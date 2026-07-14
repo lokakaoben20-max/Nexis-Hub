@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nexis Hub</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="topbar">
+        <div>
+          <p class="eyebrow">Nexis Hub</p>
+          <h1 id="hello">Bienvenue</h1>
+        </div>
+        <span class="status">Mini App</span>
+      </section>
+
+      <section class="quick-actions" aria-label="Choix du profil">
+        <button class="action" type="button" data-role="provider">
+          <span>Prestataire</span>
+          <small>Tableau de bord</small>
+        </button>
+        <button class="action primary" type="button" data-role="client">
+          <span>Client</span>
+          <small>Demander un service</small>
+        </button>
+      </section>
+
+      <section class="panel provider-only" id="provider-overview" hidden>
+        <div class="section-head">
+          <div>
+            <h2 id="provider-name">Prestataire</h2>
+            <p id="provider-meta" class="muted">Chargement du profil...</p>
+          </div>
+          <span class="pill" id="provider-status-pill">Statut</span>
+        </div>
+        <button class="secondary-button" id="toggle-provider-status" type="button">Changer ma disponibilite</button>
+        <div class="grid" id="provider-stats">
+          <article>
+            <strong id="provider-missions-total">0</strong>
+            <span>Missions</span>
+          </article>
+          <article>
+            <strong id="provider-rating">0.0</strong>
+            <span>Note</span>
+          </article>
+          <article>
+            <strong id="provider-success-rate">0%</strong>
+            <span>Reussite</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel provider-only" id="provider-registration" hidden>
+        <h2>Inscription prestataire</h2>
+        <p id="provider-registration-status" class="muted">Cree ton profil pour recevoir des demandes.</p>
+        <label>
+          Nom complet
+          <input id="provider-register-name" type="text" placeholder="Ex: Jean Lokaka" />
+        </label>
+        <label>
+          WhatsApp
+          <input id="provider-register-phone" type="tel" placeholder="Ex: +243..." />
+        </label>
+        <h3>Services</h3>
+        <div id="provider-register-services" class="checks"></div>
+        <h3>Communes</h3>
+        <div id="provider-register-communes" class="checks"></div>
+        <button class="primary-button" id="register-provider" type="button">Creer mon profil prestataire</button>
+      </section>
+
+      <section class="panel provider-only" id="provider-wallet" hidden>
+        <h2>Portefeuille</h2>
+        <div class="wallet-row">
+          <div>
+            <strong id="provider-wallet-usd">0 USD</strong>
+            <span>Solde USD</span>
+          </div>
+          <div>
+            <strong id="provider-wallet-cdf">0 CDF</strong>
+            <span>Solde CDF</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel client-only">
+        <h2>Tableau de bord</h2>
+        <p id="profile-status" class="muted">Connexion aux donnees...</p>
+        <div class="grid" id="stats-grid">
+          <article>
+            <strong>Profil</strong>
+            <span id="profile-type">Chargement</span>
+          </article>
+          <article>
+            <strong>Missions</strong>
+            <span id="missions-count">0</span>
+          </article>
+          <article>
+            <strong>Services</strong>
+            <span id="services-count">0</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Mes informations</h2>
+        <div id="profile-details" class="list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head compact">
+          <div>
+            <h2>Missions recentes</h2>
+            <p id="missions-filter-status" class="muted">Toutes les missions visibles.</p>
+          </div>
+        </div>
+        <div class="tabs provider-only" id="provider-mission-tabs" hidden>
+          <button class="tab active" type="button" data-mission-filter="all">Toutes</button>
+          <button class="tab" type="button" data-mission-filter="active">En cours</button>
+          <button class="tab" type="button" data-mission-filter="done">Terminees</button>
+        </div>
+        <div id="missions-list" class="list"></div>
+      </section>
+
+      <section class="panel provider-only" id="provider-tools" hidden>
+        <h2>Mes services</h2>
+        <p id="services-status" class="muted">Choisis les domaines que tu veux proposer.</p>
+        <div id="services-editor" class="checks"></div>
+        <button class="primary-button" id="save-services" type="button">Enregistrer mes services</button>
+      </section>
+
+      <section class="panel provider-only" id="missing-service-panel" hidden>
+        <h2>Service manquant</h2>
+        <p id="missing-service-status" class="muted">Propose un service que Nexis Hub pourra analyser.</p>
+        <label>
+          Nom du service
+          <input id="missing-service-name" type="text" placeholder="Ex: Reparation TV" />
+        </label>
+        <label>
+          Description
+          <textarea id="missing-service-description" rows="4" placeholder="Explique ce service et quand un client pourrait en avoir besoin."></textarea>
+        </label>
+        <button class="primary-button" id="send-missing-service" type="button">Envoyer la proposition</button>
+        <div id="service-requests-list" class="list"></div>
+      </section>
+    </main>
+
+    <script src="/static/main.js"></script>
+  </body>
+</html>
