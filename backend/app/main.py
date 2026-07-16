@@ -1,3 +1,6 @@
+import json
+import os
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
@@ -5,7 +8,23 @@ from pydantic import BaseModel
 
 app = FastAPI(title="Nexis Hub V5 Backend")
 
-APP_STATE: dict[str, Any] = {"users": {}, "missions": {}, "providers": {}}
+STATE_FILE = Path(os.getenv("BACKEND_STATE_FILE", "backend_state.json"))
+
+
+def _load_state() -> dict[str, Any]:
+    if STATE_FILE.exists():
+        try:
+            return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {"users": {}, "missions": {}, "providers": {}}
+    return {"users": {}, "missions": {}, "providers": {}}
+
+
+def _save_state(state: dict[str, Any]) -> None:
+    STATE_FILE.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+APP_STATE: dict[str, Any] = _load_state()
 
 
 class BotUserPayload(BaseModel):
@@ -59,6 +78,7 @@ def create_bot_user(payload: BotUserPayload):
         "phone_number": payload.phone_number,
         "language": payload.language,
     }
+    _save_state(APP_STATE)
     return {"status": "ok", "user": APP_STATE["users"][payload.telegram_id]}
 
 
@@ -73,6 +93,7 @@ def create_bot_mission(payload: BotMissionPayload):
         "description": payload.description,
         "urgent": payload.urgent,
     }
+    _save_state(APP_STATE)
     return {"status": "ok", "mission": APP_STATE["missions"][payload.mission_id]}
 
 
@@ -87,6 +108,7 @@ def create_bot_provider(payload: BotProviderPayload):
         "language": payload.language,
         "status": "available",
     }
+    _save_state(APP_STATE)
     return {"status": "ok", "provider": APP_STATE["providers"][payload.telegram_id]}
 
 
@@ -98,6 +120,7 @@ def update_mission_status(payload: MissionStatusPayload):
     mission["status"] = payload.status
     if payload.payment_status:
         mission["payment_status"] = payload.payment_status
+    _save_state(APP_STATE)
     return {"status": "ok", "mission": mission}
 
 
@@ -106,6 +129,7 @@ def update_payment(payload: PaymentPayload):
     mission = APP_STATE["missions"].get(payload.mission_id) if payload.mission_id is not None else None
     if mission is not None:
         mission["payment_status"] = payload.payment_status
+    _save_state(APP_STATE)
     return {"status": "ok", "payment_status": payload.payment_status, "mission": mission}
 
 
