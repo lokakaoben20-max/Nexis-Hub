@@ -3,6 +3,7 @@ import html
 import json
 import os
 
+import httpx
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -11,6 +12,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import CallbackQuery, KeyboardButton, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from dotenv import load_dotenv
+from aiogram.exceptions import TelegramBadRequest
 
 from messages import get_message
 from db import (
@@ -39,6 +41,7 @@ from db import (
     init_db,
     finish_mission,
     mark_quote_paid,
+    mark_quote_paid_with_wallet,
     reject_quote,
     release_payment,
     set_provider_suspended,
@@ -56,12 +59,28 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID")
 MINI_APP_URL = os.getenv("MINI_APP_URL")
+BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://127.0.0.1:8000")
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN manquant dans le fichier .env")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
+
+
+_original_edit_text = Message.edit_text
+
+
+async def _safe_edit_text(self, text, *args, **kwargs):
+    try:
+        return await _original_edit_text(self, text, *args, **kwargs)
+    except TelegramBadRequest as exc:
+        if "message is not modified" in str(exc).lower():
+            return None
+        raise
+
+
+Message.edit_text = _safe_edit_text
 
 
 def is_admin(telegram_id: int) -> bool:
@@ -220,6 +239,125 @@ BUTTON_LABELS = {
 
 def button_label(key: str, lang: str = "fr") -> str:
     return BUTTON_LABELS.get(lang, BUTTON_LABELS["fr"]).get(key, BUTTON_LABELS["fr"][key])
+
+
+async def sync_user_to_backend(telegram_id: int, first_name: str | None = None, phone_number: str | None = None, language: str = "fr") -> dict:
+    payload = {
+        "telegram_id": telegram_id,
+        "first_name": first_name or "Client",
+        "phone_number": phone_number,
+        "language": language,
+    }
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/users", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_mission_to_backend(telegram_id: int, mission_id: int, data: dict) -> dict:
+    payload = {
+        "telegram_id": telegram_id,
+        "mission_id": mission_id,
+        "service": data.get("service", "service_autre"),
+        "commune": data.get("commune", "Autre commune"),
+        "currency": data.get("currency", "USD"),
+        "description": data.get("description", ""),
+        "urgent": bool(data.get("urgent", False)),
+    }
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/missions", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_provider_to_backend(telegram_id: int, full_name: str, phone_number: str | None = None, services: list[str] | None = None, communes: list[str] | None = None, language: str = "fr") -> dict:
+    payload = {
+        "telegram_id": telegram_id,
+        "full_name": full_name,
+        "phone_number": phone_number,
+        "services": services or [],
+        "communes": communes or [],
+        "language": language,
+    }
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def fetch_backend_profile(telegram_id: int) -> dict | None:
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{BACKEND_BASE_URL}/api/profile/{telegram_id}")
+            response.raise_for_status()
+            return response.json()
+    except Exception:
+        return None
+
+
+async def load_profile_from_backend(telegram_id: int, fallback_user: dict | None = None) -> dict:
+    backend_profile = await fetch_backend_profile(telegram_id)
+    if backend_profile:
+        return backend_profile
+    return {"client": fallback_user or {"telegram_id": telegram_id, "first_name": "Client"}, "provider": None, "client_missions": [], "provider_missions": []}
+
+
+async def fetch_backend_missions(telegram_id: int) -> list[dict]:
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{BACKEND_BASE_URL}/api/profile/{telegram_id}")
+            response.raise_for_status()
+            payload = response.json()
+            return payload.get("client_missions", [])
+    except Exception:
+        return []
+
+
+async def sync_mission_status_to_backend(mission_id: int, status: str, payment_status: str | None = None) -> dict:
+    payload = {"mission_id": mission_id, "status": status}
+    if payment_status:
+        payload["payment_status"] = payment_status
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/missions/status", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_payment_to_backend(quote_id: int, payment_status: str, mission_id: int | None = None) -> dict:
+    payload = {"quote_id": quote_id, "payment_status": payment_status}
+    if mission_id is not None:
+        payload["mission_id"] = mission_id
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/payments", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def persist_client_registration(telegram_id: int, first_name: str | None = None, phone_number: str | None = None, language: str = "fr") -> dict:
+    local_user = create_user(
+        telegram_id=telegram_id,
+        phone_number=phone_number,
+        first_name=first_name or "",
+        language=language,
+    )
+    backend_result = await sync_user_to_backend(
+        telegram_id=telegram_id,
+        first_name=first_name,
+        phone_number=phone_number,
+        language=language,
+    )
+    return {"local": local_user, "backend": backend_result}
+
+
+async def persist_mission_creation(telegram_id: int, mission_id: int, data: dict) -> dict:
+    local_mission = get_mission_by_id(mission_id)
+    if local_mission is None:
+        local_mission = {"id": mission_id, "status": "created"}
+    backend_result = await sync_mission_to_backend(telegram_id, mission_id, data)
+    return {
+        "local": local_mission,
+        "backend": backend_result,
+    }
 
 
 class MissionRequest(StatesGroup):
@@ -1035,10 +1173,10 @@ async def enregistrer_client(message: Message, state: FSMContext):
         return
 
     data = await state.get_data()
-    create_user(
+    await persist_client_registration(
         telegram_id=message.from_user.id,
-        phone_number=phone_number,
         first_name=message.from_user.first_name or "",
+        phone_number=phone_number,
         language=data.get("language", "fr"),
     )
     await state.clear()
@@ -1181,6 +1319,14 @@ async def terminer_inscription_prestataire(callback: CallbackQuery, state: FSMCo
         telegram_id=callback.from_user.id,
         phone_number=data["provider_phone"],
         full_name=data["provider_full_name"],
+        services=data["provider_services"],
+        communes=data["provider_communes"],
+        language=data.get("language", "fr"),
+    )
+    await sync_provider_to_backend(
+        telegram_id=callback.from_user.id,
+        full_name=data["provider_full_name"],
+        phone_number=data["provider_phone"],
         services=data["provider_services"],
         communes=data["provider_communes"],
         language=data.get("language", "fr"),
@@ -1544,6 +1690,7 @@ async def photo_ignoree(callback: CallbackQuery, state: FSMContext):
 async def mission_confirmer(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     mission_id = create_mission(callback.from_user.id, data)
+    await persist_mission_creation(callback.from_user.id, mission_id, data)
     matching_providers = find_matching_providers(data["service"], data["commune"])
 
     for provider in matching_providers[:3]:
@@ -1761,6 +1908,7 @@ async def paiement_mobile_money(callback: CallbackQuery):
     payment = mark_quote_paid(quote_id, operator="mobile_money_simulation")
     quote = payment["quote"]
 
+    await sync_payment_to_backend(quote_id, "paid_escrow", mission_id=quote["mission_id"])
     await callback.message.edit_text(
         "✅ <b>Paiement escrow confirmé</b>\n\n"
         f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"
@@ -1795,6 +1943,7 @@ async def prestataire_demarre_mission(callback: CallbackQuery):
         await callback.answer(str(error), show_alert=True)
         return
 
+    await sync_mission_status_to_backend(mission_id, "in_progress")
     await callback.message.edit_text(
         f"▶️ Mission <b>NXH-{mission_id:04d}</b> démarrée.\n\n"
         "Quand le travail est terminé, appuyez sur le bouton ci-dessous.",
@@ -1818,6 +1967,7 @@ async def prestataire_termine_mission(callback: CallbackQuery):
         await callback.answer(str(error), show_alert=True)
         return
 
+    await sync_mission_status_to_backend(mission_id, "awaiting_confirmation")
     await callback.message.edit_text(
         f"✅ Mission <b>NXH-{mission_id:04d}</b> marquée comme terminée.\n\n"
         "Le client doit maintenant confirmer pour libérer le paiement.",
@@ -1842,6 +1992,7 @@ async def client_confirme_mission_terminee(callback: CallbackQuery):
         await callback.answer(str(error), show_alert=True)
         return
 
+    await sync_mission_status_to_backend(mission_id, "completed", payment_status="released")
     await callback.message.edit_text(
         get_message("payment_released_client", "fr", mission_id=mission_id),
         parse_mode="HTML",
@@ -1876,10 +2027,38 @@ async def client_signale_probleme(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("pay_wallet_"))
 async def paiement_wallet(callback: CallbackQuery):
-    await callback.answer(
-        "Wallet prévu dans la suite. Pour l'instant, utilisez Mobile Money simulé.",
-        show_alert=True,
+    quote_id = int(callback.data.replace("pay_wallet_", "", 1))
+    try:
+        payment = mark_quote_paid_with_wallet(quote_id, operator="wallet")
+    except ValueError as error:
+        await callback.answer(str(error), show_alert=True)
+        return
+
+    quote = payment["quote"]
+    await sync_payment_to_backend(quote_id, "paid_escrow", mission_id=quote["mission_id"])
+    await callback.message.edit_text(
+        "✅ <b>Paiement wallet confirmé</b>\n\n"
+        f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"
+        f"Référence paiement : <b>{payment['mobile_money_ref']}</b>\n"
+        f"Total payé : <b>{payment['total_client']:.2f} {quote['currency']}</b>\n"
+        f"Frais Tola / techniques : <b>{payment['tola_fee']:.2f} {quote['currency']}</b>\n\n"
+        "Le montant du devis est maintenant sécurisé. Le prestataire peut commencer.",
+        parse_mode="HTML",
+        reply_markup=clavier_client(get_user_language(callback.from_user.id)),
     )
+
+    await bot.send_message(
+        quote["provider_telegram_id"],
+        "💰 <b>Paiement sécurisé reçu via wallet</b>\n\n"
+        f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"
+        f"Montant brut : <b>{quote['amount']:.2f} {quote['currency']}</b>\n"
+        f"Commission NEXIS HUB : <b>{payment['commission_amount']:.2f} {quote['currency']}</b>\n"
+        f"Net prestataire : <b>{payment['net_provider']:.2f} {quote['currency']}</b>\n\n"
+        "Vous pouvez commencer la mission.",
+        parse_mode="HTML",
+        reply_markup=clavier_mission_prestataire(quote["mission_id"], "start"),
+    )
+    await callback.answer("Paiement wallet confirmé")
 
 
 @dp.callback_query(F.data.startswith("client_reject_quote_"))
@@ -1913,7 +2092,10 @@ async def mission_annuler(callback: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data == "client_missions")
 async def afficher_missions_client(callback: CallbackQuery):
-    missions = get_user_missions(callback.from_user.id)
+    local_missions = get_user_missions(callback.from_user.id)
+    backend_missions = await fetch_backend_missions(callback.from_user.id)
+    missions = backend_missions or local_missions
+
     if not missions:
         await callback.message.edit_text(
             "📋 <b>Mes missions en cours</b>\n\n"
@@ -1925,7 +2107,8 @@ async def afficher_missions_client(callback: CallbackQuery):
         return
 
     text = "📋 <b>Mes dernières missions</b>\n\n" + "\n\n".join(
-        html.escape(format_mission_client(mission)) for mission in missions
+        html.escape(format_mission_client(mission)) if isinstance(mission, dict) and "service" in mission else html.escape(str(mission))
+        for mission in missions
     )
     await callback.message.edit_text(
         text,
@@ -1956,16 +2139,23 @@ async def afficher_wallet_client(callback: CallbackQuery):
 @dp.callback_query(F.data == "client_profil")
 async def afficher_profil_client(callback: CallbackQuery):
     user = get_user_by_telegram_id(callback.from_user.id)
-    if user is None:
+    profile_data = await load_profile_from_backend(callback.from_user.id, fallback_user=user)
+
+    if user is None and not profile_data.get("client"):
         await callback.answer("Client introuvable.", show_alert=True)
         return
 
+    client_profile = profile_data.get("client", {})
+    display_name = client_profile.get("first_name") or (user.get("first_name") if user else "Client")
+    display_phone = client_profile.get("phone_number") or (user.get("phone_number") if user else "Non renseigné")
+    total_missions = len(profile_data.get("client_missions", [])) if profile_data else (user.get("total_missions", 0) if user else 0)
+
     await callback.message.edit_text(
         "👤 <b>Mon profil client</b>\n\n"
-        f"Nom : <b>{html.escape(user['first_name'] or 'Client')}</b>\n"
-        f"Téléphone : <b>{html.escape(user['phone_number'])}</b>\n"
-        f"Langue : <b>{html.escape(user['language'])}</b>\n"
-        f"Missions totales : <b>{user['total_missions']}</b>",
+        f"Nom : <b>{html.escape(display_name or 'Client')}</b>\n"
+        f"Téléphone : <b>{html.escape(display_phone or 'Non renseigné')}</b>\n"
+        f"Langue : <b>{html.escape(user['language'] if user else 'fr')}</b>\n"
+        f"Missions totales : <b>{total_missions}</b>",
         parse_mode="HTML",
         reply_markup=clavier_client(get_user_language(callback.from_user.id)),
     )
@@ -2017,17 +2207,29 @@ async def afficher_wallet_prestataire(callback: CallbackQuery):
 @dp.callback_query(F.data == "prest_profil")
 async def afficher_profil_prestataire(callback: CallbackQuery):
     provider = get_provider_by_telegram_id(callback.from_user.id)
-    if provider is None:
+    backend_profile = await fetch_backend_profile(callback.from_user.id)
+    provider_data = (backend_profile or {}).get("provider") if backend_profile else None
+
+    if provider is None and not provider_data:
         await callback.answer("Prestataire introuvable.", show_alert=True)
         return
 
-    await callback.message.edit_text(
+    display_name = provider_data.get("full_name") if provider_data else provider.get("full_name") if provider else "Prestataire"
+    display_phone = provider_data.get("phone_number") if provider_data else provider.get("phone_number") if provider else "Non renseigné"
+    display_status = provider_data.get("status") if provider_data else provider.get("status") if provider else "available"
+    display_services = ", ".join(provider_data.get("services", [])) if provider_data else ""
+
+    text = (
         "👤 <b>Mon profil prestataire</b>\n\n"
-        f"Nom : <b>{html.escape(provider['full_name'])}</b>\n"
-        f"Téléphone : <b>{html.escape(provider['phone_number'])}</b>\n"
-        f"Badge : <b>{html.escape(provider['badge'])}</b>\n"
-        f"Statut : <b>{html.escape(provider['status'])}</b>\n"
-        f"Missions totales : <b>{provider['total_missions']}</b>",
+        f"Nom : <b>{html.escape(display_name or 'Prestataire')}</b>\n"
+        f"Téléphone : <b>{html.escape(display_phone or 'Non renseigné')}</b>\n"
+        f"Statut : <b>{html.escape(display_status)}</b>\n"
+    )
+    if display_services:
+        text += f"Services : <b>{html.escape(display_services)}</b>\n"
+
+    await callback.message.edit_text(
+        text,
         parse_mode="HTML",
         reply_markup=clavier_prestataire(get_provider_language(callback.from_user.id)),
     )

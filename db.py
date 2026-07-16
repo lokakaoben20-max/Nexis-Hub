@@ -958,6 +958,91 @@ def mark_quote_paid(quote_id: int, operator: str = "simulation"):
         **amounts,
         "quote": quote,
         "operator": operator,
+        "status": "success",
+    }
+
+
+def mark_quote_paid_with_wallet(quote_id: int, operator: str = "wallet"):
+    quote = get_quote_by_id(quote_id)
+    if quote is None:
+        raise ValueError("Devis introuvable")
+
+    mission = get_mission_by_id(quote["mission_id"])
+    if mission is None:
+        raise ValueError("Mission introuvable")
+
+    user = get_user_by_telegram_id(mission["client_telegram_id"])
+    if user is None:
+        raise ValueError("Client introuvable")
+
+    user_data = dict(user) if hasattr(user, "keys") and not isinstance(user, dict) else user
+
+    amounts = calculate_payment_amounts(
+        amount=quote["amount"],
+        currency=quote["currency"],
+        urgent=bool(mission["is_urgent"]),
+    )
+    total_client = amounts["total_client"]
+    wallet_balance = user_data["wallet_balance_usd"] if quote["currency"] == "USD" else user_data["wallet_balance_cdf"]
+    if wallet_balance < total_client:
+        raise ValueError("Solde insuffisant sur le wallet")
+
+    with get_connection() as conn:
+        wallet_column = "wallet_balance_usd" if quote["currency"] == "USD" else "wallet_balance_cdf"
+        conn.execute(
+            f"UPDATE users SET {wallet_column} = {wallet_column} - ? WHERE telegram_id = ?",
+            (total_client, mission["client_telegram_id"]),
+        )
+        conn.execute(
+            """
+            INSERT INTO transactions (
+                mission_id, quote_id, type, amount, currency,
+                commission_amount, tola_fee, aggregator_fee, net_provider,
+                status, mobile_money_ref
+            )
+            VALUES (?, ?, 'escrow_in', ?, ?, ?, ?, ?, ?, 'success', ?)
+            """,
+            (
+                quote["mission_id"],
+                quote_id,
+                total_client,
+                quote["currency"],
+                amounts["commission_amount"],
+                amounts["tola_fee"],
+                amounts["aggregator_fee"],
+                amounts["net_provider"],
+                f"WLT-{quote_id:04d}",
+            ),
+        )
+        conn.execute(
+            """
+            UPDATE missions
+            SET payment_status = 'paid_escrow',
+                commission_amount = ?,
+                tola_fee = ?,
+                aggregator_fee = ?,
+                total_client = ?,
+                net_provider = ?,
+                status = 'confirmed'
+            WHERE id = ?
+            """,
+            (
+                amounts["commission_amount"],
+                amounts["tola_fee"],
+                amounts["aggregator_fee"],
+                total_client,
+                amounts["net_provider"],
+                quote["mission_id"],
+            ),
+        )
+
+    return {
+        "transaction_id": None,
+        "mobile_money_ref": f"WLT-{quote_id:04d}",
+        **amounts,
+        "quote": quote,
+        "operator": operator,
+        "status": "success",
     }
 
 
