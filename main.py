@@ -44,9 +44,11 @@ from db import (
     mark_quote_paid_with_wallet,
     reject_quote,
     release_payment,
+    reset_consecutive_ignored,
     set_provider_suspended,
     set_provider_verified,
     start_mission,
+    update_consecutive_ignored,
     update_provider_language,
     update_provider_services,
     update_provider_status,
@@ -1386,6 +1388,8 @@ async def disponibilite_prestataire(callback: CallbackQuery):
 async def changer_disponibilite(callback: CallbackQuery):
     status = "available" if callback.data == "provider_status_available" else "offline"
     update_provider_status(callback.from_user.id, status)
+    if status == "available":
+        reset_consecutive_ignored(callback.from_user.id)
     status_label = "Disponible" if status == "available" else "Indisponible"
     await callback.message.edit_text(
         "⚙️ <b>Disponibilité mise à jour</b>\n\n"
@@ -1860,6 +1864,7 @@ async def devis_message_recu(message: Message, state: FSMContext):
         delay_hours=data["quote_delay_hours"],
         message=quote_message,
     )
+    reset_consecutive_ignored(message.from_user.id)
 
     await bot.send_message(
         mission["client_telegram_id"],
@@ -1890,6 +1895,20 @@ async def passer_mission_prestataire(callback: CallbackQuery):
         f"❌ Vous avez passé la mission <b>NXH-{int(mission_id):04d}</b>.",
         parse_mode="HTML",
     )
+
+    provider = update_consecutive_ignored(callback.from_user.id)
+    if provider is not None and provider["status"] == "paused" and provider["consecutive_ignored"] == 3:
+        await bot.send_message(
+            callback.from_user.id,
+            "⏸️ <b>Votre profil a été mis en pause</b>\n\n"
+            "Vous avez passé 3 missions d'affilée sans répondre. Pour éviter que "
+            "les clients attendent inutilement, votre disponibilité a été désactivée.\n\n"
+            "Repassez-vous disponible dès que vous voulez recommencer à recevoir "
+            "des propositions de mission — le compteur repart à zéro.",
+            parse_mode="HTML",
+            reply_markup=clavier_disponibilite("paused"),
+        )
+
     await callback.answer("Mission ignorée")
 
 
