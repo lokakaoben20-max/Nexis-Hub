@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nexis_hub_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nexis_user
+      POSTGRES_PASSWORD: nexis_password
+      POSTGRES_DB: nexis_hub
+    ports:
+      - "5432:5432"
+    volumes:
+      - nexis_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexis_user -d nexis_hub"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  nexis_postgres_data:

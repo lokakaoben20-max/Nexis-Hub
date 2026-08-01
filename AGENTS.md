@@ -1,8 +1,15 @@
 # Instructions pour les agents IA (Manus, Copilot, Codex, Claude Code, etc.)
 
-Ce fichier est le point d'entrée commun pour **tout outil IA** qui travaille sur ce dépôt.
-S'il existe un guide plus spécifique à un outil (ex. `MANUS_HANDOFF.md`), il reste valable
-pour le détail, mais les règles ci-dessous priment en cas de conflit.
+Ce fichier est le point d'entrée commun pour **tout outil IA** qui travaille sur ce dépôt
+(remplace l'ancien `MANUS_HANDOFF.md`, qui était spécifique à un seul outil — son contenu
+a été fusionné ici).
+
+## Objectif du projet
+
+Ce dépôt contient un bot Telegram pour Nexis Hub avec une migration progressive vers une
+architecture V5 backend-driven. Le spec V5 a été défini par Manus (voir `nexis-hub-v5`
+ci-dessous) ; la mise en œuvre actuelle doit rester alignée avec cette vision et servir de
+base de travail pour la suite.
 
 ## Dépôt de référence
 
@@ -31,13 +38,69 @@ pour le détail, mais les règles ci-dessous priment en cas de conflit.
 - `messages.py` : textes du bot (fr / ln / en).
 - `backend/app/main.py` : backend V5 minimal (FastAPI), persistance JSON sur disque.
 - `mini_app/` : mini-app web liée au projet.
-- `tests/` et `backend/tests/` : tests de régression.
+- `tests/` : tests de régression pour le bot et la migration V5.
+- `backend/tests/` : tests du backend V5.
+
+## Fichiers à consulter en priorité
+
+- [main.py](main.py) : pour les flows bot et la synchronisation V5.
+- [db.py](db.py) : pour la logique legacy et les fonctions métier.
+- [backend/app/main.py](backend/app/main.py) : pour les endpoints V5.
+- [tests/test_bot_backend_sync.py](tests/test_bot_backend_sync.py) : pour les tests de synchronisation bot/backend.
+- [backend/tests/test_main.py](backend/tests/test_main.py) : pour les tests backend.
+
+## État actuel
+
+- Le bot est connecté à un backend V5 pour plusieurs flows clés : inscription utilisateur,
+  création de mission, profil, lifecycle mission, paiement.
+- **Phase 0 de la migration V5 terminée** (voir [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md)) :
+  le backend V5 persiste maintenant dans PostgreSQL (via SQLAlchemy + Alembic), plus dans un
+  fichier JSON. Le contrat d'API vu par le bot (`main.py`) n'a pas changé.
+- La couche legacy SQLite (`db.py`) reste présente comme fallback pendant la migration.
 
 ## Avant toute modification
 
-1. Lancer les tests : `c:/Users/CECBK/nexis_hub_bot/.venv/Scripts/python.exe -m pytest -q`
-2. Vérifier la branche courante et le statut git (`git status`, `git branch`).
-3. Ne pas committer `.venv/`, `__pycache__/`, `*.db`, `.env` (voir `.gitignore`).
+1. Démarrer Postgres si besoin : `docker compose up -d` (voir `docker-compose.yml`).
+2. Lancer les tests : `c:/Users/CECBK/nexis_hub_bot/.venv/Scripts/python.exe -m pytest -q`
+   (les tests backend utilisent SQLite en mémoire, pas besoin de Postgres pour les faire passer).
+3. Vérifier la branche courante et le statut git (`git status`, `git branch`, `git remote -v`).
+4. Ne pas committer `.venv/`, `__pycache__/`, `*.db`, `.env` (voir `.gitignore`).
+
+### Lancer le bot
+
+```bash
+c:/Users/CECBK/nexis_hub_bot/.venv/Scripts/python.exe main.py
+```
+
+### Lancer le backend V5 en local
+
+```bash
+docker compose up -d
+c:/Users/CECBK/nexis_hub_bot/.venv/Scripts/python.exe -m uvicorn backend.app.main:app --reload
+```
+
+### Migrations de base de données (Alembic)
+
+```bash
+# Générer une migration après avoir modifié backend/app/models.py
+c:/Users/CECBK/nexis_hub_bot/.venv/Scripts/python.exe -m alembic revision --autogenerate -m "description"
+
+# Appliquer les migrations
+c:/Users/CECBK/nexis_hub_bot/.venv/Scripts/python.exe -m alembic upgrade head
+```
+
+## Branch Git actuelle
+
+- Branche de travail : `feature/v5-migration`
+
+## Prochaine étape logique
+
+1. Continuer la migration des flows encore dépendants de la DB legacy.
+2. Rendre le backend V5 plus complet (base de données réelle si souhaité).
+3. Réduire progressivement les dépendances à l'ancienne logique locale.
+4. Vérifier que chaque évolution reste cohérente avec le spec V5 défini par Manus.
+5. Voir [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md) pour le plan de migration détaillé
+   vers l'architecture cible `nexis-hub-v5`.
 
 ## Points sensibles à ne pas casser
 
@@ -45,3 +108,4 @@ pour le détail, mais les règles ci-dessous priment en cas de conflit.
 - Les fonctions de synchronisation vers le backend V5 doivent rester tolérantes aux erreurs réseau.
 - Toute évolution du backend V5 doit rester cohérente avec la vision définie dans `nexis-hub-v5`
   (schéma de données, terminologie des statuts) même si l'implémentation reste incrémentale ici.
+- Les tests sont un bon garde-fou avant toute modification majeure.
