@@ -142,6 +142,13 @@ STATUS_LABELS = {
     "disputed": "Litige",
 }
 
+BADGE_LABELS = {
+    "partner": "🏆 Partenaire",
+    "expert": "🥇 Expert",
+    "premium": "⭐ Premium",
+    "verified": "✅ Vérifié",
+}
+
 PAYMENT_STATUS_LABELS = {
     "unpaid": "Non payé",
     "paid_escrow": "Sécurisé en escrow",
@@ -239,6 +246,19 @@ BUTTON_LABELS = {
 
 def button_label(key: str, lang: str = "fr") -> str:
     return BUTTON_LABELS.get(lang, BUTTON_LABELS["fr"]).get(key, BUTTON_LABELS["fr"][key])
+
+
+def provider_trust_line(provider) -> str:
+    if not provider["total_missions"]:
+        return "🆕 Nouveau prestataire sur Nexis Hub"
+
+    line = f"⭐ {provider['rating']:.1f}/5 ({provider['total_missions']} missions, {provider['success_rate']:.0f}% de réussite)"
+    badge_label = BADGE_LABELS.get(provider["badge"])
+    if badge_label:
+        line += f" · {badge_label}"
+    if provider["is_verified"]:
+        line += " · ✅ Vérifié"
+    return line
 
 
 async def sync_user_to_backend(telegram_id: int, first_name: str | None = None, phone_number: str | None = None, language: str = "fr") -> dict:
@@ -1846,6 +1866,7 @@ async def devis_message_recu(message: Message, state: FSMContext):
         "💬 <b>Nouveau devis reçu</b>\n\n"
         f"Mission : <b>NXH-{data['quote_mission_id']:04d}</b>\n"
         f"Prestataire : <b>{html.escape(provider['full_name'])}</b>\n"
+        f"{provider_trust_line(provider)}\n"
         f"Montant : <b>{data['quote_amount']:.2f} {data['quote_currency']}</b>\n"
         f"Délai : <b>{data['quote_delay_hours']} h</b>\n"
         f"Message : {html.escape(quote_message) if quote_message else 'Aucun message'}",
