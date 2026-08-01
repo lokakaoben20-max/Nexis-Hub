@@ -2,6 +2,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+from exchange_rates import get_usd_to_cdf_rate
+
 
 DB_PATH = Path(__file__).with_name("nexis_hub.db")
 
@@ -880,7 +882,8 @@ def reject_quote(quote_id: int):
 def calculate_payment_amounts(amount: float, currency: str, urgent: bool = False):
     commission_rate = 0.15 if urgent else 0.10
     commission_amount = round(amount * commission_rate, 2)
-    tola_fee = 1.50 if currency == "USD" else 4000.00
+    tola_fee_usd = 1.50
+    tola_fee = tola_fee_usd if currency == "USD" else round(tola_fee_usd * get_usd_to_cdf_rate(), 2)
     total_client = round(amount + tola_fee, 2)
     net_provider = round(amount - commission_amount, 2)
     return {

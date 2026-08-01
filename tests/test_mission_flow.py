@@ -21,6 +21,16 @@ def test_payment_amounts_are_consistent_for_urgent_and_standard_missions():
     assert urgent["net_provider"] == 85.0
 
 
+def test_cdf_tola_fee_follows_the_live_exchange_rate(monkeypatch):
+    monkeypatch.setattr(db, "get_usd_to_cdf_rate", lambda: 2000.0)
+    amounts = calculate_payment_amounts(100.0, "CDF", urgent=False)
+    assert amounts["tola_fee"] == 3000.0  # 1.50 USD * 2000
+
+    monkeypatch.setattr(db, "get_usd_to_cdf_rate", lambda: 2500.0)
+    amounts = calculate_payment_amounts(100.0, "CDF", urgent=False)
+    assert amounts["tola_fee"] == 3750.0  # 1.50 USD * 2500
+
+
 def test_wallet_payment_debits_client_and_marks_mission_paid(tmp_path):
     db.DB_PATH = tmp_path / "test_nexis_hub.db"
     db.init_db()

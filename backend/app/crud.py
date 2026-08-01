@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
 from backend.app.models import BotMission, BotProvider, BotQuote, BotTransaction, BotUser
+from exchange_rates import get_usd_to_cdf_rate
 
 MODULE_B_SERVICES = {"service_plomberie", "service_electricite", "service_climatisation"}
 BADGE_SCORES = {"partner": 30, "expert": 20, "premium": 10, "verified": 5, "pending": 0}
@@ -232,7 +233,8 @@ def reject_quote(db: Session, quote_id: int) -> BotQuote | None:
 def calculate_payment_amounts(amount: float, currency: str, urgent: bool = False) -> dict:
     commission_rate = 0.15 if urgent else 0.10
     commission_amount = round(amount * commission_rate, 2)
-    tola_fee = 1.50 if currency == "USD" else 4000.00
+    tola_fee_usd = 1.50
+    tola_fee = tola_fee_usd if currency == "USD" else round(tola_fee_usd * get_usd_to_cdf_rate(), 2)
     total_client = round(amount + tola_fee, 2)
     net_provider = round(amount - commission_amount, 2)
     return {

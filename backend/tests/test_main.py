@@ -242,6 +242,14 @@ def test_payment_amounts_use_urgent_commission_rate():
     assert urgent["net_provider"] == 85.0
 
 
+def test_cdf_tola_fee_follows_the_live_exchange_rate(monkeypatch):
+    import backend.app.crud as crud
+
+    monkeypatch.setattr(crud, "get_usd_to_cdf_rate", lambda: 2000.0)
+    amounts = crud.calculate_payment_amounts(100.0, "CDF", urgent=False)
+    assert amounts["tola_fee"] == 3000.0  # 1.50 USD * 2000
+
+
 def test_mission_cannot_start_before_escrow_payment(tmp_path, monkeypatch):
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
