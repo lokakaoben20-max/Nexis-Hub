@@ -29,8 +29,10 @@ sans toucher au bot (`main.py`) ni à ses appels HTTP existants.
   n'est pas validée en conditions réelles.
 
 **Risque** : faible. Le bot ne voit aucune différence de comportement.
-**Prérequis à valider avec toi** : où héberger Postgres (local/dev vs cloud dès
-maintenant), et si tu veux garder le fallback JSON en secours pendant la transition.
+
+**Statut : ✅ Terminée.** Postgres local via `docker-compose.yml`, schéma dans
+`backend/app/models.py`, migrations Alembic (`backend/alembic/`), endpoints
+existants réécrits contre la DB. `db.py` reste en fallback, inchangé.
 
 ## Phase 1 — Compléter la logique métier du backend
 
@@ -42,6 +44,26 @@ dans `db.py`/`main.py` pour les flows synchronisés (pas seulement stocker/relir
 - Étendre les tests `backend/tests/` en parallèle de chaque flow migré.
 
 **Risque** : moyen — c'est ici que les bugs de migration de logique apparaissent.
+
+**Statut : logique métier portée côté backend, bot pas encore basculé dessus.**
+Le schéma a été étendu (`bot_providers`/`bot_users`/`bot_missions` + nouvelles
+tables `bot_quotes`, `bot_transactions`) et `backend/app/crud.py` reproduit
+fidèlement la logique de `db.py` : calcul du module prestataire, matching scoré
+(`find_matching_providers`), cycle de vie des devis (`create_quote`,
+`accept_quote` qui rejette les autres devis), garde-fous de transition d'état
+(`start_mission` refuse sans `paid_escrow`), calcul de commission
+(15%/10% selon urgence), paiement wallet avec validation de solde, libération
+d'escrow avec crédit du wallet prestataire. 26 tests backend passent (SQLite en
+test, validé aussi manuellement contre Postgres réel).
+
+**Important — ce qui n'a PAS changé** : `main.py` (le bot) continue d'utiliser
+`db.py`/SQLite comme source de vérité pour ces flows ; il ne consomme pas
+encore les nouveaux endpoints du backend. Le backend est maintenant *capable*
+de porter cette logique, mais le bascule réel du bot vers le backend est une
+étape à part, plus risquée (ça change la source de vérité de données de
+production), à valider explicitement avant de l'entamer — voir Phase 3 pour le
+découplage complet du bot.
+
 **Sortie de phase** : tous les flows métier existants tournent sur Postgres via le
 backend, `db.py` n'est plus utilisé que comme fallback théorique.
 
