@@ -110,6 +110,34 @@ handler. Le matching (`find_matching_providers`) reste sur `db.py` — mêmes
 raisons que pour l'affichage du profil (score dépend de rating/badge non à
 jour côté backend).
 
+**2026-08-02 — dernier flow de cette série : paiement/escrow.** Contrairement
+aux deux flows précédents, ici la synchronisation vers le backend existait déjà
+(`sync_payment_to_backend` sur `mark_quote_paid`/`mark_quote_paid_with_wallet`,
+`sync_mission_status_to_backend` sur `start_mission`/`finish_mission`/
+`release_payment`). Le bug était ailleurs : ces `await` n'étaient pas protégés
+par `_safe_backend_call`. Concrètement, le paiement (mouvement d'argent réel)
+avait déjà eu lieu en local au moment de l'appel réseau — si le backend était
+injoignable, l'exception remontait et plantait le handler *après* le paiement,
+donc ni le client ni le prestataire ne recevaient leur confirmation malgré un
+paiement effectivement passé. Corrigé en enveloppant les 5 appels concernés
+(`paiement_mobile_money`, `paiement_wallet`, `prestataire_demarre_mission`,
+`prestataire_termine_mission`, `client_confirme_mission_terminee`), plus
+`sync_mission_to_backend` dans `persist_mission_creation` qui avait le même
+défaut. Tests de régression ajoutés pour chacun (backend down ⇒ le sync
+retourne `None` au lieu de lever). **Aucun changement de source de vérité** :
+`db.py` reste seul à exécuter la logique de paiement réelle ; le backend n'est
+encore qu'un miroir best-effort pour ce flow, volontairement — trop risqué pour
+basculer sans supervision explicite (argent réel en jeu, voir Phase 6).
+
+**Bilan de cette série (inscription → devis → paiement)** : tous les flows
+identifiés au départ ont maintenant une synchronisation backend complète et
+tolérante aux pannes réseau. Ce qui reste avant de pouvoir vraiment sortir de
+la Phase 1 (faire du backend la source de vérité, pas juste un miroir) :
+porter la logique de calcul mission-dérivée (rating/badge/total_missions/
+success_rate, soldes wallet) côté backend au moment même où `db.py` les met à
+jour, pas seulement au moment de la création — sans ça, ces champs resteront
+insuffisamment fiables pour basculer leur lecture.
+
 **Sortie de phase** : tous les flows métier existants tournent sur Postgres via le
 backend, `db.py` n'est plus utilisé que comme fallback théorique.
 

@@ -455,7 +455,7 @@ async def persist_mission_creation(telegram_id: int, mission_id: int, data: dict
     local_mission = get_mission_by_id(mission_id)
     if local_mission is None:
         local_mission = {"id": mission_id, "status": "created"}
-    backend_result = await sync_mission_to_backend(telegram_id, mission_id, data)
+    backend_result = await _safe_backend_call(sync_mission_to_backend(telegram_id, mission_id, data))
     return {
         "local": local_mission,
         "backend": backend_result,
@@ -2070,7 +2070,7 @@ async def paiement_mobile_money(callback: CallbackQuery):
     payment = mark_quote_paid(quote_id, operator="mobile_money_simulation")
     quote = payment["quote"]
 
-    await sync_payment_to_backend(quote_id, "paid_escrow", mission_id=quote["mission_id"])
+    await _safe_backend_call(sync_payment_to_backend(quote_id, "paid_escrow", mission_id=quote["mission_id"]))
     await callback.message.edit_text(
         "✅ <b>Paiement escrow confirmé</b>\n\n"
         f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"
@@ -2105,7 +2105,7 @@ async def prestataire_demarre_mission(callback: CallbackQuery):
         await callback.answer(str(error), show_alert=True)
         return
 
-    await sync_mission_status_to_backend(mission_id, "in_progress")
+    await _safe_backend_call(sync_mission_status_to_backend(mission_id, "in_progress"))
     await callback.message.edit_text(
         f"▶️ Mission <b>NXH-{mission_id:04d}</b> démarrée.\n\n"
         "Quand le travail est terminé, appuyez sur le bouton ci-dessous.",
@@ -2129,7 +2129,7 @@ async def prestataire_termine_mission(callback: CallbackQuery):
         await callback.answer(str(error), show_alert=True)
         return
 
-    await sync_mission_status_to_backend(mission_id, "awaiting_confirmation")
+    await _safe_backend_call(sync_mission_status_to_backend(mission_id, "awaiting_confirmation"))
     await callback.message.edit_text(
         f"✅ Mission <b>NXH-{mission_id:04d}</b> marquée comme terminée.\n\n"
         "Le client doit maintenant confirmer pour libérer le paiement.",
@@ -2154,7 +2154,7 @@ async def client_confirme_mission_terminee(callback: CallbackQuery):
         await callback.answer(str(error), show_alert=True)
         return
 
-    await sync_mission_status_to_backend(mission_id, "completed", payment_status="released")
+    await _safe_backend_call(sync_mission_status_to_backend(mission_id, "completed", payment_status="released"))
     await callback.message.edit_text(
         get_message("payment_released_client", "fr", mission_id=mission_id),
         parse_mode="HTML",
@@ -2197,7 +2197,7 @@ async def paiement_wallet(callback: CallbackQuery):
         return
 
     quote = payment["quote"]
-    await sync_payment_to_backend(quote_id, "paid_escrow", mission_id=quote["mission_id"])
+    await _safe_backend_call(sync_payment_to_backend(quote_id, "paid_escrow", mission_id=quote["mission_id"]))
     await callback.message.edit_text(
         "✅ <b>Paiement wallet confirmé</b>\n\n"
         f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"

@@ -111,6 +111,15 @@ def test_persist_mission_creation_returns_backend_and_local(monkeypatch):
     assert result["local"]["id"] == 999
 
 
+def test_persist_mission_creation_survives_backend_outage(monkeypatch):
+    monkeypatch.setattr(main.httpx, "AsyncClient", RaisingAsyncClient)
+
+    result = asyncio.run(main.persist_mission_creation(88, 999, {"service": "service_plomberie", "commune": "Gombe", "currency": "USD"}))
+
+    assert result["backend"] is None
+    assert result["local"]["id"] == 999
+
+
 def test_sync_provider_status_to_backend_patches_status(monkeypatch):
     monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
 

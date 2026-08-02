@@ -44,3 +44,29 @@ def test_sync_payment_to_backend_posts_payment_status(monkeypatch):
     result = asyncio.run(main.sync_payment_to_backend(5, "paid_escrow", mission_id=7))
     assert result["status"] == "ok"
     assert result["payment_status"] == "paid_escrow"
+
+
+class RaisingAsyncClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def post(self, url, json=None):
+        raise RuntimeError("backend unreachable")
+
+
+def test_payment_confirmation_survives_backend_outage(monkeypatch):
+    # Regression guard: the escrow payment itself already happened locally
+    # (mark_quote_paid / mark_quote_paid_with_wallet) by the time this sync
+    # runs — if the backend is down, the client/provider must still get their
+    # confirmation instead of the handler crashing on this best-effort mirror.
+    monkeypatch.setattr(main.httpx, "AsyncClient", RaisingAsyncClient)
+
+    result = asyncio.run(main._safe_backend_call(main.sync_payment_to_backend(5, "paid_escrow", mission_id=7)))
+
+    assert result is None
