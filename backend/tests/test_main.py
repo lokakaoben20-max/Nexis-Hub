@@ -341,3 +341,34 @@ def test_consecutive_ignored_auto_pauses_provider_after_three(tmp_path, monkeypa
 
         reset_response = test_client.post("/api/bot/providers/9/ignored/reset")
         assert reset_response.json()["provider"]["consecutive_ignored"] == 0
+
+
+def test_update_user_language(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with TestClient(backend_main.app) as test_client:
+        test_client.post(
+            "/api/bot/users",
+            json={"telegram_id": 1, "first_name": "Alice", "phone_number": "+243800000001", "language": "fr"},
+        )
+
+        response = test_client.patch("/api/bot/users/1/language", json={"language": "en"})
+        assert response.status_code == 200
+        assert response.json()["user"]["language"] == "en"
+
+        missing_response = test_client.patch("/api/bot/users/999/language", json={"language": "en"})
+        assert missing_response.status_code == 404
+
+
+def test_update_provider_language(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with TestClient(backend_main.app) as test_client:
+        _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])
+
+        response = test_client.patch("/api/bot/providers/1/language", json={"language": "ln"})
+        assert response.status_code == 200
+        assert response.json()["provider"]["language"] == "ln"
+
+        missing_response = test_client.patch("/api/bot/providers/999/language", json={"language": "ln"})
+        assert missing_response.status_code == 404

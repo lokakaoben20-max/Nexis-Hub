@@ -51,6 +51,26 @@ def upsert_provider(
     return provider
 
 
+def update_user_language(db: Session, telegram_id: int, language: str) -> BotUser | None:
+    user = db.get(BotUser, telegram_id)
+    if user is None:
+        return None
+    user.language = language
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def update_provider_language(db: Session, telegram_id: int, language: str) -> BotProvider | None:
+    provider = db.get(BotProvider, telegram_id)
+    if provider is None:
+        return None
+    provider.language = language
+    db.commit()
+    db.refresh(provider)
+    return provider
+
+
 def update_provider_services(db: Session, telegram_id: int, services: list[str]) -> BotProvider | None:
     provider = db.get(BotProvider, telegram_id)
     if provider is None:

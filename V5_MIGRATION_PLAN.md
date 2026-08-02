@@ -64,6 +64,38 @@ de porter cette logique, mais le bascule réel du bot vers le backend est une
 production), à valider explicitement avant de l'entamer — voir Phase 3 pour le
 découplage complet du bot.
 
+**2026-08-02 — premier bascule réel amorcé (flow inscription/profil) :**
+En creusant le flow choisi comme point de départ (inscription client/prestataire),
+on a trouvé que les changements de **statut**, **langue** et **services** du
+prestataire, ainsi que le **compteur d'ignorés consécutifs**, n'étaient jamais
+synchronisés vers le backend (seul `db.py` les recevait) — le backend dérivait
+silencieusement dès qu'un prestataire changeait de statut ou de langue. Corrigé :
+
+- Ajout des endpoints `PATCH /api/bot/users/{id}/language` et
+  `PATCH /api/bot/providers/{id}/language` côté backend (`crud.py`/`main.py`),
+  avec tests.
+- `main.py` synchronise désormais vers le backend : changement de statut
+  (`sync_provider_status_to_backend`), changement de langue client/prestataire
+  (`sync_user_language_to_backend`/`sync_provider_language_to_backend`),
+  modification des services (`sync_provider_services_to_backend`), et le
+  compteur d'ignorés (`sync_provider_ignored_increment_to_backend`/`_reset_to_backend`).
+  Tous ces appels sont enveloppés dans `_safe_backend_call` (nouveau helper),
+  qui avale toute exception réseau/HTTP — cohérent avec l'exigence de
+  tolérance aux pannes réseau du backend (voir AGENTS.md).
+- `get_user_language`/`get_provider_language` sont devenues des fonctions
+  `async` **backend-first** : elles lisent `/api/profile/{id}` en priorité et
+  ne retombent sur `db.py` que si le backend est injoignable ou n'a pas encore
+  l'utilisateur/prestataire. C'est le premier vrai bascule de lecture vers le
+  backend sur ce projet.
+
+**Volontairement laissé de côté** : l'affichage du profil prestataire
+(`profil_prestataire`, `provider_trust_line`, page wallet) continue de lire
+`db.py`, car `badge`/`rating`/`total_missions`/`success_rate`/soldes wallet
+sont mis à jour par la logique mission/paiement qui, elle, n'est pas encore
+câblée sur le backend en production — basculer leur lecture maintenant
+afficherait des données obsolètes (souvent à zéro). Ces champs ne pourront
+être basculés qu'une fois le flow mission/paiement migré à son tour.
+
 **Sortie de phase** : tous les flows métier existants tournent sur Postgres via le
 backend, `db.py` n'est plus utilisé que comme fallback théorique.
 

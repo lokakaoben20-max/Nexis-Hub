@@ -263,6 +263,13 @@ def provider_trust_line(provider) -> str:
     return line
 
 
+async def _safe_backend_call(coro):
+    try:
+        return await coro
+    except Exception:
+        return None
+
+
 async def sync_user_to_backend(telegram_id: int, first_name: str | None = None, phone_number: str | None = None, language: str = "fr") -> dict:
     payload = {
         "telegram_id": telegram_id,
@@ -303,6 +310,48 @@ async def sync_provider_to_backend(telegram_id: int, full_name: str, phone_numbe
     }
     async with httpx.AsyncClient(timeout=5.0) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_provider_services_to_backend(telegram_id: int, services: list[str]) -> dict:
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/services", json={"services": services})
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_provider_status_to_backend(telegram_id: int, status: str) -> dict:
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/status", json={"status": status})
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_user_language_to_backend(telegram_id: int, language: str) -> dict:
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/users/{telegram_id}/language", json={"language": language})
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_provider_language_to_backend(telegram_id: int, language: str) -> dict:
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/language", json={"language": language})
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_provider_ignored_increment_to_backend(telegram_id: int) -> dict:
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/ignored")
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_provider_ignored_reset_to_backend(telegram_id: int) -> dict:
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/ignored/reset")
         response.raise_for_status()
         return response.json()
 
@@ -362,11 +411,13 @@ async def persist_client_registration(telegram_id: int, first_name: str | None =
         first_name=first_name or "",
         language=language,
     )
-    backend_result = await sync_user_to_backend(
-        telegram_id=telegram_id,
-        first_name=first_name,
-        phone_number=phone_number,
-        language=language,
+    backend_result = await _safe_backend_call(
+        sync_user_to_backend(
+            telegram_id=telegram_id,
+            first_name=first_name,
+            phone_number=phone_number,
+            language=language,
+        )
     )
     return {"local": local_user, "backend": backend_result}
 
@@ -754,12 +805,20 @@ async def get_state_language(state: FSMContext) -> str:
     return data.get("language", "fr")
 
 
-def get_user_language(telegram_id: int) -> str:
+async def get_user_language(telegram_id: int) -> str:
+    backend_profile = await fetch_backend_profile(telegram_id)
+    client_data = backend_profile.get("client") if backend_profile else None
+    if client_data and client_data.get("language"):
+        return client_data["language"]
     user = get_user_by_telegram_id(telegram_id)
     return user["language"] if user else "fr"
 
 
-def get_provider_language(telegram_id: int) -> str:
+async def get_provider_language(telegram_id: int) -> str:
+    backend_profile = await fetch_backend_profile(telegram_id)
+    provider_data = backend_profile.get("provider") if backend_profile else None
+    if provider_data and provider_data.get("language"):
+        return provider_data["language"]
     provider = get_provider_by_telegram_id(telegram_id)
     if not provider:
         return "fr"
@@ -782,7 +841,7 @@ async def cmd_start(message: Message, state: FSMContext):
 
 @dp.message(Command("app"))
 async def cmd_app(message: Message):
-    lang = get_user_language(message.from_user.id)
+    lang = await get_user_language(message.from_user.id)
     if not MINI_APP_URL:
         await message.answer(
             "La Mini App est prête côté code, mais il manque encore MINI_APP_URL dans le fichier .env."
@@ -1127,6 +1186,8 @@ async def langue_fr(callback: CallbackQuery, state: FSMContext):
     await state.update_data(language="fr")
     update_user_language(callback.from_user.id, "fr")
     update_provider_language(callback.from_user.id, "fr")
+    await _safe_backend_call(sync_user_language_to_backend(callback.from_user.id, "fr"))
+    await _safe_backend_call(sync_provider_language_to_backend(callback.from_user.id, "fr"))
     await callback.message.edit_text(
         f"🇫🇷 Vous avez choisi le <b>Français</b>.\n\n{get_message('choose_profile', 'fr')}",
         parse_mode="HTML",
@@ -1140,6 +1201,8 @@ async def langue_ln(callback: CallbackQuery, state: FSMContext):
     await state.update_data(language="ln")
     update_user_language(callback.from_user.id, "ln")
     update_provider_language(callback.from_user.id, "ln")
+    await _safe_backend_call(sync_user_language_to_backend(callback.from_user.id, "ln"))
+    await _safe_backend_call(sync_provider_language_to_backend(callback.from_user.id, "ln"))
     await callback.message.edit_text(
         f"🇨🇩 Oponi <b>Lingala</b>.\n\n{get_message('choose_profile', 'ln')}",
         parse_mode="HTML",
@@ -1153,6 +1216,8 @@ async def langue_en(callback: CallbackQuery, state: FSMContext):
     await state.update_data(language="en")
     update_user_language(callback.from_user.id, "en")
     update_provider_language(callback.from_user.id, "en")
+    await _safe_backend_call(sync_user_language_to_backend(callback.from_user.id, "en"))
+    await _safe_backend_call(sync_provider_language_to_backend(callback.from_user.id, "en"))
     await callback.message.edit_text(
         f"🇬🇧 You chose <b>English</b>.\n\n{get_message('choose_profile', 'en')}",
         parse_mode="HTML",
@@ -1219,7 +1284,7 @@ async def enregistrer_client(message: Message, state: FSMContext):
 async def profil_prestataire(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     provider = get_provider_by_telegram_id(callback.from_user.id)
-    lang = data.get("language") or get_provider_language(callback.from_user.id)
+    lang = data.get("language") or await get_provider_language(callback.from_user.id)
     if provider is None:
         await state.set_state(ProviderRegistration.phone)
         await state.update_data(language=lang)
@@ -1345,13 +1410,15 @@ async def terminer_inscription_prestataire(callback: CallbackQuery, state: FSMCo
         communes=data["provider_communes"],
         language=data.get("language", "fr"),
     )
-    await sync_provider_to_backend(
-        telegram_id=callback.from_user.id,
-        full_name=data["provider_full_name"],
-        phone_number=data["provider_phone"],
-        services=data["provider_services"],
-        communes=data["provider_communes"],
-        language=data.get("language", "fr"),
+    await _safe_backend_call(
+        sync_provider_to_backend(
+            telegram_id=callback.from_user.id,
+            full_name=data["provider_full_name"],
+            phone_number=data["provider_phone"],
+            services=data["provider_services"],
+            communes=data["provider_communes"],
+            language=data.get("language", "fr"),
+        )
     )
     await state.clear()
     await callback.message.edit_text(
@@ -1388,8 +1455,10 @@ async def disponibilite_prestataire(callback: CallbackQuery):
 async def changer_disponibilite(callback: CallbackQuery):
     status = "available" if callback.data == "provider_status_available" else "offline"
     update_provider_status(callback.from_user.id, status)
+    await _safe_backend_call(sync_provider_status_to_backend(callback.from_user.id, status))
     if status == "available":
         reset_consecutive_ignored(callback.from_user.id)
+        await _safe_backend_call(sync_provider_ignored_reset_to_backend(callback.from_user.id))
     status_label = "Disponible" if status == "available" else "Indisponible"
     await callback.message.edit_text(
         "⚙️ <b>Disponibilité mise à jour</b>\n\n"
@@ -1483,13 +1552,14 @@ async def enregistrer_services_modifies(callback: CallbackQuery, state: FSMConte
         return
 
     update_provider_services(callback.from_user.id, selected)
+    await _safe_backend_call(sync_provider_services_to_backend(callback.from_user.id, selected))
     await state.clear()
     service_labels = [SERVICES.get(service, service) for service in selected]
     await callback.message.edit_text(
         "✅ <b>Services mis à jour.</b>\n\n"
         + "\n".join(f"• {label}" for label in service_labels),
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(get_provider_language(callback.from_user.id)),
+        reply_markup=clavier_prestataire(await get_provider_language(callback.from_user.id)),
     )
     await callback.answer("Services enregistrés")
 
@@ -1548,14 +1618,14 @@ async def recevoir_description_service_manquant(message: Message, state: FSMCont
         "Nexis va l'examiner. Si le service est accepté, il pourra être ajouté au catalogue. "
         "Si ce n'est pas possible, vous recevrez une réponse indiquant que Nexis ne peut pas encore le prendre en charge.",
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(get_provider_language(message.from_user.id)),
+        reply_markup=clavier_prestataire(await get_provider_language(message.from_user.id)),
     )
 
 
 @dp.callback_query(F.data == "client_demande")
 async def client_demande(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    lang = data.get("language") or get_user_language(callback.from_user.id)
+    lang = data.get("language") or await get_user_language(callback.from_user.id)
     await state.clear()
     await state.update_data(language=lang)
     await callback.message.edit_text(
@@ -1593,7 +1663,7 @@ async def urgence_selectionnee(callback: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data == "back_communes")
 async def retour_communes(callback: CallbackQuery):
-    lang = get_user_language(callback.from_user.id)
+    lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
         get_message("choose_commune", lang),
         parse_mode="HTML",
@@ -1865,6 +1935,7 @@ async def devis_message_recu(message: Message, state: FSMContext):
         message=quote_message,
     )
     reset_consecutive_ignored(message.from_user.id)
+    await _safe_backend_call(sync_provider_ignored_reset_to_backend(message.from_user.id))
 
     await bot.send_message(
         mission["client_telegram_id"],
@@ -1884,7 +1955,7 @@ async def devis_message_recu(message: Message, state: FSMContext):
         "✅ Devis envoyé au client.\n\n"
         f"Référence devis : <b>DV-{quote_id:04d}</b>",
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(get_provider_language(message.from_user.id)),
+        reply_markup=clavier_prestataire(await get_provider_language(message.from_user.id)),
     )
 
 
@@ -1897,6 +1968,7 @@ async def passer_mission_prestataire(callback: CallbackQuery):
     )
 
     provider = update_consecutive_ignored(callback.from_user.id)
+    await _safe_backend_call(sync_provider_ignored_increment_to_backend(callback.from_user.id))
     if provider is not None and provider["status"] == "paused" and provider["consecutive_ignored"] == 3:
         await bot.send_message(
             callback.from_user.id,
@@ -1957,7 +2029,7 @@ async def paiement_mobile_money(callback: CallbackQuery):
         f"Frais Tola / techniques : <b>{payment['tola_fee']:.2f} {quote['currency']}</b>\n\n"
         "Le montant du devis est maintenant sécurisé. Le prestataire peut commencer.",
         parse_mode="HTML",
-        reply_markup=clavier_client(get_user_language(callback.from_user.id)),
+        reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
     )
 
     await bot.send_message(
@@ -2012,7 +2084,7 @@ async def prestataire_termine_mission(callback: CallbackQuery):
         f"✅ Mission <b>NXH-{mission_id:04d}</b> marquée comme terminée.\n\n"
         "Le client doit maintenant confirmer pour libérer le paiement.",
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(get_provider_language(callback.from_user.id)),
+        reply_markup=clavier_prestataire(await get_provider_language(callback.from_user.id)),
     )
     await bot.send_message(
         mission["client_telegram_id"],
@@ -2036,7 +2108,7 @@ async def client_confirme_mission_terminee(callback: CallbackQuery):
     await callback.message.edit_text(
         get_message("payment_released_client", "fr", mission_id=mission_id),
         parse_mode="HTML",
-        reply_markup=clavier_client(get_user_language(callback.from_user.id)),
+        reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
     )
     if mission["provider_telegram_id"]:
         await bot.send_message(
@@ -2049,7 +2121,7 @@ async def client_confirme_mission_terminee(callback: CallbackQuery):
                 currency=mission["currency"],
             ),
             parse_mode="HTML",
-            reply_markup=clavier_prestataire(get_provider_language(mission["provider_telegram_id"])),
+            reply_markup=clavier_prestataire(await get_provider_language(mission["provider_telegram_id"])),
         )
     await callback.answer("Paiement libéré")
 
@@ -2060,7 +2132,7 @@ async def client_signale_probleme(callback: CallbackQuery):
     await callback.message.edit_text(
         get_message("dispute_opened", "fr", mission_id=mission_id),
         parse_mode="HTML",
-        reply_markup=clavier_client(get_user_language(callback.from_user.id)),
+        reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
     )
     await callback.answer("Paiement maintenu en escrow")
 
@@ -2084,7 +2156,7 @@ async def paiement_wallet(callback: CallbackQuery):
         f"Frais Tola / techniques : <b>{payment['tola_fee']:.2f} {quote['currency']}</b>\n\n"
         "Le montant du devis est maintenant sécurisé. Le prestataire peut commencer.",
         parse_mode="HTML",
-        reply_markup=clavier_client(get_user_language(callback.from_user.id)),
+        reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
     )
 
     await bot.send_message(
@@ -2125,7 +2197,7 @@ async def mission_annuler(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text(
         "❌ Demande annulée.\n\nRetour à votre espace client.",
-        reply_markup=clavier_client(get_user_language(callback.from_user.id)),
+        reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
     )
     await callback.answer("Demande annulée")
 
@@ -2141,7 +2213,7 @@ async def afficher_missions_client(callback: CallbackQuery):
             "📋 <b>Mes missions en cours</b>\n\n"
             "Vous n'avez pas encore de mission enregistrée.",
             parse_mode="HTML",
-            reply_markup=clavier_client(get_user_language(callback.from_user.id)),
+            reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
         )
         await callback.answer()
         return
@@ -2153,7 +2225,7 @@ async def afficher_missions_client(callback: CallbackQuery):
     await callback.message.edit_text(
         text,
         parse_mode="HTML",
-        reply_markup=clavier_client(get_user_language(callback.from_user.id)),
+        reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
     )
     await callback.answer()
 
@@ -2171,7 +2243,7 @@ async def afficher_wallet_client(callback: CallbackQuery):
         f"Solde CDF : <b>{user['wallet_balance_cdf']:.2f} CDF</b>\n\n"
         "Le rechargement wallet sera ajouté avec la vraie API Mobile Money.",
         parse_mode="HTML",
-        reply_markup=clavier_client(get_user_language(callback.from_user.id)),
+        reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
     )
     await callback.answer()
 
@@ -2197,7 +2269,7 @@ async def afficher_profil_client(callback: CallbackQuery):
         f"Langue : <b>{html.escape(user['language'] if user else 'fr')}</b>\n"
         f"Missions totales : <b>{total_missions}</b>",
         parse_mode="HTML",
-        reply_markup=clavier_client(get_user_language(callback.from_user.id)),
+        reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
     )
     await callback.answer()
 
@@ -2210,7 +2282,7 @@ async def afficher_missions_prestataire(callback: CallbackQuery):
             "📋 <b>Mes missions</b>\n\n"
             "Aucune mission attribuée pour l'instant.",
             parse_mode="HTML",
-            reply_markup=clavier_prestataire(get_provider_language(callback.from_user.id)),
+            reply_markup=clavier_prestataire(await get_provider_language(callback.from_user.id)),
         )
         await callback.answer()
         return
@@ -2221,7 +2293,7 @@ async def afficher_missions_prestataire(callback: CallbackQuery):
     await callback.message.edit_text(
         text,
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(get_provider_language(callback.from_user.id)),
+        reply_markup=clavier_prestataire(await get_provider_language(callback.from_user.id)),
     )
     await callback.answer()
 
@@ -2239,7 +2311,7 @@ async def afficher_wallet_prestataire(callback: CallbackQuery):
         f"Solde CDF : <b>{provider['wallet_balance_cdf']:.2f} CDF</b>\n\n"
         "Les retraits Mobile Money seront ajoutés après l'intégration API.",
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(get_provider_language(callback.from_user.id)),
+        reply_markup=clavier_prestataire(await get_provider_language(callback.from_user.id)),
     )
     await callback.answer()
 
@@ -2271,7 +2343,7 @@ async def afficher_profil_prestataire(callback: CallbackQuery):
     await callback.message.edit_text(
         text,
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(get_provider_language(callback.from_user.id)),
+        reply_markup=clavier_prestataire(await get_provider_language(callback.from_user.id)),
     )
     await callback.answer()
 

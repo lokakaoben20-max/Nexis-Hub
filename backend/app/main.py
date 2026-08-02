@@ -63,6 +63,10 @@ class ProviderStatusPayload(BaseModel):
     status: str
 
 
+class LanguagePayload(BaseModel):
+    language: str
+
+
 class QuoteCreatePayload(BaseModel):
     mission_id: int
     provider_telegram_id: int
@@ -189,6 +193,24 @@ def create_bot_provider(payload: BotProviderPayload):
             communes=payload.communes or [],
             language=payload.language,
         )
+        return {"status": "ok", "provider": _provider_to_dict(provider)}
+
+
+@app.patch("/api/bot/users/{telegram_id}/language")
+def update_user_language(telegram_id: int, payload: LanguagePayload):
+    with SessionLocal() as db:
+        user = crud.update_user_language(db, telegram_id, payload.language)
+        if user is None:
+            raise HTTPException(status_code=404, detail="user_not_found")
+        return {"status": "ok", "user": _user_to_dict(user)}
+
+
+@app.patch("/api/bot/providers/{telegram_id}/language")
+def update_provider_language(telegram_id: int, payload: LanguagePayload):
+    with SessionLocal() as db:
+        provider = crud.update_provider_language(db, telegram_id, payload.language)
+        if provider is None:
+            raise HTTPException(status_code=404, detail="provider_not_found")
         return {"status": "ok", "provider": _provider_to_dict(provider)}
 
 

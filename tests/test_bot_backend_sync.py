@@ -9,6 +9,7 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
+import db
 import main
 
 
@@ -34,13 +35,38 @@ class DummyAsyncClient:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
-    async def post(self, url, json):
+    async def post(self, url, json=None):
         self.last_request = {"url": url, "json": json}
-        return DummyResponse({"status": "ok", "user": {"telegram_id": json["telegram_id"]}})
+        telegram_id = json["telegram_id"] if json else None
+        return DummyResponse({"status": "ok", "user": {"telegram_id": telegram_id}})
 
     async def get(self, url, params=None):
         self.last_request = {"url": url, "params": params}
         return DummyResponse({"telegram_id": 42, "client": {"telegram_id": 42, "first_name": "Alice"}, "client_missions": [{"mission_id": 1}]})
+
+    async def patch(self, url, json):
+        self.last_request = {"url": url, "json": json}
+        return DummyResponse({"status": "ok", "provider": {"telegram_id": 1, **json}})
+
+
+class RaisingAsyncClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def post(self, url, json=None):
+        raise RuntimeError("backend unreachable")
+
+    async def get(self, url, params=None):
+        raise RuntimeError("backend unreachable")
+
+    async def patch(self, url, json=None):
+        raise RuntimeError("backend unreachable")
 
 
 def test_sync_user_to_backend_posts_payload(monkeypatch):
@@ -77,3 +103,103 @@ def test_persist_mission_creation_returns_backend_and_local(monkeypatch):
 
     assert result["backend"]["status"] == "ok"
     assert result["local"]["id"] == 999
+
+
+def test_sync_provider_status_to_backend_patches_status(monkeypatch):
+    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+
+    result = asyncio.run(main.sync_provider_status_to_backend(1, "offline"))
+
+    assert result["status"] == "ok"
+    assert result["provider"]["status"] == "offline"
+
+
+def test_sync_user_language_to_backend_patches_language(monkeypatch):
+    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+
+    result = asyncio.run(main.sync_user_language_to_backend(1, "ln"))
+
+    assert result["status"] == "ok"
+
+
+def test_sync_provider_language_to_backend_patches_language(monkeypatch):
+    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+
+    result = asyncio.run(main.sync_provider_language_to_backend(1, "en"))
+
+    assert result["provider"]["language"] == "en"
+
+
+def test_sync_provider_services_to_backend_patches_services(monkeypatch):
+    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+
+    result = asyncio.run(main.sync_provider_services_to_backend(1, ["service_peinture"]))
+
+    assert result["provider"]["services"] == ["service_peinture"]
+
+
+def test_sync_provider_ignored_increment_and_reset_to_backend(monkeypatch):
+    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+
+    increment_result = asyncio.run(main.sync_provider_ignored_increment_to_backend(1))
+    reset_result = asyncio.run(main.sync_provider_ignored_reset_to_backend(1))
+
+    assert increment_result["status"] == "ok"
+    assert reset_result["status"] == "ok"
+
+
+def test_safe_backend_call_swallows_network_errors(monkeypatch):
+    monkeypatch.setattr(main.httpx, "AsyncClient", RaisingAsyncClient)
+
+    result = asyncio.run(main._safe_backend_call(main.sync_provider_status_to_backend(1, "available")))
+
+    assert result is None
+
+
+def test_get_user_language_prefers_backend_value(monkeypatch, tmp_path):
+    db.DB_PATH = tmp_path / "test_nexis_hub.db"
+    db.init_db()
+    db.create_user(42, "+243800000042", "Alice", language="fr")
+    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr(main, "fetch_backend_profile", lambda telegram_id: _async_return({"client": {"language": "en"}}))
+
+    result = asyncio.run(main.get_user_language(42))
+
+    assert result == "en"
+
+
+def test_get_user_language_falls_back_to_local_db_when_backend_unavailable(tmp_path, monkeypatch):
+    db.DB_PATH = tmp_path / "test_nexis_hub.db"
+    db.init_db()
+    db.create_user(42, "+243800000042", "Alice", language="ln")
+    monkeypatch.setattr(main, "fetch_backend_profile", lambda telegram_id: _async_return(None))
+
+    result = asyncio.run(main.get_user_language(42))
+
+    assert result == "ln"
+
+
+def test_get_provider_language_prefers_backend_value(monkeypatch, tmp_path):
+    db.DB_PATH = tmp_path / "test_nexis_hub.db"
+    db.init_db()
+    db.create_provider(2, "+243800000002", "Bob", ["service_plomberie"], ["Gombe"], language="fr")
+    monkeypatch.setattr(main, "fetch_backend_profile", lambda telegram_id: _async_return({"provider": {"language": "en"}}))
+
+    result = asyncio.run(main.get_provider_language(2))
+
+    assert result == "en"
+
+
+def test_get_provider_language_falls_back_to_local_db_when_backend_unavailable(tmp_path, monkeypatch):
+    db.DB_PATH = tmp_path / "test_nexis_hub.db"
+    db.init_db()
+    db.create_provider(2, "+243800000002", "Bob", ["service_plomberie"], ["Gombe"], language="ln")
+    monkeypatch.setattr(main, "fetch_backend_profile", lambda telegram_id: _async_return(None))
+
+    result = asyncio.run(main.get_provider_language(2))
+
+    assert result == "ln"
+
+
+async def _async_return(value):
+    return value
