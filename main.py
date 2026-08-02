@@ -314,6 +314,35 @@ async def sync_provider_to_backend(telegram_id: int, full_name: str, phone_numbe
         return response.json()
 
 
+async def sync_quote_to_backend(mission_id: int, provider_telegram_id: int, amount: float, currency: str, delay_hours: int, message: str = "") -> dict:
+    payload = {
+        "mission_id": mission_id,
+        "provider_telegram_id": provider_telegram_id,
+        "amount": amount,
+        "currency": currency,
+        "delay_hours": delay_hours,
+        "message": message,
+    }
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_quote_accept_to_backend(backend_quote_id: int) -> dict:
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes/{backend_quote_id}/accept")
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_quote_reject_to_backend(backend_quote_id: int) -> dict:
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes/{backend_quote_id}/reject")
+        response.raise_for_status()
+        return response.json()
+
+
 async def sync_provider_services_to_backend(telegram_id: int, services: list[str]) -> dict:
     async with httpx.AsyncClient(timeout=5.0) as client:
         response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/services", json={"services": services})
@@ -576,12 +605,19 @@ def clavier_alerte_mission(mission_id: int):
     return builder.as_markup()
 
 
-def clavier_devis_client(quote_id: int):
+def clavier_devis_client(quote_id: int, backend_quote_id: int | None = None):
+    backend_suffix = backend_quote_id if backend_quote_id is not None else "-"
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Accepter ce devis", callback_data=f"client_accept_quote_{quote_id}")
-    builder.button(text="❌ Refuser", callback_data=f"client_reject_quote_{quote_id}")
+    builder.button(text="✅ Accepter ce devis", callback_data=f"client_accept_quote_{quote_id}:{backend_suffix}")
+    builder.button(text="❌ Refuser", callback_data=f"client_reject_quote_{quote_id}:{backend_suffix}")
     builder.adjust(1)
     return builder.as_markup()
+
+
+def _parse_quote_callback_ids(raw: str) -> tuple[int, int | None]:
+    local_part, _, backend_part = raw.partition(":")
+    backend_id = int(backend_part) if backend_part and backend_part != "-" else None
+    return int(local_part), backend_id
 
 
 def clavier_paiement(quote_id: int):
@@ -1937,6 +1973,18 @@ async def devis_message_recu(message: Message, state: FSMContext):
     reset_consecutive_ignored(message.from_user.id)
     await _safe_backend_call(sync_provider_ignored_reset_to_backend(message.from_user.id))
 
+    backend_quote = await _safe_backend_call(
+        sync_quote_to_backend(
+            mission_id=data["quote_mission_id"],
+            provider_telegram_id=message.from_user.id,
+            amount=data["quote_amount"],
+            currency=data["quote_currency"],
+            delay_hours=data["quote_delay_hours"],
+            message=quote_message,
+        )
+    )
+    backend_quote_id = backend_quote["quote"]["id"] if backend_quote else None
+
     await bot.send_message(
         mission["client_telegram_id"],
         "💬 <b>Nouveau devis reçu</b>\n\n"
@@ -1947,7 +1995,7 @@ async def devis_message_recu(message: Message, state: FSMContext):
         f"Délai : <b>{data['quote_delay_hours']} h</b>\n"
         f"Message : {html.escape(quote_message) if quote_message else 'Aucun message'}",
         parse_mode="HTML",
-        reply_markup=clavier_devis_client(quote_id),
+        reply_markup=clavier_devis_client(quote_id, backend_quote_id),
     )
 
     await state.clear()
@@ -1986,8 +2034,10 @@ async def passer_mission_prestataire(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("client_accept_quote_"))
 async def client_accepte_devis(callback: CallbackQuery):
-    quote_id = int(callback.data.replace("client_accept_quote_", "", 1))
+    quote_id, backend_quote_id = _parse_quote_callback_ids(callback.data.replace("client_accept_quote_", "", 1))
     quote = accept_quote(quote_id)
+    if backend_quote_id is not None:
+        await _safe_backend_call(sync_quote_accept_to_backend(backend_quote_id))
     tola_fee = 1.50 if quote["currency"] == "USD" else 4000.00
     total_client = quote["amount"] + tola_fee
 
@@ -2175,8 +2225,10 @@ async def paiement_wallet(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("client_reject_quote_"))
 async def client_refuse_devis(callback: CallbackQuery):
-    quote_id = int(callback.data.replace("client_reject_quote_", "", 1))
+    quote_id, backend_quote_id = _parse_quote_callback_ids(callback.data.replace("client_reject_quote_", "", 1))
     quote = reject_quote(quote_id)
+    if backend_quote_id is not None:
+        await _safe_backend_call(sync_quote_reject_to_backend(backend_quote_id))
     await callback.message.edit_text(
         "❌ <b>Devis refusé.</b>\n\n"
         f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"

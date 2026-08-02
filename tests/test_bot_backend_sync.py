@@ -37,6 +37,12 @@ class DummyAsyncClient:
 
     async def post(self, url, json=None):
         self.last_request = {"url": url, "json": json}
+        if url.endswith("/api/bot/quotes"):
+            return DummyResponse({"status": "ok", "quote": {"id": 501, **json}})
+        if "/quotes/" in url and url.endswith("/accept"):
+            return DummyResponse({"status": "ok", "quote": {"id": 501, "status": "accepted"}})
+        if "/quotes/" in url and url.endswith("/reject"):
+            return DummyResponse({"status": "ok", "quote": {"id": 501, "status": "rejected"}})
         telegram_id = json["telegram_id"] if json else None
         return DummyResponse({"status": "ok", "user": {"telegram_id": telegram_id}})
 
@@ -203,3 +209,39 @@ def test_get_provider_language_falls_back_to_local_db_when_backend_unavailable(t
 
 async def _async_return(value):
     return value
+
+
+def test_sync_quote_to_backend_posts_payload(monkeypatch):
+    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+
+    result = asyncio.run(main.sync_quote_to_backend(
+        mission_id=1001, provider_telegram_id=7, amount=50.0, currency="USD", delay_hours=2, message="ok",
+    ))
+
+    assert result["status"] == "ok"
+    assert result["quote"]["id"] == 501
+    assert result["quote"]["mission_id"] == 1001
+
+
+def test_sync_quote_accept_and_reject_to_backend(monkeypatch):
+    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+
+    accept_result = asyncio.run(main.sync_quote_accept_to_backend(501))
+    reject_result = asyncio.run(main.sync_quote_reject_to_backend(501))
+
+    assert accept_result["quote"]["status"] == "accepted"
+    assert reject_result["quote"]["status"] == "rejected"
+
+
+def test_parse_quote_callback_ids_with_backend_id():
+    local_id, backend_id = main._parse_quote_callback_ids("5:501")
+
+    assert local_id == 5
+    assert backend_id == 501
+
+
+def test_parse_quote_callback_ids_without_backend_id():
+    local_id, backend_id = main._parse_quote_callback_ids("5:-")
+
+    assert local_id == 5
+    assert backend_id is None

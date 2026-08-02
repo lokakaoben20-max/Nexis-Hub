@@ -96,6 +96,20 @@ câblée sur le backend en production — basculer leur lecture maintenant
 afficherait des données obsolètes (souvent à zéro). Ces champs ne pourront
 être basculés qu'une fois le flow mission/paiement migré à son tour.
 
+**2026-08-02 — flow suivant : devis (matching/quotes).** Même constat que
+pour l'inscription : `create_quote`/`accept_quote`/`reject_quote` n'étaient
+jamais synchronisés vers le backend alors que les endpoints existaient déjà
+(`POST /api/bot/quotes`, `.../accept`, `.../reject`). Point d'attention
+spécifique à ce flow : l'id local du devis (`db.py`, SQLite autoincrement) et
+l'id backend (`bot_quotes.id`, Postgres autoincrement) sont deux séquences
+indépendantes qui divergent — impossible de réutiliser l'id local pour piloter
+l'API backend. Solution : `clavier_devis_client` encode maintenant les deux ids
+dans le `callback_data` (`client_accept_quote_{local}:{backend}`, `-` si le
+sync de création a échoué), et `_parse_quote_callback_ids` les sépare côté
+handler. Le matching (`find_matching_providers`) reste sur `db.py` — mêmes
+raisons que pour l'affichage du profil (score dépend de rating/badge non à
+jour côté backend).
+
 **Sortie de phase** : tous les flows métier existants tournent sur Postgres via le
 backend, `db.py` n'est plus utilisé que comme fallback théorique.
 
