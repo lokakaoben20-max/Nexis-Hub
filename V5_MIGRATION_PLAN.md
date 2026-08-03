@@ -131,12 +131,44 @@ basculer sans supervision explicite (argent réel en jeu, voir Phase 6).
 
 **Bilan de cette série (inscription → devis → paiement)** : tous les flows
 identifiés au départ ont maintenant une synchronisation backend complète et
-tolérante aux pannes réseau. Ce qui reste avant de pouvoir vraiment sortir de
-la Phase 1 (faire du backend la source de vérité, pas juste un miroir) :
-porter la logique de calcul mission-dérivée (rating/badge/total_missions/
-success_rate, soldes wallet) côté backend au moment même où `db.py` les met à
-jour, pas seulement au moment de la création — sans ça, ces champs resteront
-insuffisamment fiables pour basculer leur lecture.
+tolérante aux pannes réseau.
+
+**2026-08-03 — correction du libellé ci-dessus, après audit.** L'ancienne
+formulation ("porter la logique de calcul mission-dérivée... côté backend")
+supposait à tort que cette logique existe déjà dans `db.py` et qu'il suffirait
+de la recopier côté backend. Un audit détaillé (recherche de chaque écriture
+de `rating`/`badge`/`total_missions`/`success_rate`/wallet sur `providers`/
+`users` dans `db.py`, comparaison avec `backend/app/crud.py`) montre que ce
+n'est vrai que pour les soldes wallet :
+
+- **Soldes wallet (`wallet_balance_usd/cdf`)** : ✅ déjà à parité complète entre
+  `db.py` et `backend/app/crud.py` (`mark_quote_paid_with_wallet`,
+  `release_payment`). Rien à faire ici.
+- **`providers.total_missions`** : n'est incrémenté **nulle part**, ni dans
+  `db.py` ni dans le backend (seul `users.total_missions`, côté client, est
+  incrémenté à la création de mission).
+- **`providers.success_rate`** : n'est calculé **nulle part** ; aucune formule
+  n'existe (ni completed/disputed, ni autre).
+- **`providers.rating`** : n'est jamais écrit ; la table `reviews` (`db.py`)
+  existe dans le schéma mais est totalement inutilisée (aucun `INSERT`, aucun
+  handler Telegram de notation, rien pour moyenner vers `providers.rating`).
+- **`providers.badge` (tiers `partner`/`expert`/`premium`)** : seul le binaire
+  `verified`/`pending` est utilisé (`set_provider_verified`, admin). Les tiers
+  ne sont référencés que dans un dict de score utilisé pour le matching
+  (`badge_scores`), jamais assignés à un prestataire.
+- Trouvé au passage : `add_visit_fee_to_provider` (`db.py`) est du **code
+  mort** — jamais appelée nulle part (ni bot ni tests), donc ce n'est pas un
+  gap de synchronisation actif. Laissé tel quel pour l'instant (décision du
+  2026-08-03), à traiter séparément si besoin.
+
+**Conclusion** : rating / tiering de badge / `total_missions` prestataire /
+`success_rate` ne sont pas un travail de *migration* mais une **fonctionnalité
+à concevoir puis construire de zéro** (formule de note, seuils de badge,
+définition du taux de succès sont des décisions produit, pas des détails
+d'implémentation à déduire du code existant). Ce travail n'a pas encore été
+lancé — à planifier explicitement avec l'utilisateur avant de coder quoi que
+ce soit ici, en cohérence avec la règle "une seule phase/décision active à la
+fois" (voir `AGENTS.md`).
 
 **Sortie de phase** : tous les flows métier existants tournent sur Postgres via le
 backend, `db.py` n'est plus utilisé que comme fallback théorique.
