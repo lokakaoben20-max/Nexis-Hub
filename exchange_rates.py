@@ -65,6 +65,15 @@ def get_usd_to_cdf_rate(force_refresh: bool = False) -> float:
         return fetched_rate
 
     if cache is not None:
+        age_hours = (time.time() - cache.get("fetched_at", 0)) / 3600
+        print(
+            f"⚠️ Taux de change USD/CDF : API indisponible, utilisation du cache "
+            f"({age_hours:.1f}h, rate={cache['usd_cdf_rate']})."
+        )
         return cache["usd_cdf_rate"]
 
+    print(
+        f"⚠️ Taux de change USD/CDF : API indisponible et aucun cache, utilisation "
+        f"du taux codé en dur ({FALLBACK_USD_CDF_RATE}) — potentiellement obsolète."
+    )
     return FALLBACK_USD_CDF_RATE
