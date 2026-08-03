@@ -61,7 +61,7 @@ base de travail pour la suite.
 ## Avant toute modification
 
 1. Démarrer Postgres si besoin : `docker compose up -d` (voir `docker-compose.yml`).
-2. Lancer les tests : `c:/Users/CECBK/nexis_hub_bot/.venv/Scripts/python.exe -m pytest -q`
+2. Lancer les tests : `c:/Users/Ben L/OneDrive/Desktop/Startup_Nexis_Hub/nexis_hub_bot/.venv/Scripts/python.exe -m pytest -q`
    (les tests backend utilisent SQLite en mémoire, pas besoin de Postgres pour les faire passer).
 3. Vérifier la branche courante et le statut git (`git status`, `git branch`, `git remote -v`).
 4. Ne pas committer `.venv/`, `__pycache__/`, `*.db`, `.env` (voir `.gitignore`).
@@ -69,24 +69,24 @@ base de travail pour la suite.
 ### Lancer le bot
 
 ```bash
-c:/Users/CECBK/nexis_hub_bot/.venv/Scripts/python.exe main.py
+c:/Users/Ben L/OneDrive/Desktop/Startup_Nexis_Hub/nexis_hub_bot/.venv/Scripts/python.exe main.py
 ```
 
 ### Lancer le backend V5 en local
 
 ```bash
 docker compose up -d
-c:/Users/CECBK/nexis_hub_bot/.venv/Scripts/python.exe -m uvicorn backend.app.main:app --reload
+c:/Users/Ben L/OneDrive/Desktop/Startup_Nexis_Hub/nexis_hub_bot/.venv/Scripts/python.exe -m uvicorn backend.app.main:app --reload
 ```
 
 ### Migrations de base de données (Alembic)
 
 ```bash
 # Générer une migration après avoir modifié backend/app/models.py
-c:/Users/CECBK/nexis_hub_bot/.venv/Scripts/python.exe -m alembic revision --autogenerate -m "description"
+c:/Users/Ben L/OneDrive/Desktop/Startup_Nexis_Hub/nexis_hub_bot/.venv/Scripts/python.exe -m alembic revision --autogenerate -m "description"
 
 # Appliquer les migrations
-c:/Users/CECBK/nexis_hub_bot/.venv/Scripts/python.exe -m alembic upgrade head
+c:/Users/Ben L/OneDrive/Desktop/Startup_Nexis_Hub/nexis_hub_bot/.venv/Scripts/python.exe -m alembic upgrade head
 ```
 
 ## Branch Git actuelle
@@ -104,25 +104,23 @@ c:/Users/CECBK/nexis_hub_bot/.venv/Scripts/python.exe -m alembic upgrade head
 
 ## Migration vers un autre profil Windows (transfert local, même machine)
 
-Le 2026-08-03, l'utilisateur a créé un nouveau profil Windows (**"Ben L"**, dossier
-`C:\Users\Ben L\`) et prévoit d'y déplacer ce projet. Checklist si un agent doit aider
-à finaliser ce transfert ou retrouve ce dépôt à un nouveau chemin :
+**Statut : ✅ Terminée (2026-08-03).** Le projet vit maintenant à
+`C:\Users\Ben L\OneDrive\Desktop\Startup_Nexis_Hub\nexis_hub_bot` (sous OneDrive, pas
+directement sous `C:\Users\Ben L\` comme prévu initialement — chemin définitif).
 
-- **À copier** : tout le dossier `nexis_hub_bot`, y compris `.git` (historique complet)
-  et `.env` (secrets — jamais suivi par Git, à copier séparément à la main).
-- **À exclure/recréer** : `.venv` (chemins absolus liés à l'ancien profil, à recréer avec
-  `python -m venv .venv` puis `pip install -r requirements.txt`), `__pycache__/`,
-  `.pytest_cache/`.
-- Un profil Windows ne peut pas écrire directement dans le dossier d'un autre profil
-  (permissions par compte) — le transfert doit passer par `C:\Users\Public\` ou une clé
-  USB/autre support, puis être terminé manuellement une fois connecté sur le nouveau profil.
-- **Après le transfert**, les chemins absolus codés en dur dans ce fichier et ailleurs
-  (ex. `c:/Users/CECBK/nexis_hub_bot/.venv/Scripts/python.exe`) ne seront plus valides —
-  à mettre à jour avec le nouveau chemin (`c:/Users/Ben L/nexis_hub_bot/...`) une fois
-  confirmé que c'est bien le chemin définitif de travail.
-- Vérifier après coup avec `git log --oneline -5` et `git status` que l'historique et les
-  3 derniers commits (inscription/profil, devis, paiement — voir
-  [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md)) sont bien arrivés intacts.
+Ce qui a été fait pour finaliser le transfert :
+- Dossier `nexis_hub_bot` (avec `.git`, historique complet) et `.env` copiés avec succès.
+- `backend/`, `mini_app/`, `tests/` étaient absents après la copie initiale (27 fichiers
+  manquants côté disque bien que suivis par Git) — restaurés avec `git checkout -- backend
+  mini_app tests`.
+- L'ancien `.venv` (chemins `C:\Users\CECBK\...`) était cassé (`Scripts/python.exe` absent) —
+  supprimé et recréé. Aucun Python n'était installé sur ce profil (juste le stub Windows
+  Store) : installé via `winget install --id Python.Python.3.14` (3.14.6), puis
+  `python -m venv .venv` + `pip install -r requirements.txt pytest`.
+- Chemins absolus mis à jour dans ce fichier (`c:/Users/Ben L/OneDrive/Desktop/
+  Startup_Nexis_Hub/nexis_hub_bot/.venv/Scripts/python.exe`).
+- Suite de tests validée : `62 passed` avec `pytest -q`.
+- Docker (pour Postgres local) est disponible sur ce profil.
 
 ## Points sensibles à ne pas casser
 
