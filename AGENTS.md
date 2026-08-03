@@ -102,6 +102,28 @@ c:/Users/CECBK/nexis_hub_bot/.venv/Scripts/python.exe -m alembic upgrade head
 5. Voir [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md) pour le plan de migration détaillé
    vers l'architecture cible `nexis-hub-v5`.
 
+## Migration vers un autre profil Windows (transfert local, même machine)
+
+Le 2026-08-03, l'utilisateur a créé un nouveau profil Windows (**"Ben L"**, dossier
+`C:\Users\Ben L\`) et prévoit d'y déplacer ce projet. Checklist si un agent doit aider
+à finaliser ce transfert ou retrouve ce dépôt à un nouveau chemin :
+
+- **À copier** : tout le dossier `nexis_hub_bot`, y compris `.git` (historique complet)
+  et `.env` (secrets — jamais suivi par Git, à copier séparément à la main).
+- **À exclure/recréer** : `.venv` (chemins absolus liés à l'ancien profil, à recréer avec
+  `python -m venv .venv` puis `pip install -r requirements.txt`), `__pycache__/`,
+  `.pytest_cache/`.
+- Un profil Windows ne peut pas écrire directement dans le dossier d'un autre profil
+  (permissions par compte) — le transfert doit passer par `C:\Users\Public\` ou une clé
+  USB/autre support, puis être terminé manuellement une fois connecté sur le nouveau profil.
+- **Après le transfert**, les chemins absolus codés en dur dans ce fichier et ailleurs
+  (ex. `c:/Users/CECBK/nexis_hub_bot/.venv/Scripts/python.exe`) ne seront plus valides —
+  à mettre à jour avec le nouveau chemin (`c:/Users/Ben L/nexis_hub_bot/...`) une fois
+  confirmé que c'est bien le chemin définitif de travail.
+- Vérifier après coup avec `git log --oneline -5` et `git status` que l'historique et les
+  3 derniers commits (inscription/profil, devis, paiement — voir
+  [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md)) sont bien arrivés intacts.
+
 ## Points sensibles à ne pas casser
 
 - Les handlers Telegram utilisent des callbacks et états FSM.
