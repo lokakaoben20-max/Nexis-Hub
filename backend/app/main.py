@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from backend.app import crud
 from backend.app.database import SessionLocal, init_db
-from backend.app.models import BotMission, BotProvider, BotQuote, BotUser
+from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotUser
 
 
 @asynccontextmanager
@@ -84,6 +84,13 @@ class PaymentOperatorPayload(BaseModel):
     operator: str = "simulation"
 
 
+class ReviewCreatePayload(BaseModel):
+    mission_id: int
+    client_telegram_id: int
+    rating: int
+    comment: str | None = None
+
+
 def _user_to_dict(user: BotUser) -> dict:
     return {
         "telegram_id": user.telegram_id,
@@ -110,6 +117,8 @@ def _provider_to_dict(provider: BotProvider) -> dict:
         "rating": provider.rating,
         "total_missions": provider.total_missions,
         "success_rate": provider.success_rate,
+        "average_rating": provider.average_rating,
+        "total_reviews": provider.total_reviews,
         "is_verified": provider.is_verified,
         "is_active": provider.is_active,
         "is_suspended": provider.is_suspended,
@@ -150,6 +159,18 @@ def _quote_to_dict(quote: BotQuote) -> dict:
         "delay_hours": quote.delay_hours,
         "message": quote.message,
         "status": quote.status,
+    }
+
+
+def _review_to_dict(review: BotReview) -> dict:
+    return {
+        "id": review.id,
+        "mission_id": review.mission_id,
+        "client_telegram_id": review.client_telegram_id,
+        "provider_telegram_id": review.provider_telegram_id,
+        "rating": review.rating,
+        "comment": review.comment,
+        "created_at": review.created_at.isoformat() if review.created_at else None,
     }
 
 
@@ -290,6 +311,22 @@ def create_quote(payload: QuoteCreatePayload):
         if quote is None:
             raise HTTPException(status_code=404, detail="mission_not_found")
         return {"status": "ok", "quote": _quote_to_dict(quote)}
+
+
+@app.post("/api/bot/reviews")
+def create_review(payload: ReviewCreatePayload):
+    with SessionLocal() as db:
+        try:
+            review = crud.create_review(
+                db,
+                mission_id=payload.mission_id,
+                client_telegram_id=payload.client_telegram_id,
+                rating=payload.rating,
+                comment=payload.comment,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"status": "ok", "review": _review_to_dict(review)}
 
 
 @app.post("/api/bot/quotes/{quote_id}/accept")

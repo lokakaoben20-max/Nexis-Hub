@@ -186,6 +186,8 @@ BUTTON_LABELS = {
         "cancel": "❌ Annuler",
         "skip_photo": "➡️ Continuer sans photo",
         "finish_explanation": "✅ Terminer l'explication",
+        "skip_rating": "➡️ Ne pas noter",
+        "skip_comment": "➡️ Envoyer sans commentaire",
     },
     "ln": {
         "client": "👤 Client",
@@ -214,6 +216,8 @@ BUTTON_LABELS = {
         "cancel": "❌ Kolongola",
         "skip_photo": "➡️ Kokoba sans photo",
         "finish_explanation": "✅ Nasilisi kolimbola",
+        "skip_rating": "➡️ Kopesa note te",
+        "skip_comment": "➡️ Kotinda sans commentaire",
     },
     "en": {
         "client": "👤 Client",
@@ -242,6 +246,8 @@ BUTTON_LABELS = {
         "cancel": "❌ Cancel",
         "skip_photo": "➡️ Continue without photo",
         "finish_explanation": "✅ Finish explanation",
+        "skip_rating": "➡️ Skip rating",
+        "skip_comment": "➡️ Send without comment",
     },
 }
 
@@ -325,6 +331,19 @@ async def sync_quote_to_backend(mission_id: int, provider_telegram_id: int, amou
     }
     async with httpx.AsyncClient(timeout=5.0) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_review_to_backend(mission_id: int, client_telegram_id: int, rating: int, comment: str = "") -> dict:
+    payload = {
+        "mission_id": mission_id,
+        "client_telegram_id": client_telegram_id,
+        "rating": rating,
+        "comment": comment,
+    }
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/reviews", json=payload)
         response.raise_for_status()
         return response.json()
 
@@ -494,6 +513,11 @@ class QuoteCreation(StatesGroup):
     message = State()
 
 
+class RatingFlow(StatesGroup):
+    rating = State()
+    comment = State()
+
+
 def clavier_contact(lang: str = "fr"):
     text = {
         "fr": "📱 Partager mon numéro WhatsApp",
@@ -644,6 +668,22 @@ def clavier_confirmation_client(mission_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Confirmer et libérer le paiement", callback_data=f"client_confirm_done_{mission_id}")
     builder.button(text="⚠️ Signaler un problème", callback_data=f"client_report_issue_{mission_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_notation(mission_id: int, lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    for i in range(1, 6):
+        builder.button(text="⭐" * i, callback_data=f"rate_star_{mission_id}_{i}")
+    builder.button(text=button_label("skip_rating", lang), callback_data=f"rate_skip_{mission_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_notation_commentaire(mission_id: int, lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=button_label("skip_comment", lang), callback_data=f"rate_comment_skip_{mission_id}")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -2146,7 +2186,7 @@ async def prestataire_termine_mission(callback: CallbackQuery):
 
 
 @dp.callback_query(F.data.startswith("client_confirm_done_"))
-async def client_confirme_mission_terminee(callback: CallbackQuery):
+async def client_confirme_mission_terminee(callback: CallbackQuery, state: FSMContext):
     mission_id = int(callback.data.replace("client_confirm_done_", "", 1))
     try:
         mission = release_payment(mission_id)
@@ -2155,10 +2195,11 @@ async def client_confirme_mission_terminee(callback: CallbackQuery):
         return
 
     await _safe_backend_call(sync_mission_status_to_backend(mission_id, "completed", payment_status="released"))
+    lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
         get_message("payment_released_client", "fr", mission_id=mission_id),
         parse_mode="HTML",
-        reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
+        reply_markup=clavier_client(lang),
     )
     if mission["provider_telegram_id"]:
         await bot.send_message(
@@ -2173,7 +2214,74 @@ async def client_confirme_mission_terminee(callback: CallbackQuery):
             parse_mode="HTML",
             reply_markup=clavier_prestataire(await get_provider_language(mission["provider_telegram_id"])),
         )
+
+    provider = get_provider_by_telegram_id(mission["provider_telegram_id"]) if mission["provider_telegram_id"] else None
+    if provider is not None:
+        await state.set_state(RatingFlow.rating)
+        await state.update_data(rating_mission_id=mission_id)
+        await callback.message.answer(
+            get_message("rate_provider", lang, mission_id=mission_id, prestataire=provider["full_name"]),
+            parse_mode="HTML",
+            reply_markup=clavier_notation(mission_id, lang),
+        )
     await callback.answer("Paiement libéré")
+
+
+@dp.callback_query(RatingFlow.rating, F.data.startswith("rate_star_"))
+async def notation_etoile_recue(callback: CallbackQuery, state: FSMContext):
+    remainder = callback.data.removeprefix("rate_star_")
+    mission_id_str, _, rating_str = remainder.rpartition("_")
+    mission_id = int(mission_id_str)
+    await state.update_data(rating_value=int(rating_str))
+    await state.set_state(RatingFlow.comment)
+    lang = await get_user_language(callback.from_user.id)
+    await callback.message.edit_text(
+        get_message("rate_comment_prompt", lang),
+        parse_mode="HTML",
+        reply_markup=clavier_notation_commentaire(mission_id, lang),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(RatingFlow.rating, F.data.startswith("rate_skip_"))
+async def notation_ignoree(callback: CallbackQuery, state: FSMContext):
+    lang = await get_user_language(callback.from_user.id)
+    await state.clear()
+    await callback.message.edit_text(get_message("rate_skipped", lang), parse_mode="HTML")
+    await callback.answer()
+
+
+async def _finalize_review(telegram_id: int, data: dict, comment: str | None, state: FSMContext) -> dict | None:
+    result = await _safe_backend_call(
+        sync_review_to_backend(
+            mission_id=data["rating_mission_id"],
+            client_telegram_id=telegram_id,
+            rating=data["rating_value"],
+            comment=comment or "",
+        )
+    )
+    await state.clear()
+    return result
+
+
+@dp.message(RatingFlow.comment)
+async def notation_commentaire_recu(message: Message, state: FSMContext):
+    data = await state.get_data()
+    comment = (message.text or "").strip()
+    if comment == "-":
+        comment = None
+    await _finalize_review(message.from_user.id, data, comment, state)
+    lang = await get_user_language(message.from_user.id)
+    await message.answer(get_message("rate_thanks", lang), parse_mode="HTML", reply_markup=clavier_client(lang))
+
+
+@dp.callback_query(RatingFlow.comment, F.data.startswith("rate_comment_skip_"))
+async def notation_commentaire_ignore(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    await _finalize_review(callback.from_user.id, data, None, state)
+    lang = await get_user_language(callback.from_user.id)
+    await callback.message.edit_text(get_message("rate_thanks", lang), parse_mode="HTML")
+    await callback.answer()
 
 
 @dp.callback_query(F.data.startswith("client_report_issue_"))

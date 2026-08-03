@@ -145,6 +145,12 @@ MESSAGES = {
             "💡 Votre avis aide les autres clients "
             "à choisir en confiance."
         ),
+        "rate_comment_prompt": (
+            "✍️ Voulez-vous ajouter un commentaire ?\n\n"
+            "Envoyez votre commentaire, ou appuyez sur le bouton pour l'envoyer sans commentaire."
+        ),
+        "rate_skipped": "👍 D'accord, merci quand même d'avoir utilisé NEXIS HUB !",
+        "rate_thanks": "🙏 Merci pour votre évaluation !",
 
         # ── Prestataire ─────────────────────────────────
         "provider_menu": (
@@ -303,6 +309,22 @@ MESSAGES = {
             "💳 TOTAL : <b>{total} {currency}</b>\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━"
         ),
+
+        # ── Notation ───────────────────────────────────
+        "rate_provider": (
+            "⭐ <b>Pesa note na mosali na yo</b>\n\n"
+            "Mosala : <b>NXH-{mission_id:04d}</b>\n"
+            "Mosali : <b>{prestataire}</b>\n\n"
+            "💡 Avis na yo esungaka baklienti mosusu "
+            "kopona na confiance."
+        ),
+        "rate_comment_prompt": (
+            "✍️ Olingi kobakisa commentaire ?\n\n"
+            "Tinda commentaire na yo, to finá bouton mpo na kotinda sans commentaire."
+        ),
+        "rate_skipped": "👍 Malamu, matondi mpo osaleli NEXIS HUB !",
+        "rate_thanks": "🙏 Matondi mpo na note na yo !",
+
         "provider_menu": (
             "🔧 <b>Tableau ya mosali — {prenom}</b>\n\n"
             "🏅 Badge : <b>{badge}</b>\n"
@@ -374,6 +396,22 @@ MESSAGES = {
             "💳 TOTAL  : <b>{total} {currency}</b>\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━"
         ),
+
+        # ── Rating ───────────────────────────────────
+        "rate_provider": (
+            "⭐ <b>Rate your provider</b>\n\n"
+            "Mission: <b>NXH-{mission_id:04d}</b>\n"
+            "Provider: <b>{prestataire}</b>\n\n"
+            "💡 Your feedback helps other clients "
+            "choose with confidence."
+        ),
+        "rate_comment_prompt": (
+            "✍️ Would you like to add a comment?\n\n"
+            "Send your comment, or tap the button to send without one."
+        ),
+        "rate_skipped": "👍 Alright, thanks anyway for using NEXIS HUB!",
+        "rate_thanks": "🙏 Thank you for your rating!",
+
         "provider_menu": (
             "🔧 <b>Provider Dashboard — {prenom}</b>\n\n"
             "🏅 Badge: <b>{badge}</b>\n"

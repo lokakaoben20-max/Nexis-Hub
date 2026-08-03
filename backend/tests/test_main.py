@@ -360,6 +360,85 @@ def test_update_user_language(tmp_path, monkeypatch):
         assert missing_response.status_code == 404
 
 
+def _complete_mission_flow(test_client, mission_id=1001, amount=100.0, currency="USD", provider_telegram_id=7):
+    quote_id = _setup_mission_with_quote(test_client, mission_id=mission_id, amount=amount, currency=currency)
+    test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+    test_client.post(f"/api/bot/quotes/{quote_id}/pay", json={"operator": "simulation"})
+    test_client.post(f"/api/bot/missions/{mission_id}/start", json={"provider_telegram_id": provider_telegram_id})
+    test_client.post(f"/api/bot/missions/{mission_id}/finish", json={"provider_telegram_id": provider_telegram_id})
+    release_response = test_client.post(f"/api/bot/missions/{mission_id}/release")
+    assert release_response.status_code == 200
+    return quote_id
+
+
+def test_review_creation_updates_provider_average_and_total_reviews(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with TestClient(backend_main.app) as test_client:
+        _complete_mission_flow(test_client, mission_id=1001)
+        first = test_client.post(
+            "/api/bot/reviews",
+            json={"mission_id": 1001, "client_telegram_id": 42, "rating": 5, "comment": "Top"},
+        )
+        assert first.status_code == 200
+        assert first.json()["review"]["rating"] == 5
+
+        _complete_mission_flow(test_client, mission_id=1002)
+        second = test_client.post(
+            "/api/bot/reviews",
+            json={"mission_id": 1002, "client_telegram_id": 42, "rating": 3},
+        )
+        assert second.status_code == 200
+
+        provider_profile = test_client.get("/api/profile/7").json()
+        assert provider_profile["provider"]["average_rating"] == 4.0
+        assert provider_profile["provider"]["total_reviews"] == 2
+
+
+def test_review_rejected_for_duplicate_mission(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with TestClient(backend_main.app) as test_client:
+        _complete_mission_flow(test_client, mission_id=1001)
+        test_client.post("/api/bot/reviews", json={"mission_id": 1001, "client_telegram_id": 42, "rating": 4})
+
+        duplicate = test_client.post(
+            "/api/bot/reviews",
+            json={"mission_id": 1001, "client_telegram_id": 42, "rating": 2},
+        )
+        assert duplicate.status_code == 400
+        assert "déjà été évaluée" in duplicate.json()["detail"]
+
+
+def test_review_rejected_for_rating_out_of_range(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with TestClient(backend_main.app) as test_client:
+        _complete_mission_flow(test_client, mission_id=1001)
+
+        too_low = test_client.post("/api/bot/reviews", json={"mission_id": 1001, "client_telegram_id": 42, "rating": 0})
+        assert too_low.status_code == 400
+        assert "1 et 5" in too_low.json()["detail"]
+
+        too_high = test_client.post("/api/bot/reviews", json={"mission_id": 1001, "client_telegram_id": 42, "rating": 6})
+        assert too_high.status_code == 400
+        assert "1 et 5" in too_high.json()["detail"]
+
+
+def test_review_rejected_for_mismatched_client(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with TestClient(backend_main.app) as test_client:
+        _complete_mission_flow(test_client, mission_id=1001)
+
+        response = test_client.post(
+            "/api/bot/reviews",
+            json={"mission_id": 1001, "client_telegram_id": 999, "rating": 5},
+        )
+        assert response.status_code == 400
+        assert "associé" in response.json()["detail"]
+
+
 def test_update_provider_language(tmp_path, monkeypatch):
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 

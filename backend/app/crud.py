@@ -1,6 +1,7 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.app.models import BotMission, BotProvider, BotQuote, BotTransaction, BotUser
+from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotTransaction, BotUser
 from exchange_rates import get_usd_to_cdf_rate
 
 MODULE_B_SERVICES = {"service_plomberie", "service_electricite", "service_climatisation"}
@@ -410,3 +411,54 @@ def release_payment(db: Session, mission_id: int) -> BotMission:
     db.commit()
     db.refresh(mission)
     return mission
+
+
+def _recompute_provider_rating(db: Session, provider_telegram_id: int) -> None:
+    provider = db.get(BotProvider, provider_telegram_id)
+    if provider is None:
+        return
+    avg_rating, total = (
+        db.query(func.avg(BotReview.rating), func.count(BotReview.id))
+        .filter(BotReview.provider_telegram_id == provider_telegram_id)
+        .one()
+    )
+    provider.average_rating = round(float(avg_rating), 1) if avg_rating is not None else 0.0
+    provider.total_reviews = total or 0
+    db.commit()
+    db.refresh(provider)
+
+
+def create_review(
+    db: Session,
+    mission_id: int,
+    client_telegram_id: int,
+    rating: int,
+    comment: str | None = None,
+) -> BotReview:
+    mission = db.get(BotMission, mission_id)
+    if mission is None:
+        raise ValueError("Mission introuvable")
+    if mission.telegram_id != client_telegram_id:
+        raise ValueError("Ce client n'est pas associé à cette mission")
+    if mission.provider_telegram_id is None:
+        raise ValueError("Aucun prestataire associé à cette mission")
+    if rating < 1 or rating > 5:
+        raise ValueError("La note doit être comprise entre 1 et 5")
+
+    existing = db.query(BotReview).filter(BotReview.mission_id == mission_id).first()
+    if existing is not None:
+        raise ValueError("Cette mission a déjà été évaluée")
+
+    review = BotReview(
+        mission_id=mission_id,
+        client_telegram_id=client_telegram_id,
+        provider_telegram_id=mission.provider_telegram_id,
+        rating=rating,
+        comment=comment or None,
+    )
+    db.add(review)
+    db.commit()
+    db.refresh(review)
+
+    _recompute_provider_rating(db, mission.provider_telegram_id)
+    return review

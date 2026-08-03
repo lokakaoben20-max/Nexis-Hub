@@ -1,4 +1,6 @@
-from sqlalchemy import JSON, BigInteger, Boolean, Float, ForeignKey, Integer, String, Text
+from datetime import datetime
+
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.database import Base
@@ -31,6 +33,8 @@ class BotProvider(Base):
     rating: Mapped[float] = mapped_column(Float, default=0.0)
     total_missions: Mapped[int] = mapped_column(Integer, default=0)
     success_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    average_rating: Mapped[float] = mapped_column(Float, default=0.0)
+    total_reviews: Mapped[int] = mapped_column(Integer, default=0)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_suspended: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -89,3 +93,15 @@ class BotTransaction(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")
     mobile_money_ref: Mapped[str | None] = mapped_column(String(50), nullable=True)
     operator: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+
+class BotReview(Base):
+    __tablename__ = "bot_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mission_id: Mapped[int] = mapped_column(ForeignKey("bot_missions.mission_id"), unique=True, index=True)
+    client_telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    provider_telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    rating: Mapped[int] = mapped_column(Integer)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
