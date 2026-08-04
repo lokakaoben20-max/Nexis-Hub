@@ -823,7 +823,9 @@ def media_list(data: dict, key: str) -> list[str]:
 def format_recap(data: dict) -> str:
     lang = data.get("language", "fr")
     service = SERVICES.get(data.get("service"), "Service")
-    urgence = "Oui" if data.get("urgent") else "Non"
+    yes_no = {"fr": ("Oui", "Non"), "ln": ("Iyo", "Te"), "en": ("Yes", "No")}
+    yes_label, no_label = yes_no.get(lang, yes_no["fr"])
+    urgence = yes_label if data.get("urgent") else no_label
     commune = data.get("commune", "Non précisée")
     currency = data.get("currency", "USD")
     description = html.escape(data.get("description", ""))
@@ -1785,16 +1787,16 @@ async def description_recue(message: Message, state: FSMContext):
 
     if message.voice:
         voice_file_ids.append(message.voice.file_id)
-        feedback = f"🎙️ Note vocale ajoutée ({len(voice_file_ids)})."
+        feedback = get_message("media_voice_added", lang, count=len(voice_file_ids))
     elif message.photo:
         photo_file_ids.append(message.photo[-1].file_id)
-        feedback = f"📷 Photo ajoutée ({len(photo_file_ids)})."
+        feedback = get_message("media_photo_added", lang, count=len(photo_file_ids))
     elif message.text:
         description_parts.append(message.text.strip())
-        feedback = "✏️ Texte ajouté."
+        feedback = get_message("media_text_added", lang)
     else:
         await message.answer(
-            "Veuillez envoyer un texte, une photo ou une note vocale.",
+            get_message("media_invalid", lang),
             reply_markup=clavier_fin_explication(lang),
         )
         return
@@ -1808,9 +1810,7 @@ async def description_recue(message: Message, state: FSMContext):
         voice_file_id=json.dumps(voice_file_ids) if voice_file_ids else None,
     )
     await message.answer(
-        f"{feedback}\n\n"
-        "Vous pouvez encore envoyer un autre texte, une autre photo ou une autre note vocale. "
-        "Quand c'est complet, appuyez sur Terminer.",
+        f"{feedback}\n\n{get_message('media_more_or_finish', lang)}",
         reply_markup=clavier_fin_explication(lang),
     )
 
@@ -1823,7 +1823,10 @@ async def explication_terminee(callback: CallbackQuery, state: FSMContext):
     voice_file_ids = data.get("voice_file_ids", [])
 
     if not description_parts and not photo_file_ids and not voice_file_ids:
-        await callback.answer("Envoyez au moins un texte, une photo ou une note vocale.", show_alert=True)
+        await callback.answer(
+            get_message("media_required_alert", data.get("language", "fr")),
+            show_alert=True,
+        )
         return
 
     await state.update_data(
@@ -1878,15 +1881,16 @@ async def mission_confirmer(callback: CallbackQuery, state: FSMContext):
             )
 
     await state.clear()
+    client_lang = data.get("language", "fr")
     matching_text = (
-        f"{len(matching_providers[:3])} prestataire(s) notifié(s)."
+        get_message("matching_providers_notified", client_lang, count=len(matching_providers[:3]))
         if matching_providers
-        else "Aucun prestataire disponible trouvé pour l'instant."
+        else get_message("matching_no_providers", client_lang)
     )
     await callback.message.edit_text(
         get_message(
             "mission_saved",
-            data.get("language", "fr"),
+            client_lang,
             mission_id=mission_id,
             matching_text=matching_text,
         ),
@@ -2387,9 +2391,10 @@ async def client_refuse_devis(callback: CallbackQuery):
 @dp.callback_query(F.data == "mission_annuler")
 async def mission_annuler(callback: CallbackQuery, state: FSMContext):
     await state.clear()
+    lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
-        "❌ Demande annulée.\n\nRetour à votre espace client.",
-        reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
+        get_message("request_cancelled", lang),
+        reply_markup=clavier_client(lang),
     )
     await callback.answer("Demande annulée")
 

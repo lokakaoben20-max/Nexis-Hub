@@ -200,6 +200,18 @@ MESSAGES = {
             "ou contactez-nous directement.\n\n"
             "📱 Contactez-nous : +243 852 638 209"
         ),
+        "media_voice_added": "🎙️ Note vocale ajoutée ({count}).",
+        "media_photo_added": "📷 Photo ajoutée ({count}).",
+        "media_text_added": "✏️ Texte ajouté.",
+        "media_invalid": "Veuillez envoyer un texte, une photo ou une note vocale.",
+        "media_more_or_finish": (
+            "Vous pouvez encore envoyer un autre texte, une autre photo ou une "
+            "autre note vocale. Quand c'est complet, appuyez sur Terminer."
+        ),
+        "media_required_alert": "Envoyez au moins un texte, une photo ou une note vocale.",
+        "matching_providers_notified": "{count} prestataire(s) notifié(s).",
+        "matching_no_providers": "Aucun prestataire disponible trouvé pour l'instant.",
+        "request_cancelled": "❌ Demande annulée.\n\nRetour à votre espace client.",
 
         # ── Anti-désintermédiation ──────────────────────
         "anti_bypass_warning": (
@@ -552,6 +564,18 @@ MESSAGES = {
             "to benga biso directement.\n\n"
             "📱 Benga biso : +243 852 638 209"
         ),
+        "media_voice_added": "🎙️ Note vocale ebakisami ({count}).",
+        "media_photo_added": "📷 Photo ebakisami ({count}).",
+        "media_text_added": "✏️ Texte ebakisami.",
+        "media_invalid": "Tinda texte, photo to note vocale.",
+        "media_more_or_finish": (
+            "Okoki kotinda lisusu texte, photo to note vocale. "
+            "Soki osilisi, fina Nasilisi."
+        ),
+        "media_required_alert": "Tinda ata texte, photo to note vocale moko.",
+        "matching_providers_notified": "Ba prestataire {count} bayebisami.",
+        "matching_no_providers": "Prestataire moko te ezwami sikoyo.",
+        "request_cancelled": "❌ Demande elongolami.\n\nOzongi na esika na yo ya client.",
 
         # ── Notation ───────────────────────────────────
         "rate_provider": (
@@ -778,6 +802,18 @@ MESSAGES = {
             "or contact us directly.\n\n"
             "📱 Contact us: +243 852 638 209"
         ),
+        "media_voice_added": "🎙️ Voice note added ({count}).",
+        "media_photo_added": "📷 Photo added ({count}).",
+        "media_text_added": "✏️ Text added.",
+        "media_invalid": "Please send a text, a photo, or a voice note.",
+        "media_more_or_finish": (
+            "You can still send another text, photo, or voice note. "
+            "When everything is added, press Finish."
+        ),
+        "media_required_alert": "Send at least a text, a photo, or a voice note.",
+        "matching_providers_notified": "{count} provider(s) notified.",
+        "matching_no_providers": "No provider found available right now.",
+        "request_cancelled": "❌ Request cancelled.\n\nBack to your client space.",
 
         # ── Rating ───────────────────────────────────
         "rate_provider": (
