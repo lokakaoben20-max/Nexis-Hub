@@ -483,7 +483,6 @@ async def persist_mission_creation(telegram_id: int, mission_id: int, data: dict
 
 class MissionRequest(StatesGroup):
     description = State()
-    photo = State()
 
 
 class ClientRegistration(StatesGroup):
@@ -795,6 +794,7 @@ def clavier_photo_optionnelle(lang: str = "fr"):
 def clavier_fin_explication(lang: str = "fr"):
     builder = InlineKeyboardBuilder()
     builder.button(text=button_label("finish_explanation", lang), callback_data="mission_media_done")
+    builder.button(text=button_label("cancel", lang), callback_data="mission_annuler")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -1842,20 +1842,6 @@ async def explication_terminee(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@dp.callback_query(MissionRequest.photo, F.data == "mission_skip_photo")
-async def photo_ignoree(callback: CallbackQuery, state: FSMContext):
-    await state.update_data(photo_file_id=None)
-    data = await state.get_data()
-    await state.clear()
-    await state.update_data(**data)
-    await callback.message.edit_text(
-        format_recap(data),
-        parse_mode="HTML",
-        reply_markup=clavier_recapitulatif(data.get("language", "fr")),
-    )
-    await callback.answer()
-
-
 @dp.callback_query(F.data == "mission_confirmer")
 async def mission_confirmer(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -2025,15 +2011,21 @@ async def devis_message_recu(message: Message, state: FSMContext):
     )
     backend_quote_id = backend_quote["quote"]["id"] if backend_quote else None
 
+    client_lang = await get_user_language(mission["client_telegram_id"])
+    no_message_by_lang = {"fr": "Aucun message", "ln": "Message te", "en": "No message"}
     await bot.send_message(
         mission["client_telegram_id"],
-        "💬 <b>Nouveau devis reçu</b>\n\n"
-        f"Mission : <b>NXH-{data['quote_mission_id']:04d}</b>\n"
-        f"Prestataire : <b>{html.escape(provider['full_name'])}</b>\n"
-        f"{provider_trust_line(provider)}\n"
-        f"Montant : <b>{data['quote_amount']:.2f} {data['quote_currency']}</b>\n"
-        f"Délai : <b>{data['quote_delay_hours']} h</b>\n"
-        f"Message : {html.escape(quote_message) if quote_message else 'Aucun message'}",
+        get_message(
+            "new_quote_received_client",
+            client_lang,
+            mission_id=data["quote_mission_id"],
+            prestataire=html.escape(provider["full_name"]),
+            trust_line=provider_trust_line(provider),
+            amount=data["quote_amount"],
+            currency=data["quote_currency"],
+            delay=data["quote_delay_hours"],
+            message=html.escape(quote_message) if quote_message else no_message_by_lang.get(client_lang, "Aucun message"),
+        ),
         parse_mode="HTML",
         reply_markup=clavier_devis_client(quote_id, backend_quote_id),
     )
@@ -2081,24 +2073,40 @@ async def client_accepte_devis(callback: CallbackQuery):
     tola_fee = 1.50 if quote["currency"] == "USD" else 4000.00
     total_client = quote["amount"] + tola_fee
 
+    client_lang = await get_user_language(callback.from_user.id)
+    client_user = get_user_by_telegram_id(callback.from_user.id)
+    wallet_balance = 0.0
+    if client_user is not None:
+        wallet_balance = (
+            client_user["wallet_balance_usd"] if quote["currency"] == "USD" else client_user["wallet_balance_cdf"]
+        )
+
     await callback.message.edit_text(
-        "✅ <b>Devis accepté.</b>\n\n"
-        f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"
-        f"Prestataire : <b>{html.escape(quote['provider_name'])}</b>\n"
-        f"Devis : <b>{quote['amount']:.2f} {quote['currency']}</b>\n"
-        f"Frais Tola / techniques : <b>{tola_fee:.2f} {quote['currency']}</b>\n"
-        f"Total à payer : <b>{total_client:.2f} {quote['currency']}</b>\n\n"
-        "Choisissez un mode de paiement pour sécuriser la mission.",
+        get_message(
+            "quote_accept_confirmation",
+            client_lang,
+            mission_id=quote["mission_id"],
+            prestataire=html.escape(quote["provider_name"]),
+            devis=quote["amount"],
+            frais=tola_fee,
+            total=total_client,
+            currency=quote["currency"],
+            wallet_balance=wallet_balance,
+        ),
         parse_mode="HTML",
         reply_markup=clavier_paiement(quote_id),
     )
 
+    provider_lang = await get_provider_language(quote["provider_telegram_id"])
     await bot.send_message(
         quote["provider_telegram_id"],
-        "✅ <b>Votre devis a été accepté</b>\n\n"
-        f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"
-        f"Montant : <b>{quote['amount']:.2f} {quote['currency']}</b>\n\n"
-        "En attente du paiement escrow du client.",
+        get_message(
+            "quote_accept_provider_notify",
+            provider_lang,
+            mission_id=quote["mission_id"],
+            amount=quote["amount"],
+            currency=quote["currency"],
+        ),
         parse_mode="HTML",
     )
     await callback.answer("Devis accepté")
@@ -2111,25 +2119,33 @@ async def paiement_mobile_money(callback: CallbackQuery):
     quote = payment["quote"]
 
     await _safe_backend_call(sync_payment_to_backend(quote_id, "paid_escrow", mission_id=quote["mission_id"]))
+    client_lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
-        "✅ <b>Paiement escrow confirmé</b>\n\n"
-        f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"
-        f"Référence paiement : <b>{payment['mobile_money_ref']}</b>\n"
-        f"Total payé : <b>{payment['total_client']:.2f} {quote['currency']}</b>\n"
-        f"Frais Tola / techniques : <b>{payment['tola_fee']:.2f} {quote['currency']}</b>\n\n"
-        "Le montant du devis est maintenant sécurisé. Le prestataire peut commencer.",
+        get_message(
+            "payment_mobile_confirmed_client",
+            client_lang,
+            mission_id=quote["mission_id"],
+            ref=payment["mobile_money_ref"],
+            total=payment["total_client"],
+            frais=payment["tola_fee"],
+            currency=quote["currency"],
+        ),
         parse_mode="HTML",
-        reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
+        reply_markup=clavier_client(client_lang),
     )
 
+    provider_lang = await get_provider_language(quote["provider_telegram_id"])
     await bot.send_message(
         quote["provider_telegram_id"],
-        "💰 <b>Paiement sécurisé reçu</b>\n\n"
-        f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"
-        f"Montant brut : <b>{quote['amount']:.2f} {quote['currency']}</b>\n"
-        f"Commission NEXIS HUB : <b>{payment['commission_amount']:.2f} {quote['currency']}</b>\n"
-        f"Net prestataire : <b>{payment['net_provider']:.2f} {quote['currency']}</b>\n\n"
-        "Vous pouvez commencer la mission.",
+        get_message(
+            "payment_confirmed_provider_notify",
+            provider_lang,
+            mission_id=quote["mission_id"],
+            brut=quote["amount"],
+            commission=payment["commission_amount"],
+            net=payment["net_provider"],
+            currency=quote["currency"],
+        ),
         parse_mode="HTML",
         reply_markup=clavier_mission_prestataire(quote["mission_id"], "start"),
     )
@@ -2152,9 +2168,10 @@ async def prestataire_demarre_mission(callback: CallbackQuery):
         parse_mode="HTML",
         reply_markup=clavier_mission_prestataire(mission_id, "finish"),
     )
+    client_lang = await get_user_language(mission["client_telegram_id"])
     await bot.send_message(
         mission["client_telegram_id"],
-        get_message("mission_started", "fr", mission_id=mission_id),
+        get_message("mission_started", client_lang, mission_id=mission_id),
         parse_mode="HTML",
     )
     await callback.answer("Mission démarrée")
@@ -2176,9 +2193,10 @@ async def prestataire_termine_mission(callback: CallbackQuery):
         parse_mode="HTML",
         reply_markup=clavier_prestataire(await get_provider_language(callback.from_user.id)),
     )
+    client_lang = await get_user_language(mission["client_telegram_id"])
     await bot.send_message(
         mission["client_telegram_id"],
-        get_message("mission_finished_client", "fr", mission_id=mission_id),
+        get_message("mission_finished_client", client_lang, mission_id=mission_id),
         parse_mode="HTML",
         reply_markup=clavier_confirmation_client(mission_id),
     )
@@ -2197,22 +2215,23 @@ async def client_confirme_mission_terminee(callback: CallbackQuery, state: FSMCo
     await _safe_backend_call(sync_mission_status_to_backend(mission_id, "completed", payment_status="released"))
     lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
-        get_message("payment_released_client", "fr", mission_id=mission_id),
+        get_message("payment_released_client", lang, mission_id=mission_id),
         parse_mode="HTML",
         reply_markup=clavier_client(lang),
     )
     if mission["provider_telegram_id"]:
+        provider_lang = await get_provider_language(mission["provider_telegram_id"])
         await bot.send_message(
             mission["provider_telegram_id"],
             get_message(
                 "payment_released_provider",
-                "fr",
+                provider_lang,
                 mission_id=mission_id,
                 net=f"{mission['net_provider']:.2f}",
                 currency=mission["currency"],
             ),
             parse_mode="HTML",
-            reply_markup=clavier_prestataire(await get_provider_language(mission["provider_telegram_id"])),
+            reply_markup=clavier_prestataire(provider_lang),
         )
 
     provider = get_provider_by_telegram_id(mission["provider_telegram_id"]) if mission["provider_telegram_id"] else None
@@ -2287,10 +2306,11 @@ async def notation_commentaire_ignore(callback: CallbackQuery, state: FSMContext
 @dp.callback_query(F.data.startswith("client_report_issue_"))
 async def client_signale_probleme(callback: CallbackQuery):
     mission_id = int(callback.data.replace("client_report_issue_", "", 1))
+    lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
-        get_message("dispute_opened", "fr", mission_id=mission_id),
+        get_message("dispute_opened", lang, mission_id=mission_id),
         parse_mode="HTML",
-        reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
+        reply_markup=clavier_client(lang),
     )
     await callback.answer("Paiement maintenu en escrow")
 
@@ -2306,25 +2326,33 @@ async def paiement_wallet(callback: CallbackQuery):
 
     quote = payment["quote"]
     await _safe_backend_call(sync_payment_to_backend(quote_id, "paid_escrow", mission_id=quote["mission_id"]))
+    client_lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
-        "✅ <b>Paiement wallet confirmé</b>\n\n"
-        f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"
-        f"Référence paiement : <b>{payment['mobile_money_ref']}</b>\n"
-        f"Total payé : <b>{payment['total_client']:.2f} {quote['currency']}</b>\n"
-        f"Frais Tola / techniques : <b>{payment['tola_fee']:.2f} {quote['currency']}</b>\n\n"
-        "Le montant du devis est maintenant sécurisé. Le prestataire peut commencer.",
+        get_message(
+            "payment_wallet_confirmed_client",
+            client_lang,
+            mission_id=quote["mission_id"],
+            ref=payment["mobile_money_ref"],
+            total=payment["total_client"],
+            frais=payment["tola_fee"],
+            currency=quote["currency"],
+        ),
         parse_mode="HTML",
-        reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
+        reply_markup=clavier_client(client_lang),
     )
 
+    provider_lang = await get_provider_language(quote["provider_telegram_id"])
     await bot.send_message(
         quote["provider_telegram_id"],
-        "💰 <b>Paiement sécurisé reçu via wallet</b>\n\n"
-        f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"
-        f"Montant brut : <b>{quote['amount']:.2f} {quote['currency']}</b>\n"
-        f"Commission NEXIS HUB : <b>{payment['commission_amount']:.2f} {quote['currency']}</b>\n"
-        f"Net prestataire : <b>{payment['net_provider']:.2f} {quote['currency']}</b>\n\n"
-        "Vous pouvez commencer la mission.",
+        get_message(
+            "payment_wallet_confirmed_provider_notify",
+            provider_lang,
+            mission_id=quote["mission_id"],
+            brut=quote["amount"],
+            commission=payment["commission_amount"],
+            net=payment["net_provider"],
+            currency=quote["currency"],
+        ),
         parse_mode="HTML",
         reply_markup=clavier_mission_prestataire(quote["mission_id"], "start"),
     )
@@ -2337,16 +2365,20 @@ async def client_refuse_devis(callback: CallbackQuery):
     quote = reject_quote(quote_id)
     if backend_quote_id is not None:
         await _safe_backend_call(sync_quote_reject_to_backend(backend_quote_id))
+    client_lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
-        "❌ <b>Devis refusé.</b>\n\n"
-        f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"
-        f"Prestataire : <b>{html.escape(quote['provider_name'])}</b>",
+        get_message(
+            "quote_rejected_client",
+            client_lang,
+            mission_id=quote["mission_id"],
+            prestataire=html.escape(quote["provider_name"]),
+        ),
         parse_mode="HTML",
     )
+    provider_lang = await get_provider_language(quote["provider_telegram_id"])
     await bot.send_message(
         quote["provider_telegram_id"],
-        "❌ <b>Votre devis a été refusé</b>\n\n"
-        f"Mission : <b>NXH-{quote['mission_id']:04d}</b>",
+        get_message("quote_rejected_provider_notify", provider_lang, mission_id=quote["mission_id"]),
         parse_mode="HTML",
     )
     await callback.answer("Devis refusé")
@@ -2364,28 +2396,28 @@ async def mission_annuler(callback: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data == "client_missions")
 async def afficher_missions_client(callback: CallbackQuery):
+    lang = await get_user_language(callback.from_user.id)
     local_missions = get_user_missions(callback.from_user.id)
     backend_missions = await fetch_backend_missions(callback.from_user.id)
     missions = backend_missions or local_missions
 
     if not missions:
         await callback.message.edit_text(
-            "📋 <b>Mes missions en cours</b>\n\n"
-            "Vous n'avez pas encore de mission enregistrée.",
+            get_message("missions_empty", lang),
             parse_mode="HTML",
-            reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
+            reply_markup=clavier_client(lang),
         )
         await callback.answer()
         return
 
-    text = "📋 <b>Mes dernières missions</b>\n\n" + "\n\n".join(
+    text = get_message("missions_title", lang) + "\n\n" + "\n\n".join(
         html.escape(format_mission_client(mission)) if isinstance(mission, dict) and "service" in mission else html.escape(str(mission))
         for mission in missions
     )
     await callback.message.edit_text(
         text,
         parse_mode="HTML",
-        reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
+        reply_markup=clavier_client(lang),
     )
     await callback.answer()
 
@@ -2397,13 +2429,16 @@ async def afficher_wallet_client(callback: CallbackQuery):
         await callback.answer("Client introuvable.", show_alert=True)
         return
 
+    lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
-        "👛 <b>Mon Wallet Client</b>\n\n"
-        f"Solde USD : <b>{user['wallet_balance_usd']:.2f} USD</b>\n"
-        f"Solde CDF : <b>{user['wallet_balance_cdf']:.2f} CDF</b>\n\n"
-        "Le rechargement wallet sera ajouté avec la vraie API Mobile Money.",
+        get_message(
+            "wallet_title",
+            lang,
+            usd=user["wallet_balance_usd"],
+            cdf=user["wallet_balance_cdf"],
+        ),
         parse_mode="HTML",
-        reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
+        reply_markup=clavier_client(lang),
     )
     await callback.answer()
 
@@ -2418,18 +2453,25 @@ async def afficher_profil_client(callback: CallbackQuery):
         return
 
     client_profile = profile_data.get("client", {})
-    display_name = client_profile.get("first_name") or (user.get("first_name") if user else "Client")
-    display_phone = client_profile.get("phone_number") or (user.get("phone_number") if user else "Non renseigné")
-    total_missions = len(profile_data.get("client_missions", [])) if profile_data else (user.get("total_missions", 0) if user else 0)
+    display_name = client_profile.get("first_name") or (user["first_name"] if user else "Client")
+    display_phone = client_profile.get("phone_number") or (user["phone_number"] if user else "Non renseigné")
+    total_missions = len(profile_data.get("client_missions", [])) if profile_data else (user["total_missions"] if user else 0)
+
+    lang = await get_user_language(callback.from_user.id)
+    lang_labels = {"fr": "Français", "ln": "Lingala", "en": "English"}
+    lang_label = lang_labels.get(user["language"] if user else "fr", "Français")
 
     await callback.message.edit_text(
-        "👤 <b>Mon profil client</b>\n\n"
-        f"Nom : <b>{html.escape(display_name or 'Client')}</b>\n"
-        f"Téléphone : <b>{html.escape(display_phone or 'Non renseigné')}</b>\n"
-        f"Langue : <b>{html.escape(user['language'] if user else 'fr')}</b>\n"
-        f"Missions totales : <b>{total_missions}</b>",
+        get_message(
+            "profile_title",
+            lang,
+            name=html.escape(display_name or "Client"),
+            phone=html.escape(display_phone or "Non renseigné"),
+            lang_label=lang_label,
+            missions=total_missions,
+        ),
         parse_mode="HTML",
-        reply_markup=clavier_client(await get_user_language(callback.from_user.id)),
+        reply_markup=clavier_client(lang),
     )
     await callback.answer()
 
@@ -2508,11 +2550,53 @@ async def afficher_profil_prestataire(callback: CallbackQuery):
     await callback.answer()
 
 
+@dp.callback_query(F.data == "client_historique")
+async def afficher_historique_client(callback: CallbackQuery):
+    lang = await get_user_language(callback.from_user.id)
+    local_missions = get_user_missions(callback.from_user.id)
+    backend_missions = await fetch_backend_missions(callback.from_user.id)
+    missions = backend_missions or local_missions
+    terminal_statuses = {"completed", "cancelled", "disputed"}
+    history = [
+        mission
+        for mission in missions
+        if isinstance(mission, dict) and mission.get("status") in terminal_statuses
+    ]
+
+    if not history:
+        await callback.message.edit_text(
+            get_message("mission_history_empty", lang),
+            parse_mode="HTML",
+            reply_markup=clavier_client(lang),
+        )
+        await callback.answer()
+        return
+
+    text = get_message("mission_history_title", lang) + "\n\n" + "\n\n".join(
+        html.escape(format_mission_client(mission)) for mission in history
+    )
+    await callback.message.edit_text(
+        text,
+        parse_mode="HTML",
+        reply_markup=clavier_client(lang),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "client_aide")
+async def afficher_aide_client(callback: CallbackQuery):
+    lang = await get_user_language(callback.from_user.id)
+    await callback.message.edit_text(
+        get_message("help_content", lang),
+        parse_mode="HTML",
+        reply_markup=clavier_client(lang),
+    )
+    await callback.answer()
+
+
 @dp.callback_query(
     F.data.in_(
         [
-            "client_historique",
-            "client_aide",
             "prest_dashboard",
             "prest_support",
         ]
