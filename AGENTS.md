@@ -31,29 +31,29 @@ base de travail pour la suite.
   (évite les noms auto-générés type `xxx-xxx-xxx`).
 - Ne pousse jamais directement sur `main`. Travaille sur une branche (`feature/...`), ouvre une PR.
 
-## Répartition en cours (2026-08-05) — exception cadrée à la règle d'or
+## Couplage à connaître : `db.py` est utilisé par le bot ET la Mini App
 
-L'utilisateur fait travailler **deux agents en parallèle**, sur des périmètres disjoints.
-Tant que cette section est là, respecte strictement ta zone :
+Un essai de travail en parallèle (Codex sur le bot, Claude Code sur la Mini App) a été
+tenté le 2026-08-05 puis abandonné le jour même : on revient à la règle d'or ci-dessus,
+**un seul agent à la fois**. Ce qui reste utile de cet essai, c'est le couplage qu'il a
+mis en évidence :
 
-| Agent | Zone exclusive |
-| --- | --- |
-| **Codex** | `main.py`, `messages.py`, `translations/` (le bot Telegram) |
-| **Claude Code** | `mini_app/` (`app.py` + `static/`) |
+`mini_app/app.py` importe une quinzaine de fonctions de `db.py`
+(`get_user_by_telegram_id`, `create_provider`, `start_mission`, `finish_mission`,
+`update_provider_services`…), exactement comme `main.py`. **Modifier la signature ou le
+comportement d'une fonction de `db.py` pour le bot casse donc la Mini App sans que rien
+ne le signale** — et l'inverse est vrai aussi.
 
-**`db.py` est une zone partagée** : `mini_app/app.py` en importe une quinzaine de
-fonctions (`get_user_by_telegram_id`, `create_provider`, `start_mission`,
-`finish_mission`, `update_provider_services`…). Une modification de signature ou de
-comportement dans `db.py` casse donc l'autre côté sans prévenir.
+- Avant de toucher à une fonction existante de `db.py`, vérifie ses appelants
+  (`main.py` et `mini_app/app.py` au minimum).
+- Préfère **ajouter** une fonction plutôt que changer une signature déjà utilisée.
+- La Mini App n'a pas de tests de bout en bout du bot : lance toute la suite
+  (`pytest -q`), pas seulement les tests du module que tu modifies.
 
-- **Ne touche pas à `db.py` sans l'annoncer à l'utilisateur**, qui préviendra l'autre agent.
-- Si tu dois absolument y toucher, préfère **ajouter** une fonction plutôt que modifier
-  une existante, et ne change jamais une signature déjà utilisée ailleurs.
+Ce couplage disparaîtra le jour où la Mini App passera par le backend V5 au lieu de
+`db.py` — chantier non lancé, voir [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md).
 
-Autres zones partagées à traiter avec la même prudence : `AGENTS.md`,
-`V5_MIGRATION_PLAN.md`, `requirements.txt`, `.env.example`, `backend/`.
-
-### Travail inachevé laissé dans `main.py` par Claude Code
+### Travail inachevé dans `main.py` (Rich Message historique)
 
 `build_history_rich_message()` (vers `main.py:2750`) **n'est appelée nulle part** :
 elle a été écrite pour afficher l'historique client sous forme de tableau Telegram
