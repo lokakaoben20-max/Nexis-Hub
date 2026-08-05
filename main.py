@@ -705,13 +705,13 @@ def clavier_paiement(quote_id: int):
     return builder.as_markup()
 
 
-def clavier_mission_prestataire(mission_id: int, action: str):
+def clavier_mission_prestataire(mission_id: int, action: str, lang: str = "fr"):
     builder = InlineKeyboardBuilder()
     if action == "start":
-        builder.button(text="▶️ Démarrer la mission", callback_data=f"mission_start_{mission_id}")
+        builder.button(text=get_message("button_start_mission", lang), callback_data=f"mission_start_{mission_id}")
     elif action == "finish":
-        builder.button(text="✅ Mission terminée", callback_data=f"mission_finish_{mission_id}")
-    builder.button(text="🏠 Menu prestataire", callback_data="profil_prestataire")
+        builder.button(text=get_message("button_finish_mission", lang), callback_data=f"mission_finish_{mission_id}")
+    builder.button(text=get_message("button_provider_menu", lang), callback_data="profil_prestataire")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -1971,52 +1971,51 @@ async def mission_confirmer(callback: CallbackQuery, state: FSMContext):
 async def accepter_mission_prestataire(callback: CallbackQuery, state: FSMContext):
     mission_id = int(callback.data.replace("provider_accept_", "", 1))
     mission = get_mission_by_id(mission_id)
+    provider_lang = await get_provider_language(callback.from_user.id)
     if mission is None:
-        await callback.answer("Mission introuvable.", show_alert=True)
+        await callback.answer(get_message("provider_mission_not_found", provider_lang), show_alert=True)
         return
 
     await state.clear()
     await state.set_state(QuoteCreation.amount)
     await state.update_data(quote_mission_id=mission_id)
     await callback.message.edit_text(
-        f"✅ Mission <b>NXH-{mission_id:04d}</b> acceptée.\n\n"
-        "Envoyez le montant de votre devis.\n\n"
-        "Exemple : <b>35</b>",
+        get_message("quote_amount_prompt", provider_lang, mission_id=mission_id),
         parse_mode="HTML",
     )
-    provider_lang = await get_provider_language(callback.from_user.id)
     await callback.answer(get_message("toast_mission_accepted", provider_lang))
 
 
 @dp.message(QuoteCreation.amount)
 async def devis_montant_recu(message: Message, state: FSMContext):
+    lang = await get_provider_language(message.from_user.id)
     raw_amount = (message.text or "").replace(",", ".").strip()
     try:
         amount = float(raw_amount)
     except ValueError:
-        await message.answer("Veuillez envoyer un montant valide. Exemple : 35")
+        await message.answer(get_message("quote_amount_invalid", lang))
         return
 
     if amount <= 0:
-        await message.answer("Le montant doit être supérieur à zéro.")
+        await message.answer(get_message("quote_amount_positive", lang))
         return
 
     await state.update_data(quote_amount=amount)
     await state.set_state(QuoteCreation.currency)
     await message.answer(
-        "💱 Dans quelle devise est ce devis ?",
+        get_message("quote_currency_prompt", lang),
         reply_markup=clavier_devises_devis(),
     )
 
 
 @dp.callback_query(QuoteCreation.currency, F.data.in_(["quote_currency_usd", "quote_currency_cdf"]))
 async def devis_devise_recue(callback: CallbackQuery, state: FSMContext):
+    lang = await get_provider_language(callback.from_user.id)
     currency = "USD" if callback.data == "quote_currency_usd" else "CDF"
     await state.update_data(quote_currency=currency)
     await state.set_state(QuoteCreation.delay)
     await callback.message.edit_text(
-        "⏱️ En combien d'heures pouvez-vous réaliser ou commencer la mission ?\n\n"
-        "Exemple : <b>2</b>",
+        get_message("quote_delay_prompt", lang),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -2024,22 +2023,21 @@ async def devis_devise_recue(callback: CallbackQuery, state: FSMContext):
 
 @dp.message(QuoteCreation.delay)
 async def devis_delai_recu(message: Message, state: FSMContext):
+    lang = await get_provider_language(message.from_user.id)
     raw_delay = (message.text or "").strip()
     if not raw_delay.isdigit():
-        await message.answer("Veuillez envoyer un nombre d'heures. Exemple : 2")
+        await message.answer(get_message("quote_delay_invalid", lang))
         return
 
     delay_hours = int(raw_delay)
     if delay_hours <= 0:
-        await message.answer("Le délai doit être supérieur à zéro.")
+        await message.answer(get_message("quote_delay_positive", lang))
         return
 
     await state.update_data(quote_delay_hours=delay_hours)
     await state.set_state(QuoteCreation.message)
     await message.answer(
-        "💬 Ajoutez un court message pour le client.\n\n"
-        "Exemple : Je peux passer aujourd'hui avec le matériel nécessaire.\n\n"
-        "Envoyez <b>-</b> si vous ne voulez pas ajouter de message.",
+        get_message("quote_message_prompt", lang),
         parse_mode="HTML",
     )
 
@@ -2049,10 +2047,11 @@ async def devis_message_recu(message: Message, state: FSMContext):
     data = await state.get_data()
     provider = get_provider_by_telegram_id(message.from_user.id)
     mission = get_mission_by_id(data["quote_mission_id"])
+    provider_lang = await get_provider_language(message.from_user.id)
 
     if provider is None or mission is None:
         await state.clear()
-        await message.answer("Impossible de créer le devis : mission ou prestataire introuvable.")
+        await message.answer(get_message("quote_create_failed", provider_lang))
         return
 
     quote_message = (message.text or "").strip()
@@ -2103,18 +2102,18 @@ async def devis_message_recu(message: Message, state: FSMContext):
 
     await state.clear()
     await message.answer(
-        "✅ Devis envoyé au client.\n\n"
-        f"Référence devis : <b>DV-{quote_id:04d}</b>",
+        get_message("quote_sent", provider_lang, reference=f"DV-{quote_id:04d}"),
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(await get_provider_language(message.from_user.id)),
+        reply_markup=clavier_prestataire(provider_lang),
     )
 
 
 @dp.callback_query(F.data.startswith("provider_skip_"))
 async def passer_mission_prestataire(callback: CallbackQuery):
     mission_id = callback.data.replace("provider_skip_", "", 1)
+    provider_lang = await get_provider_language(callback.from_user.id)
     await callback.message.edit_text(
-        f"❌ Vous avez passé la mission <b>NXH-{int(mission_id):04d}</b>.",
+        get_message("provider_mission_skipped", provider_lang, mission_id=int(mission_id)),
         parse_mode="HTML",
     )
 
@@ -2123,16 +2122,11 @@ async def passer_mission_prestataire(callback: CallbackQuery):
     if provider is not None and provider["status"] == "paused" and provider["consecutive_ignored"] == 3:
         await bot.send_message(
             callback.from_user.id,
-            "⏸️ <b>Votre profil a été mis en pause</b>\n\n"
-            "Vous avez passé 3 missions d'affilée sans répondre. Pour éviter que "
-            "les clients attendent inutilement, votre disponibilité a été désactivée.\n\n"
-            "Repassez-vous disponible dès que vous voulez recommencer à recevoir "
-            "des propositions de mission — le compteur repart à zéro.",
+            get_message("provider_paused_message", provider_lang),
             parse_mode="HTML",
-            reply_markup=clavier_disponibilite("paused"),
+            reply_markup=clavier_disponibilite("paused", provider_lang),
         )
 
-    provider_lang = await get_provider_language(callback.from_user.id)
     await callback.answer(get_message("toast_mission_skipped", provider_lang))
 
 
@@ -2230,7 +2224,7 @@ async def paiement_mobile_money(callback: CallbackQuery):
             currency=quote["currency"],
         ),
         parse_mode="HTML",
-        reply_markup=clavier_mission_prestataire(quote["mission_id"], "start"),
+            reply_markup=clavier_mission_prestataire(quote["mission_id"], "start", provider_lang),
     )
     await callback.answer(get_message("toast_payment_confirmed", client_lang))
 
@@ -2244,12 +2238,12 @@ async def prestataire_demarre_mission(callback: CallbackQuery):
         await callback.answer(str(error), show_alert=True)
         return
 
+    provider_lang = await get_provider_language(callback.from_user.id)
     await _safe_backend_call(sync_mission_status_to_backend(mission_id, "in_progress"))
     await callback.message.edit_text(
-        f"▶️ Mission <b>NXH-{mission_id:04d}</b> démarrée.\n\n"
-        "Quand le travail est terminé, appuyez sur le bouton ci-dessous.",
+        get_message("provider_mission_started", provider_lang, mission_id=mission_id),
         parse_mode="HTML",
-        reply_markup=clavier_mission_prestataire(mission_id, "finish"),
+        reply_markup=clavier_mission_prestataire(mission_id, "finish", provider_lang),
     )
     client_lang = await get_user_language(mission["client_telegram_id"])
     await bot.send_message(
@@ -2257,7 +2251,6 @@ async def prestataire_demarre_mission(callback: CallbackQuery):
         get_message("mission_started", client_lang, mission_id=mission_id),
         parse_mode="HTML",
     )
-    provider_lang = await get_provider_language(callback.from_user.id)
     await callback.answer(get_message("toast_mission_started", provider_lang))
 
 
@@ -2273,8 +2266,7 @@ async def prestataire_termine_mission(callback: CallbackQuery):
     await _safe_backend_call(sync_mission_status_to_backend(mission_id, "awaiting_confirmation"))
     provider_lang = await get_provider_language(callback.from_user.id)
     await callback.message.edit_text(
-        f"✅ Mission <b>NXH-{mission_id:04d}</b> marquée comme terminée.\n\n"
-        "Le client doit maintenant confirmer pour libérer le paiement.",
+        get_message("provider_mission_finished", provider_lang, mission_id=mission_id),
         parse_mode="HTML",
         reply_markup=clavier_prestataire(provider_lang),
     )
@@ -2448,7 +2440,7 @@ async def paiement_wallet(callback: CallbackQuery):
             currency=quote["currency"],
         ),
         parse_mode="HTML",
-        reply_markup=clavier_mission_prestataire(quote["mission_id"], "start"),
+        reply_markup=clavier_mission_prestataire(quote["mission_id"], "start", provider_lang),
     )
     await callback.answer(get_message("toast_wallet_payment_confirmed", client_lang))
 
