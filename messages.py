@@ -200,6 +200,24 @@ MESSAGES = {
             "ou contactez-nous directement.\n\n"
             "📱 Contactez-nous : +243 852 638 209"
         ),
+        "help_title": "❓ Aide & Support",
+        "help_faq_1_q": "Comment ça marche ?",
+        "help_faq_1_a": (
+            "Décrivez votre besoin, recevez des devis de prestataires vérifiés, "
+            "payez en toute sécurité via l'escrow NEXIS HUB — l'argent n'est "
+            "libéré au prestataire qu'après votre confirmation."
+        ),
+        "help_faq_2_q": "Le paiement est-il sécurisé ?",
+        "help_faq_2_a": (
+            "Oui. Vos fonds restent bloqués tant que vous n'avez pas confirmé "
+            "que la mission est bien terminée."
+        ),
+        "help_faq_3_q": "Un problème avec une mission ?",
+        "help_faq_3_a": (
+            "Utilisez le bouton de signalement depuis la mission concernée, "
+            "ou contactez-nous directement."
+        ),
+        "help_contact": "📱 Contactez-nous : +243 852 638 209",
         "media_voice_added": "🎙️ Note vocale ajoutée ({count}).",
         "media_photo_added": "📷 Photo ajoutée ({count}).",
         "media_text_added": "✏️ Texte ajouté.",
@@ -586,6 +604,18 @@ MESSAGES = {
             "to benga biso directement.\n\n"
             "📱 Benga biso : +243 852 638 209"
         ),
+        "help_title": "❓ Lisungi & Support",
+        "help_faq_1_q": "Ezali kosala ndenge nini ?",
+        "help_faq_1_a": (
+            "Limbola bosengi na yo, zwa ba devis ya ba prestataire ba vérifié, "
+            "futa na sécurité na système escrow ya NEXIS HUB — mbongo ekokoma "
+            "epai ya mosali kaka soki ondimi mission esili."
+        ),
+        "help_faq_2_q": "Paiement ezali sûr ?",
+        "help_faq_2_a": "Iyo. Mbongo na yo ekotikala kino okondima que mission esili malamu.",
+        "help_faq_3_q": "Problème na mission ?",
+        "help_faq_3_a": "Salela bouton ya kosakola litige na mission wana, to benga biso directement.",
+        "help_contact": "📱 Benga biso : +243 852 638 209",
         "media_voice_added": "🎙️ Note vocale ebakisami ({count}).",
         "media_photo_added": "📷 Photo ebakisami ({count}).",
         "media_text_added": "✏️ Texte ebakisami.",
@@ -846,6 +876,18 @@ MESSAGES = {
             "or contact us directly.\n\n"
             "📱 Contact us: +243 852 638 209"
         ),
+        "help_title": "❓ Help & Support",
+        "help_faq_1_q": "How does it work?",
+        "help_faq_1_a": (
+            "Describe your need, receive quotes from verified providers, "
+            "pay securely through the NEXIS HUB escrow — funds are only "
+            "released to the provider after your confirmation."
+        ),
+        "help_faq_2_q": "Is payment secure?",
+        "help_faq_2_a": "Yes. Your funds stay held until you confirm the mission is properly completed.",
+        "help_faq_3_q": "Problem with a mission?",
+        "help_faq_3_a": "Use the report button on the mission in question, or contact us directly.",
+        "help_contact": "📱 Contact us: +243 852 638 209",
         "media_voice_added": "🎙️ Voice note added ({count}).",
         "media_photo_added": "📷 Photo added ({count}).",
         "media_text_added": "✏️ Text added.",

@@ -9,7 +9,17 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import CallbackQuery, KeyboardButton, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove, WebAppInfo
+from aiogram.types import (
+    CallbackQuery,
+    InputRichBlockDetails,
+    InputRichBlockParagraph,
+    InputRichMessage,
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    WebAppInfo,
+)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from dotenv import load_dotenv
 from aiogram.exceptions import TelegramBadRequest
@@ -2635,14 +2645,39 @@ async def afficher_historique_client(callback: CallbackQuery):
     await callback.answer()
 
 
+def build_help_rich_message(lang: str = "fr") -> InputRichMessage:
+    faq_items = [
+        ("help_faq_1_q", "help_faq_1_a"),
+        ("help_faq_2_q", "help_faq_2_a"),
+        ("help_faq_3_q", "help_faq_3_a"),
+    ]
+    blocks = [InputRichBlockParagraph(text=get_message("help_title", lang))]
+    for index, (question_key, answer_key) in enumerate(faq_items):
+        blocks.append(
+            InputRichBlockDetails(
+                summary=get_message(question_key, lang),
+                blocks=[InputRichBlockParagraph(text=get_message(answer_key, lang))],
+                is_open=(index == 0),
+            )
+        )
+    blocks.append(InputRichBlockParagraph(text=get_message("help_contact", lang)))
+    return InputRichMessage(blocks=blocks)
+
+
 @dp.callback_query(F.data == "client_aide")
 async def afficher_aide_client(callback: CallbackQuery):
     lang = await get_user_language(callback.from_user.id)
-    await callback.message.edit_text(
-        get_message("help_content", lang),
-        parse_mode="HTML",
-        reply_markup=clavier_client(lang),
-    )
+    try:
+        await callback.message.edit_text(
+            rich_message=build_help_rich_message(lang),
+            reply_markup=clavier_client(lang),
+        )
+    except Exception:
+        await callback.message.edit_text(
+            get_message("help_content", lang),
+            parse_mode="HTML",
+            reply_markup=clavier_client(lang),
+        )
     await callback.answer()
 
 
