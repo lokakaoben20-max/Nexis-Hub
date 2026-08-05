@@ -662,13 +662,13 @@ def clavier_prestataire(lang: str = "fr"):
     return builder.as_markup()
 
 
-def clavier_disponibilite(status: str):
+def clavier_disponibilite(status: str, lang: str = "fr"):
     builder = InlineKeyboardBuilder()
     if status == "available":
-        builder.button(text="⏸️ Me rendre indisponible", callback_data="provider_status_offline")
+        builder.button(text=get_message("button_provider_unavailable", lang), callback_data="provider_status_offline")
     else:
-        builder.button(text="✅ Me rendre disponible", callback_data="provider_status_available")
-    builder.button(text="⬅️ Retour", callback_data="profil_prestataire")
+        builder.button(text=get_message("button_provider_available", lang), callback_data="provider_status_available")
+    builder.button(text=button_label("back", lang), callback_data="profil_prestataire")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -760,24 +760,24 @@ def clavier_services_prestataire(selected_services=None):
     return builder.as_markup()
 
 
-def clavier_modifier_services(selected_services=None):
+def clavier_modifier_services(selected_services=None, lang: str = "fr"):
     selected_services = selected_services or []
     builder = InlineKeyboardBuilder()
     for key, label in SERVICES.items():
         prefix = "✅" if key in selected_services else "▫️"
         builder.button(text=f"{prefix} {label}", callback_data=f"edit_service_{key}")
-    builder.button(text="✅ Enregistrer mes services", callback_data="edit_services_done")
-    builder.button(text="➕ Proposer un service manquant", callback_data="prest_missing_service")
-    builder.button(text="⬅️ Retour", callback_data="profil_prestataire")
+    builder.button(text=get_message("button_save_services", lang), callback_data="edit_services_done")
+    builder.button(text=get_message("button_propose_service", lang), callback_data="prest_missing_service")
+    builder.button(text=button_label("back", lang), callback_data="profil_prestataire")
     builder.adjust(1)
     return builder.as_markup()
 
 
-def clavier_services_actions():
+def clavier_services_actions(lang: str = "fr"):
     builder = InlineKeyboardBuilder()
-    builder.button(text="✏️ Modifier mes services", callback_data="prest_edit_services")
-    builder.button(text="➕ Proposer un service manquant", callback_data="prest_missing_service")
-    builder.button(text="⬅️ Retour", callback_data="profil_prestataire")
+    builder.button(text=get_message("button_edit_services", lang), callback_data="prest_edit_services")
+    builder.button(text=get_message("button_propose_service", lang), callback_data="prest_missing_service")
+    builder.button(text=button_label("back", lang), callback_data="profil_prestataire")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -1568,16 +1568,19 @@ async def terminer_inscription_prestataire(callback: CallbackQuery, state: FSMCo
 @dp.callback_query(F.data == "prest_dispo")
 async def disponibilite_prestataire(callback: CallbackQuery):
     provider = get_provider_by_telegram_id(callback.from_user.id)
+    lang = await get_provider_language(callback.from_user.id)
     if provider is None:
-        await callback.answer("Créez d'abord votre profil prestataire.", show_alert=True)
+        await callback.answer(get_message("provider_profile_required", lang), show_alert=True)
         return
 
-    status_label = "Disponible" if provider["status"] == "available" else "Indisponible"
+    status_label = get_message(
+        "provider_status_available" if provider["status"] == "available" else "provider_status_offline",
+        lang,
+    )
     await callback.message.edit_text(
-        "⚙️ <b>Disponibilité</b>\n\n"
-        f"Statut actuel : <b>{status_label}</b>",
+        get_message("provider_availability_title", lang, status=status_label),
         parse_mode="HTML",
-        reply_markup=clavier_disponibilite(provider["status"]),
+        reply_markup=clavier_disponibilite(provider["status"], lang),
     )
     await callback.answer()
 
@@ -1590,22 +1593,25 @@ async def changer_disponibilite(callback: CallbackQuery):
     if status == "available":
         reset_consecutive_ignored(callback.from_user.id)
         await _safe_backend_call(sync_provider_ignored_reset_to_backend(callback.from_user.id))
-    status_label = "Disponible" if status == "available" else "Indisponible"
-    await callback.message.edit_text(
-        "⚙️ <b>Disponibilité mise à jour</b>\n\n"
-        f"Statut actuel : <b>{status_label}</b>",
-        parse_mode="HTML",
-        reply_markup=clavier_disponibilite(status),
-    )
     provider_lang = await get_provider_language(callback.from_user.id)
+    status_label = get_message(
+        "provider_status_available" if status == "available" else "provider_status_offline",
+        provider_lang,
+    )
+    await callback.message.edit_text(
+        get_message("provider_availability_updated", provider_lang, status=status_label),
+        parse_mode="HTML",
+        reply_markup=clavier_disponibilite(status, provider_lang),
+    )
     await callback.answer(get_message("toast_status_updated", provider_lang))
 
 
 @dp.callback_query(F.data == "prest_services")
 async def afficher_services_prestataire(callback: CallbackQuery):
     provider = get_provider_by_telegram_id(callback.from_user.id)
+    lang = await get_provider_language(callback.from_user.id)
     if provider is None:
-        await callback.answer("Créez d'abord votre profil prestataire.", show_alert=True)
+        await callback.answer(get_message("provider_profile_required", lang), show_alert=True)
         return
 
     try:
@@ -1621,17 +1627,19 @@ async def afficher_services_prestataire(callback: CallbackQuery):
     ]
 
     text = (
-        "🧰 <b>Mes services</b>\n\n"
-        "<b>Services actifs :</b>\n"
-        + ("\n".join(f"• {label}" for label in service_labels) if service_labels else "Aucun service sélectionné")
+        get_message("provider_services_title", lang)
+        + "\n\n"
+        + get_message("provider_active_services", lang)
+        + "\n"
+        + ("\n".join(f"• {label}" for label in service_labels) if service_labels else get_message("provider_no_services", lang))
     )
     if request_lines:
-        text += "\n\n<b>Services proposés à Nexis :</b>\n" + "\n".join(request_lines)
+        text += "\n\n" + get_message("provider_suggested_services", lang) + "\n" + "\n".join(request_lines)
 
     await callback.message.edit_text(
         text,
         parse_mode="HTML",
-        reply_markup=clavier_services_actions(),
+        reply_markup=clavier_services_actions(lang),
     )
     await callback.answer()
 
@@ -1639,8 +1647,9 @@ async def afficher_services_prestataire(callback: CallbackQuery):
 @dp.callback_query(F.data == "prest_edit_services")
 async def modifier_services_prestataire(callback: CallbackQuery, state: FSMContext):
     provider = get_provider_by_telegram_id(callback.from_user.id)
+    lang = await get_provider_language(callback.from_user.id)
     if provider is None:
-        await callback.answer("Créez d'abord votre profil prestataire.", show_alert=True)
+        await callback.answer(get_message("provider_profile_required", lang), show_alert=True)
         return
 
     try:
@@ -1651,10 +1660,9 @@ async def modifier_services_prestataire(callback: CallbackQuery, state: FSMConte
     await state.set_state(ProviderServicesEdit.services)
     await state.update_data(provider_services_edit=selected_services)
     await callback.message.edit_text(
-        "🧰 <b>Modifier mes services</b>\n\n"
-        "Cochez ou décochez les services que vous proposez, puis enregistrez.",
+        get_message("provider_edit_services", lang),
         parse_mode="HTML",
-        reply_markup=clavier_modifier_services(selected_services),
+        reply_markup=clavier_modifier_services(selected_services, lang),
     )
     await callback.answer()
 
@@ -1671,7 +1679,8 @@ async def choisir_service_modification(callback: CallbackQuery, state: FSMContex
         selected.append(service_key)
 
     await state.update_data(provider_services_edit=selected)
-    await callback.message.edit_reply_markup(reply_markup=clavier_modifier_services(selected))
+    lang = await get_provider_language(callback.from_user.id)
+    await callback.message.edit_reply_markup(reply_markup=clavier_modifier_services(selected, lang))
     await callback.answer()
 
 
@@ -1679,17 +1688,18 @@ async def choisir_service_modification(callback: CallbackQuery, state: FSMContex
 async def enregistrer_services_modifies(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     selected = data.get("provider_services_edit", [])
+    provider_lang = await get_provider_language(callback.from_user.id)
     if not selected:
-        await callback.answer("Choisissez au moins un service.", show_alert=True)
+        await callback.answer(get_message("provider_select_service", provider_lang), show_alert=True)
         return
 
     update_provider_services(callback.from_user.id, selected)
     await _safe_backend_call(sync_provider_services_to_backend(callback.from_user.id, selected))
     await state.clear()
-    provider_lang = await get_provider_language(callback.from_user.id)
     service_labels = [SERVICES.get(service, service) for service in selected]
     await callback.message.edit_text(
-        "✅ <b>Services mis à jour.</b>\n\n"
+        get_message("provider_services_updated", provider_lang)
+        + "\n\n"
         + "\n".join(f"• {label}" for label in service_labels),
         parse_mode="HTML",
         reply_markup=clavier_prestataire(provider_lang),
@@ -1700,16 +1710,15 @@ async def enregistrer_services_modifies(callback: CallbackQuery, state: FSMConte
 @dp.callback_query(F.data == "prest_missing_service")
 async def proposer_service_manquant(callback: CallbackQuery, state: FSMContext):
     provider = get_provider_by_telegram_id(callback.from_user.id)
+    lang = await get_provider_language(callback.from_user.id)
     if provider is None:
-        await callback.answer("Créez d'abord votre profil prestataire.", show_alert=True)
+        await callback.answer(get_message("provider_profile_required", lang), show_alert=True)
         return
 
     await state.clear()
     await state.set_state(ProviderServiceRequest.service_name)
     await callback.message.edit_text(
-        "➕ <b>Service manquant</b>\n\n"
-        "Quel service souhaitez-vous proposer à Nexis ?\n\n"
-        "Exemple : Réparation panneaux solaires",
+        get_message("provider_missing_service_prompt", lang),
         parse_mode="HTML",
     )
     await callback.answer()
@@ -1718,23 +1727,24 @@ async def proposer_service_manquant(callback: CallbackQuery, state: FSMContext):
 @dp.message(ProviderServiceRequest.service_name)
 async def recevoir_nom_service_manquant(message: Message, state: FSMContext):
     service_name = (message.text or "").strip()
+    lang = await get_provider_language(message.from_user.id)
     if len(service_name) < 3:
-        await message.answer("Veuillez envoyer un nom de service plus précis.")
+        await message.answer(get_message("provider_missing_service_name_invalid", lang))
         return
 
     await state.update_data(missing_service_name=service_name)
     await state.set_state(ProviderServiceRequest.description)
     await message.answer(
-        "📝 Décrivez ce service pour aider Nexis à l'évaluer.\n\n"
-        "Précisez ce que vous faites, le type de client concerné, et si un déplacement est nécessaire."
+        get_message("provider_missing_service_description_prompt", lang)
     )
 
 
 @dp.message(ProviderServiceRequest.description)
 async def recevoir_description_service_manquant(message: Message, state: FSMContext):
     description = (message.text or "").strip()
+    lang = await get_provider_language(message.from_user.id)
     if len(description) < 10:
-        await message.answer("Ajoutez un peu plus de détails pour que Nexis comprenne bien le service.")
+        await message.answer(get_message("provider_missing_service_description_invalid", lang))
         return
 
     data = await state.get_data()
@@ -1745,13 +1755,14 @@ async def recevoir_description_service_manquant(message: Message, state: FSMCont
     )
     await state.clear()
     await message.answer(
-        "✅ <b>Votre proposition de service a été enregistrée.</b>\n\n"
-        f"Référence : <b>SRV-{request_id:04d}</b>\n"
-        f"Service proposé : <b>{html.escape(data['missing_service_name'])}</b>\n\n"
-        "Nexis va l'examiner. Si le service est accepté, il pourra être ajouté au catalogue. "
-        "Si ce n'est pas possible, vous recevrez une réponse indiquant que Nexis ne peut pas encore le prendre en charge.",
+        get_message(
+            "provider_missing_service_created",
+            lang,
+            reference=f"SRV-{request_id:04d}",
+            service=html.escape(data["missing_service_name"]),
+        ),
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(await get_provider_language(message.from_user.id)),
+        reply_markup=clavier_prestataire(lang),
     )
 
 
