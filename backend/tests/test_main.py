@@ -233,8 +233,8 @@ def test_payment_amounts_use_urgent_commission_rate():
 
     normal = calculate_payment_amounts(100.0, "USD", urgent=False)
     assert normal["commission_amount"] == 10.0
-    assert normal["tola_fee"] == 1.50
-    assert normal["total_client"] == 101.50
+    assert normal["tola_fee"] == 0.00
+    assert normal["total_client"] == 100.00
     assert normal["net_provider"] == 90.0
 
     urgent = calculate_payment_amounts(100.0, "USD", urgent=True)
@@ -242,12 +242,19 @@ def test_payment_amounts_use_urgent_commission_rate():
     assert urgent["net_provider"] == 85.0
 
 
-def test_cdf_tola_fee_follows_the_live_exchange_rate(monkeypatch):
-    import backend.app.crud as crud
+def test_client_pays_exactly_the_quote_amount_in_both_currencies():
+    """Frais Tola supprimés : le total client == le montant du devis, USD comme CDF."""
+    from backend.app.crud import calculate_payment_amounts
 
-    monkeypatch.setattr(crud, "get_usd_to_cdf_rate", lambda: 2000.0)
-    amounts = crud.calculate_payment_amounts(100.0, "CDF", urgent=False)
-    assert amounts["tola_fee"] == 3000.0  # 1.50 USD * 2000
+    usd = calculate_payment_amounts(100.0, "USD", urgent=False)
+    cdf = calculate_payment_amounts(250000.0, "CDF", urgent=False)
+
+    assert usd["total_client"] == 100.0
+    assert cdf["total_client"] == 250000.0
+    assert usd["tola_fee"] == 0.0
+    assert cdf["tola_fee"] == 0.0
+    assert usd["aggregator_fee"] == 0.0
+    assert cdf["aggregator_fee"] == 0.0
 
 
 def test_mission_cannot_start_before_escrow_payment(tmp_path, monkeypatch):
@@ -322,7 +329,7 @@ def test_wallet_payment_succeeds_and_debits_balance(tmp_path, monkeypatch):
         assert response.json()["mobile_money_ref"] == f"WLT-{quote_id:04d}"
 
         profile = test_client.get("/api/profile/42").json()
-        assert profile["client"]["wallet_balance_usd"] == 98.5  # 200 - (100 + 1.50 tola_fee)
+        assert profile["client"]["wallet_balance_usd"] == 100.0  # 200 - 100 (devis seul, plus de frais Tola)
 
 
 def test_consecutive_ignored_auto_pauses_provider_after_three(tmp_path, monkeypatch):

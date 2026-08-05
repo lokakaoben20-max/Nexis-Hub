@@ -13,11 +13,13 @@ from aiogram.types import (
     CallbackQuery,
     InputRichBlockDetails,
     InputRichBlockParagraph,
+    InputRichBlockTable,
     InputRichMessage,
     KeyboardButton,
     Message,
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
+    RichBlockTableCell,
     WebAppInfo,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -2129,8 +2131,7 @@ async def client_accepte_devis(callback: CallbackQuery):
     quote = accept_quote(quote_id)
     if backend_quote_id is not None:
         await _safe_backend_call(sync_quote_accept_to_backend(backend_quote_id))
-    tola_fee = 1.50 if quote["currency"] == "USD" else 4000.00
-    total_client = quote["amount"] + tola_fee
+    total_client = quote["amount"]
 
     client_lang = await get_user_language(callback.from_user.id)
     client_user = get_user_by_telegram_id(callback.from_user.id)
@@ -2140,21 +2141,34 @@ async def client_accepte_devis(callback: CallbackQuery):
             client_user["wallet_balance_usd"] if quote["currency"] == "USD" else client_user["wallet_balance_cdf"]
         )
 
-    await callback.message.edit_text(
-        get_message(
-            "quote_accept_confirmation",
-            client_lang,
-            mission_id=quote["mission_id"],
-            prestataire=html.escape(quote["provider_name"]),
-            devis=quote["amount"],
-            frais=tola_fee,
-            total=total_client,
-            currency=quote["currency"],
-            wallet_balance=wallet_balance,
-        ),
-        parse_mode="HTML",
-        reply_markup=clavier_paiement(quote_id),
-    )
+    try:
+        await callback.message.edit_text(
+            rich_message=build_quote_accept_rich_message(
+                client_lang,
+                mission_id=quote["mission_id"],
+                prestataire=quote["provider_name"],
+                devis=quote["amount"],
+                total=total_client,
+                currency=quote["currency"],
+                wallet_balance=wallet_balance,
+            ),
+            reply_markup=clavier_paiement(quote_id),
+        )
+    except Exception:
+        await callback.message.edit_text(
+            get_message(
+                "quote_accept_confirmation",
+                client_lang,
+                mission_id=quote["mission_id"],
+                prestataire=html.escape(quote["provider_name"]),
+                devis=quote["amount"],
+                total=total_client,
+                currency=quote["currency"],
+                wallet_balance=wallet_balance,
+            ),
+            parse_mode="HTML",
+            reply_markup=clavier_paiement(quote_id),
+        )
 
     provider_lang = await get_provider_language(quote["provider_telegram_id"])
     await bot.send_message(
@@ -2186,7 +2200,6 @@ async def paiement_mobile_money(callback: CallbackQuery):
             mission_id=quote["mission_id"],
             ref=payment["mobile_money_ref"],
             total=payment["total_client"],
-            frais=payment["tola_fee"],
             currency=quote["currency"],
         ),
         parse_mode="HTML",
@@ -2395,7 +2408,6 @@ async def paiement_wallet(callback: CallbackQuery):
             mission_id=quote["mission_id"],
             ref=payment["mobile_money_ref"],
             total=payment["total_client"],
-            frais=payment["tola_fee"],
             currency=quote["currency"],
         ),
         parse_mode="HTML",
@@ -2645,6 +2657,10 @@ async def afficher_historique_client(callback: CallbackQuery):
     await callback.answer()
 
 
+def _rich_cell(text: str, header: bool = False) -> RichBlockTableCell:
+    return RichBlockTableCell(text=text, is_header=header, align="left", valign="middle")
+
+
 def build_help_rich_message(lang: str = "fr") -> InputRichMessage:
     faq_items = [
         ("help_faq_1_q", "help_faq_1_a"),
@@ -2662,6 +2678,67 @@ def build_help_rich_message(lang: str = "fr") -> InputRichMessage:
         )
     blocks.append(InputRichBlockParagraph(text=get_message("help_contact", lang)))
     return InputRichMessage(blocks=blocks)
+
+
+def build_quote_accept_rich_message(
+    lang: str,
+    mission_id: int,
+    prestataire: str,
+    devis: float,
+    total: float,
+    currency: str,
+    wallet_balance: float,
+) -> InputRichMessage:
+    rows = [
+        (get_message("table_row_provider", lang), prestataire),
+        (get_message("table_row_quote", lang), f"{devis:.2f} {currency}"),
+        (get_message("table_row_total", lang), f"{total:.2f} {currency}"),
+        (get_message("table_row_wallet", lang), f"{wallet_balance:.2f} {currency}"),
+    ]
+    table = InputRichBlockTable(
+        cells=[
+            [
+                _rich_cell(get_message("table_col_detail", lang), header=True),
+                _rich_cell(get_message("table_col_amount", lang), header=True),
+            ],
+            *[[_rich_cell(label), _rich_cell(value)] for label, value in rows],
+        ],
+        is_bordered=True,
+        is_striped=True,
+    )
+    return InputRichMessage(
+        blocks=[
+            InputRichBlockParagraph(text=get_message("quote_accept_title", lang, mission_id=mission_id)),
+            table,
+            InputRichBlockParagraph(text=get_message("quote_accept_choose_payment", lang)),
+        ]
+    )
+
+
+def build_history_rich_message(lang: str, missions: list) -> InputRichMessage:
+    header = [
+        _rich_cell(get_message("table_col_mission", lang), header=True),
+        _rich_cell(get_message("table_col_service", lang), header=True),
+        _rich_cell(get_message("table_col_status", lang), header=True),
+        _rich_cell(get_message("table_col_payment", lang), header=True),
+    ]
+    rows = []
+    for mission in missions:
+        rows.append(
+            [
+                _rich_cell(f"NXH-{mission['id']:04d}"),
+                _rich_cell(SERVICES.get(mission["service"], mission["service"])),
+                _rich_cell(STATUS_LABELS.get(mission["status"], mission["status"] or "")),
+                _rich_cell(PAYMENT_STATUS_LABELS.get(mission["payment_status"], mission["payment_status"] or "")),
+            ]
+        )
+    table = InputRichBlockTable(cells=[header, *rows], is_bordered=True, is_striped=True)
+    return InputRichMessage(
+        blocks=[
+            InputRichBlockParagraph(text=get_message("mission_history_title", lang)),
+            table,
+        ]
+    )
 
 
 @dp.callback_query(F.data == "client_aide")

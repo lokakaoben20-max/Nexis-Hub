@@ -2,7 +2,6 @@ import json
 import sqlite3
 from pathlib import Path
 
-from exchange_rates import get_usd_to_cdf_rate
 
 
 DB_PATH = Path(__file__).with_name("nexis_hub.db")
@@ -888,16 +887,18 @@ def reject_quote(quote_id: int):
 
 
 def calculate_payment_amounts(amount: float, currency: str, urgent: bool = False):
+    # Les frais Tola ont été supprimés (service indisponible en RDC) : le client
+    # ne paie plus que le montant du devis. Les clés tola_fee/aggregator_fee sont
+    # conservées à 0.00 car les colonnes correspondantes existent toujours en base
+    # et gardent l'historique des missions payées avant cette suppression.
     commission_rate = 0.15 if urgent else 0.10
     commission_amount = round(amount * commission_rate, 2)
-    tola_fee_usd = 1.50
-    tola_fee = tola_fee_usd if currency == "USD" else round(tola_fee_usd * get_usd_to_cdf_rate(), 2)
-    total_client = round(amount + tola_fee, 2)
+    total_client = round(amount, 2)
     net_provider = round(amount - commission_amount, 2)
     return {
         "commission_amount": commission_amount,
-        "tola_fee": tola_fee,
-        "aggregator_fee": tola_fee,
+        "tola_fee": 0.00,
+        "aggregator_fee": 0.00,
         "total_client": total_client,
         "net_provider": net_provider,
     }

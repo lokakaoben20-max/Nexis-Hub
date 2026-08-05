@@ -15,20 +15,23 @@ def test_payment_amounts_are_consistent_for_urgent_and_standard_missions():
 
     assert standard["commission_amount"] == 10.0
     assert urgent["commission_amount"] == 15.0
-    assert standard["total_client"] == 101.5
-    assert urgent["total_client"] == 101.5
+    assert standard["total_client"] == 100.0
+    assert urgent["total_client"] == 100.0
     assert standard["net_provider"] == 90.0
     assert urgent["net_provider"] == 85.0
 
 
-def test_cdf_tola_fee_follows_the_live_exchange_rate(monkeypatch):
-    monkeypatch.setattr(db, "get_usd_to_cdf_rate", lambda: 2000.0)
-    amounts = calculate_payment_amounts(100.0, "CDF", urgent=False)
-    assert amounts["tola_fee"] == 3000.0  # 1.50 USD * 2000
+def test_client_pays_exactly_the_quote_amount_in_both_currencies():
+    """Les frais Tola ayant été supprimés, le total client == le montant du devis."""
+    usd = calculate_payment_amounts(100.0, "USD", urgent=False)
+    cdf = calculate_payment_amounts(250000.0, "CDF", urgent=False)
 
-    monkeypatch.setattr(db, "get_usd_to_cdf_rate", lambda: 2500.0)
-    amounts = calculate_payment_amounts(100.0, "CDF", urgent=False)
-    assert amounts["tola_fee"] == 3750.0  # 1.50 USD * 2500
+    assert usd["total_client"] == 100.0
+    assert cdf["total_client"] == 250000.0
+    assert usd["tola_fee"] == 0.0
+    assert cdf["tola_fee"] == 0.0
+    assert usd["aggregator_fee"] == 0.0
+    assert cdf["aggregator_fee"] == 0.0
 
 
 def test_wallet_payment_debits_client_and_marks_mission_paid(tmp_path):
@@ -71,6 +74,6 @@ def test_wallet_payment_debits_client_and_marks_mission_paid(tmp_path):
         user_row = conn.execute("SELECT wallet_balance_usd FROM users WHERE telegram_id = ?", (1001,)).fetchone()
         mission_row = conn.execute("SELECT payment_status, status FROM missions WHERE id = ?", (mission_id,)).fetchone()
 
-    assert user_row[0] == 148.5
+    assert user_row[0] == 150.0  # 200 - 50 (devis seul, plus de frais Tola)
     assert mission_row[0] == "paid_escrow"
     assert mission_row[1] == "confirmed"

@@ -2,7 +2,6 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotTransaction, BotUser
-from exchange_rates import get_usd_to_cdf_rate
 
 MODULE_B_SERVICES = {"service_plomberie", "service_electricite", "service_climatisation"}
 BADGE_SCORES = {"partner": 30, "expert": 20, "premium": 10, "verified": 5, "pending": 0}
@@ -262,16 +261,17 @@ def reject_quote(db: Session, quote_id: int) -> BotQuote | None:
 
 
 def calculate_payment_amounts(amount: float, currency: str, urgent: bool = False) -> dict:
+    # Miroir de db.calculate_payment_amounts : frais Tola supprimés (service
+    # indisponible en RDC). Clés conservées à 0.00, les colonnes bot_missions /
+    # bot_transactions existent toujours et gardent l'historique.
     commission_rate = 0.15 if urgent else 0.10
     commission_amount = round(amount * commission_rate, 2)
-    tola_fee_usd = 1.50
-    tola_fee = tola_fee_usd if currency == "USD" else round(tola_fee_usd * get_usd_to_cdf_rate(), 2)
-    total_client = round(amount + tola_fee, 2)
+    total_client = round(amount, 2)
     net_provider = round(amount - commission_amount, 2)
     return {
         "commission_amount": commission_amount,
-        "tola_fee": tola_fee,
-        "aggregator_fee": tola_fee,
+        "tola_fee": 0.00,
+        "aggregator_fee": 0.00,
         "total_client": total_client,
         "net_provider": net_provider,
     }
