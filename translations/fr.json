@@ -87,6 +87,7 @@
   "rate_comment_prompt": "✍️ Voulez-vous ajouter un commentaire ?\n\nEnvoyez votre commentaire, ou appuyez sur le bouton pour l'envoyer sans commentaire.",
   "rate_skipped": "👍 D'accord, merci quand même d'avoir utilisé NEXIS HUB !",
   "rate_thanks": "🙏 Merci pour votre évaluation !",
+  "rate_save_failed": "⚠️ <b>Votre évaluation n'a pas pu être enregistrée.</b>\n\nVérifiez votre connexion et réessayez dans un instant.",
   "provider_menu": "🔧 <b>Tableau de bord — {prenom}</b>\n\n🏅 Badge : <b>{badge}</b>\n⭐ Note : <b>{note}/5</b>\n📊 Missions : <b>{missions}</b>\n🟢 Statut : <b>{statut}</b>",
   "new_mission_alert": "🔔 <b>Nouvelle demande !</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nService : <b>{service}</b>\nCommune : <b>{commune}</b>\nUrgence : <b>{urgent}</b>\n\n⏰ Vous avez <b>20 minutes</b> pour répondre.",
   "quote_accepted_provider": "🎉 <b>Votre devis a été accepté !</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nClient : <b>{client}</b>\nCommune : <b>{commune}</b>\n\n━━━━━━━━━━━━━━━━━━━━━━━━\nMontant brut     : <b>{brut} {currency}</b>\nCommission NEXIS : <b>{commission} {currency}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━\n💳 Votre net     : <b>{net} {currency}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n🛡 <i>Ne demandez jamais au client de payer en dehors du bot.</i>",

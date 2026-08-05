@@ -254,3 +254,37 @@ def test_parse_quote_callback_ids_without_backend_id():
 
     assert local_id == 5
     assert backend_id is None
+
+
+class DummyState:
+    def __init__(self):
+        self.cleared = False
+
+    async def clear(self):
+        self.cleared = True
+
+
+def test_finalize_review_clears_state_after_backend_success(monkeypatch):
+    async def save_review(*args, **kwargs):
+        return {"status": "ok"}
+
+    monkeypatch.setattr(main, "sync_review_to_backend", save_review)
+    state = DummyState()
+
+    result = asyncio.run(main._finalize_review(42, {"rating_mission_id": 1, "rating_value": 5}, "Excellent", state))
+
+    assert result == {"status": "ok"}
+    assert state.cleared is True
+
+
+def test_finalize_review_keeps_state_when_backend_is_unavailable(monkeypatch):
+    async def save_review(*args, **kwargs):
+        raise RuntimeError("backend unreachable")
+
+    monkeypatch.setattr(main, "sync_review_to_backend", save_review)
+    state = DummyState()
+
+    result = asyncio.run(main._finalize_review(42, {"rating_mission_id": 1, "rating_value": 5}, None, state))
+
+    assert result is None
+    assert state.cleared is False

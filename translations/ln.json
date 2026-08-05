@@ -95,6 +95,7 @@
   "rate_comment_prompt": "✍️ Olingi kobakisa commentaire ?\n\nTinda commentaire na yo, to finá bouton mpo na kotinda sans commentaire.",
   "rate_skipped": "👍 Malamu, matondi mpo osaleli NEXIS HUB !",
   "rate_thanks": "🙏 Matondi mpo na note na yo !",
+  "rate_save_failed": "⚠️ <b>Tokoki kobomba note na yo te.</b>\n\nTala connexion na yo mpe meká lisusu mwa sima.",
   "provider_menu": "🔧 <b>Tableau ya mosali — {prenom}</b>\n\n🏅 Badge : <b>{badge}</b>\n⭐ Note : <b>{note}/5</b>\n📊 Misala : <b>{missions}</b>\n🟢 Statut : <b>{statut}</b>",
   "anti_bypass_warning": "🛡 <b>Tika kozwa mbongo libanda ya bot oyo</b>\n\nSoki ozali kosala bongo, okobungisa garantie ya NEXIS HUB.",
   "quote_accept_title": "✅ <b>Devis endimami</b> — Mission NXH-{mission_id:04d}",

@@ -2353,7 +2353,11 @@ async def _finalize_review(telegram_id: int, data: dict, comment: str | None, st
             comment=comment or "",
         )
     )
-    await state.clear()
+    # Reviews exist only in the V5 backend. Unlike the legacy flows, there is
+    # no local fallback to replay a failed write, so preserve the FSM state on
+    # an outage and let the client retry instead of confirming a lost review.
+    if result is not None:
+        await state.clear()
     return result
 
 
@@ -2363,16 +2367,22 @@ async def notation_commentaire_recu(message: Message, state: FSMContext):
     comment = (message.text or "").strip()
     if comment == "-":
         comment = None
-    await _finalize_review(message.from_user.id, data, comment, state)
     lang = await get_user_language(message.from_user.id)
+    result = await _finalize_review(message.from_user.id, data, comment, state)
+    if result is None:
+        await message.answer(get_message("rate_save_failed", lang), parse_mode="HTML")
+        return
     await message.answer(get_message("rate_thanks", lang), parse_mode="HTML", reply_markup=clavier_client(lang))
 
 
 @dp.callback_query(RatingFlow.comment, F.data.startswith("rate_comment_skip_"))
 async def notation_commentaire_ignore(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    await _finalize_review(callback.from_user.id, data, None, state)
     lang = await get_user_language(callback.from_user.id)
+    result = await _finalize_review(callback.from_user.id, data, None, state)
+    if result is None:
+        await callback.answer(get_message("rate_save_failed", lang), show_alert=True)
+        return
     await callback.message.edit_text(get_message("rate_thanks", lang), parse_mode="HTML")
     await callback.answer()
 

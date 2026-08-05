@@ -82,6 +82,7 @@
   "rate_comment_prompt": "✍️ Would you like to add a comment?\n\nSend your comment, or tap the button to send without one.",
   "rate_skipped": "👍 Alright, thanks anyway for using NEXIS HUB!",
   "rate_thanks": "🙏 Thank you for your rating!",
+  "rate_save_failed": "⚠️ <b>Your rating could not be saved.</b>\n\nCheck your connection and try again shortly.",
   "provider_menu": "🔧 <b>Provider Dashboard — {prenom}</b>\n\n🏅 Badge: <b>{badge}</b>\n⭐ Rating: <b>{note}/5</b>\n📊 Missions: <b>{missions}</b>\n🟢 Status: <b>{statut}</b>",
   "anti_bypass_warning": "🛡 <b>Important reminder</b>\n\nTo keep your <b>NEXIS HUB Guarantee</b>, always transact through this bot.",
   "quote_accept_title": "✅ <b>Quote accepted</b> — Mission NXH-{mission_id:04d}",
