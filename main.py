@@ -2504,7 +2504,7 @@ async def afficher_profil_client(callback: CallbackQuery):
         await callback.answer("Client introuvable.", show_alert=True)
         return
 
-    client_profile = profile_data.get("client", {})
+    client_profile = profile_data.get("client") or {}
     display_name = client_profile.get("first_name") or (user["first_name"] if user else "Client")
     display_phone = client_profile.get("phone_number") or (user["phone_number"] if user else "Non renseigné")
     total_missions = len(profile_data.get("client_missions", [])) if profile_data else (user["total_missions"] if user else 0)

@@ -449,7 +449,7 @@ def profile(telegram_id: int):
         ]
         return {
             "telegram_id": telegram_id,
-            "client": _user_to_dict(user) if user else {"telegram_id": telegram_id, "first_name": "Client"},
+            "client": _user_to_dict(user) if user else None,
             "provider": _provider_to_dict(provider) if provider else None,
             "client_missions": missions,
             "provider_missions": missions,
