@@ -161,17 +161,40 @@ def test_matching_filters_by_service_commune_and_ranks_by_score(tmp_path, monkey
 
             low = db.get(BotProvider, 4)
             low.badge = "pending"
-            low.rating = 1.0
+            low.average_rating = 1.0
             high = db.get(BotProvider, 5)
             high.badge = "partner"
-            high.rating = 5.0
+            high.average_rating = 5.0
             high.success_rate = 100
+            high.total_missions = 10  # au-delà du seuil : le bonus fiabilité s'applique
             db.commit()
 
         response = test_client.get("/api/bot/providers/matching", params={"service": "service_peinture", "commune": "Gombe"})
         assert response.status_code == 200
         matches = response.json()["providers"]
         assert [p["telegram_id"] for p in matches] == [5, 4, 1]
+
+
+def test_perfect_success_rate_gives_no_bonus_without_enough_missions(tmp_path, monkeypatch):
+    """Un prestataire sans historique ne doit pas être classé comme un vétéran irréprochable."""
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with TestClient(backend_main.app) as test_client:
+        _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])  # neuf, success_rate 100 par défaut
+        _register_provider(test_client, 2, ["service_peinture"], ["Gombe"])  # expérimenté
+
+        with database_module.SessionLocal() as db:
+            from backend.app.models import BotProvider
+
+            veteran = db.get(BotProvider, 2)
+            veteran.success_rate = 100.0
+            veteran.total_missions = 5
+            db.commit()
+
+        response = test_client.get(
+            "/api/bot/providers/matching", params={"service": "service_peinture", "commune": "Gombe"}
+        )
+        assert [p["telegram_id"] for p in response.json()["providers"]][0] == 2
 
 
 def _setup_mission_with_quote(test_client, mission_id=1001, amount=100.0, currency="USD", urgent=False):
@@ -458,3 +481,112 @@ def test_update_provider_language(tmp_path, monkeypatch):
 
         missing_response = test_client.patch("/api/bot/providers/999/language", json={"language": "ln"})
         assert missing_response.status_code == 404
+
+
+# ── Statistiques prestataire et badges (Phase 1) ────────────────
+
+
+def _rate(test_client, mission_id, rating, client_telegram_id=42):
+    return test_client.post(
+        "/api/bot/reviews",
+        json={"mission_id": mission_id, "client_telegram_id": client_telegram_id, "rating": rating},
+    )
+
+
+def _provider_stats(test_client, provider_telegram_id=7):
+    return test_client.get(f"/api/profile/{provider_telegram_id}").json()["provider"]
+
+
+def test_completing_a_mission_counts_towards_total_missions(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with TestClient(backend_main.app) as test_client:
+        _complete_mission_flow(test_client, mission_id=1001)
+        assert _provider_stats(test_client)["total_missions"] == 1
+
+        _complete_mission_flow(test_client, mission_id=1002)
+        assert _provider_stats(test_client)["total_missions"] == 2
+
+
+def test_success_rate_is_100_when_nothing_has_failed(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with TestClient(backend_main.app) as test_client:
+        _complete_mission_flow(test_client, mission_id=1001)
+        assert _provider_stats(test_client)["success_rate"] == 100.0
+
+
+def test_a_disputed_mission_lowers_the_success_rate(tmp_path, monkeypatch):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with TestClient(backend_main.app) as test_client:
+        _complete_mission_flow(test_client, mission_id=1001)
+        _complete_mission_flow(test_client, mission_id=1002)
+        _complete_mission_flow(test_client, mission_id=1003)
+
+        # Une des trois part en litige, puis on redéclenche un recalcul.
+        from backend.app import crud
+        from backend.app.models import BotMission
+
+        with database_module.SessionLocal() as db:
+            db.get(BotMission, 1003).status = "disputed"
+            db.commit()
+            crud._recompute_provider_stats(db, 7)
+
+        stats = _provider_stats(test_client)
+        assert stats["total_missions"] == 2
+        assert stats["success_rate"] == round(2 / 3 * 100, 2)
+
+
+def test_provider_earns_premium_badge_at_five_missions_and_good_rating(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with TestClient(backend_main.app) as test_client:
+        for index in range(5):
+            mission_id = 2000 + index
+            _complete_mission_flow(test_client, mission_id=mission_id)
+            _rate(test_client, mission_id, 5)
+
+        stats = _provider_stats(test_client)
+        assert stats["total_missions"] == 5
+        assert stats["average_rating"] == 5.0
+        assert stats["badge"] == "premium"
+
+
+def test_badge_stays_below_premium_when_rating_is_too_low(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with TestClient(backend_main.app) as test_client:
+        for index in range(5):
+            mission_id = 2100 + index
+            _complete_mission_flow(test_client, mission_id=mission_id)
+            _rate(test_client, mission_id, 3)  # moyenne 3.0 < 4.0
+
+        stats = _provider_stats(test_client)
+        assert stats["total_missions"] == 5
+        assert stats["badge"] == "pending"
+
+
+def test_badge_falls_back_to_verified_when_no_tier_is_earned(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with TestClient(backend_main.app) as test_client:
+        _register_provider(test_client, 7, ["service_plomberie"], ["Gombe"])
+        assert test_client.post("/api/bot/providers/7/verify").status_code == 200
+
+        _complete_mission_flow(test_client, mission_id=2200)
+        _rate(test_client, 2200, 5)
+
+        stats = _provider_stats(test_client)
+        assert stats["total_missions"] == 1  # trop peu pour premium
+        assert stats["badge"] == "verified"
+
+
+def test_a_new_provider_has_no_badge_tier(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with TestClient(backend_main.app) as test_client:
+        _register_provider(test_client, 7, ["service_plomberie"], ["Gombe"])
+        stats = _provider_stats(test_client)
+        assert stats["badge"] == "pending"
+        assert stats["total_missions"] == 0

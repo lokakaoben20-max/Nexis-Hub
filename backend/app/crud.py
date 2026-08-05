@@ -6,6 +6,10 @@ from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, Bot
 MODULE_B_SERVICES = {"service_plomberie", "service_electricite", "service_climatisation"}
 BADGE_SCORES = {"partner": 30, "expert": 20, "premium": 10, "verified": 5, "pending": 0}
 
+# Nombre de missions terminées à partir duquel le taux de succès devient un
+# signal exploitable dans le matching (en dessous, il n'est pas représentatif).
+MIN_MISSIONS_FOR_SUCCESS_BONUS = 3
+
 
 def _compute_module(services: list[str]) -> str:
     return "B" if any(service in MODULE_B_SERVICES for service in services) else "A"
@@ -159,12 +163,19 @@ def find_matching_providers(db: Session, service: str, commune: str) -> list[Bot
     for provider in providers:
         if service in (provider.services or []) and commune in (provider.communes or []):
             score = BADGE_SCORES.get(provider.badge, 0)
-            score += provider.rating * 10
+            # `average_rating` (moyenne réelle des avis) et non l'ancien champ
+            # `rating`, qui n'a jamais été alimenté et vaut 0 partout : la note
+            # d'un prestataire ne pesait donc rien dans le classement.
+            score += provider.average_rating * 10
             score += min(provider.total_missions, 50) * 0.2
-            if provider.success_rate == 100:
-                score += 15
-            elif provider.success_rate >= 90:
-                score += 8
+            # Le bonus de fiabilité demande un minimum d'historique : sans lui,
+            # un prestataire sans aucune mission (success_rate initialisé à
+            # 100 %) partait à égalité avec un vétéran irréprochable.
+            if provider.total_missions >= MIN_MISSIONS_FOR_SUCCESS_BONUS:
+                if provider.success_rate == 100:
+                    score += 15
+                elif provider.success_rate >= 90:
+                    score += 8
             matches.append((score, provider))
 
     matches.sort(key=lambda item: item[0], reverse=True)
@@ -420,20 +431,81 @@ def release_payment(db: Session, mission_id: int) -> BotMission:
     mission.payment_status = "released"
     db.commit()
     db.refresh(mission)
+
+    # La mission vient de passer à "completed" : le volume et le taux de succès
+    # du prestataire changent, donc potentiellement son badge.
+    if mission.provider_telegram_id is not None:
+        _recompute_provider_stats(db, mission.provider_telegram_id)
+
     return mission
 
 
-def _recompute_provider_rating(db: Session, provider_telegram_id: int) -> None:
+# Tiers de badge mérités, du plus exigeant au moins exigeant. Le premier dont
+# tous les critères sont remplis gagne. En dessous, le prestataire retombe sur
+# le badge administratif (`verified` / `pending`).
+BADGE_TIERS = (
+    ("partner", {"min_missions": 50, "min_rating": 4.7, "min_success_rate": 95.0}),
+    ("expert", {"min_missions": 20, "min_rating": 4.5, "min_success_rate": 0.0}),
+    ("premium", {"min_missions": 5, "min_rating": 4.0, "min_success_rate": 0.0}),
+)
+
+# Statuts de mission qui comptent dans le taux de succès.
+_SUCCESS_STATUS = "completed"
+_FAILURE_STATUSES = ("disputed", "cancelled")
+
+
+def _earned_badge(provider: BotProvider) -> str:
+    """Badge dérivé des statistiques, ou badge administratif si aucun tier atteint.
+
+    Entièrement recalculé plutôt que cumulatif : un prestataire qui repasse sous
+    un seuil (note qui baisse, litige) perd son tier au lieu de le garder à vie.
+    """
+    for badge, rules in BADGE_TIERS:
+        if (
+            provider.total_missions >= rules["min_missions"]
+            and provider.average_rating >= rules["min_rating"]
+            and provider.success_rate >= rules["min_success_rate"]
+        ):
+            return badge
+    return "verified" if provider.is_verified else "pending"
+
+
+def _recompute_provider_stats(db: Session, provider_telegram_id: int) -> None:
+    """Recalcule note, volume, taux de succès et badge d'un prestataire.
+
+    Tout est recalculé depuis les tables sources (bot_reviews, bot_missions)
+    plutôt qu'incrémenté : le résultat ne peut pas dériver si une mission ou un
+    avis est corrigé après coup.
+    """
     provider = db.get(BotProvider, provider_telegram_id)
     if provider is None:
         return
-    avg_rating, total = (
+
+    avg_rating, total_reviews = (
         db.query(func.avg(BotReview.rating), func.count(BotReview.id))
         .filter(BotReview.provider_telegram_id == provider_telegram_id)
         .one()
     )
     provider.average_rating = round(float(avg_rating), 1) if avg_rating is not None else 0.0
-    provider.total_reviews = total or 0
+    provider.total_reviews = total_reviews or 0
+
+    status_counts = dict(
+        db.query(BotMission.status, func.count(BotMission.mission_id))
+        .filter(BotMission.provider_telegram_id == provider_telegram_id)
+        .group_by(BotMission.status)
+        .all()
+    )
+    completed = status_counts.get(_SUCCESS_STATUS, 0)
+    failed = sum(status_counts.get(status, 0) for status in _FAILURE_STATUSES)
+
+    provider.total_missions = completed
+    # Aucune mission conclue : on n'a rien à reprocher au prestataire, mais rien
+    # à porter à son crédit non plus. Voir la note sur le matching dans
+    # V5_MIGRATION_PLAN.md — 100 % ici vaut "aucun échec", pas "excellent".
+    provider.success_rate = round(completed / (completed + failed) * 100, 2) if (completed + failed) else 100.0
+
+    provider.badge = _earned_badge(provider)
+
     db.commit()
     db.refresh(provider)
 
@@ -470,5 +542,5 @@ def create_review(
     db.commit()
     db.refresh(review)
 
-    _recompute_provider_rating(db, mission.provider_telegram_id)
+    _recompute_provider_stats(db, mission.provider_telegram_id)
     return review

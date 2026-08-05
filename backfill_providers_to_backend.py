@@ -16,7 +16,7 @@ looks stale on the backend):
 
 import json
 
-from backend.app.crud import _recompute_provider_rating, upsert_provider
+from backend.app.crud import _recompute_provider_stats, upsert_provider
 from backend.app.database import SessionLocal
 from db import get_all_providers
 
@@ -46,7 +46,7 @@ def main() -> None:
                     communes=_load_json_list(provider["communes"]),
                     language=provider["language"],
                 )
-                _recompute_provider_rating(db, provider["telegram_id"])
+                _recompute_provider_stats(db, provider["telegram_id"])
                 synced += 1
             except Exception as exc:  # noqa: BLE001 - report and keep going
                 failed.append((provider["telegram_id"], str(exc)))
