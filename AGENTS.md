@@ -31,6 +31,39 @@ base de travail pour la suite.
   (évite les noms auto-générés type `xxx-xxx-xxx`).
 - Ne pousse jamais directement sur `main`. Travaille sur une branche (`feature/...`), ouvre une PR.
 
+## Répartition en cours (2026-08-05) — exception cadrée à la règle d'or
+
+L'utilisateur fait travailler **deux agents en parallèle**, sur des périmètres disjoints.
+Tant que cette section est là, respecte strictement ta zone :
+
+| Agent | Zone exclusive |
+| --- | --- |
+| **Codex** | `main.py`, `messages.py`, `translations/` (le bot Telegram) |
+| **Claude Code** | `mini_app/` (`app.py` + `static/`) |
+
+**`db.py` est une zone partagée** : `mini_app/app.py` en importe une quinzaine de
+fonctions (`get_user_by_telegram_id`, `create_provider`, `start_mission`,
+`finish_mission`, `update_provider_services`…). Une modification de signature ou de
+comportement dans `db.py` casse donc l'autre côté sans prévenir.
+
+- **Ne touche pas à `db.py` sans l'annoncer à l'utilisateur**, qui préviendra l'autre agent.
+- Si tu dois absolument y toucher, préfère **ajouter** une fonction plutôt que modifier
+  une existante, et ne change jamais une signature déjà utilisée ailleurs.
+
+Autres zones partagées à traiter avec la même prudence : `AGENTS.md`,
+`V5_MIGRATION_PLAN.md`, `requirements.txt`, `.env.example`, `backend/`.
+
+### Ports (les trois services peuvent tourner en même temps)
+
+| Service | Port | Commande |
+| --- | --- | --- |
+| Backend V5 | 8000 | `.venv\Scripts\python.exe -m uvicorn backend.app.main:app --reload` |
+| Mini App | 8001 | `.venv\Scripts\python.exe -m uvicorn mini_app.app:app --reload --host 127.0.0.1 --port 8001` |
+| Bot Telegram | — | `.venv\Scripts\python.exe main.py` |
+
+Ne remets pas la Mini App sur le port 8000 : il appartient au backend V5
+(`BACKEND_BASE_URL`). Voir [mini_app/README.md](mini_app/README.md).
+
 ## Structure du projet
 
 - `main.py` : handlers Telegram, logique du bot, synchronisation vers le backend V5.
