@@ -62,6 +62,16 @@ def update_user_language(db: Session, telegram_id: int, language: str) -> BotUse
     return user
 
 
+def update_user_name(db: Session, telegram_id: int, first_name: str) -> BotUser | None:
+    user = db.get(BotUser, telegram_id)
+    if user is None:
+        return None
+    user.first_name = first_name
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def update_provider_language(db: Session, telegram_id: int, language: str) -> BotProvider | None:
     provider = db.get(BotProvider, telegram_id)
     if provider is None:

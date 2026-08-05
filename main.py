@@ -54,6 +54,7 @@ from db import (
     update_provider_status,
     update_service_request_status,
     update_user_language,
+    update_user_name,
 )
 
 
@@ -188,6 +189,9 @@ BUTTON_LABELS = {
         "finish_explanation": "✅ Terminer l'explication",
         "skip_rating": "➡️ Ne pas noter",
         "skip_comment": "➡️ Envoyer sans commentaire",
+        "settings": "✏️ Modifier",
+        "change_language": "🌐 Changer de langue",
+        "change_name": "✏️ Modifier mon nom",
     },
     "ln": {
         "client": "👤 Client",
@@ -218,6 +222,9 @@ BUTTON_LABELS = {
         "finish_explanation": "✅ Nasilisi kolimbola",
         "skip_rating": "➡️ Kopesa note te",
         "skip_comment": "➡️ Kotinda sans commentaire",
+        "settings": "✏️ Kobongisa",
+        "change_language": "🌐 Kobongola monoko",
+        "change_name": "✏️ Kobongola kombo",
     },
     "en": {
         "client": "👤 Client",
@@ -248,6 +255,9 @@ BUTTON_LABELS = {
         "finish_explanation": "✅ Finish explanation",
         "skip_rating": "➡️ Skip rating",
         "skip_comment": "➡️ Send without comment",
+        "settings": "✏️ Edit",
+        "change_language": "🌐 Change language",
+        "change_name": "✏️ Edit my name",
     },
 }
 
@@ -379,6 +389,13 @@ async def sync_provider_status_to_backend(telegram_id: int, status: str) -> dict
 async def sync_user_language_to_backend(telegram_id: int, language: str) -> dict:
     async with httpx.AsyncClient(timeout=5.0) as client:
         response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/users/{telegram_id}/language", json={"language": language})
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_user_name_to_backend(telegram_id: int, first_name: str) -> dict:
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/users/{telegram_id}/name", json={"first_name": first_name})
         response.raise_for_status()
         return response.json()
 
@@ -517,6 +534,10 @@ class RatingFlow(StatesGroup):
     comment = State()
 
 
+class ClientSettings(StatesGroup):
+    name = State()
+
+
 def clavier_contact(lang: str = "fr"):
     text = {
         "fr": "📱 Partager mon numéro WhatsApp",
@@ -589,6 +610,26 @@ def clavier_client(lang: str = "fr"):
     builder.button(text=button_label("wallet", lang), callback_data="client_wallet")
     builder.button(text=button_label("profile", lang), callback_data="client_profil")
     builder.button(text=button_label("help", lang), callback_data="client_aide")
+    builder.button(text=button_label("settings", lang), callback_data="client_parametres")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_parametres_client(lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=button_label("change_language", lang), callback_data="client_settings_language")
+    builder.button(text=button_label("change_name", lang), callback_data="client_settings_name")
+    builder.button(text=button_label("back", lang), callback_data="client_menu_from_settings")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_langue_parametres(lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🇫🇷 Français", callback_data="settings_lang_fr")
+    builder.button(text="🇨🇩 Lingala", callback_data="settings_lang_ln")
+    builder.button(text="🇬🇧 English", callback_data="settings_lang_en")
+    builder.button(text=button_label("back", lang), callback_data="client_parametres")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -1509,7 +1550,7 @@ async def terminer_inscription_prestataire(callback: CallbackQuery, state: FSMCo
         parse_mode="HTML",
         reply_markup=clavier_prestataire(data.get("language", "fr")),
     )
-    await callback.answer("Inscription terminée")
+    await callback.answer(get_message("toast_registration_complete", data.get("language", "fr")))
 
 
 @dp.callback_query(F.data == "prest_dispo")
@@ -1544,7 +1585,8 @@ async def changer_disponibilite(callback: CallbackQuery):
         parse_mode="HTML",
         reply_markup=clavier_disponibilite(status),
     )
-    await callback.answer("Statut mis à jour")
+    provider_lang = await get_provider_language(callback.from_user.id)
+    await callback.answer(get_message("toast_status_updated", provider_lang))
 
 
 @dp.callback_query(F.data == "prest_services")
@@ -1632,14 +1674,15 @@ async def enregistrer_services_modifies(callback: CallbackQuery, state: FSMConte
     update_provider_services(callback.from_user.id, selected)
     await _safe_backend_call(sync_provider_services_to_backend(callback.from_user.id, selected))
     await state.clear()
+    provider_lang = await get_provider_language(callback.from_user.id)
     service_labels = [SERVICES.get(service, service) for service in selected]
     await callback.message.edit_text(
         "✅ <b>Services mis à jour.</b>\n\n"
         + "\n".join(f"• {label}" for label in service_labels),
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(await get_provider_language(callback.from_user.id)),
+        reply_markup=clavier_prestataire(provider_lang),
     )
-    await callback.answer("Services enregistrés")
+    await callback.answer(get_message("toast_services_saved", provider_lang))
 
 
 @dp.callback_query(F.data == "prest_missing_service")
@@ -1898,7 +1941,7 @@ async def mission_confirmer(callback: CallbackQuery, state: FSMContext):
         reply_markup=clavier_client(data.get("language", "fr")),
     )
     print("Nouvelle demande client:", data)
-    await callback.answer("Demande confirmée")
+    await callback.answer(get_message("toast_request_confirmed", client_lang))
 
 
 @dp.callback_query(F.data.startswith("provider_accept_"))
@@ -1918,7 +1961,8 @@ async def accepter_mission_prestataire(callback: CallbackQuery, state: FSMContex
         "Exemple : <b>35</b>",
         parse_mode="HTML",
     )
-    await callback.answer("Mission acceptée")
+    provider_lang = await get_provider_language(callback.from_user.id)
+    await callback.answer(get_message("toast_mission_accepted", provider_lang))
 
 
 @dp.message(QuoteCreation.amount)
@@ -2065,7 +2109,8 @@ async def passer_mission_prestataire(callback: CallbackQuery):
             reply_markup=clavier_disponibilite("paused"),
         )
 
-    await callback.answer("Mission ignorée")
+    provider_lang = await get_provider_language(callback.from_user.id)
+    await callback.answer(get_message("toast_mission_skipped", provider_lang))
 
 
 @dp.callback_query(F.data.startswith("client_accept_quote_"))
@@ -2113,7 +2158,7 @@ async def client_accepte_devis(callback: CallbackQuery):
         ),
         parse_mode="HTML",
     )
-    await callback.answer("Devis accepté")
+    await callback.answer(get_message("toast_quote_accepted", client_lang))
 
 
 @dp.callback_query(F.data.startswith("pay_mobile_"))
@@ -2153,7 +2198,7 @@ async def paiement_mobile_money(callback: CallbackQuery):
         parse_mode="HTML",
         reply_markup=clavier_mission_prestataire(quote["mission_id"], "start"),
     )
-    await callback.answer("Paiement confirmé")
+    await callback.answer(get_message("toast_payment_confirmed", client_lang))
 
 
 @dp.callback_query(F.data.startswith("mission_start_"))
@@ -2178,7 +2223,8 @@ async def prestataire_demarre_mission(callback: CallbackQuery):
         get_message("mission_started", client_lang, mission_id=mission_id),
         parse_mode="HTML",
     )
-    await callback.answer("Mission démarrée")
+    provider_lang = await get_provider_language(callback.from_user.id)
+    await callback.answer(get_message("toast_mission_started", provider_lang))
 
 
 @dp.callback_query(F.data.startswith("mission_finish_"))
@@ -2191,11 +2237,12 @@ async def prestataire_termine_mission(callback: CallbackQuery):
         return
 
     await _safe_backend_call(sync_mission_status_to_backend(mission_id, "awaiting_confirmation"))
+    provider_lang = await get_provider_language(callback.from_user.id)
     await callback.message.edit_text(
         f"✅ Mission <b>NXH-{mission_id:04d}</b> marquée comme terminée.\n\n"
         "Le client doit maintenant confirmer pour libérer le paiement.",
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(await get_provider_language(callback.from_user.id)),
+        reply_markup=clavier_prestataire(provider_lang),
     )
     client_lang = await get_user_language(mission["client_telegram_id"])
     await bot.send_message(
@@ -2204,7 +2251,7 @@ async def prestataire_termine_mission(callback: CallbackQuery):
         parse_mode="HTML",
         reply_markup=clavier_confirmation_client(mission_id),
     )
-    await callback.answer("Client notifié")
+    await callback.answer(get_message("toast_client_notified", provider_lang))
 
 
 @dp.callback_query(F.data.startswith("client_confirm_done_"))
@@ -2247,7 +2294,7 @@ async def client_confirme_mission_terminee(callback: CallbackQuery, state: FSMCo
             parse_mode="HTML",
             reply_markup=clavier_notation(mission_id, lang),
         )
-    await callback.answer("Paiement libéré")
+    await callback.answer(get_message("toast_payment_released", lang))
 
 
 @dp.callback_query(RatingFlow.rating, F.data.startswith("rate_star_"))
@@ -2316,7 +2363,7 @@ async def client_signale_probleme(callback: CallbackQuery):
         parse_mode="HTML",
         reply_markup=clavier_client(lang),
     )
-    await callback.answer("Paiement maintenu en escrow")
+    await callback.answer(get_message("toast_dispute_opened", lang))
 
 
 @dp.callback_query(F.data.startswith("pay_wallet_"))
@@ -2360,7 +2407,7 @@ async def paiement_wallet(callback: CallbackQuery):
         parse_mode="HTML",
         reply_markup=clavier_mission_prestataire(quote["mission_id"], "start"),
     )
-    await callback.answer("Paiement wallet confirmé")
+    await callback.answer(get_message("toast_wallet_payment_confirmed", client_lang))
 
 
 @dp.callback_query(F.data.startswith("client_reject_quote_"))
@@ -2385,7 +2432,7 @@ async def client_refuse_devis(callback: CallbackQuery):
         get_message("quote_rejected_provider_notify", provider_lang, mission_id=quote["mission_id"]),
         parse_mode="HTML",
     )
-    await callback.answer("Devis refusé")
+    await callback.answer(get_message("toast_quote_rejected", client_lang))
 
 
 @dp.callback_query(F.data == "mission_annuler")
@@ -2396,7 +2443,7 @@ async def mission_annuler(callback: CallbackQuery, state: FSMContext):
         get_message("request_cancelled", lang),
         reply_markup=clavier_client(lang),
     )
-    await callback.answer("Demande annulée")
+    await callback.answer(get_message("toast_request_cancelled", lang))
 
 
 @dp.callback_query(F.data == "client_missions")
@@ -2597,6 +2644,98 @@ async def afficher_aide_client(callback: CallbackQuery):
         reply_markup=clavier_client(lang),
     )
     await callback.answer()
+
+
+@dp.callback_query(F.data == "client_parametres")
+async def afficher_parametres_client(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    lang = await get_user_language(callback.from_user.id)
+    await callback.message.edit_text(
+        get_message("settings_title", lang),
+        parse_mode="HTML",
+        reply_markup=clavier_parametres_client(lang),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "client_menu_from_settings")
+async def retour_menu_client(callback: CallbackQuery):
+    lang = await get_user_language(callback.from_user.id)
+    prenom = html.escape(callback.from_user.first_name or "Client")
+    await callback.message.edit_text(
+        get_message("client_menu", lang, prenom=prenom),
+        parse_mode="HTML",
+        reply_markup=clavier_client(lang),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "client_settings_language")
+async def demander_nouvelle_langue(callback: CallbackQuery):
+    lang = await get_user_language(callback.from_user.id)
+    await callback.message.edit_text(
+        get_message("settings_language_prompt", lang),
+        parse_mode="HTML",
+        reply_markup=clavier_langue_parametres(lang),
+    )
+    await callback.answer()
+
+
+async def _appliquer_nouvelle_langue(callback: CallbackQuery, new_lang: str):
+    update_user_language(callback.from_user.id, new_lang)
+    await _safe_backend_call(sync_user_language_to_backend(callback.from_user.id, new_lang))
+    prenom = html.escape(callback.from_user.first_name or "Client")
+    await callback.message.edit_text(
+        f"{get_message('settings_language_updated', new_lang)}\n\n"
+        f"{get_message('client_menu', new_lang, prenom=prenom)}",
+        parse_mode="HTML",
+        reply_markup=clavier_client(new_lang),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "settings_lang_fr")
+async def modifier_langue_fr(callback: CallbackQuery):
+    await _appliquer_nouvelle_langue(callback, "fr")
+
+
+@dp.callback_query(F.data == "settings_lang_ln")
+async def modifier_langue_ln(callback: CallbackQuery):
+    await _appliquer_nouvelle_langue(callback, "ln")
+
+
+@dp.callback_query(F.data == "settings_lang_en")
+async def modifier_langue_en(callback: CallbackQuery):
+    await _appliquer_nouvelle_langue(callback, "en")
+
+
+@dp.callback_query(F.data == "client_settings_name")
+async def demander_nouveau_nom(callback: CallbackQuery, state: FSMContext):
+    lang = await get_user_language(callback.from_user.id)
+    await state.set_state(ClientSettings.name)
+    await callback.message.edit_text(
+        get_message("settings_name_prompt", lang),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@dp.message(ClientSettings.name)
+async def nouveau_nom_recu(message: Message, state: FSMContext):
+    lang = await get_user_language(message.from_user.id)
+    new_name = (message.text or "").strip()
+    if not new_name:
+        await message.answer(get_message("settings_name_prompt", lang), parse_mode="HTML")
+        return
+
+    await state.clear()
+    update_user_name(message.from_user.id, new_name)
+    await _safe_backend_call(sync_user_name_to_backend(message.from_user.id, new_name))
+    await message.answer(
+        get_message("settings_name_updated", lang, name=html.escape(new_name)),
+        parse_mode="HTML",
+        reply_markup=clavier_client(lang),
+    )
 
 
 @dp.callback_query(

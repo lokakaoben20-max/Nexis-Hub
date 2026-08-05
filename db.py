@@ -410,6 +410,14 @@ def update_user_language(telegram_id: int, language: str):
         )
 
 
+def update_user_name(telegram_id: int, first_name: str):
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE users SET first_name = ? WHERE telegram_id = ?",
+            (first_name, telegram_id),
+        )
+
+
 def create_mission(telegram_id: int, data: dict):
     user = get_user_by_telegram_id(telegram_id)
     if user is None:

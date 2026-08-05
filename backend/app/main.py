@@ -67,6 +67,10 @@ class LanguagePayload(BaseModel):
     language: str
 
 
+class NamePayload(BaseModel):
+    first_name: str
+
+
 class QuoteCreatePayload(BaseModel):
     mission_id: int
     provider_telegram_id: int
@@ -221,6 +225,15 @@ def create_bot_provider(payload: BotProviderPayload):
 def update_user_language(telegram_id: int, payload: LanguagePayload):
     with SessionLocal() as db:
         user = crud.update_user_language(db, telegram_id, payload.language)
+        if user is None:
+            raise HTTPException(status_code=404, detail="user_not_found")
+        return {"status": "ok", "user": _user_to_dict(user)}
+
+
+@app.patch("/api/bot/users/{telegram_id}/name")
+def update_user_name(telegram_id: int, payload: NamePayload):
+    with SessionLocal() as db:
+        user = crud.update_user_name(db, telegram_id, payload.first_name)
         if user is None:
             raise HTTPException(status_code=404, detail="user_not_found")
         return {"status": "ok", "user": _user_to_dict(user)}

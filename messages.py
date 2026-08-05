@@ -212,6 +212,28 @@ MESSAGES = {
         "matching_providers_notified": "{count} prestataire(s) notifié(s).",
         "matching_no_providers": "Aucun prestataire disponible trouvé pour l'instant.",
         "request_cancelled": "❌ Demande annulée.\n\nRetour à votre espace client.",
+        "settings_title": "✏️ <b>Modifier mon profil</b>\n\nQue souhaitez-vous modifier ?",
+        "settings_language_prompt": "🌐 Choisissez votre nouvelle langue :",
+        "settings_language_updated": "✅ Langue mise à jour !",
+        "settings_name_prompt": "✏️ Envoyez votre nouveau nom :",
+        "settings_name_updated": "✅ Nom mis à jour : <b>{name}</b>",
+
+        # ── Toasts (confirmations éphémères) ─────────────
+        "toast_request_confirmed": "Demande confirmée",
+        "toast_quote_accepted": "Devis accepté",
+        "toast_payment_confirmed": "Paiement confirmé",
+        "toast_payment_released": "Paiement libéré",
+        "toast_dispute_opened": "Paiement maintenu en escrow",
+        "toast_wallet_payment_confirmed": "Paiement wallet confirmé",
+        "toast_quote_rejected": "Devis refusé",
+        "toast_request_cancelled": "Demande annulée",
+        "toast_registration_complete": "Inscription terminée",
+        "toast_status_updated": "Statut mis à jour",
+        "toast_services_saved": "Services enregistrés",
+        "toast_mission_accepted": "Mission acceptée",
+        "toast_mission_skipped": "Mission ignorée",
+        "toast_mission_started": "Mission démarrée",
+        "toast_client_notified": "Client notifié",
 
         # ── Anti-désintermédiation ──────────────────────
         "anti_bypass_warning": (
@@ -576,6 +598,28 @@ MESSAGES = {
         "matching_providers_notified": "Ba prestataire {count} bayebisami.",
         "matching_no_providers": "Prestataire moko te ezwami sikoyo.",
         "request_cancelled": "❌ Demande elongolami.\n\nOzongi na esika na yo ya client.",
+        "settings_title": "✏️ <b>Kobongisa profil na ngai</b>\n\nOlingi kobongisa nini ?",
+        "settings_language_prompt": "🌐 Pona monoko na yo ya sika :",
+        "settings_language_updated": "✅ Monoko ebongisami !",
+        "settings_name_prompt": "✏️ Tinda kombo na yo ya sika :",
+        "settings_name_updated": "✅ Kombo ebongisami : <b>{name}</b>",
+
+        # ── Toasts ────────────────────────────────────
+        "toast_request_confirmed": "Demande endimami",
+        "toast_quote_accepted": "Devis endimami",
+        "toast_payment_confirmed": "Paiement endimami",
+        "toast_payment_released": "Paiement ekomi",
+        "toast_dispute_opened": "Paiement etikali na escrow",
+        "toast_wallet_payment_confirmed": "Paiement wallet endimami",
+        "toast_quote_rejected": "Devis eboyami",
+        "toast_request_cancelled": "Demande elongolami",
+        "toast_registration_complete": "Inscription esili",
+        "toast_status_updated": "Statut ebongisami",
+        "toast_services_saved": "Services ebombami",
+        "toast_mission_accepted": "Mission endimami",
+        "toast_mission_skipped": "Mission elekisami",
+        "toast_mission_started": "Mission ebandi",
+        "toast_client_notified": "Client ayebisami",
 
         # ── Notation ───────────────────────────────────
         "rate_provider": (
@@ -814,6 +858,28 @@ MESSAGES = {
         "matching_providers_notified": "{count} provider(s) notified.",
         "matching_no_providers": "No provider found available right now.",
         "request_cancelled": "❌ Request cancelled.\n\nBack to your client space.",
+        "settings_title": "✏️ <b>Edit my profile</b>\n\nWhat would you like to change?",
+        "settings_language_prompt": "🌐 Choose your new language:",
+        "settings_language_updated": "✅ Language updated!",
+        "settings_name_prompt": "✏️ Send your new name:",
+        "settings_name_updated": "✅ Name updated: <b>{name}</b>",
+
+        # ── Toasts ────────────────────────────────────
+        "toast_request_confirmed": "Request confirmed",
+        "toast_quote_accepted": "Quote accepted",
+        "toast_payment_confirmed": "Payment confirmed",
+        "toast_payment_released": "Payment released",
+        "toast_dispute_opened": "Payment held in escrow",
+        "toast_wallet_payment_confirmed": "Wallet payment confirmed",
+        "toast_quote_rejected": "Quote rejected",
+        "toast_request_cancelled": "Request cancelled",
+        "toast_registration_complete": "Registration complete",
+        "toast_status_updated": "Status updated",
+        "toast_services_saved": "Services saved",
+        "toast_mission_accepted": "Mission accepted",
+        "toast_mission_skipped": "Mission skipped",
+        "toast_mission_started": "Mission started",
+        "toast_client_notified": "Client notified",
 
         # ── Rating ───────────────────────────────────
         "rate_provider": (
