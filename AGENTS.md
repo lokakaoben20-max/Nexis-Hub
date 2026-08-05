@@ -53,6 +53,33 @@ comportement dans `db.py` casse donc l'autre côté sans prévenir.
 Autres zones partagées à traiter avec la même prudence : `AGENTS.md`,
 `V5_MIGRATION_PLAN.md`, `requirements.txt`, `.env.example`, `backend/`.
 
+### Travail inachevé laissé dans `main.py` par Claude Code
+
+`build_history_rich_message()` (vers `main.py:2750`) **n'est appelée nulle part** :
+elle a été écrite pour afficher l'historique client sous forme de tableau Telegram
+Rich Message, mais le branchement au handler `afficher_historique_client` n'a jamais
+été fait. Ce n'est pas un oubli à supprimer aveuglément — c'est du travail en pause.
+
+À savoir avant d'y toucher (deux bugs à corriger **avant** de la brancher, sinon elle
+plantera en production) :
+
+1. **Deux formes de mission coexistent.** Les missions locales (`db.py`) sont des
+   `sqlite3.Row` avec une clé `id` ; celles du backend V5 sont des `dict` avec
+   `mission_id` et **sans** `provider_name`. `build_history_rich_message` lit
+   `mission['id']` : elle échoue donc sur les missions venant du backend.
+2. **Même problème, déjà présent en production** : `format_mission_client()` lit
+   `mission['provider_name']` et lève un `KeyError` sur une mission backend — ce qui
+   touche aussi `afficher_missions_client`, pas seulement l'historique.
+3. **Le filtre de l'historique exclut les missions locales** : `isinstance(mission, dict)`
+   est faux pour un `sqlite3.Row`, donc quand le backend est éteint (repli sur `db.py`),
+   l'historique est systématiquement vide.
+
+La bonne correction est probablement un petit helper qui lit un champ quel que soit le
+format (`id`/`mission_id`, `provider_name` absent), utilisé par les deux fonctions.
+
+`build_quote_accept_rich_message()` et `_rich_cell()`, elles, **sont bien utilisées**
+(récap d'acceptation de devis) — ne pas les supprimer.
+
 ### Ports (les trois services peuvent tourner en même temps)
 
 | Service | Port | Commande |
