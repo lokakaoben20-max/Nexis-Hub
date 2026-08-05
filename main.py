@@ -2562,24 +2562,24 @@ async def afficher_profil_client(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "prest_missions")
 async def afficher_missions_prestataire(callback: CallbackQuery):
+    lang = await get_provider_language(callback.from_user.id)
     missions = get_provider_missions(callback.from_user.id)
     if not missions:
         await callback.message.edit_text(
-            "📋 <b>Mes missions</b>\n\n"
-            "Aucune mission attribuée pour l'instant.",
+            get_message("provider_missions_empty", lang),
             parse_mode="HTML",
-            reply_markup=clavier_prestataire(await get_provider_language(callback.from_user.id)),
+            reply_markup=clavier_prestataire(lang),
         )
         await callback.answer()
         return
 
-    text = "📋 <b>Mes dernières missions</b>\n\n" + "\n\n".join(
+    text = get_message("provider_missions_title", lang) + "\n\n" + "\n\n".join(
         html.escape(format_mission_provider(mission)) for mission in missions
     )
     await callback.message.edit_text(
         text,
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(await get_provider_language(callback.from_user.id)),
+        reply_markup=clavier_prestataire(lang),
     )
     await callback.answer()
 
@@ -2587,17 +2587,20 @@ async def afficher_missions_prestataire(callback: CallbackQuery):
 @dp.callback_query(F.data == "prest_wallet")
 async def afficher_wallet_prestataire(callback: CallbackQuery):
     provider = get_provider_by_telegram_id(callback.from_user.id)
+    lang = await get_provider_language(callback.from_user.id)
     if provider is None:
-        await callback.answer("Prestataire introuvable.", show_alert=True)
+        await callback.answer(get_message("provider_not_found", lang), show_alert=True)
         return
 
     await callback.message.edit_text(
-        "💰 <b>Mon portefeuille prestataire</b>\n\n"
-        f"Solde USD : <b>{provider['wallet_balance_usd']:.2f} USD</b>\n"
-        f"Solde CDF : <b>{provider['wallet_balance_cdf']:.2f} CDF</b>\n\n"
-        "Les retraits Mobile Money seront ajoutés après l'intégration API.",
+        get_message(
+            "provider_wallet_title",
+            lang,
+            usd=provider["wallet_balance_usd"],
+            cdf=provider["wallet_balance_cdf"],
+        ),
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(await get_provider_language(callback.from_user.id)),
+        reply_markup=clavier_prestataire(lang),
     )
     await callback.answer()
 
@@ -2607,29 +2610,37 @@ async def afficher_profil_prestataire(callback: CallbackQuery):
     provider = get_provider_by_telegram_id(callback.from_user.id)
     backend_profile = await fetch_backend_profile(callback.from_user.id)
     provider_data = (backend_profile or {}).get("provider") if backend_profile else None
+    lang = await get_provider_language(callback.from_user.id)
 
     if provider is None and not provider_data:
-        await callback.answer("Prestataire introuvable.", show_alert=True)
+        await callback.answer(get_message("provider_not_found", lang), show_alert=True)
         return
 
-    display_name = provider_data.get("full_name") if provider_data else provider.get("full_name") if provider else "Prestataire"
-    display_phone = provider_data.get("phone_number") if provider_data else provider.get("phone_number") if provider else "Non renseigné"
+    display_name = provider_data.get("full_name") if provider_data else provider.get("full_name") if provider else get_message("provider_default_name", lang)
+    display_phone = provider_data.get("phone_number") if provider_data else provider.get("phone_number") if provider else get_message("not_provided", lang)
     display_status = provider_data.get("status") if provider_data else provider.get("status") if provider else "available"
     display_services = ", ".join(provider_data.get("services", [])) if provider_data else ""
+    status_labels = {
+        "available": get_message("provider_status_available", lang),
+        "offline": get_message("provider_status_offline", lang),
+        "paused": get_message("provider_status_paused", lang),
+    }
+    status_label = status_labels.get(display_status, display_status)
 
-    text = (
-        "👤 <b>Mon profil prestataire</b>\n\n"
-        f"Nom : <b>{html.escape(display_name or 'Prestataire')}</b>\n"
-        f"Téléphone : <b>{html.escape(display_phone or 'Non renseigné')}</b>\n"
-        f"Statut : <b>{html.escape(display_status)}</b>\n"
+    text = get_message(
+        "provider_profile_title",
+        lang,
+        name=html.escape(display_name or get_message("provider_default_name", lang)),
+        phone=html.escape(display_phone or get_message("not_provided", lang)),
+        status=html.escape(status_label),
     )
     if display_services:
-        text += f"Services : <b>{html.escape(display_services)}</b>\n"
+        text += "\n" + get_message("provider_profile_services", lang, services=html.escape(display_services))
 
     await callback.message.edit_text(
         text,
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(await get_provider_language(callback.from_user.id)),
+        reply_markup=clavier_prestataire(lang),
     )
     await callback.answer()
 
