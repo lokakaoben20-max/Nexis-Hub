@@ -50,9 +50,11 @@ def create_quote(payload: QuoteCreatePayload):
 
 ## Sécurité — voir le skill `securite-backend`
 
-Aucun de ces 26 endpoints n'est authentifié. Avant d'en ajouter un qui touche
-à l'argent (paiement, escrow, wallet) ou à des données personnelles, consulter
-`securite-backend`.
+Toutes les routes `/api/*` sont protégées par une clé partagée (`X-API-Key`),
+via `@router.` et non `@app.` — un nouvel endpoint déclaré avec `@app.` au
+lieu de `@router.` serait accessible sans authentification par erreur. Voir
+`securite-backend` pour le détail, en particulier avant un endpoint qui touche
+à l'argent (paiement, escrow, wallet) ou à des données personnelles.
 
 ## Miroir côté legacy
 

@@ -75,6 +75,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID")
 MINI_APP_URL = os.getenv("MINI_APP_URL")
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://127.0.0.1:8000")
+BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
+BACKEND_AUTH_HEADERS = {"X-API-Key": BACKEND_API_KEY}
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN manquant dans le fichier .env")
@@ -305,7 +307,7 @@ async def sync_user_to_backend(telegram_id: int, first_name: str | None = None, 
         "phone_number": phone_number,
         "language": language,
     }
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/users", json=payload)
         response.raise_for_status()
         return response.json()
@@ -321,7 +323,7 @@ async def sync_mission_to_backend(telegram_id: int, mission_id: int, data: dict)
         "description": data.get("description", ""),
         "urgent": bool(data.get("urgent", False)),
     }
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/missions", json=payload)
         response.raise_for_status()
         return response.json()
@@ -336,7 +338,7 @@ async def sync_provider_to_backend(telegram_id: int, full_name: str, phone_numbe
         "communes": communes or [],
         "language": language,
     }
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers", json=payload)
         response.raise_for_status()
         return response.json()
@@ -351,7 +353,7 @@ async def sync_quote_to_backend(mission_id: int, provider_telegram_id: int, amou
         "delay_hours": delay_hours,
         "message": message,
     }
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes", json=payload)
         response.raise_for_status()
         return response.json()
@@ -364,70 +366,70 @@ async def sync_review_to_backend(mission_id: int, client_telegram_id: int, ratin
         "rating": rating,
         "comment": comment,
     }
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/reviews", json=payload)
         response.raise_for_status()
         return response.json()
 
 
 async def sync_quote_accept_to_backend(backend_quote_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes/{backend_quote_id}/accept")
         response.raise_for_status()
         return response.json()
 
 
 async def sync_quote_reject_to_backend(backend_quote_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes/{backend_quote_id}/reject")
         response.raise_for_status()
         return response.json()
 
 
 async def sync_provider_services_to_backend(telegram_id: int, services: list[str]) -> dict:
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/services", json={"services": services})
         response.raise_for_status()
         return response.json()
 
 
 async def sync_provider_status_to_backend(telegram_id: int, status: str) -> dict:
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/status", json={"status": status})
         response.raise_for_status()
         return response.json()
 
 
 async def sync_user_language_to_backend(telegram_id: int, language: str) -> dict:
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/users/{telegram_id}/language", json={"language": language})
         response.raise_for_status()
         return response.json()
 
 
 async def sync_user_name_to_backend(telegram_id: int, first_name: str) -> dict:
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/users/{telegram_id}/name", json={"first_name": first_name})
         response.raise_for_status()
         return response.json()
 
 
 async def sync_provider_language_to_backend(telegram_id: int, language: str) -> dict:
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/language", json={"language": language})
         response.raise_for_status()
         return response.json()
 
 
 async def sync_provider_ignored_increment_to_backend(telegram_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/ignored")
         response.raise_for_status()
         return response.json()
 
 
 async def sync_provider_ignored_reset_to_backend(telegram_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/ignored/reset")
         response.raise_for_status()
         return response.json()
@@ -435,7 +437,7 @@ async def sync_provider_ignored_reset_to_backend(telegram_id: int) -> dict:
 
 async def fetch_backend_profile(telegram_id: int) -> dict | None:
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
             response = await client.get(f"{BACKEND_BASE_URL}/api/profile/{telegram_id}")
             response.raise_for_status()
             return response.json()
@@ -452,7 +454,7 @@ async def load_profile_from_backend(telegram_id: int, fallback_user: dict | None
 
 async def fetch_backend_missions(telegram_id: int) -> list[dict]:
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
             response = await client.get(f"{BACKEND_BASE_URL}/api/profile/{telegram_id}")
             response.raise_for_status()
             payload = response.json()
@@ -465,7 +467,7 @@ async def sync_mission_status_to_backend(mission_id: int, status: str, payment_s
     payload = {"mission_id": mission_id, "status": status}
     if payment_status:
         payload["payment_status"] = payment_status
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/missions/status", json=payload)
         response.raise_for_status()
         return response.json()
@@ -475,7 +477,7 @@ async def sync_payment_to_backend(quote_id: int, payment_status: str, mission_id
     payload = {"quote_id": quote_id, "payment_status": payment_status}
     if mission_id is not None:
         payload["mission_id"] = mission_id
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/payments", json=payload)
         response.raise_for_status()
         return response.json()
@@ -907,14 +909,30 @@ def format_recap(data: dict) -> str:
     )
 
 
+def mission_value(mission, key: str, default=None):
+    """Read fields from either a SQLite Row or a backend V5 dictionary."""
+    try:
+        value = mission[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+    return default if value is None else value
+
+
+def mission_id(mission) -> int:
+    return int(mission_value(mission, "id", mission_value(mission, "mission_id", 0)))
+
+
 def format_mission_client(mission) -> str:
-    service = SERVICES.get(mission["service"], mission["service"])
-    status = STATUS_LABELS.get(mission["status"], mission["status"])
-    payment_status = PAYMENT_STATUS_LABELS.get(mission["payment_status"], mission["payment_status"])
-    provider = mission["provider_name"] or "Non attribué"
+    service_key = mission_value(mission, "service", "")
+    status_key = mission_value(mission, "status", "")
+    payment_key = mission_value(mission, "payment_status", "")
+    service = SERVICES.get(service_key, service_key)
+    status = STATUS_LABELS.get(status_key, status_key)
+    payment_status = PAYMENT_STATUS_LABELS.get(payment_key, payment_key)
+    provider = mission_value(mission, "provider_name", "Non attribué")
     return (
-        f"NXH-{mission['id']:04d} | {service}\n"
-        f"Commune : {mission['commune']} | Statut : {status}\n"
+        f"NXH-{mission_id(mission):04d} | {service}\n"
+        f"Commune : {mission_value(mission, 'commune', '')} | Statut : {status}\n"
         f"Paiement : {payment_status} | Prestataire : {provider}"
     )
 
@@ -2658,7 +2676,7 @@ async def afficher_historique_client(callback: CallbackQuery):
     history = [
         mission
         for mission in missions
-        if isinstance(mission, dict) and mission.get("status") in terminal_statuses
+        if mission_value(mission, "status") in terminal_statuses
     ]
 
     if not history:
@@ -2670,14 +2688,20 @@ async def afficher_historique_client(callback: CallbackQuery):
         await callback.answer()
         return
 
-    text = get_message("mission_history_title", lang) + "\n\n" + "\n\n".join(
-        html.escape(format_mission_client(mission)) for mission in history
-    )
-    await callback.message.edit_text(
-        text,
-        parse_mode="HTML",
-        reply_markup=clavier_client(lang),
-    )
+    try:
+        await callback.message.edit_text(
+            rich_message=build_history_rich_message(lang, history),
+            reply_markup=clavier_client(lang),
+        )
+    except Exception:
+        text = get_message("mission_history_title", lang) + "\n\n" + "\n\n".join(
+            html.escape(format_mission_client(mission)) for mission in history
+        )
+        await callback.message.edit_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=clavier_client(lang),
+        )
     await callback.answer()
 
 
@@ -2750,10 +2774,10 @@ def build_history_rich_message(lang: str, missions: list) -> InputRichMessage:
     for mission in missions:
         rows.append(
             [
-                _rich_cell(f"NXH-{mission['id']:04d}"),
-                _rich_cell(SERVICES.get(mission["service"], mission["service"])),
-                _rich_cell(STATUS_LABELS.get(mission["status"], mission["status"] or "")),
-                _rich_cell(PAYMENT_STATUS_LABELS.get(mission["payment_status"], mission["payment_status"] or "")),
+                _rich_cell(f"NXH-{mission_id(mission):04d}"),
+                _rich_cell(SERVICES.get(mission_value(mission, "service", ""), mission_value(mission, "service", ""))),
+                _rich_cell(STATUS_LABELS.get(mission_value(mission, "status", ""), mission_value(mission, "status", ""))),
+                _rich_cell(PAYMENT_STATUS_LABELS.get(mission_value(mission, "payment_status", ""), mission_value(mission, "payment_status", ""))),
             ]
         )
     table = InputRichBlockTable(cells=[header, *rows], is_bordered=True, is_striped=True)

@@ -1,11 +1,17 @@
+import hmac
+import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from dotenv import load_dotenv
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from backend.app import crud
 from backend.app.database import SessionLocal, init_db
 from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotUser
+
+load_dotenv()
+BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
 
 
 @asynccontextmanager
@@ -15,6 +21,26 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Nexis Hub V5 Backend", lifespan=lifespan)
+
+
+def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """Authentifie le bot (seul client légitime) sur toutes les routes /api/*.
+
+    Ce backend n'a aucune authentification par utilisateur final : le bot est
+    censé être le seul appelant, via une clé partagée envoyée dans l'en-tête
+    X-API-Key. Voir le skill `securite-backend` avant d'exposer ce service
+    au-delà de 127.0.0.1.
+    """
+    if not BACKEND_API_KEY:
+        raise HTTPException(status_code=500, detail="BACKEND_API_KEY manquant côté serveur")
+    if not x_api_key or not hmac.compare_digest(x_api_key, BACKEND_API_KEY):
+        raise HTTPException(status_code=401, detail="Clé API invalide ou manquante")
+
+
+# Toutes les routes /api/* passent par ce router protégé. /health reste sur
+# `app` directement, sans authentification, pour rester utilisable par un
+# outil de supervision externe.
+router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 
 class BotUserPayload(BaseModel):
@@ -183,14 +209,14 @@ def health():
     return {"status": "ok", "service": "nexis-hub-v5"}
 
 
-@app.post("/api/bot/users")
+@router.post("/api/bot/users")
 def create_bot_user(payload: BotUserPayload):
     with SessionLocal() as db:
         user = crud.upsert_user(db, payload.telegram_id, payload.first_name, payload.phone_number, payload.language)
         return {"status": "ok", "user": _user_to_dict(user)}
 
 
-@app.post("/api/bot/missions")
+@router.post("/api/bot/missions")
 def create_bot_mission(payload: BotMissionPayload):
     with SessionLocal() as db:
         mission = crud.create_mission(
@@ -206,7 +232,7 @@ def create_bot_mission(payload: BotMissionPayload):
         return {"status": "ok", "mission": _mission_to_dict(mission)}
 
 
-@app.post("/api/bot/providers")
+@router.post("/api/bot/providers")
 def create_bot_provider(payload: BotProviderPayload):
     with SessionLocal() as db:
         provider = crud.upsert_provider(
@@ -221,7 +247,7 @@ def create_bot_provider(payload: BotProviderPayload):
         return {"status": "ok", "provider": _provider_to_dict(provider)}
 
 
-@app.patch("/api/bot/users/{telegram_id}/language")
+@router.patch("/api/bot/users/{telegram_id}/language")
 def update_user_language(telegram_id: int, payload: LanguagePayload):
     with SessionLocal() as db:
         user = crud.update_user_language(db, telegram_id, payload.language)
@@ -230,7 +256,7 @@ def update_user_language(telegram_id: int, payload: LanguagePayload):
         return {"status": "ok", "user": _user_to_dict(user)}
 
 
-@app.patch("/api/bot/users/{telegram_id}/name")
+@router.patch("/api/bot/users/{telegram_id}/name")
 def update_user_name(telegram_id: int, payload: NamePayload):
     with SessionLocal() as db:
         user = crud.update_user_name(db, telegram_id, payload.first_name)
@@ -239,7 +265,7 @@ def update_user_name(telegram_id: int, payload: NamePayload):
         return {"status": "ok", "user": _user_to_dict(user)}
 
 
-@app.patch("/api/bot/providers/{telegram_id}/language")
+@router.patch("/api/bot/providers/{telegram_id}/language")
 def update_provider_language(telegram_id: int, payload: LanguagePayload):
     with SessionLocal() as db:
         provider = crud.update_provider_language(db, telegram_id, payload.language)
@@ -248,7 +274,7 @@ def update_provider_language(telegram_id: int, payload: LanguagePayload):
         return {"status": "ok", "provider": _provider_to_dict(provider)}
 
 
-@app.patch("/api/bot/providers/{telegram_id}/services")
+@router.patch("/api/bot/providers/{telegram_id}/services")
 def update_provider_services(telegram_id: int, payload: ProviderServicesPayload):
     with SessionLocal() as db:
         provider = crud.update_provider_services(db, telegram_id, payload.services)
@@ -257,7 +283,7 @@ def update_provider_services(telegram_id: int, payload: ProviderServicesPayload)
         return {"status": "ok", "provider": _provider_to_dict(provider)}
 
 
-@app.patch("/api/bot/providers/{telegram_id}/status")
+@router.patch("/api/bot/providers/{telegram_id}/status")
 def update_provider_status(telegram_id: int, payload: ProviderStatusPayload):
     with SessionLocal() as db:
         provider = crud.update_provider_status(db, telegram_id, payload.status)
@@ -266,7 +292,7 @@ def update_provider_status(telegram_id: int, payload: ProviderStatusPayload):
         return {"status": "ok", "provider": _provider_to_dict(provider)}
 
 
-@app.post("/api/bot/providers/{telegram_id}/verify")
+@router.post("/api/bot/providers/{telegram_id}/verify")
 def verify_provider(telegram_id: int):
     with SessionLocal() as db:
         provider = crud.set_provider_verified(db, telegram_id, True)
@@ -275,7 +301,7 @@ def verify_provider(telegram_id: int):
         return {"status": "ok", "provider": _provider_to_dict(provider)}
 
 
-@app.post("/api/bot/providers/{telegram_id}/suspend")
+@router.post("/api/bot/providers/{telegram_id}/suspend")
 def suspend_provider(telegram_id: int):
     with SessionLocal() as db:
         provider = crud.set_provider_suspended(db, telegram_id, True)
@@ -284,7 +310,7 @@ def suspend_provider(telegram_id: int):
         return {"status": "ok", "provider": _provider_to_dict(provider)}
 
 
-@app.post("/api/bot/providers/{telegram_id}/ignored")
+@router.post("/api/bot/providers/{telegram_id}/ignored")
 def increment_provider_ignored(telegram_id: int):
     with SessionLocal() as db:
         provider = crud.update_consecutive_ignored(db, telegram_id)
@@ -293,7 +319,7 @@ def increment_provider_ignored(telegram_id: int):
         return {"status": "ok", "provider": _provider_to_dict(provider)}
 
 
-@app.post("/api/bot/providers/{telegram_id}/ignored/reset")
+@router.post("/api/bot/providers/{telegram_id}/ignored/reset")
 def reset_provider_ignored(telegram_id: int):
     with SessionLocal() as db:
         provider = crud.reset_consecutive_ignored(db, telegram_id)
@@ -302,14 +328,14 @@ def reset_provider_ignored(telegram_id: int):
         return {"status": "ok", "provider": _provider_to_dict(provider)}
 
 
-@app.get("/api/bot/providers/matching")
+@router.get("/api/bot/providers/matching")
 def matching_providers(service: str, commune: str):
     with SessionLocal() as db:
         providers = crud.find_matching_providers(db, service, commune)
         return {"status": "ok", "providers": [_provider_to_dict(provider) for provider in providers]}
 
 
-@app.post("/api/bot/quotes")
+@router.post("/api/bot/quotes")
 def create_quote(payload: QuoteCreatePayload):
     with SessionLocal() as db:
         quote = crud.create_quote(
@@ -326,7 +352,7 @@ def create_quote(payload: QuoteCreatePayload):
         return {"status": "ok", "quote": _quote_to_dict(quote)}
 
 
-@app.post("/api/bot/reviews")
+@router.post("/api/bot/reviews")
 def create_review(payload: ReviewCreatePayload):
     with SessionLocal() as db:
         try:
@@ -342,7 +368,7 @@ def create_review(payload: ReviewCreatePayload):
         return {"status": "ok", "review": _review_to_dict(review)}
 
 
-@app.post("/api/bot/quotes/{quote_id}/accept")
+@router.post("/api/bot/quotes/{quote_id}/accept")
 def accept_quote(quote_id: int):
     with SessionLocal() as db:
         quote = crud.accept_quote(db, quote_id)
@@ -351,7 +377,7 @@ def accept_quote(quote_id: int):
         return {"status": "ok", "quote": _quote_to_dict(quote)}
 
 
-@app.post("/api/bot/quotes/{quote_id}/reject")
+@router.post("/api/bot/quotes/{quote_id}/reject")
 def reject_quote(quote_id: int):
     with SessionLocal() as db:
         quote = crud.reject_quote(db, quote_id)
@@ -360,7 +386,7 @@ def reject_quote(quote_id: int):
         return {"status": "ok", "quote": _quote_to_dict(quote)}
 
 
-@app.post("/api/bot/quotes/{quote_id}/pay")
+@router.post("/api/bot/quotes/{quote_id}/pay")
 def pay_quote(quote_id: int, payload: PaymentOperatorPayload):
     with SessionLocal() as db:
         result = crud.mark_quote_paid(db, quote_id, payload.operator)
@@ -369,7 +395,7 @@ def pay_quote(quote_id: int, payload: PaymentOperatorPayload):
         return {"status": "ok", **result}
 
 
-@app.post("/api/bot/quotes/{quote_id}/pay-wallet")
+@router.post("/api/bot/quotes/{quote_id}/pay-wallet")
 def pay_quote_with_wallet(quote_id: int, payload: PaymentOperatorPayload):
     with SessionLocal() as db:
         try:
@@ -379,7 +405,7 @@ def pay_quote_with_wallet(quote_id: int, payload: PaymentOperatorPayload):
         return {"status": "ok", **result}
 
 
-@app.post("/api/bot/missions/{mission_id}/start")
+@router.post("/api/bot/missions/{mission_id}/start")
 def start_mission(mission_id: int, payload: MissionActionPayload):
     with SessionLocal() as db:
         try:
@@ -389,7 +415,7 @@ def start_mission(mission_id: int, payload: MissionActionPayload):
         return {"status": "ok", "mission": _mission_to_dict(mission)}
 
 
-@app.post("/api/bot/missions/{mission_id}/finish")
+@router.post("/api/bot/missions/{mission_id}/finish")
 def finish_mission(mission_id: int, payload: MissionActionPayload):
     with SessionLocal() as db:
         try:
@@ -399,7 +425,7 @@ def finish_mission(mission_id: int, payload: MissionActionPayload):
         return {"status": "ok", "mission": _mission_to_dict(mission)}
 
 
-@app.post("/api/bot/missions/{mission_id}/release")
+@router.post("/api/bot/missions/{mission_id}/release")
 def release_payment(mission_id: int):
     with SessionLocal() as db:
         try:
@@ -409,7 +435,7 @@ def release_payment(mission_id: int):
         return {"status": "ok", "mission": _mission_to_dict(mission)}
 
 
-@app.post("/api/bot/missions/status")
+@router.post("/api/bot/missions/status")
 def update_mission_status(payload: MissionStatusPayload):
     with SessionLocal() as db:
         mission = db.get(BotMission, payload.mission_id)
@@ -423,7 +449,7 @@ def update_mission_status(payload: MissionStatusPayload):
         return {"status": "ok", "mission": _mission_to_dict(mission)}
 
 
-@app.post("/api/bot/payments")
+@router.post("/api/bot/payments")
 def update_payment(payload: PaymentPayload):
     with SessionLocal() as db:
         mission = db.get(BotMission, payload.mission_id) if payload.mission_id is not None else None
@@ -438,7 +464,7 @@ def update_payment(payload: PaymentPayload):
         }
 
 
-@app.get("/api/profile/{telegram_id}")
+@router.get("/api/profile/{telegram_id}")
 def profile(telegram_id: int):
     with SessionLocal() as db:
         user = db.get(BotUser, telegram_id)
@@ -456,3 +482,6 @@ def profile(telegram_id: int):
             "service_requests": [],
             "profile_type": "client" if user else "provider" if provider else "guest",
         }
+
+
+app.include_router(router)

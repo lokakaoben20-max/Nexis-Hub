@@ -288,3 +288,20 @@ def test_finalize_review_keeps_state_when_backend_is_unavailable(monkeypatch):
 
     assert result is None
     assert state.cleared is False
+
+
+def test_backend_mission_is_rendered_without_legacy_only_fields():
+    mission = {
+        "mission_id": 17,
+        "service": "service_plomberie",
+        "commune": "Gombe",
+        "status": "completed",
+        "payment_status": "released",
+    }
+
+    rendered = main.format_mission_client(mission)
+    rich_message = main.build_history_rich_message("fr", [mission])
+
+    assert "NXH-0017" in rendered
+    assert "Non attribué" in rendered
+    assert rich_message.blocks
