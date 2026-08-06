@@ -148,5 +148,8 @@
   "provider_menu": "🔧 <b>Tableau ya mosali — {prenom}</b>\n\n🏅 Badge : <b>{badge}</b>\n⭐ Note : <b>{note}/5</b>\n📊 Misala : <b>{missions}</b>\n🟢 Statut : <b>{statut}</b>",
   "anti_bypass_warning": "🛡 <b>Tika kozwa mbongo libanda ya bot oyo</b>\n\nSoki ozali kosala bongo, okobungisa garantie ya NEXIS HUB.",
   "quote_accept_title": "✅ <b>Devis endimami</b> — Mission NXH-{mission_id:04d}",
-  "quote_accept_choose_payment": "Pona ndenge ya kofuta mpo na kobatela mission."
+  "quote_accept_choose_payment": "Pona ndenge ya kofuta mpo na kobatela mission.",
+  "mission_reminder_10min_provider": "⏰ <b>Bokundoli</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nService : <b>{service}</b>\nCommune : <b>{commune}</b>\n\nDevis ezali naino te. Ozali na ntango ya kopesa eyano.",
+  "mission_reminder_20min_provider": "⏰ <b>Bokundoli ya nsuka</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nService : <b>{service}</b>\nCommune : <b>{commune}</b>\n\nDevis ezali naino te. Pesa eyano noki soki ozali libre.",
+  "daily_analytics_admin_report": "📊 <b>Lapolo ya mokolo NEXIS HUB — {date}</b>\n\nMission ekelami : <b>{missions_created}</b>\nMission esilisami : <b>{missions_completed}</b>\n\n{breakdown}"
 }

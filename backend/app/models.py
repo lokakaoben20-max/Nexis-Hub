@@ -62,6 +62,13 @@ class BotMission(Base):
     total_client: Mapped[float] = mapped_column(Float, default=0.0)
     net_provider: Mapped[float] = mapped_column(Float, default=0.0)
     dispute_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Mise à jour à chaque changement de `status` (voir crud._touch_status) — sert
+    # à mesurer "en attente de confirmation depuis quand" (auto-libération) et
+    # "sans devis depuis quand" (relances), sans dupliquer un timestamp par statut.
+    status_changed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    reminder_sent_10min: Mapped[bool] = mapped_column(Boolean, default=False)
+    reminder_sent_20min: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class BotQuote(Base):
@@ -75,6 +82,7 @@ class BotQuote(Base):
     delay_hours: Mapped[int] = mapped_column(Integer)
     message: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(20), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class BotTransaction(Base):

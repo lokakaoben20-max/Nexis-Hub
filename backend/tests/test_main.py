@@ -96,7 +96,11 @@ def test_mission_lifecycle_round_trip(tmp_path, monkeypatch):
             },
         )
         assert create_response.status_code == 200
-        assert create_response.json()["mission"]["status"] is None
+        # "pending" dès la création (et non None) : parité avec le défaut SQL
+        # de db.py légataire (`status TEXT DEFAULT 'pending'`), et signal
+        # nécessaire aux tâches Celery de la Phase 2 (relances : "mission
+        # encore sans devis").
+        assert create_response.json()["mission"]["status"] == "pending"
 
         status_response = test_client.post(
             "/api/bot/missions/status",

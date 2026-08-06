@@ -144,5 +144,8 @@
   "provider_ignored_warning": "⏰ <b>Demande expirée</b>\n\nVous n'avez pas répondu à temps.\nLa demande a été transmise à un autre prestataire.\n\nRestez réactif pour ne pas manquer vos opportunités !",
   "provider_paused": "⚠️ <b>Votre profil est en pause</b>\n\nVous n'avez pas répondu à 3 demandes consécutives.\n\nÊtes-vous disponible ?",
   "quote_accept_title": "✅ <b>Devis accepté</b> — Mission NXH-{mission_id:04d}",
-  "quote_accept_choose_payment": "Choisissez un mode de paiement pour sécuriser la mission."
+  "quote_accept_choose_payment": "Choisissez un mode de paiement pour sécuriser la mission.",
+  "mission_reminder_10min_provider": "⏰ <b>Rappel</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nService : <b>{service}</b>\nCommune : <b>{commune}</b>\n\nAucun devis reçu pour l'instant. Il vous reste du temps pour répondre.",
+  "mission_reminder_20min_provider": "⏰ <b>Dernier rappel</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nService : <b>{service}</b>\nCommune : <b>{commune}</b>\n\nToujours aucun devis reçu. Répondez vite si vous êtes disponible.",
+  "daily_analytics_admin_report": "📊 <b>Rapport quotidien NEXIS HUB — {date}</b>\n\nMissions créées : <b>{missions_created}</b>\nMissions terminées : <b>{missions_completed}</b>\n\n{breakdown}"
 }

@@ -53,16 +53,27 @@ ne le signale** — et l'inverse est vrai aussi.
 Ce couplage disparaîtra le jour où la Mini App passera par le backend V5 au lieu de
 `db.py` — chantier non lancé, voir [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md).
 
-### Ports (les trois services peuvent tourner en même temps)
+### Ports (les services peuvent tourner en même temps)
 
 | Service | Port | Commande |
 | --- | --- | --- |
 | Backend V5 | 8000 | `.venv\Scripts\python.exe -m uvicorn backend.app.main:app --reload` |
 | Mini App | 8001 | `.venv\Scripts\python.exe -m uvicorn mini_app.app:app --reload --host 127.0.0.1 --port 8001` |
 | Bot Telegram | — | `.venv\Scripts\python.exe main.py` |
+| Redis (broker Celery) | 6379 | `docker compose up -d redis` |
+| Worker Celery | — | `.venv\Scripts\python.exe -m celery -A backend.app.celery_app worker --loglevel=info --pool=solo` |
+| Beat Celery (planificateur) | — | `.venv\Scripts\python.exe -m celery -A backend.app.celery_app beat --loglevel=info` |
 
 Ne remets pas la Mini App sur le port 8000 : il appartient au backend V5
 (`BACKEND_BASE_URL`). Voir [mini_app/README.md](mini_app/README.md).
+
+**Worker Celery : toujours `python -m celery`, jamais `celery` seul.** Invoqué
+directement, l'exécutable `celery` place son propre dossier (`Scripts/`) en
+tête de `sys.path` au lieu de la racine du projet — `backend/app/tasks.py`
+(qui importe `messages` à la racine) échoue alors avec `ModuleNotFoundError`.
+`python -m celery`, lancé depuis la racine du dépôt, résout ce problème.
+`--pool=solo` est nécessaire sous Windows (le pool par défaut, `prefork`, n'y
+fonctionne pas).
 
 ## Structure du projet
 

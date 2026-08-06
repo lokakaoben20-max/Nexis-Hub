@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -13,6 +15,17 @@ MIN_MISSIONS_FOR_SUCCESS_BONUS = 3
 
 def _compute_module(services: list[str]) -> str:
     return "B" if any(service in MODULE_B_SERVICES for service in services) else "A"
+
+
+def _touch_status(mission: BotMission) -> None:
+    """Marque le moment du changement de statut d'une mission.
+
+    Sert de référence pour les tâches Celery de la Phase 2 : auto-libération
+    d'escrow après 24h passées en `awaiting_confirmation`, relances quand une
+    mission reste sans devis. Appeler juste après toute assignation de
+    `mission.status`.
+    """
+    mission.status_changed_at = datetime.utcnow()
 
 
 def upsert_user(db: Session, telegram_id: int, first_name: str | None, phone_number: str | None, language: str = "fr") -> BotUser:
@@ -200,6 +213,7 @@ def create_mission(
         currency=currency,
         description=description,
         urgent=urgent,
+        status="pending",
     )
     db.add(mission)
     user = db.get(BotUser, telegram_id)
@@ -232,6 +246,7 @@ def create_quote(
     )
     db.add(quote)
     mission.status = "quoted"
+    _touch_status(mission)
     db.commit()
     db.refresh(quote)
     return quote
@@ -254,6 +269,7 @@ def accept_quote(db: Session, quote_id: int) -> BotQuote | None:
     mission = db.get(BotMission, quote.mission_id)
     if mission is not None:
         mission.status = "confirmed"
+        _touch_status(mission)
         mission.provider_telegram_id = quote.provider_telegram_id
 
     db.commit()
@@ -269,6 +285,43 @@ def reject_quote(db: Session, quote_id: int) -> BotQuote | None:
     db.commit()
     db.refresh(quote)
     return quote
+
+
+def expire_stale_quotes(db: Session, older_than_hours: int = 24) -> list[BotQuote]:
+    """Marque `expired` les devis `pending` plus vieux que `older_than_hours`.
+
+    Si un devis expiré était le dernier devis actif d'une mission `quoted`, la
+    mission repasse à `pending` pour rester matchable — sinon elle resterait
+    coincée sur `quoted` sans plus aucun devis vivant.
+    """
+    cutoff = datetime.utcnow() - timedelta(hours=older_than_hours)
+    stale_quotes = (
+        db.query(BotQuote)
+        .filter(BotQuote.status == "pending", BotQuote.created_at < cutoff)
+        .all()
+    )
+
+    for quote in stale_quotes:
+        quote.status = "expired"
+        mission = db.get(BotMission, quote.mission_id)
+        if mission is not None and mission.status == "quoted":
+            remaining = (
+                db.query(BotQuote)
+                .filter(
+                    BotQuote.mission_id == mission.mission_id,
+                    BotQuote.status == "pending",
+                    BotQuote.id != quote.id,
+                )
+                .count()
+            )
+            if remaining == 0:
+                mission.status = "pending"
+                _touch_status(mission)
+
+    db.commit()
+    for quote in stale_quotes:
+        db.refresh(quote)
+    return stale_quotes
 
 
 def calculate_payment_amounts(amount: float, currency: str, urgent: bool = False) -> dict:
@@ -312,6 +365,7 @@ def _apply_escrow_payment(db: Session, quote: BotQuote, mission: BotMission, tot
     mission.total_client = total_client
     mission.net_provider = amounts["net_provider"]
     mission.status = "confirmed"
+    _touch_status(mission)
 
     db.commit()
     db.refresh(transaction)
@@ -383,6 +437,7 @@ def start_mission(db: Session, mission_id: int, provider_telegram_id: int) -> Bo
         raise ValueError("La mission n'est pas encore payée en escrow")
 
     mission.status = "in_progress"
+    _touch_status(mission)
     db.commit()
     db.refresh(mission)
     return mission
@@ -396,6 +451,7 @@ def finish_mission(db: Session, mission_id: int, provider_telegram_id: int) -> B
         raise ValueError("Ce prestataire n'est pas associé à cette mission")
 
     mission.status = "awaiting_confirmation"
+    _touch_status(mission)
     db.commit()
     db.refresh(mission)
     return mission
@@ -428,6 +484,7 @@ def release_payment(db: Session, mission_id: int) -> BotMission:
                 provider.wallet_balance_cdf += mission.net_provider
 
     mission.status = "completed"
+    _touch_status(mission)
     mission.payment_status = "released"
     db.commit()
     db.refresh(mission)
@@ -544,3 +601,56 @@ def create_review(
 
     _recompute_provider_stats(db, mission.provider_telegram_id)
     return review
+
+
+def find_missions_awaiting_confirmation_since(db: Session, older_than_hours: int = 24) -> list[BotMission]:
+    """Missions en `awaiting_confirmation` depuis plus de `older_than_hours`.
+
+    Base pour l'auto-libération d'escrow (Phase 2) : le client n'a ni confirmé
+    ni contesté, on libère automatiquement au bout du délai.
+    """
+    cutoff = datetime.utcnow() - timedelta(hours=older_than_hours)
+    return (
+        db.query(BotMission)
+        .filter(BotMission.status == "awaiting_confirmation", BotMission.status_changed_at < cutoff)
+        .all()
+    )
+
+
+def find_missions_needing_reminder(db: Session) -> dict[str, list[BotMission]]:
+    """Missions encore `pending` (aucun devis) depuis 10 ou 20 minutes.
+
+    Marque le palier comme envoyé (`reminder_sent_10min`/`reminder_sent_20min`)
+    avant de retourner les listes, pour qu'un appel répété de la tâche
+    périodique ne relance pas deux fois la même mission dans la même fenêtre.
+    """
+    now = datetime.utcnow()
+    first_tier_cutoff = now - timedelta(minutes=10)
+    second_tier_cutoff = now - timedelta(minutes=20)
+
+    first_tier = (
+        db.query(BotMission)
+        .filter(
+            BotMission.status == "pending",
+            BotMission.created_at < first_tier_cutoff,
+            BotMission.reminder_sent_10min.is_(False),
+        )
+        .all()
+    )
+    for mission in first_tier:
+        mission.reminder_sent_10min = True
+
+    second_tier = (
+        db.query(BotMission)
+        .filter(
+            BotMission.status == "pending",
+            BotMission.created_at < second_tier_cutoff,
+            BotMission.reminder_sent_20min.is_(False),
+        )
+        .all()
+    )
+    for mission in second_tier:
+        mission.reminder_sent_20min = True
+
+    db.commit()
+    return {"first": first_tier, "second": second_tier}

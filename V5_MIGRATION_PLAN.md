@@ -186,6 +186,21 @@ polling/synchronicité aujourd'hui, vers des tâches planifiées fiables.
   auto-libération après 24h, analytics quotidiennes).
 - Vérifier qu'aucune tâche cron/manuelle existante ne fait doublon.
 
+**Statut : les 4 tâches identifiées sont portées** (`backend/app/tasks.py`,
+`backend/app/celery_app.py`, `backend/app/notify.py`). Nouvelle migration
+Alembic (`a92fb549a950`) : `created_at`/`status_changed_at` sur `bot_missions`,
+`created_at` sur `bot_quotes` — nécessaires pour mesurer "depuis combien de
+temps" une tâche périodique doit agir, absents jusqu'ici du schéma backend.
+`send_provider_reminders` est une version simplifiée par rapport au fichier
+source : le flow bot actuel diffuse une mission aux 3 meilleurs prestataires
+simultanément (pas un par un avec escalade séquentielle), donc la tâche
+re-notifie les mêmes prestataires matchés à 10 min et 20 min plutôt que de
+réattribuer à un "prestataire suivant" — voir le commentaire dans
+`backend/app/tasks.py`. Notifications envoyées par appel HTTP synchrone direct
+à l'API Telegram (`backend/app/notify.py`), pas par `aiogram.Bot` (le worker
+Celery est un process séparé, sans boucle asyncio). Commandes worker/beat
+documentées dans `AGENTS.md`.
+
 **Risque** : moyen. Nécessite un environnement Redis qui tourne en continu (dev et
 prod).
 
