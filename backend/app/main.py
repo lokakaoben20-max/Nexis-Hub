@@ -310,6 +310,15 @@ def suspend_provider(telegram_id: int):
         return {"status": "ok", "provider": _provider_to_dict(provider)}
 
 
+@router.post("/api/bot/providers/{telegram_id}/unsuspend")
+def unsuspend_provider(telegram_id: int):
+    with SessionLocal() as db:
+        provider = crud.set_provider_suspended(db, telegram_id, False)
+        if provider is None:
+            raise HTTPException(status_code=404, detail="provider_not_found")
+        return {"status": "ok", "provider": _provider_to_dict(provider)}
+
+
 @router.post("/api/bot/providers/{telegram_id}/ignored")
 def increment_provider_ignored(telegram_id: int):
     with SessionLocal() as db:

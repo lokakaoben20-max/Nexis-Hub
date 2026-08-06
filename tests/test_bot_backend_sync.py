@@ -305,3 +305,27 @@ def test_backend_mission_is_rendered_without_legacy_only_fields():
     assert "NXH-0017" in rendered
     assert "Non attribué" in rendered
     assert rich_message.blocks
+
+
+def test_sync_provider_verified_to_backend(monkeypatch):
+    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+
+    result = asyncio.run(main.sync_provider_verified_to_backend(1))
+
+    assert result["status"] == "ok"
+
+
+def test_sync_provider_suspended_to_backend(monkeypatch):
+    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+
+    result = asyncio.run(main.sync_provider_suspended_to_backend(1))
+
+    assert result["status"] == "ok"
+
+
+def test_sync_provider_unsuspended_to_backend(monkeypatch):
+    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+
+    result = asyncio.run(main.sync_provider_unsuspended_to_backend(1))
+
+    assert result["status"] == "ok"

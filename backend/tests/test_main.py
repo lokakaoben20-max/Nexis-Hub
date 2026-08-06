@@ -641,3 +641,42 @@ def test_health_endpoint_needs_no_api_key(tmp_path, monkeypatch):
     with TestClient(backend_main.app) as test_client:
         response = test_client.get("/health")
         assert response.status_code == 200
+
+
+# ── Vérification / suspension prestataire ───────────────────────
+
+
+def test_verify_provider_endpoint_sets_is_verified(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])
+
+        response = test_client.post("/api/bot/providers/1/verify")
+        assert response.status_code == 200
+        assert response.json()["provider"]["is_verified"] is True
+
+
+def test_suspend_then_unsuspend_provider(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])
+
+        suspend_response = test_client.post("/api/bot/providers/1/suspend")
+        assert suspend_response.status_code == 200
+        assert suspend_response.json()["provider"]["is_suspended"] is True
+        assert suspend_response.json()["provider"]["status"] == "paused"
+
+        unsuspend_response = test_client.post("/api/bot/providers/1/unsuspend")
+        assert unsuspend_response.status_code == 200
+        assert unsuspend_response.json()["provider"]["is_suspended"] is False
+        assert unsuspend_response.json()["provider"]["status"] == "available"
+
+
+def test_verify_unknown_provider_returns_404(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        response = test_client.post("/api/bot/providers/999999/verify")
+        assert response.status_code == 404

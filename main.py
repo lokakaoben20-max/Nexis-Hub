@@ -400,6 +400,27 @@ async def sync_provider_status_to_backend(telegram_id: int, status: str) -> dict
         return response.json()
 
 
+async def sync_provider_verified_to_backend(telegram_id: int) -> dict:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/verify")
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_provider_suspended_to_backend(telegram_id: int) -> dict:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/suspend")
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_provider_unsuspended_to_backend(telegram_id: int) -> dict:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/unsuspend")
+        response.raise_for_status()
+        return response.json()
+
+
 async def sync_user_language_to_backend(telegram_id: int, language: str) -> dict:
     async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/users/{telegram_id}/language", json={"language": language})
@@ -1236,6 +1257,8 @@ async def admin_verify_provider(callback: CallbackQuery):
         await callback.answer("Prestataire introuvable.", show_alert=True)
         return
 
+    await _safe_backend_call(sync_provider_verified_to_backend(provider_id))
+
     await callback.message.edit_text(
         f"✅ Prestataire vérifié : <b>{html.escape(provider['full_name'])}</b>",
         parse_mode="HTML",
@@ -1262,6 +1285,8 @@ async def admin_suspend_provider(callback: CallbackQuery):
         await callback.answer("Prestataire introuvable.", show_alert=True)
         return
 
+    await _safe_backend_call(sync_provider_suspended_to_backend(provider_id))
+
     await callback.message.edit_text(
         f"⛔ Prestataire suspendu : <b>{html.escape(provider['full_name'])}</b>",
         parse_mode="HTML",
@@ -1287,6 +1312,8 @@ async def admin_unsuspend_provider(callback: CallbackQuery):
     if provider is None:
         await callback.answer("Prestataire introuvable.", show_alert=True)
         return
+
+    await _safe_backend_call(sync_provider_unsuspended_to_backend(provider_id))
 
     await callback.message.edit_text(
         f"♻️ Prestataire réactivé : <b>{html.escape(provider['full_name'])}</b>",
