@@ -147,5 +147,19 @@
   "quote_accept_choose_payment": "Choisissez un mode de paiement pour sécuriser la mission.",
   "mission_reminder_10min_provider": "⏰ <b>Rappel</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nService : <b>{service}</b>\nCommune : <b>{commune}</b>\n\nAucun devis reçu pour l'instant. Il vous reste du temps pour répondre.",
   "mission_reminder_20min_provider": "⏰ <b>Dernier rappel</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nService : <b>{service}</b>\nCommune : <b>{commune}</b>\n\nToujours aucun devis reçu. Répondez vite si vous êtes disponible.",
-  "daily_analytics_admin_report": "📊 <b>Rapport quotidien NEXIS HUB — {date}</b>\n\nMissions créées : <b>{missions_created}</b>\nMissions terminées : <b>{missions_completed}</b>\n\n{breakdown}"
+  "daily_analytics_admin_report": "📊 <b>Rapport quotidien NEXIS HUB — {date}</b>\n\nMissions créées : <b>{missions_created}</b>\nMissions terminées : <b>{missions_completed}</b>\n\n{breakdown}",
+  "mission_photo_caption": "📷 Photo liée à la mission NXH-{mission_id:04d}",
+  "mission_voice_caption": "🎙️ Note vocale liée à la mission NXH-{mission_id:04d}",
+  "quote_no_message": "Aucun message",
+  "ask_client_phone": "📱 Envoyez votre numéro WhatsApp.\n\nAppuyez sur le bouton ci-dessous ou tapez votre numéro au format +243...",
+  "ask_provider_phone": "🔧 Créons votre profil prestataire.\n\nEnvoyez votre numéro WhatsApp.",
+  "choose_one_commune": "Choisissez au moins une commune.",
+  "choose_one_service": "Choisissez au moins un service.",
+  "client_registered": "✅ Votre inscription client est terminée.",
+  "mission_saved": "✅ <b>Demande enregistrée.</b>\n\nRéférence mission : <b>NXH-{mission_id:04d}</b>\n\n{matching_text}",
+  "phone_required": "Envoyez ou tapez votre numéro WhatsApp pour continuer.",
+  "provider_choose_communes": "📍 Dans quelles communes pouvez-vous intervenir ?\n\nVous pouvez en choisir plusieurs.",
+  "provider_choose_services": "🧰 Quels services proposez-vous ?\n\nVous pouvez en choisir plusieurs, puis appuyez sur Continuer.",
+  "provider_phone_saved": "✅ Numéro enregistré.\n\nTapez votre nom complet ou le nom de votre activité.",
+  "provider_registered": "✅ <b>Profil prestataire créé.</b>\n\nStatut : <b>{status}</b>\nBadge : <b>{badge}</b>\n\nVotre profil est enregistré. La validation admin et le matching suivront."
 }

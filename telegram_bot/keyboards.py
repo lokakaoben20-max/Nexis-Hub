@@ -44,6 +44,8 @@ def load_services():
 
 SERVICES = load_services()
 
+SERVICE_CALLBACKS = list(SERVICES.keys())
+
 COMMUNES = [
     ("Gombe", "commune_gombe"),
     ("Kinshasa", "commune_kinshasa"),
@@ -55,6 +57,12 @@ COMMUNES = [
     ("Lingwala", "commune_lingwala"),
     ("Autre commune", "commune_autre"),
 ]
+
+CURRENCIES = {
+    "currency_usd": "USD",
+    "currency_cdf": "CDF",
+}
+CURRENCY_CALLBACKS = list(CURRENCIES.keys())
 
 BUTTON_LABELS = {
     "fr": {
@@ -298,3 +306,102 @@ def clavier_communes_prestataire(selected_communes=None):
     builder.button(text="✅ Terminer l'inscription", callback_data="provider_communes_done")
     builder.adjust(1)
     return builder.as_markup()
+
+
+# ── Flow mission / devis (Phase 3, second flow extrait) ────────────────────
+
+
+def clavier_services(lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    for key, label in SERVICES.items():
+        builder.button(text=label, callback_data=key)
+    builder.button(text=button_label("back", lang), callback_data="profil_client")
+    builder.adjust(2, 2, 2, 2, 1, 1)
+    return builder.as_markup()
+
+
+def clavier_urgence(lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=button_label("urgent_yes", lang), callback_data="urgent_oui")
+    builder.button(text=button_label("urgent_no", lang), callback_data="urgent_non")
+    builder.button(text=button_label("back_services", lang), callback_data="client_demande")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_communes(lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    for label, callback_data in COMMUNES:
+        builder.button(text=label, callback_data=callback_data)
+    builder.button(text=button_label("back", lang), callback_data="client_demande")
+    builder.adjust(2, 2, 2, 2, 1, 1)
+    return builder.as_markup()
+
+
+def clavier_devises(lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💵 USD", callback_data="currency_usd")
+    builder.button(text="🇨🇩 CDF", callback_data="currency_cdf")
+    builder.button(text=button_label("back_communes", lang), callback_data="back_communes")
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def clavier_devises_devis():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💵 USD", callback_data="quote_currency_usd")
+    builder.button(text="🇨🇩 CDF", callback_data="quote_currency_cdf")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def clavier_recapitulatif(lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=button_label("confirm_request", lang), callback_data="mission_confirmer")
+    builder.button(text=button_label("edit", lang), callback_data="client_demande")
+    builder.button(text=button_label("cancel", lang), callback_data="mission_annuler")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_photo_optionnelle(lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=button_label("skip_photo", lang), callback_data="mission_skip_photo")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_fin_explication(lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=button_label("finish_explanation", lang), callback_data="mission_media_done")
+    builder.button(text=button_label("cancel", lang), callback_data="mission_annuler")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_alerte_mission(mission_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Accepter", callback_data=f"provider_accept_{mission_id}")
+    builder.button(text="❌ Passer", callback_data=f"provider_skip_{mission_id}")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def clavier_devis_client(quote_id: int, backend_quote_id: int | None = None):
+    backend_suffix = backend_quote_id if backend_quote_id is not None else "-"
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Accepter ce devis", callback_data=f"client_accept_quote_{quote_id}:{backend_suffix}")
+    builder.button(text="❌ Refuser", callback_data=f"client_reject_quote_{quote_id}:{backend_suffix}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def _parse_quote_callback_ids(raw: str) -> tuple[int, int | None]:
+    """Sépare l'id local (db.py) de l'id backend encodés dans un callback_data.
+
+    Les deux séquences d'autoincrement divergent (SQLite vs Postgres) — voir
+    V5_MIGRATION_PLAN.md, flow devis. `-` signale un sync backend échoué.
+    """
+    local_part, _, backend_part = raw.partition(":")
+    backend_id = int(backend_part) if backend_part and backend_part != "-" else None
+    return int(local_part), backend_id

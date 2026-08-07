@@ -49,17 +49,26 @@ Ajouter la clé dans **les trois** fichiers, pas seulement `fr.json`. Une clé
 absente ne provoque aucune erreur : `get_message()` retombe silencieusement sur
 le français.
 
-Vérifier la parité après coup :
+**Et si le français lui-même n'a pas la clé, l'utilisateur voit
+`[Message manquant : ma_cle]` en plein écran.** Ce n'est pas théorique : le
+2026-08-07 on a découvert que 11 clés du parcours d'inscription et de création de
+mission (`ask_client_phone`, `phone_required`, `client_registered`,
+`mission_saved`, `provider_registered`…) n'existaient **que** dans `ln.json`.
+Résultat : tout client francophone ou anglophone voyait ce placeholder au premier
+écran après avoir choisi « Client ». Personne ne l'avait signalé.
+
+Le garde-fou est maintenant automatique — `tests/test_translations_parity.py`
+extrait par AST toutes les clés réellement passées à `get_message("...")` dans
+`main.py`, `telegram_bot/` et `backend/app/`, et échoue si l'une manque dans une
+des trois langues. Lancer après tout ajout :
 
 ```bash
-.venv/Scripts/python.exe -c "
-import json
-langs={l:set(json.load(open(f'translations/{l}.json',encoding='utf-8'))) for l in ('fr','ln','en')}
-for l in ('ln','en'):
-    manquant=sorted(langs['fr']-langs[l])
-    print(l,':',len(manquant),'manquante(s)',manquant if manquant else '')
-"
+.venv/Scripts/python.exe -m pytest tests/test_translations_parity.py -q
 ```
+
+Ce test ignore volontairement les clés présentes dans les fichiers mais jamais
+appelées (le projet en compte une dizaine) : c'est du texte mort, le traduire
+serait du travail inutile.
 
 Contraintes de format à respecter en éditant les JSON :
 

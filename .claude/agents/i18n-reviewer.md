@@ -25,14 +25,25 @@ restent alignés.
    écrit en dur, alors qu'une variable `lang` résolue est déjà disponible
    dans la même fonction ou facilement obtenable, est le bug le plus
    fréquent trouvé dans ce projet — vérifier chaque nouvel appel.
-3. **Vérifier la parité des clés.** Toute nouvelle clé ajoutée à
-   `translations/fr.json` doit avoir son équivalent dans `ln.json` et
-   `en.json` — lancer une comparaison des trois fichiers (clés présentes
-   dans l'un et absentes des deux autres) et rapporter les manquantes, en
-   excluant les clés déjà connues comme mortes/hors-scope (voir le skill
-   `textes-utilisateur` pour la liste à jour : `bypass_signal`,
-   `new_mission_alert`, `provider_card`, etc. — provider-facing ou jamais
-   appelées, pas une vraie dette).
+3. **Vérifier la parité des clés — dans les deux sens.** Le réflexe naturel
+   est de vérifier que `fr.json` ⊆ `ln.json`/`en.json`. Le 2026-08-07 le bug
+   était l'inverse : 11 clés du parcours d'inscription
+   (`ask_client_phone`, `phone_required`, `mission_saved`,
+   `provider_registered`…) n'existaient **que** dans `ln.json`. Comme le
+   fallback de `get_message` est le français, et que le français ne les avait
+   pas non plus, les clients francophones **et** anglophones voyaient
+   `[Message manquant : ...]` en plein écran, au premier écran d'inscription.
+   Comparer l'union des trois fichiers contre chacun, jamais `fr` comme
+   référence implicite.
+
+   Le garde-fou est maintenant `tests/test_translations_parity.py` (scan AST
+   des clés réellement appelées) — le lancer plutôt que de comparer les
+   fichiers à la main. Ne signaler une clé manquante que si elle est
+   réellement appelée quelque part : le projet contient une dizaine de clés
+   mortes (`bypass_signal`, `provider_card`, `searching_providers`,
+   `payment_confirmed`…) présentes dans une seule langue, que le test ignore
+   volontairement. **`new_mission_alert` n'en fait plus partie** — elle était
+   listée ici à tort comme morte alors que `mission_confirmer` l'utilise.
 4. **Vérifier le respect du format des fichiers.** `{placeholders}`,
    `\n`, balises `<b>`/`<i>` doivent être identiques en structure entre les
    trois langues (le contenu textuel diffère, la structure de formatage ne

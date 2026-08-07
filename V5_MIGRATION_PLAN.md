@@ -242,8 +242,39 @@ l'objectif ci-dessus, découvertes pendant l'extraction :
   champs backend réellement calculés (`backend/app/crud.py._recompute_provider_stats`,
   Phase 1).
 
-**Prochain flow candidat** : mission/devis (matching), qui débloquerait la coupure
-complète de `db.py` pour le flow inscription/profil.
+**Second flow extrait : mission/devis** (`telegram_bot/mission.py`, 16 handlers).
+Couvre la création de la demande côté client (choix du service → confirmation →
+diffusion aux 3 prestataires matchés) et la réponse du prestataire (acceptation,
+saisie du devis, envoi au client, ou passage). **S'arrête volontairement à l'envoi du
+devis** : acceptation du devis, paiement, lifecycle et notation restent dans `main.py`
+— la partie argent mérite son propre commit, avec sa propre relecture.
+
+Détail d'implémentation à connaître : les handlers extraits utilisent `callback.bot` /
+`message.bot` (fourni par aiogram sur chaque événement) au lieu de l'instance globale
+`bot` de `main.py`. C'est ce qui permet à un router séparé d'envoyer des messages sans
+réimporter `main`, et ce qui rend les envois sortants mockables en test.
+
+**Trois bugs corrigés au passage dans ce flow** :
+- L'alerte envoyée aux prestataires matchés était figée en français
+  (`get_message("new_mission_alert", "fr", ...)`) : un prestataire lingala ou
+  anglophone la recevait dans la mauvaise langue. Idem pour les légendes des photos et
+  notes vocales, écrites en dur en français.
+- **11 clés de traduction n'existaient que dans `ln.json`** (`ask_client_phone`,
+  `phone_required`, `client_registered`, `mission_saved`, `provider_registered`,
+  `provider_choose_services`…). Comme `get_message` retombe sur le français quand une
+  clé manque, et que le français ne l'avait pas non plus, un client francophone **ou
+  anglophone** voyait littéralement `[Message manquant : ask_client_phone]` au premier
+  écran d'inscription. Complété dans `fr.json` et `en.json`.
+- `tests/test_translations_parity.py` ajouté comme garde-fou : il parse l'AST des
+  fichiers source pour extraire les clés réellement passées à `get_message("...")` et
+  vérifie qu'elles existent dans les trois langues. Une simple parité de clés entre
+  fichiers ne conviendrait pas — le projet contient une dizaine de clés mortes
+  présentes dans une seule langue, qui feraient échouer le test sans qu'aucun
+  utilisateur ne soit affecté.
+
+**Prochain flow candidat** : acceptation du devis → paiement → lifecycle → notation.
+C'est le dernier gros bloc de `main.py`, et celui qui touche à l'argent : à extraire
+avec la même prudence (double écriture, aucun changement de source de vérité).
 
 ## Phase 4 — Canal WhatsApp
 

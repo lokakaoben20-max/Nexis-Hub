@@ -18,7 +18,7 @@ import os
 import httpx
 from dotenv import load_dotenv
 
-from db import create_user, get_provider_by_telegram_id, get_user_by_telegram_id
+from db import create_user, get_mission_by_id, get_provider_by_telegram_id, get_user_by_telegram_id
 
 load_dotenv()
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://127.0.0.1:8000")
@@ -101,6 +101,55 @@ async def sync_provider_ignored_reset_to_backend(telegram_id: int) -> dict:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/ignored/reset")
         response.raise_for_status()
         return response.json()
+
+
+async def sync_provider_ignored_increment_to_backend(telegram_id: int) -> dict:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/ignored")
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_mission_to_backend(telegram_id: int, mission_id: int, data: dict) -> dict:
+    payload = {
+        "telegram_id": telegram_id,
+        "mission_id": mission_id,
+        "service": data.get("service", "service_autre"),
+        "commune": data.get("commune", "Autre commune"),
+        "currency": data.get("currency", "USD"),
+        "description": data.get("description", ""),
+        "urgent": bool(data.get("urgent", False)),
+    }
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/missions", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_quote_to_backend(mission_id: int, provider_telegram_id: int, amount: float, currency: str, delay_hours: int, message: str = "") -> dict:
+    payload = {
+        "mission_id": mission_id,
+        "provider_telegram_id": provider_telegram_id,
+        "amount": amount,
+        "currency": currency,
+        "delay_hours": delay_hours,
+        "message": message,
+    }
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def persist_mission_creation(telegram_id: int, mission_id: int, data: dict) -> dict:
+    local_mission = get_mission_by_id(mission_id)
+    if local_mission is None:
+        local_mission = {"id": mission_id, "status": "created"}
+    backend_result = await _safe_backend_call(sync_mission_to_backend(telegram_id, mission_id, data))
+    return {
+        "local": local_mission,
+        "backend": backend_result,
+    }
 
 
 async def fetch_backend_profile(telegram_id: int) -> dict | None:

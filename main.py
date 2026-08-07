@@ -26,10 +26,7 @@ from aiogram.exceptions import TelegramBadRequest
 from messages import get_message
 from db import (
     accept_quote,
-    create_mission,
-    create_quote,
     create_service_request,
-    find_matching_providers,
     get_mission_by_id,
     get_admin_stats,
     get_all_providers,
@@ -50,16 +47,15 @@ from db import (
     mark_quote_paid_with_wallet,
     reject_quote,
     release_payment,
-    reset_consecutive_ignored,
     set_provider_suspended,
     set_provider_verified,
     start_mission,
-    update_consecutive_ignored,
     update_service_request_status,
 )
-# Phase 3 (pilote, voir V5_MIGRATION_PLAN.md) : le flow inscription/profil vit
-# maintenant dans telegram_bot/ (module séparé, même process — pas encore un
-# service à part, voir le commentaire au-dessus de dp.include_router ci-dessous).
+# Phase 3 (voir V5_MIGRATION_PLAN.md) : les flows inscription/profil et
+# mission/devis vivent maintenant dans telegram_bot/ (modules séparés, même
+# process — pas encore des services à part, voir dp.include_router ci-dessous).
+from telegram_bot import mission as mission_flow
 from telegram_bot import registration
 from telegram_bot.backend_client import (
     _safe_backend_call,
@@ -68,19 +64,18 @@ from telegram_bot.backend_client import (
     get_state_language,
     get_user_language,
     load_profile_from_backend,
-    sync_provider_ignored_reset_to_backend,
 )
 from telegram_bot.keyboards import (
-    COMMUNES,
     MINI_APP_URL,
     SERVICES,
+    _parse_quote_callback_ids,
     button_label,
     clavier_client,
-    clavier_disponibilite,
     clavier_langue,
     clavier_prestataire,
     clavier_services_actions,
 )
+from telegram_bot.mission import provider_trust_line
 
 
 load_dotenv()
@@ -95,9 +90,10 @@ if not BOT_TOKEN:
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
-# Flow inscription/profil (Phase 3 pilote) : router séparé plutôt que des handlers
-# directement sur `dp`, voir telegram_bot/registration.py.
+# Flows extraits (Phase 3) : routers séparés plutôt que des handlers directement
+# sur `dp`. Voir telegram_bot/registration.py et telegram_bot/mission.py.
 dp.include_router(registration.router)
+dp.include_router(mission_flow.router)
 
 
 _original_edit_text = Message.edit_text
@@ -140,62 +136,12 @@ STATUS_LABELS = {
     "disputed": "Litige",
 }
 
-BADGE_LABELS = {
-    "partner": "🏆 Partenaire",
-    "expert": "🥇 Expert",
-    "premium": "⭐ Premium",
-    "verified": "✅ Vérifié",
-}
-
 PAYMENT_STATUS_LABELS = {
     "unpaid": "Non payé",
     "paid_escrow": "Sécurisé en escrow",
     "released": "Libéré",
     "refunded": "Remboursé",
 }
-
-def provider_trust_line(provider) -> str:
-    if not provider["total_missions"]:
-        return "🆕 Nouveau prestataire sur Nexis Hub"
-
-    line = f"⭐ {provider['rating']:.1f}/5 ({provider['total_missions']} missions, {provider['success_rate']:.0f}% de réussite)"
-    badge_label = BADGE_LABELS.get(provider["badge"])
-    if badge_label:
-        line += f" · {badge_label}"
-    if provider["is_verified"]:
-        line += " · ✅ Vérifié"
-    return line
-
-
-async def sync_mission_to_backend(telegram_id: int, mission_id: int, data: dict) -> dict:
-    payload = {
-        "telegram_id": telegram_id,
-        "mission_id": mission_id,
-        "service": data.get("service", "service_autre"),
-        "commune": data.get("commune", "Autre commune"),
-        "currency": data.get("currency", "USD"),
-        "description": data.get("description", ""),
-        "urgent": bool(data.get("urgent", False)),
-    }
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/missions", json=payload)
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_quote_to_backend(mission_id: int, provider_telegram_id: int, amount: float, currency: str, delay_hours: int, message: str = "") -> dict:
-    payload = {
-        "mission_id": mission_id,
-        "provider_telegram_id": provider_telegram_id,
-        "amount": amount,
-        "currency": currency,
-        "delay_hours": delay_hours,
-        "message": message,
-    }
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes", json=payload)
-        response.raise_for_status()
-        return response.json()
 
 
 async def sync_review_to_backend(mission_id: int, client_telegram_id: int, rating: int, comment: str = "") -> dict:
@@ -246,13 +192,6 @@ async def sync_provider_unsuspended_to_backend(telegram_id: int) -> dict:
         return response.json()
 
 
-async def sync_provider_ignored_increment_to_backend(telegram_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/ignored")
-        response.raise_for_status()
-        return response.json()
-
-
 async def fetch_backend_missions(telegram_id: int) -> list[dict]:
     try:
         async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
@@ -284,31 +223,9 @@ async def sync_payment_to_backend(quote_id: int, payment_status: str, mission_id
         return response.json()
 
 
-async def persist_mission_creation(telegram_id: int, mission_id: int, data: dict) -> dict:
-    local_mission = get_mission_by_id(mission_id)
-    if local_mission is None:
-        local_mission = {"id": mission_id, "status": "created"}
-    backend_result = await _safe_backend_call(sync_mission_to_backend(telegram_id, mission_id, data))
-    return {
-        "local": local_mission,
-        "backend": backend_result,
-    }
-
-
-class MissionRequest(StatesGroup):
-    description = State()
-
-
 class ProviderServiceRequest(StatesGroup):
     service_name = State()
     description = State()
-
-
-class QuoteCreation(StatesGroup):
-    amount = State()
-    currency = State()
-    delay = State()
-    message = State()
 
 
 class RatingFlow(StatesGroup):
@@ -344,29 +261,6 @@ def clavier_admin_provider(provider_id: int):
     builder.button(text="⬅️ Admin", callback_data="admin_home")
     builder.adjust(1)
     return builder.as_markup()
-
-
-def clavier_alerte_mission(mission_id: int):
-    builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Accepter", callback_data=f"provider_accept_{mission_id}")
-    builder.button(text="❌ Passer", callback_data=f"provider_skip_{mission_id}")
-    builder.adjust(2)
-    return builder.as_markup()
-
-
-def clavier_devis_client(quote_id: int, backend_quote_id: int | None = None):
-    backend_suffix = backend_quote_id if backend_quote_id is not None else "-"
-    builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Accepter ce devis", callback_data=f"client_accept_quote_{quote_id}:{backend_suffix}")
-    builder.button(text="❌ Refuser", callback_data=f"client_reject_quote_{quote_id}:{backend_suffix}")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def _parse_quote_callback_ids(raw: str) -> tuple[int, int | None]:
-    local_part, _, backend_part = raw.partition(":")
-    backend_id = int(backend_part) if backend_part and backend_part != "-" else None
-    return int(local_part), backend_id
 
 
 def clavier_paiement(quote_id: int):
@@ -413,127 +307,12 @@ def clavier_notation_commentaire(mission_id: int, lang: str = "fr"):
     return builder.as_markup()
 
 
-def clavier_services(lang: str = "fr"):
-    builder = InlineKeyboardBuilder()
-    for key, label in SERVICES.items():
-        builder.button(text=label, callback_data=key)
-    builder.button(text=button_label("back", lang), callback_data="profil_client")
-    builder.adjust(2, 2, 2, 2, 1, 1)
-    return builder.as_markup()
-
-
-def clavier_urgence(lang: str = "fr"):
-    builder = InlineKeyboardBuilder()
-    builder.button(text=button_label("urgent_yes", lang), callback_data="urgent_oui")
-    builder.button(text=button_label("urgent_no", lang), callback_data="urgent_non")
-    builder.button(text=button_label("back_services", lang), callback_data="client_demande")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def clavier_communes(lang: str = "fr"):
-    builder = InlineKeyboardBuilder()
-    for label, callback_data in COMMUNES:
-        builder.button(text=label, callback_data=callback_data)
-    builder.button(text=button_label("back", lang), callback_data="client_demande")
-    builder.adjust(2, 2, 2, 2, 1, 1)
-    return builder.as_markup()
-
-
-def clavier_devises(lang: str = "fr"):
-    builder = InlineKeyboardBuilder()
-    builder.button(text="💵 USD", callback_data="currency_usd")
-    builder.button(text="🇨🇩 CDF", callback_data="currency_cdf")
-    builder.button(text=button_label("back_communes", lang), callback_data="back_communes")
-    builder.adjust(2, 1)
-    return builder.as_markup()
-
-
-def clavier_devises_devis():
-    builder = InlineKeyboardBuilder()
-    builder.button(text="💵 USD", callback_data="quote_currency_usd")
-    builder.button(text="🇨🇩 CDF", callback_data="quote_currency_cdf")
-    builder.adjust(2)
-    return builder.as_markup()
-
-
-def clavier_recapitulatif(lang: str = "fr"):
-    builder = InlineKeyboardBuilder()
-    builder.button(text=button_label("confirm_request", lang), callback_data="mission_confirmer")
-    builder.button(text=button_label("edit", lang), callback_data="client_demande")
-    builder.button(text=button_label("cancel", lang), callback_data="mission_annuler")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def clavier_photo_optionnelle(lang: str = "fr"):
-    builder = InlineKeyboardBuilder()
-    builder.button(text=button_label("skip_photo", lang), callback_data="mission_skip_photo")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def clavier_fin_explication(lang: str = "fr"):
-    builder = InlineKeyboardBuilder()
-    builder.button(text=button_label("finish_explanation", lang), callback_data="mission_media_done")
-    builder.button(text=button_label("cancel", lang), callback_data="mission_annuler")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
 def clavier_mini_app(lang: str = "fr"):
     builder = InlineKeyboardBuilder()
     if MINI_APP_URL:
         builder.button(text=button_label("open_mini_app", lang), web_app=WebAppInfo(url=MINI_APP_URL))
     builder.adjust(1)
     return builder.as_markup()
-
-
-def media_list(data: dict, key: str) -> list[str]:
-    value = data.get(key)
-    if not value:
-        return []
-    if isinstance(value, list):
-        return value
-    try:
-        loaded = json.loads(value)
-        return loaded if isinstance(loaded, list) else [value]
-    except (TypeError, json.JSONDecodeError):
-        return [value]
-
-
-def format_recap(data: dict) -> str:
-    lang = data.get("language", "fr")
-    service = SERVICES.get(data.get("service"), "Service")
-    yes_no = {"fr": ("Oui", "Non"), "ln": ("Iyo", "Te"), "en": ("Yes", "No")}
-    yes_label, no_label = yes_no.get(lang, yes_no["fr"])
-    urgence = yes_label if data.get("urgent") else no_label
-    commune = data.get("commune", "Non précisée")
-    currency = data.get("currency", "USD")
-    description = html.escape(data.get("description", ""))
-    photo_count = len(media_list(data, "photo_file_ids") or media_list(data, "photo_file_id"))
-    voice_count = len(media_list(data, "voice_file_ids") or media_list(data, "voice_file_id"))
-    photo = str(photo_count)
-    voice = str(voice_count)
-
-    base_summary = get_message(
-        "mission_summary",
-        lang,
-        service=service,
-        urgent=urgence,
-        commune=commune,
-        currency=currency,
-        description=description,
-    )
-    if lang == "en":
-        return base_summary.replace(
-            f"Currency: <b>{currency}</b>\n",
-            f"Currency: <b>{currency}</b>\nPhoto: <b>{photo}</b>\nVoice note: <b>{voice}</b>\n",
-        )
-    return base_summary.replace(
-        f"Devise : <b>{currency}</b>\n",
-        f"Devise : <b>{currency}</b>\nPhoto : <b>{photo}</b>\nNote vocale : <b>{voice}</b>\n",
-    )
 
 
 def mission_value(mission, key: str, default=None):
@@ -1031,370 +810,6 @@ async def recevoir_description_service_manquant(message: Message, state: FSMCont
     )
 
 
-@dp.callback_query(F.data == "client_demande")
-async def client_demande(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    lang = data.get("language") or await get_user_language(callback.from_user.id)
-    await state.clear()
-    await state.update_data(language=lang)
-    await callback.message.edit_text(
-        get_message("choose_service", lang),
-        parse_mode="HTML",
-        reply_markup=clavier_services(lang),
-    )
-    await callback.answer()
-
-
-@dp.callback_query(F.data.in_(SERVICE_CALLBACKS))
-async def service_selectionne(callback: CallbackQuery, state: FSMContext):
-    await state.update_data(service=callback.data)
-    lang = await get_state_language(state)
-    service_choisi = SERVICES.get(callback.data, "Service")
-    await callback.message.edit_text(
-        get_message("is_urgent", lang, service=service_choisi),
-        parse_mode="HTML",
-        reply_markup=clavier_urgence(lang),
-    )
-    await callback.answer()
-
-
-@dp.callback_query(F.data.in_(["urgent_oui", "urgent_non"]))
-async def urgence_selectionnee(callback: CallbackQuery, state: FSMContext):
-    await state.update_data(urgent=callback.data == "urgent_oui")
-    lang = await get_state_language(state)
-    await callback.message.edit_text(
-        get_message("choose_commune", lang),
-        parse_mode="HTML",
-        reply_markup=clavier_communes(lang),
-    )
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "back_communes")
-async def retour_communes(callback: CallbackQuery):
-    lang = await get_user_language(callback.from_user.id)
-    await callback.message.edit_text(
-        get_message("choose_commune", lang),
-        parse_mode="HTML",
-        reply_markup=clavier_communes(lang),
-    )
-    await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("commune_"))
-async def commune_selectionnee(callback: CallbackQuery, state: FSMContext):
-    commune = next((label for label, data in COMMUNES if data == callback.data), "Autre commune")
-    await state.update_data(commune=commune)
-    lang = await get_state_language(state)
-    await callback.message.edit_text(
-        get_message("choose_currency", lang),
-        parse_mode="HTML",
-        reply_markup=clavier_devises(lang),
-    )
-    await callback.answer()
-
-
-@dp.callback_query(F.data.in_(CURRENCY_CALLBACKS))
-async def devise_selectionnee(callback: CallbackQuery, state: FSMContext):
-    await state.update_data(currency=CURRENCIES[callback.data])
-    lang = await get_state_language(state)
-    await state.set_state(MissionRequest.description)
-    await state.update_data(description_parts=[], photo_file_ids=[], voice_file_ids=[])
-    await callback.message.edit_text(
-        get_message("describe_problem", lang),
-        parse_mode="HTML",
-        reply_markup=clavier_fin_explication(lang),
-    )
-    await callback.answer()
-
-
-@dp.message(MissionRequest.description)
-async def description_recue(message: Message, state: FSMContext):
-    data = await state.get_data()
-    lang = data.get("language", "fr")
-    description_parts = data.get("description_parts", [])
-    photo_file_ids = data.get("photo_file_ids", [])
-    voice_file_ids = data.get("voice_file_ids", [])
-
-    if message.voice:
-        voice_file_ids.append(message.voice.file_id)
-        feedback = get_message("media_voice_added", lang, count=len(voice_file_ids))
-    elif message.photo:
-        photo_file_ids.append(message.photo[-1].file_id)
-        feedback = get_message("media_photo_added", lang, count=len(photo_file_ids))
-    elif message.text:
-        description_parts.append(message.text.strip())
-        feedback = get_message("media_text_added", lang)
-    else:
-        await message.answer(
-            get_message("media_invalid", lang),
-            reply_markup=clavier_fin_explication(lang),
-        )
-        return
-
-    await state.update_data(
-        description_parts=description_parts,
-        photo_file_ids=photo_file_ids,
-        voice_file_ids=voice_file_ids,
-        description="\n".join(description_parts) if description_parts else "Explication envoyée en média par le client.",
-        photo_file_id=json.dumps(photo_file_ids) if photo_file_ids else None,
-        voice_file_id=json.dumps(voice_file_ids) if voice_file_ids else None,
-    )
-    await message.answer(
-        f"{feedback}\n\n{get_message('media_more_or_finish', lang)}",
-        reply_markup=clavier_fin_explication(lang),
-    )
-
-
-@dp.callback_query(MissionRequest.description, F.data == "mission_media_done")
-async def explication_terminee(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    description_parts = data.get("description_parts", [])
-    photo_file_ids = data.get("photo_file_ids", [])
-    voice_file_ids = data.get("voice_file_ids", [])
-
-    if not description_parts and not photo_file_ids and not voice_file_ids:
-        await callback.answer(
-            get_message("media_required_alert", data.get("language", "fr")),
-            show_alert=True,
-        )
-        return
-
-    await state.update_data(
-        description="\n".join(description_parts) if description_parts else "Explication envoyée en média par le client.",
-        photo_file_id=json.dumps(photo_file_ids) if photo_file_ids else None,
-        voice_file_id=json.dumps(voice_file_ids) if voice_file_ids else None,
-    )
-    data = await state.get_data()
-    await state.clear()
-    await state.update_data(**data)
-    await callback.message.edit_text(
-        format_recap(data),
-        parse_mode="HTML",
-        reply_markup=clavier_recapitulatif(data.get("language", "fr")),
-    )
-    await callback.answer()
-
-
-@dp.callback_query(F.data == "mission_confirmer")
-async def mission_confirmer(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    mission_id = create_mission(callback.from_user.id, data)
-    await persist_mission_creation(callback.from_user.id, mission_id, data)
-    matching_providers = find_matching_providers(data["service"], data["commune"])
-
-    for provider in matching_providers[:3]:
-        await bot.send_message(
-            provider["telegram_id"],
-            get_message(
-                "new_mission_alert",
-                "fr",
-                mission_id=mission_id,
-                service=SERVICES.get(data["service"], data["service"]),
-                commune=html.escape(data["commune"]),
-                urgent="Oui" if data.get("urgent") else "Non",
-            )
-            + f"\n\n{html.escape(data['description'])}",
-            parse_mode="HTML",
-            reply_markup=clavier_alerte_mission(mission_id),
-        )
-        for photo_file_id in media_list(data, "photo_file_ids") or media_list(data, "photo_file_id"):
-            await bot.send_photo(
-                provider["telegram_id"],
-                photo_file_id,
-                caption=f"📷 Photo liée à la mission NXH-{mission_id:04d}",
-            )
-        for voice_file_id in media_list(data, "voice_file_ids") or media_list(data, "voice_file_id"):
-            await bot.send_voice(
-                provider["telegram_id"],
-                voice_file_id,
-                caption=f"🎙️ Note vocale liée à la mission NXH-{mission_id:04d}",
-            )
-
-    await state.clear()
-    client_lang = data.get("language", "fr")
-    matching_text = (
-        get_message("matching_providers_notified", client_lang, count=len(matching_providers[:3]))
-        if matching_providers
-        else get_message("matching_no_providers", client_lang)
-    )
-    await callback.message.edit_text(
-        get_message(
-            "mission_saved",
-            client_lang,
-            mission_id=mission_id,
-            matching_text=matching_text,
-        ),
-        parse_mode="HTML",
-        reply_markup=clavier_client(data.get("language", "fr")),
-    )
-    print("Nouvelle demande client:", data)
-    await callback.answer(get_message("toast_request_confirmed", client_lang))
-
-
-@dp.callback_query(F.data.startswith("provider_accept_"))
-async def accepter_mission_prestataire(callback: CallbackQuery, state: FSMContext):
-    mission_id = int(callback.data.replace("provider_accept_", "", 1))
-    mission = get_mission_by_id(mission_id)
-    provider_lang = await get_provider_language(callback.from_user.id)
-    if mission is None:
-        await callback.answer(get_message("provider_mission_not_found", provider_lang), show_alert=True)
-        return
-
-    await state.clear()
-    await state.set_state(QuoteCreation.amount)
-    await state.update_data(quote_mission_id=mission_id)
-    await callback.message.edit_text(
-        get_message("quote_amount_prompt", provider_lang, mission_id=mission_id),
-        parse_mode="HTML",
-    )
-    await callback.answer(get_message("toast_mission_accepted", provider_lang))
-
-
-@dp.message(QuoteCreation.amount)
-async def devis_montant_recu(message: Message, state: FSMContext):
-    lang = await get_provider_language(message.from_user.id)
-    raw_amount = (message.text or "").replace(",", ".").strip()
-    try:
-        amount = float(raw_amount)
-    except ValueError:
-        await message.answer(get_message("quote_amount_invalid", lang))
-        return
-
-    if amount <= 0:
-        await message.answer(get_message("quote_amount_positive", lang))
-        return
-
-    await state.update_data(quote_amount=amount)
-    await state.set_state(QuoteCreation.currency)
-    await message.answer(
-        get_message("quote_currency_prompt", lang),
-        reply_markup=clavier_devises_devis(),
-    )
-
-
-@dp.callback_query(QuoteCreation.currency, F.data.in_(["quote_currency_usd", "quote_currency_cdf"]))
-async def devis_devise_recue(callback: CallbackQuery, state: FSMContext):
-    lang = await get_provider_language(callback.from_user.id)
-    currency = "USD" if callback.data == "quote_currency_usd" else "CDF"
-    await state.update_data(quote_currency=currency)
-    await state.set_state(QuoteCreation.delay)
-    await callback.message.edit_text(
-        get_message("quote_delay_prompt", lang),
-        parse_mode="HTML",
-    )
-    await callback.answer()
-
-
-@dp.message(QuoteCreation.delay)
-async def devis_delai_recu(message: Message, state: FSMContext):
-    lang = await get_provider_language(message.from_user.id)
-    raw_delay = (message.text or "").strip()
-    if not raw_delay.isdigit():
-        await message.answer(get_message("quote_delay_invalid", lang))
-        return
-
-    delay_hours = int(raw_delay)
-    if delay_hours <= 0:
-        await message.answer(get_message("quote_delay_positive", lang))
-        return
-
-    await state.update_data(quote_delay_hours=delay_hours)
-    await state.set_state(QuoteCreation.message)
-    await message.answer(
-        get_message("quote_message_prompt", lang),
-        parse_mode="HTML",
-    )
-
-
-@dp.message(QuoteCreation.message)
-async def devis_message_recu(message: Message, state: FSMContext):
-    data = await state.get_data()
-    provider = get_provider_by_telegram_id(message.from_user.id)
-    mission = get_mission_by_id(data["quote_mission_id"])
-    provider_lang = await get_provider_language(message.from_user.id)
-
-    if provider is None or mission is None:
-        await state.clear()
-        await message.answer(get_message("quote_create_failed", provider_lang))
-        return
-
-    quote_message = (message.text or "").strip()
-    if quote_message == "-":
-        quote_message = ""
-
-    quote_id = create_quote(
-        mission_id=data["quote_mission_id"],
-        provider_telegram_id=message.from_user.id,
-        amount=data["quote_amount"],
-        currency=data["quote_currency"],
-        delay_hours=data["quote_delay_hours"],
-        message=quote_message,
-    )
-    reset_consecutive_ignored(message.from_user.id)
-    await _safe_backend_call(sync_provider_ignored_reset_to_backend(message.from_user.id))
-
-    backend_quote = await _safe_backend_call(
-        sync_quote_to_backend(
-            mission_id=data["quote_mission_id"],
-            provider_telegram_id=message.from_user.id,
-            amount=data["quote_amount"],
-            currency=data["quote_currency"],
-            delay_hours=data["quote_delay_hours"],
-            message=quote_message,
-        )
-    )
-    backend_quote_id = backend_quote["quote"]["id"] if backend_quote else None
-
-    client_lang = await get_user_language(mission["client_telegram_id"])
-    no_message_by_lang = {"fr": "Aucun message", "ln": "Message te", "en": "No message"}
-    await bot.send_message(
-        mission["client_telegram_id"],
-        get_message(
-            "new_quote_received_client",
-            client_lang,
-            mission_id=data["quote_mission_id"],
-            prestataire=html.escape(provider["full_name"]),
-            trust_line=provider_trust_line(provider),
-            amount=data["quote_amount"],
-            currency=data["quote_currency"],
-            delay=data["quote_delay_hours"],
-            message=html.escape(quote_message) if quote_message else no_message_by_lang.get(client_lang, "Aucun message"),
-        ),
-        parse_mode="HTML",
-        reply_markup=clavier_devis_client(quote_id, backend_quote_id),
-    )
-
-    await state.clear()
-    await message.answer(
-        get_message("quote_sent", provider_lang, reference=f"DV-{quote_id:04d}"),
-        parse_mode="HTML",
-        reply_markup=clavier_prestataire(provider_lang),
-    )
-
-
-@dp.callback_query(F.data.startswith("provider_skip_"))
-async def passer_mission_prestataire(callback: CallbackQuery):
-    mission_id = callback.data.replace("provider_skip_", "", 1)
-    provider_lang = await get_provider_language(callback.from_user.id)
-    await callback.message.edit_text(
-        get_message("provider_mission_skipped", provider_lang, mission_id=int(mission_id)),
-        parse_mode="HTML",
-    )
-
-    provider = update_consecutive_ignored(callback.from_user.id)
-    await _safe_backend_call(sync_provider_ignored_increment_to_backend(callback.from_user.id))
-    if provider is not None and provider["status"] == "paused" and provider["consecutive_ignored"] == 3:
-        await bot.send_message(
-            callback.from_user.id,
-            get_message("provider_paused_message", provider_lang),
-            parse_mode="HTML",
-            reply_markup=clavier_disponibilite("paused", provider_lang),
-        )
-
-    await callback.answer(get_message("toast_mission_skipped", provider_lang))
-
-
 @dp.callback_query(F.data.startswith("client_accept_quote_"))
 async def client_accepte_devis(callback: CallbackQuery):
     quote_id, backend_quote_id = _parse_quote_callback_ids(callback.data.replace("client_accept_quote_", "", 1))
@@ -1733,17 +1148,6 @@ async def client_refuse_devis(callback: CallbackQuery):
         parse_mode="HTML",
     )
     await callback.answer(get_message("toast_quote_rejected", client_lang))
-
-
-@dp.callback_query(F.data == "mission_annuler")
-async def mission_annuler(callback: CallbackQuery, state: FSMContext):
-    await state.clear()
-    lang = await get_user_language(callback.from_user.id)
-    await callback.message.edit_text(
-        get_message("request_cancelled", lang),
-        reply_markup=clavier_client(lang),
-    )
-    await callback.answer(get_message("toast_request_cancelled", lang))
 
 
 @dp.callback_query(F.data == "client_missions")

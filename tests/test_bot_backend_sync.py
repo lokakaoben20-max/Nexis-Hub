@@ -106,7 +106,7 @@ def test_persist_client_registration_returns_backend_and_local(monkeypatch):
 def test_persist_mission_creation_returns_backend_and_local(monkeypatch):
     monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
 
-    result = asyncio.run(main.persist_mission_creation(88, 999, {"service": "service_plomberie", "commune": "Gombe", "currency": "USD"}))
+    result = asyncio.run(backend_client.persist_mission_creation(88, 999, {"service": "service_plomberie", "commune": "Gombe", "currency": "USD"}))
 
     assert result["backend"]["status"] == "ok"
     assert result["local"]["id"] == 999
@@ -115,7 +115,7 @@ def test_persist_mission_creation_returns_backend_and_local(monkeypatch):
 def test_persist_mission_creation_survives_backend_outage(monkeypatch):
     monkeypatch.setattr(main.httpx, "AsyncClient", RaisingAsyncClient)
 
-    result = asyncio.run(main.persist_mission_creation(88, 999, {"service": "service_plomberie", "commune": "Gombe", "currency": "USD"}))
+    result = asyncio.run(backend_client.persist_mission_creation(88, 999, {"service": "service_plomberie", "commune": "Gombe", "currency": "USD"}))
 
     assert result["backend"] is None
     assert result["local"]["id"] == 999
@@ -157,8 +157,8 @@ def test_sync_provider_services_to_backend_patches_services(monkeypatch):
 def test_sync_provider_ignored_increment_and_reset_to_backend(monkeypatch):
     monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
 
-    increment_result = asyncio.run(main.sync_provider_ignored_increment_to_backend(1))
-    reset_result = asyncio.run(main.sync_provider_ignored_reset_to_backend(1))
+    increment_result = asyncio.run(backend_client.sync_provider_ignored_increment_to_backend(1))
+    reset_result = asyncio.run(backend_client.sync_provider_ignored_reset_to_backend(1))
 
     assert increment_result["status"] == "ok"
     assert reset_result["status"] == "ok"
@@ -227,7 +227,7 @@ async def _async_return(value):
 def test_sync_quote_to_backend_posts_payload(monkeypatch):
     monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
 
-    result = asyncio.run(main.sync_quote_to_backend(
+    result = asyncio.run(backend_client.sync_quote_to_backend(
         mission_id=1001, provider_telegram_id=7, amount=50.0, currency="USD", delay_hours=2, message="ok",
     ))
 

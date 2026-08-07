@@ -86,6 +86,12 @@ fonctionne pas).
 - `telegram_bot/` : flows Telegram extraits de `main.py` (Phase 3 du plan de migration,
   voir [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md)) — même process que `main.py` pour
   l'instant (`dp.include_router(...)`), pas encore un service séparé.
+  `registration.py` (inscription/profil), `mission.py` (mission/devis),
+  `backend_client.py` (appels au backend V5), `keyboards.py` (claviers partagés).
+  **Dans ces modules, ne jamais importer `bot` depuis `main.py`** : utiliser
+  `callback.bot` / `message.bot`, fournis par aiogram sur chaque événement. Un
+  `from main import ...` réexécute tout `main.py` sous le nom `__main__` quand le bot
+  tourne via `python main.py`, et crée un second `Bot`/`Dispatcher`.
 - `db.py` : couche de persistance legacy SQLite (fallback pendant la migration).
 - `messages.py` : textes du bot (fr / ln / en).
 - `backend/app/main.py` : backend V5 minimal (FastAPI), persistance JSON sur disque.

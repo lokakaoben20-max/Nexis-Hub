@@ -138,5 +138,20 @@
   "quote_accept_choose_payment": "Choose a payment method to secure the mission.",
   "mission_reminder_10min_provider": "⏰ <b>Reminder</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\nService: <b>{service}</b>\nDistrict: <b>{commune}</b>\n\nNo quote received yet. You still have time to respond.",
   "mission_reminder_20min_provider": "⏰ <b>Last reminder</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\nService: <b>{service}</b>\nDistrict: <b>{commune}</b>\n\nStill no quote received. Respond quickly if you're available.",
-  "daily_analytics_admin_report": "📊 <b>NEXIS HUB daily report — {date}</b>\n\nMissions created: <b>{missions_created}</b>\nMissions completed: <b>{missions_completed}</b>\n\n{breakdown}"
+  "daily_analytics_admin_report": "📊 <b>NEXIS HUB daily report — {date}</b>\n\nMissions created: <b>{missions_created}</b>\nMissions completed: <b>{missions_completed}</b>\n\n{breakdown}",
+  "mission_photo_caption": "📷 Photo attached to mission NXH-{mission_id:04d}",
+  "mission_voice_caption": "🎙️ Voice note attached to mission NXH-{mission_id:04d}",
+  "quote_no_message": "No message",
+  "ask_client_phone": "📱 Send your WhatsApp number.\n\nTap the button below or type your number in +243... format.",
+  "ask_provider_phone": "🔧 Let's set up your provider profile.\n\nSend your WhatsApp number.",
+  "choose_one_commune": "Choose at least one district.",
+  "choose_one_service": "Choose at least one service.",
+  "client_registered": "✅ Your client registration is complete.",
+  "mission_saved": "✅ <b>Request saved.</b>\n\nMission reference: <b>NXH-{mission_id:04d}</b>\n\n{matching_text}",
+  "phone_required": "Send or type your WhatsApp number to continue.",
+  "provider_choose_communes": "📍 Which districts can you work in?\n\nYou can pick several.",
+  "provider_choose_services": "🧰 Which services do you offer?\n\nYou can pick several, then tap Continue.",
+  "provider_phone_saved": "✅ Number saved.\n\nType your full name or your business name.",
+  "provider_registered": "✅ <b>Provider profile created.</b>\n\nStatus: <b>{status}</b>\nBadge: <b>{badge}</b>\n\nYour profile is saved. Admin validation and matching will follow.",
+  "new_mission_alert": "🔔 <b>New request!</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\nService: <b>{service}</b>\nDistrict: <b>{commune}</b>\nUrgent: <b>{urgent}</b>\n\n⏰ You have <b>20 minutes</b> to respond."
 }
