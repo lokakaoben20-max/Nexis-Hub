@@ -115,6 +115,11 @@ fonctionne pas).
   le backend V5 persiste maintenant dans PostgreSQL (via SQLAlchemy + Alembic), plus dans un
   fichier JSON. Le contrat d'API vu par le bot (`main.py`) n'a pas changé.
 - La couche legacy SQLite (`db.py`) reste présente comme fallback pendant la migration.
+- **Phase 2 terminée** (Celery + Redis, tâches asynchrones).
+- **Phase 3 en cours** : 2 flows sur 5 extraits vers `telegram_bot/` (inscription/profil,
+  mission/devis) + vérification obligatoire des prestataires ajoutée dans la foulée. Le
+  flow paiement/lifecycle/notation est le suivant — voir "Prochaine étape logique"
+  ci-dessous pour la reprise exacte.
 
 ## Avant toute modification
 
@@ -151,14 +156,75 @@ c:/Users/Ben L/OneDrive/Desktop/Startup_Nexis_Hub/nexis_hub_bot/.venv/Scripts/py
 
 - Branche de travail : `feature/v5-migration`
 
-## Prochaine étape logique
+## Prochaine étape logique — EN COURS, reprendre ici (2026-08-07)
 
-1. Continuer la migration des flows encore dépendants de la DB legacy.
-2. Rendre le backend V5 plus complet (base de données réelle si souhaité).
-3. Réduire progressivement les dépendances à l'ancienne logique locale.
-4. Vérifier que chaque évolution reste cohérente avec le spec V5 défini par Manus.
-5. Voir [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md) pour le plan de migration détaillé
-   vers l'architecture cible `nexis-hub-v5`.
+**Phase 3, flow 3 (paiement/lifecycle/notation) : plan approuvé par l'utilisateur,
+implémentation pas commencée.** `git status` est propre — rien à committer, la
+session précédente s'est arrêtée en pleine lecture de `main.py`, avant la première
+écriture de fichier. Le plan complet et détaillé existe (a été approuvé via
+ExitPlanMode) : relire `main.py:869-1206` directement (le plan en donne les numéros
+de ligne exacts) plutôt que de redemander à l'utilisateur — tout le contexte
+nécessaire est ci-dessous.
+
+**Ce qu'il reste à faire, dans l'ordre :**
+1. `telegram_bot/backend_client.py` : ajouter `sync_review_to_backend`,
+   `sync_quote_accept_to_backend`, `sync_quote_reject_to_backend`,
+   `sync_mission_status_to_backend`, `sync_payment_to_backend` (copiés tels quels
+   depuis `main.py`, mêmes noms).
+2. `telegram_bot/keyboards.py` : ajouter `clavier_paiement`,
+   `clavier_mission_prestataire`, `clavier_confirmation_client`, `clavier_notation`,
+   `clavier_notation_commentaire`, `_rich_cell`, `build_quote_accept_rich_message`.
+   `_rich_cell` est aussi utilisé par `build_help_rich_message`/
+   `build_history_rich_message`, qui restent dans `main.py` — `main.py` doit
+   l'importer en retour.
+3. **Nouveau** `telegram_bot/payment.py` : 13 handlers + FSM `RatingFlow` +
+   helper `_finalize_review`, déplacés depuis `main.py:869-1206` :
+   `client_accepte_devis`, `paiement_mobile_money`, `prestataire_demarre_mission`,
+   `prestataire_termine_mission`, `client_confirme_mission_terminee`,
+   `notation_etoile_recue`, `notation_ignoree`, `_finalize_review`,
+   `notation_commentaire_recu`, `notation_commentaire_ignore`,
+   `client_signale_probleme`, `paiement_wallet`, `client_refuse_devis`. Toutes les
+   fonctions `db.py` qu'ils appellent (`accept_quote`, `reject_quote`,
+   `mark_quote_paid`, `mark_quote_paid_with_wallet`, `start_mission`,
+   `finish_mission`, `release_payment`) sont exclusives à ce bloc — vérifié par grep
+   sur tout `main.py`, rien d'autre n'en dépend. **Utiliser `callback.bot`/
+   `message.bot`, jamais l'instance globale `bot`** (voir la note plus haut sur
+   `from main import`).
+4. Nettoyer `main.py` : retirer les 13 handlers/FSM/claviers/sync déplacés, ajouter
+   `dp.include_router(payment.router)`, retirer les 7 fonctions `db.py` ci-dessus
+   de la liste d'imports.
+5. `tests/test_payment_flow_extraction.py`, même style que
+   `tests/test_mission_flow_extraction.py` (`DummyBot`, `DummyAsyncClient`, SQLite
+   jetable). Couvrir : devis accepté → paiement (mobile money et wallet) → mission
+   démarrée → terminée → confirmée → escrow libéré → notation.
+6. `pytest -q` (suite complète, 129 tests passent avant ce flow).
+7. **Avant de committer** : lancer les agents `security-reviewer` et
+   `backend-parity-auditor` (code de paiement/escrow, exactement leur périmètre).
+8. `graphify update .`, puis committer et pousser sur `feature/v5-migration`.
+
+**Trouvaille déjà identifiée, à signaler mais volontairement pas corriger dans ce
+commit** (documentée aussi dans `V5_MIGRATION_PLAN.md`) : `client_signale_probleme`
+(`main.py:1129`) affiche "paiement maintenu en escrow" mais ne change aucun statut
+réel — pas de `mission.status = "disputed"`, aucun gel effectif de
+`release_payment`. `"disputed"` existe comme valeur de statut ailleurs
+(`_FAILURE_STATUSES` dans `backend/app/crud.py`), donc l'infrastructure l'attend,
+juste jamais posée par ce handler. Décision produit non triviale, pas une simple
+correction — à trancher avec l'utilisateur séparément.
+
+**Après ce flow** : c'est le dernier gros bloc de handlers dans `main.py`. Il
+restera l'admin (12 handlers) et l'affichage missions/wallet (6 handlers), plus
+petits et moins sensibles. Une fois tout extrait, le vrai objectif de Phase 3 (un
+service `telegram_bot/` séparé, déployé indépendamment) reste à faire — bloqué
+jusque-là par le long-polling Telegram (un seul process consommateur par token),
+voir `V5_MIGRATION_PLAN.md`.
+
+**Sujets déjà traités cette session, ne pas refaire** : Phase 2 (Celery+Redis),
+extraction inscription/profil, extraction mission/devis, vérification obligatoire
+des prestataires (documents + validation admin) — tous committés et poussés sur
+`feature/v5-migration` (commits `ae07050`, `99c7526`, `117e60b`, `b60400e`).
+
+Voir aussi [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md) pour le plan de migration
+complet vers l'architecture cible `nexis-hub-v5`.
 
 ## Migration vers un autre profil Windows (transfert local, même machine)
 
