@@ -11,6 +11,7 @@ os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
 import db
 import main
+from telegram_bot import backend_client
 
 
 class DummyResponse:
@@ -78,7 +79,7 @@ class RaisingAsyncClient:
 def test_sync_user_to_backend_posts_payload(monkeypatch):
     monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
 
-    result = asyncio.run(main.sync_user_to_backend(42, first_name="Alice", phone_number="+243", language="fr"))
+    result = asyncio.run(backend_client.sync_user_to_backend(42, first_name="Alice", phone_number="+243", language="fr"))
 
     assert result["status"] == "ok"
     assert result["user"]["telegram_id"] == 42
@@ -96,7 +97,7 @@ def test_fetch_backend_profile_returns_payload(monkeypatch):
 def test_persist_client_registration_returns_backend_and_local(monkeypatch):
     monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
 
-    result = asyncio.run(main.persist_client_registration(77, first_name="Bob", phone_number="+243", language="fr"))
+    result = asyncio.run(backend_client.persist_client_registration(77, first_name="Bob", phone_number="+243", language="fr"))
 
     assert result["backend"]["status"] == "ok"
     assert result["local"]["telegram_id"] == 77
@@ -123,7 +124,7 @@ def test_persist_mission_creation_survives_backend_outage(monkeypatch):
 def test_sync_provider_status_to_backend_patches_status(monkeypatch):
     monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
 
-    result = asyncio.run(main.sync_provider_status_to_backend(1, "offline"))
+    result = asyncio.run(backend_client.sync_provider_status_to_backend(1, "offline"))
 
     assert result["status"] == "ok"
     assert result["provider"]["status"] == "offline"
@@ -132,7 +133,7 @@ def test_sync_provider_status_to_backend_patches_status(monkeypatch):
 def test_sync_user_language_to_backend_patches_language(monkeypatch):
     monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
 
-    result = asyncio.run(main.sync_user_language_to_backend(1, "ln"))
+    result = asyncio.run(backend_client.sync_user_language_to_backend(1, "ln"))
 
     assert result["status"] == "ok"
 
@@ -140,7 +141,7 @@ def test_sync_user_language_to_backend_patches_language(monkeypatch):
 def test_sync_provider_language_to_backend_patches_language(monkeypatch):
     monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
 
-    result = asyncio.run(main.sync_provider_language_to_backend(1, "en"))
+    result = asyncio.run(backend_client.sync_provider_language_to_backend(1, "en"))
 
     assert result["provider"]["language"] == "en"
 
@@ -148,7 +149,7 @@ def test_sync_provider_language_to_backend_patches_language(monkeypatch):
 def test_sync_provider_services_to_backend_patches_services(monkeypatch):
     monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
 
-    result = asyncio.run(main.sync_provider_services_to_backend(1, ["service_peinture"]))
+    result = asyncio.run(backend_client.sync_provider_services_to_backend(1, ["service_peinture"]))
 
     assert result["provider"]["services"] == ["service_peinture"]
 
@@ -166,7 +167,7 @@ def test_sync_provider_ignored_increment_and_reset_to_backend(monkeypatch):
 def test_safe_backend_call_swallows_network_errors(monkeypatch):
     monkeypatch.setattr(main.httpx, "AsyncClient", RaisingAsyncClient)
 
-    result = asyncio.run(main._safe_backend_call(main.sync_provider_status_to_backend(1, "available")))
+    result = asyncio.run(main._safe_backend_call(backend_client.sync_provider_status_to_backend(1, "available")))
 
     assert result is None
 
@@ -176,9 +177,12 @@ def test_get_user_language_prefers_backend_value(monkeypatch, tmp_path):
     db.init_db()
     db.create_user(42, "+243800000042", "Alice", language="fr")
     monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
-    monkeypatch.setattr(main, "fetch_backend_profile", lambda telegram_id: _async_return({"client": {"language": "en"}}))
+    # get_user_language résout fetch_backend_profile dans son propre module
+    # (telegram_bot.backend_client) — patcher main.fetch_backend_profile n'a
+    # aucun effet dessus, même si `main` réexporte le même nom.
+    monkeypatch.setattr(backend_client, "fetch_backend_profile", lambda telegram_id: _async_return({"client": {"language": "en"}}))
 
-    result = asyncio.run(main.get_user_language(42))
+    result = asyncio.run(backend_client.get_user_language(42))
 
     assert result == "en"
 
@@ -187,9 +191,9 @@ def test_get_user_language_falls_back_to_local_db_when_backend_unavailable(tmp_p
     db.DB_PATH = tmp_path / "test_nexis_hub.db"
     db.init_db()
     db.create_user(42, "+243800000042", "Alice", language="ln")
-    monkeypatch.setattr(main, "fetch_backend_profile", lambda telegram_id: _async_return(None))
+    monkeypatch.setattr(backend_client, "fetch_backend_profile", lambda telegram_id: _async_return(None))
 
-    result = asyncio.run(main.get_user_language(42))
+    result = asyncio.run(backend_client.get_user_language(42))
 
     assert result == "ln"
 
@@ -198,9 +202,9 @@ def test_get_provider_language_prefers_backend_value(monkeypatch, tmp_path):
     db.DB_PATH = tmp_path / "test_nexis_hub.db"
     db.init_db()
     db.create_provider(2, "+243800000002", "Bob", ["service_plomberie"], ["Gombe"], language="fr")
-    monkeypatch.setattr(main, "fetch_backend_profile", lambda telegram_id: _async_return({"provider": {"language": "en"}}))
+    monkeypatch.setattr(backend_client, "fetch_backend_profile", lambda telegram_id: _async_return({"provider": {"language": "en"}}))
 
-    result = asyncio.run(main.get_provider_language(2))
+    result = asyncio.run(backend_client.get_provider_language(2))
 
     assert result == "en"
 
@@ -209,9 +213,9 @@ def test_get_provider_language_falls_back_to_local_db_when_backend_unavailable(t
     db.DB_PATH = tmp_path / "test_nexis_hub.db"
     db.init_db()
     db.create_provider(2, "+243800000002", "Bob", ["service_plomberie"], ["Gombe"], language="ln")
-    monkeypatch.setattr(main, "fetch_backend_profile", lambda telegram_id: _async_return(None))
+    monkeypatch.setattr(backend_client, "fetch_backend_profile", lambda telegram_id: _async_return(None))
 
-    result = asyncio.run(main.get_provider_language(2))
+    result = asyncio.run(backend_client.get_provider_language(2))
 
     assert result == "ln"
 

@@ -45,10 +45,15 @@ comportement d'une fonction de `db.py` pour le bot casse donc la Mini App sans q
 ne le signale** — et l'inverse est vrai aussi.
 
 - Avant de toucher à une fonction existante de `db.py`, vérifie ses appelants
-  (`main.py` et `mini_app/app.py` au minimum).
+  (`main.py`, `mini_app/app.py` et `telegram_bot/` au minimum).
 - Préfère **ajouter** une fonction plutôt que changer une signature déjà utilisée.
 - La Mini App n'a pas de tests de bout en bout du bot : lance toute la suite
   (`pytest -q`), pas seulement les tests du module que tu modifies.
+
+Corollaire pour les flows déjà extraits vers `telegram_bot/` (Phase 3) : ils écrivent
+**toujours** dans `db.py` en plus du backend. Tant que `find_matching_providers` et la
+Mini App lisent `db.py`, supprimer une écriture locale sous prétexte que « le backend
+l'a » fait diverger silencieusement ces deux lecteurs.
 
 Ce couplage disparaîtra le jour où la Mini App passera par le backend V5 au lieu de
 `db.py` — chantier non lancé, voir [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md).
@@ -78,6 +83,9 @@ fonctionne pas).
 ## Structure du projet
 
 - `main.py` : handlers Telegram, logique du bot, synchronisation vers le backend V5.
+- `telegram_bot/` : flows Telegram extraits de `main.py` (Phase 3 du plan de migration,
+  voir [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md)) — même process que `main.py` pour
+  l'instant (`dp.include_router(...)`), pas encore un service séparé.
 - `db.py` : couche de persistance legacy SQLite (fallback pendant la migration).
 - `messages.py` : textes du bot (fr / ln / en).
 - `backend/app/main.py` : backend V5 minimal (FastAPI), persistance JSON sur disque.

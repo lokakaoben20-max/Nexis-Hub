@@ -1,0 +1,167 @@
+"""Client backend V5 pour le flow inscription/profil (Phase 3, pilote).
+
+Déplacé depuis `main.py` — seuls les helpers utilisés par `telegram_bot/registration.py`
+sont ici. Les helpers `sync_*` des flows mission/devis/paiement (pas encore migrés)
+restent dans `main.py` ; `main.py` importe les fonctions ci-dessous au lieu de les
+redéfinir, pour que les ~30 handlers hors scope qui les utilisent encore n'aient rien
+à changer.
+
+Double écriture maintenue (backend + `db.py`) pour toutes les écritures de ce module :
+`find_matching_providers` (flow mission, pas migré) et la Mini App lisent encore
+`db.py` pour le statut/les services/la langue du prestataire — couper l'écriture locale
+maintenant leur ferait lire une donnée périmée. Voir V5_MIGRATION_PLAN.md, Phase 3.
+"""
+
+import json
+import os
+
+import httpx
+from dotenv import load_dotenv
+
+from db import create_user, get_provider_by_telegram_id, get_user_by_telegram_id
+
+load_dotenv()
+BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://127.0.0.1:8000")
+BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
+BACKEND_AUTH_HEADERS = {"X-API-Key": BACKEND_API_KEY}
+
+
+async def _safe_backend_call(coro):
+    try:
+        return await coro
+    except Exception:
+        return None
+
+
+async def sync_user_to_backend(telegram_id: int, first_name: str | None = None, phone_number: str | None = None, language: str = "fr") -> dict:
+    payload = {
+        "telegram_id": telegram_id,
+        "first_name": first_name or "Client",
+        "phone_number": phone_number,
+        "language": language,
+    }
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/users", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_provider_to_backend(telegram_id: int, full_name: str, phone_number: str | None = None, services: list[str] | None = None, communes: list[str] | None = None, language: str = "fr") -> dict:
+    payload = {
+        "telegram_id": telegram_id,
+        "full_name": full_name,
+        "phone_number": phone_number,
+        "services": services or [],
+        "communes": communes or [],
+        "language": language,
+    }
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_provider_services_to_backend(telegram_id: int, services: list[str]) -> dict:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/services", json={"services": services})
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_provider_status_to_backend(telegram_id: int, status: str) -> dict:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/status", json={"status": status})
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_user_language_to_backend(telegram_id: int, language: str) -> dict:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/users/{telegram_id}/language", json={"language": language})
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_user_name_to_backend(telegram_id: int, first_name: str) -> dict:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/users/{telegram_id}/name", json={"first_name": first_name})
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_provider_language_to_backend(telegram_id: int, language: str) -> dict:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/language", json={"language": language})
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_provider_ignored_reset_to_backend(telegram_id: int) -> dict:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/ignored/reset")
+        response.raise_for_status()
+        return response.json()
+
+
+async def fetch_backend_profile(telegram_id: int) -> dict | None:
+    try:
+        async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+            response = await client.get(f"{BACKEND_BASE_URL}/api/profile/{telegram_id}")
+            response.raise_for_status()
+            return response.json()
+    except Exception:
+        return None
+
+
+async def load_profile_from_backend(telegram_id: int, fallback_user: dict | None = None) -> dict:
+    backend_profile = await fetch_backend_profile(telegram_id)
+    if backend_profile:
+        return backend_profile
+    return {"client": fallback_user or {"telegram_id": telegram_id, "first_name": "Client"}, "provider": None, "client_missions": [], "provider_missions": []}
+
+
+async def get_state_language(state) -> str:
+    data = await state.get_data()
+    return data.get("language", "fr")
+
+
+async def get_user_language(telegram_id: int) -> str:
+    backend_profile = await fetch_backend_profile(telegram_id)
+    client_data = backend_profile.get("client") if backend_profile else None
+    if client_data and client_data.get("language"):
+        return client_data["language"]
+    user = get_user_by_telegram_id(telegram_id)
+    return user["language"] if user else "fr"
+
+
+async def get_provider_language(telegram_id: int) -> str:
+    backend_profile = await fetch_backend_profile(telegram_id)
+    provider_data = backend_profile.get("provider") if backend_profile else None
+    if provider_data and provider_data.get("language"):
+        return provider_data["language"]
+    provider = get_provider_by_telegram_id(telegram_id)
+    if not provider:
+        return "fr"
+    try:
+        languages = json.loads(provider["languages_spoken"] or '["fr"]')
+    except json.JSONDecodeError:
+        return "fr"
+    return languages[0] if languages else "fr"
+
+
+async def persist_client_registration(telegram_id: int, first_name: str | None = None, phone_number: str | None = None, language: str = "fr") -> dict:
+    local_user = create_user(
+        telegram_id=telegram_id,
+        phone_number=phone_number,
+        first_name=first_name or "",
+        language=language,
+    )
+    backend_result = await _safe_backend_call(
+        sync_user_to_backend(
+            telegram_id=telegram_id,
+            first_name=first_name,
+            phone_number=phone_number,
+            language=language,
+        )
+    )
+    return {"local": local_user, "backend": backend_result}

@@ -219,6 +219,32 @@ que via l'API du backend — plus jamais d'accès direct à la DB depuis le bot.
 
 **Risque** : élevé — c'est le refactor le plus invasif du plan.
 
+**Statut : premier flow pilote extrait (inscription/profil)**, `telegram_bot/`
+(`backend_client.py`, `keyboards.py`, `registration.py`). Deux précisions par rapport à
+l'objectif ci-dessus, découvertes pendant l'extraction :
+
+- **Pas encore un service séparé.** Le bot fait du long-polling Telegram — un seul
+  process peut consommer les updates avec le token du bot à la fois. `telegram_bot/`
+  est pour l'instant un module importé dans le même process que `main.py`
+  (`dp.include_router(registration.router)`), pas un service déployé indépendamment.
+  Le vrai découplage en process attend que davantage de flows soient migrés.
+- **Double écriture maintenue, pas encore "plus jamais d'accès à la DB".**
+  `find_matching_providers` (flow mission, pas migré) et la Mini App lisent encore
+  `db.py` pour le statut/les services/la langue du prestataire. Le flow migré écrit
+  donc toujours dans `db.py` **et** le backend (comme avant l'extraction) — couper
+  l'écriture locale maintenant ferait lire une donnée périmée à ces deux lecteurs.
+  La coupure complète viendra quand le flow mission/matching sera migré à son tour.
+- Petit correctif au passage : `create_mission` (`backend/app/crud.py`) ne posait
+  jamais `status="pending"` à la création (contrairement au `DEFAULT 'pending'` SQL de
+  `db.py`) — trou de parité comblé, un test existant mis à jour en conséquence.
+  `profil_prestataire` (menu prestataire) lisait aussi `badge`/`rating`/
+  `total_missions` depuis `db.py`, jamais alimentés côté legacy — bascule vers les
+  champs backend réellement calculés (`backend/app/crud.py._recompute_provider_stats`,
+  Phase 1).
+
+**Prochain flow candidat** : mission/devis (matching), qui débloquerait la coupure
+complète de `db.py` pour le flow inscription/profil.
+
 ## Phase 4 — Canal WhatsApp
 
 **Objectif** : ajouter `whatsapp_bot/` comme second canal, une fois que le

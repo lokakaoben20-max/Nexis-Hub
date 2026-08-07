@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
 import main
+from telegram_bot import backend_client
 
 
 class DummyResponse:
@@ -41,6 +42,6 @@ class DummyAsyncClient:
 
 def test_provider_registration_syncs_to_backend(monkeypatch):
     monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
-    result = asyncio.run(main.sync_provider_to_backend(321, "Alice", phone_number="+243", services=["service_plomberie"], communes=["Gombe"], language="fr"))
+    result = asyncio.run(backend_client.sync_provider_to_backend(321, "Alice", phone_number="+243", services=["service_plomberie"], communes=["Gombe"], language="fr"))
     assert result["status"] == "ok"
     assert result["provider"]["telegram_id"] == 321
