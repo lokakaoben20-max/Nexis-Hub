@@ -46,7 +46,17 @@ async def sync_user_to_backend(telegram_id: int, first_name: str | None = None, 
         return response.json()
 
 
-async def sync_provider_to_backend(telegram_id: int, full_name: str, phone_number: str | None = None, services: list[str] | None = None, communes: list[str] | None = None, language: str = "fr") -> dict:
+async def sync_provider_to_backend(
+    telegram_id: int,
+    full_name: str,
+    phone_number: str | None = None,
+    services: list[str] | None = None,
+    communes: list[str] | None = None,
+    language: str = "fr",
+    id_document_file_id: str | None = None,
+    selfie_file_id: str | None = None,
+    portfolio_file_ids: list[str] | None = None,
+) -> dict:
     payload = {
         "telegram_id": telegram_id,
         "full_name": full_name,
@@ -54,6 +64,9 @@ async def sync_provider_to_backend(telegram_id: int, full_name: str, phone_numbe
         "services": services or [],
         "communes": communes or [],
         "language": language,
+        "id_document_file_id": id_document_file_id,
+        "selfie_file_id": selfie_file_id,
+        "portfolio_file_ids": portfolio_file_ids,
     }
     async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers", json=payload)

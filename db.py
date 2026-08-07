@@ -160,6 +160,14 @@ def init_db():
         ensure_column(conn, "providers", "commission_rate", "REAL DEFAULT 10.00")
         ensure_column(conn, "providers", "language", "TEXT DEFAULT 'fr'")
         ensure_column(conn, "providers", "member_since_months", "INTEGER DEFAULT 0")
+        # Vérification obligatoire à l'inscription (voir V5_MIGRATION_PLAN.md) :
+        # id_document_url/portfolio_urls ci-dessus existent depuis longtemps mais
+        # ne sont lus/écrits nulle part (colonnes mortes, laissées telles quelles).
+        # Ces trois-ci sont les vraies, utilisées par terminer_inscription_prestataire.
+        # file_id Telegram, pas d'URL : aucun hébergement de fichier nécessaire.
+        ensure_column(conn, "providers", "id_document_file_id", "TEXT")
+        ensure_column(conn, "providers", "selfie_file_id", "TEXT")
+        ensure_column(conn, "providers", "portfolio_file_ids", "TEXT DEFAULT '[]'")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS transactions (
@@ -587,6 +595,22 @@ def update_provider_status(telegram_id: int, status: str):
         conn.execute(
             "UPDATE providers SET status = ? WHERE telegram_id = ?",
             (status, telegram_id),
+        )
+    return get_provider_by_telegram_id(telegram_id)
+
+
+def update_provider_verification_documents(telegram_id: int, id_document_file_id: str, selfie_file_id: str, portfolio_file_ids: list[str]):
+    """Vérification obligatoire à l'inscription (V5_MIGRATION_PLAN.md).
+
+    Fonction séparée plutôt qu'un paramètre ajouté à create_provider() : cette
+    dernière est aussi appelée par mini_app/app.py et une dizaine de tests avec sa
+    signature actuelle — l'étendre aurait un rayon d'impact bien plus large que
+    nécessaire pour ce qui n'est qu'une mise à jour ponctuelle après coup.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE providers SET id_document_file_id = ?, selfie_file_id = ?, portfolio_file_ids = ? WHERE telegram_id = ?",
+            (id_document_file_id, selfie_file_id, json.dumps(portfolio_file_ids), telegram_id),
         )
     return get_provider_by_telegram_id(telegram_id)
 

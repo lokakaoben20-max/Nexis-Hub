@@ -67,6 +67,9 @@ class BotProviderPayload(BaseModel):
     services: list[str] | None = None
     communes: list[str] | None = None
     language: str = "fr"
+    id_document_file_id: str | None = None
+    selfie_file_id: str | None = None
+    portfolio_file_ids: list[str] | None = None
 
 
 class MissionStatusPayload(BaseModel):
@@ -155,6 +158,9 @@ def _provider_to_dict(provider: BotProvider) -> dict:
         "consecutive_ignored": provider.consecutive_ignored,
         "wallet_balance_usd": provider.wallet_balance_usd,
         "wallet_balance_cdf": provider.wallet_balance_cdf,
+        "id_document_file_id": provider.id_document_file_id,
+        "selfie_file_id": provider.selfie_file_id,
+        "portfolio_file_ids": provider.portfolio_file_ids,
     }
 
 
@@ -243,6 +249,9 @@ def create_bot_provider(payload: BotProviderPayload):
             services=payload.services or [],
             communes=payload.communes or [],
             language=payload.language,
+            id_document_file_id=payload.id_document_file_id,
+            selfie_file_id=payload.selfie_file_id,
+            portfolio_file_ids=payload.portfolio_file_ids,
         )
         return {"status": "ok", "provider": _provider_to_dict(provider)}
 

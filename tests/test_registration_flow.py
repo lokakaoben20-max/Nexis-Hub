@@ -145,7 +145,11 @@ def _init_db(tmp_path):
     db.init_db()
 
 
-def test_terminer_inscription_prestataire_writes_backend_and_local(monkeypatch, tmp_path):
+def test_terminer_inscription_prestataire_asks_for_documents_before_creating_provider(monkeypatch, tmp_path):
+    """Vérification obligatoire (V5_MIGRATION_PLAN.md) : le prestataire n'est créé
+    qu'après la pièce d'identité et le selfie — voir
+    tests/test_provider_verification.py pour le flow complet jusqu'à la création.
+    """
     _init_db(tmp_path)
     _use_dummy_backend(monkeypatch)
 
@@ -160,14 +164,8 @@ def test_terminer_inscription_prestataire_writes_backend_and_local(monkeypatch, 
 
     asyncio.run(registration.terminer_inscription_prestataire(callback, state))
 
-    local_provider = db.get_provider_by_telegram_id(501)
-    assert local_provider is not None
-    assert local_provider["full_name"] == "Alice Prestataire"
-
-    assert DummyAsyncClient.last_request["method"] == "post"
-    assert DummyAsyncClient.last_request["url"].endswith("/api/bot/providers")
-    assert DummyAsyncClient.last_request["json"]["telegram_id"] == 501
-    assert state.cleared is True
+    assert db.get_provider_by_telegram_id(501) is None, "pas encore créé avant les documents"
+    assert DummyAsyncClient.last_request is None, "aucun appel backend avant les documents"
 
 
 def test_changer_disponibilite_writes_backend_and_local(monkeypatch, tmp_path):

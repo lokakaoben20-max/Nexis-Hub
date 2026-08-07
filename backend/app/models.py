@@ -41,6 +41,11 @@ class BotProvider(Base):
     consecutive_ignored: Mapped[int] = mapped_column(Integer, default=0)
     wallet_balance_usd: Mapped[float] = mapped_column(Float, default=0.0)
     wallet_balance_cdf: Mapped[float] = mapped_column(Float, default=0.0)
+    # Vérification obligatoire à l'inscription (voir V5_MIGRATION_PLAN.md) : file_id
+    # Telegram, pas d'URL — aucun hébergement de fichier nécessaire.
+    id_document_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    selfie_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    portfolio_file_ids: Mapped[list] = mapped_column(JSON, default=list)
 
 
 class BotMission(Base):

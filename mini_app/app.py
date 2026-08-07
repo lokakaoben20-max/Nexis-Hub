@@ -226,16 +226,21 @@ def register_provider(
     if any(commune not in COMMUNES for commune in communes):
         raise HTTPException(status_code=400, detail="Commune invalide")
 
-    provider = row_to_dict(
-        create_provider(
-            telegram_id=telegram_id,
-            phone_number=phone_number,
-            full_name=full_name,
-            services=services,
-            communes=communes,
-            language=payload.language,
-        )
+    create_provider(
+        telegram_id=telegram_id,
+        phone_number=phone_number,
+        full_name=full_name,
+        services=services,
+        communes=communes,
+        language=payload.language,
     )
+    # Vérification obligatoire à l'inscription (V5_MIGRATION_PLAN.md) : create_provider
+    # remet toujours status="available" — la Mini App ne collecte pas encore les
+    # documents d'identité (contrairement au bot Telegram, voir
+    # telegram_bot/registration.py), mais un prestataire inscrit ici ne doit pas
+    # pouvoir contourner la validation admin pour autant. Reste non-matchable comme
+    # côté bot ; la collecte de documents via la Mini App est un chantier séparé.
+    provider = row_to_dict(update_provider_status(telegram_id, "pending_verification"))
     provider["services"] = load_json_list(provider.get("services"))
     provider["communes"] = load_json_list(provider.get("communes"))
     provider["languages_spoken"] = load_json_list(provider.get("languages_spoken"))

@@ -405,3 +405,28 @@ def _parse_quote_callback_ids(raw: str) -> tuple[int, int | None]:
     local_part, _, backend_part = raw.partition(":")
     backend_id = int(backend_part) if backend_part and backend_part != "-" else None
     return int(local_part), backend_id
+
+
+# ── Vérification prestataire (V5_MIGRATION_PLAN.md) ─────────────────────────
+
+
+def clavier_portfolio_prestataire(lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=get_message("provider_portfolio_done_button", lang), callback_data="provider_portfolio_done")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_admin_new_provider(provider_id: int):
+    """Boutons Approuver/Refuser sur la notification admin poussée à l'inscription.
+
+    Mêmes callback_data que clavier_admin_provider (admin_verify_provider_{id} /
+    admin_reject_provider_{id}, id interne SQLite) : un seul chemin de code géré
+    dans main.py, que l'admin approuve depuis ce push ou depuis la liste
+    admin_providers.
+    """
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Approuver", callback_data=f"admin_verify_provider_{provider_id}")
+    builder.button(text="❌ Refuser", callback_data=f"admin_reject_provider_{provider_id}")
+    builder.adjust(2)
+    return builder.as_markup()

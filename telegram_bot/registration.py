@@ -15,11 +15,13 @@ Lecture déjà backend-first (héritée de la Phase 1), sauf pour `profil_presta
 
 import html
 import json
+import os
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
+from dotenv import load_dotenv
 
 from db import (
     create_provider,
@@ -29,6 +31,7 @@ from db import (
     update_provider_language,
     update_provider_services,
     update_provider_status,
+    update_provider_verification_documents,
     update_user_language,
     update_user_name,
 )
@@ -52,6 +55,7 @@ from telegram_bot.backend_client import (
 from telegram_bot.keyboards import (
     COMMUNES,
     SERVICES,
+    clavier_admin_new_provider,
     clavier_client,
     clavier_communes_prestataire,
     clavier_contact,
@@ -59,10 +63,14 @@ from telegram_bot.keyboards import (
     clavier_langue_parametres,
     clavier_modifier_services,
     clavier_parametres_client,
+    clavier_portfolio_prestataire,
     clavier_prestataire,
     clavier_profil,
     clavier_services_prestataire,
 )
+
+load_dotenv()
+ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID")
 
 router = Router()
 
@@ -76,6 +84,13 @@ class ProviderRegistration(StatesGroup):
     full_name = State()
     services = State()
     communes = State()
+    # Vérification obligatoire à l'inscription (V5_MIGRATION_PLAN.md) : le
+    # prestataire ne devient pas "available" en sortant de ces trois états, il passe
+    # par "pending_verification" jusqu'à validation admin — voir
+    # terminer_inscription_prestataire / recevoir_portfolio.
+    id_document = State()
+    selfie = State()
+    portfolio = State()
 
 
 class ProviderServicesEdit(StatesGroup):
@@ -319,10 +334,77 @@ async def choisir_commune_prestataire(callback: CallbackQuery, state: FSMContext
 
 @router.callback_query(ProviderRegistration.communes, F.data == "provider_communes_done")
 async def terminer_inscription_prestataire(callback: CallbackQuery, state: FSMContext):
+    """Ne crée plus le prestataire ici — le profil est constitué mais incomplet tant
+    que la pièce d'identité et le selfie n'ont pas été soumis (vérification
+    obligatoire, V5_MIGRATION_PLAN.md). La création réelle se fait dans
+    `finaliser_inscription_prestataire`, une fois tous les documents reçus.
+    """
     data = await state.get_data()
     if not data.get("provider_communes"):
         await callback.answer(get_message("choose_one_commune", data.get("language", "fr")), show_alert=True)
         return
+
+    lang = data.get("language", "fr")
+    await state.set_state(ProviderRegistration.id_document)
+    await callback.message.edit_text(
+        get_message("provider_id_document_prompt", lang),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(ProviderRegistration.id_document)
+async def recevoir_document_identite(message: Message, state: FSMContext):
+    lang = await get_state_language(state)
+    if not message.photo:
+        await message.answer(get_message("provider_id_document_invalid", lang))
+        return
+
+    await state.update_data(provider_id_document_file_id=message.photo[-1].file_id)
+    await state.set_state(ProviderRegistration.selfie)
+    await message.answer(get_message("provider_selfie_prompt", lang), parse_mode="HTML")
+
+
+@router.message(ProviderRegistration.selfie)
+async def recevoir_selfie(message: Message, state: FSMContext):
+    lang = await get_state_language(state)
+    if not message.photo:
+        await message.answer(get_message("provider_selfie_invalid", lang))
+        return
+
+    await state.update_data(provider_selfie_file_id=message.photo[-1].file_id, provider_portfolio_file_ids=[])
+    await state.set_state(ProviderRegistration.portfolio)
+    await message.answer(
+        get_message("provider_portfolio_prompt", lang),
+        parse_mode="HTML",
+        reply_markup=clavier_portfolio_prestataire(lang),
+    )
+
+
+@router.message(ProviderRegistration.portfolio)
+async def recevoir_portfolio(message: Message, state: FSMContext):
+    lang = await get_state_language(state)
+    if not message.photo:
+        await message.answer(
+            get_message("provider_portfolio_invalid", lang),
+            reply_markup=clavier_portfolio_prestataire(lang),
+        )
+        return
+
+    data = await state.get_data()
+    portfolio = data.get("provider_portfolio_file_ids", [])
+    portfolio.append(message.photo[-1].file_id)
+    await state.update_data(provider_portfolio_file_ids=portfolio)
+    await message.answer(
+        get_message("provider_portfolio_added", lang, count=len(portfolio)),
+        reply_markup=clavier_portfolio_prestataire(lang),
+    )
+
+
+@router.callback_query(ProviderRegistration.portfolio, F.data == "provider_portfolio_done")
+async def finaliser_inscription_prestataire(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get("language", "fr")
 
     provider = create_provider(
         telegram_id=callback.from_user.id,
@@ -330,7 +412,21 @@ async def terminer_inscription_prestataire(callback: CallbackQuery, state: FSMCo
         full_name=data["provider_full_name"],
         services=data["provider_services"],
         communes=data["provider_communes"],
-        language=data.get("language", "fr"),
+        language=lang,
+    )
+    # Vérification obligatoire (V5_MIGRATION_PLAN.md) : create_provider pose
+    # status="available" par défaut — on le fait repasser à "pending_verification"
+    # tout de suite après, avant que quiconque puisse voir ce prestataire matchable.
+    # find_matching_providers (db.py) ne filtre que sur status='available', donc ce
+    # seul champ suffit à le rendre invisible du matching sans toucher la requête.
+    provider = update_provider_status(callback.from_user.id, "pending_verification")
+
+    portfolio_file_ids = data.get("provider_portfolio_file_ids", [])
+    provider = update_provider_verification_documents(
+        callback.from_user.id,
+        data["provider_id_document_file_id"],
+        data["provider_selfie_file_id"],
+        portfolio_file_ids,
     )
     await _safe_backend_call(
         sync_provider_to_backend(
@@ -339,21 +435,60 @@ async def terminer_inscription_prestataire(callback: CallbackQuery, state: FSMCo
             phone_number=data["provider_phone"],
             services=data["provider_services"],
             communes=data["provider_communes"],
-            language=data.get("language", "fr"),
+            language=lang,
+            id_document_file_id=data["provider_id_document_file_id"],
+            selfie_file_id=data["provider_selfie_file_id"],
+            portfolio_file_ids=portfolio_file_ids,
         )
     )
+    await _safe_backend_call(sync_provider_status_to_backend(callback.from_user.id, "pending_verification"))
+
     await state.clear()
     await callback.message.edit_text(
         get_message(
             "provider_registered",
-            data.get("language", "fr"),
+            lang,
             status=provider["status"],
             badge=provider["badge"],
         ),
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(data.get("language", "fr")),
+        reply_markup=clavier_prestataire(lang),
     )
-    await callback.answer(get_message("toast_registration_complete", data.get("language", "fr")))
+    await callback.answer(get_message("toast_registration_complete", lang))
+
+    await _notifier_admin_nouveau_prestataire(callback, provider, data["provider_id_document_file_id"], data["provider_selfie_file_id"], portfolio_file_ids)
+
+
+async def _notifier_admin_nouveau_prestataire(callback: CallbackQuery, provider, id_document_file_id: str, selfie_file_id: str, portfolio_file_ids: list[str]) -> None:
+    """Push proactif vers l'admin — nouveau pattern pour le bot synchrone (main.py
+    n'en avait aucun), mais déjà éprouvé côté Celery
+    (backend/app/tasks.py:send_daily_analytics). Erreurs réseau/Telegram avalées :
+    un push raté ne doit jamais faire échouer l'inscription elle-même, l'admin peut
+    toujours retrouver le prestataire via la liste `admin_providers`.
+    """
+    if not ADMIN_TELEGRAM_ID:
+        return
+    try:
+        admin_id = int(ADMIN_TELEGRAM_ID)
+        summary = (
+            f"🆕 <b>Nouveau prestataire en attente de validation</b>\n\n"
+            f"Nom : <b>{html.escape(provider['full_name'])}</b>\n"
+            f"Téléphone : <b>{html.escape(provider['phone_number'] or '')}</b>\n"
+            f"Services : {html.escape(', '.join(json.loads(provider['services'] or '[]')))}\n"
+            f"Communes : {html.escape(', '.join(json.loads(provider['communes'] or '[]')))}"
+        )
+        await callback.bot.send_message(admin_id, summary, parse_mode="HTML")
+        await callback.bot.send_photo(admin_id, id_document_file_id, caption="Pièce d'identité")
+        await callback.bot.send_photo(admin_id, selfie_file_id, caption="Selfie")
+        for photo_file_id in portfolio_file_ids:
+            await callback.bot.send_photo(admin_id, photo_file_id, caption="Portfolio")
+        await callback.bot.send_message(
+            admin_id,
+            "Approuver ce prestataire ?",
+            reply_markup=clavier_admin_new_provider(provider["id"]),
+        )
+    except Exception:
+        pass
 
 
 @router.callback_query(F.data == "prest_dispo")

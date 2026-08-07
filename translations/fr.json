@@ -161,5 +161,17 @@
   "provider_choose_communes": "📍 Dans quelles communes pouvez-vous intervenir ?\n\nVous pouvez en choisir plusieurs.",
   "provider_choose_services": "🧰 Quels services proposez-vous ?\n\nVous pouvez en choisir plusieurs, puis appuyez sur Continuer.",
   "provider_phone_saved": "✅ Numéro enregistré.\n\nTapez votre nom complet ou le nom de votre activité.",
-  "provider_registered": "✅ <b>Profil prestataire créé.</b>\n\nStatut : <b>{status}</b>\nBadge : <b>{badge}</b>\n\nVotre profil est enregistré. La validation admin et le matching suivront."
+  "provider_registered": "✅ <b>Profil prestataire créé.</b>\n\nStatut : <b>{status}</b>\nBadge : <b>{badge}</b>\n\nVotre profil est enregistré. La validation admin et le matching suivront.",
+  "provider_id_document_prompt": "🪪 <b>Vérification d'identité</b>\n\nEnvoyez une photo de votre pièce d'identité (carte d'identité ou passeport) pour finaliser votre inscription.",
+  "provider_id_document_invalid": "Envoyez une photo de votre pièce d'identité.",
+  "provider_selfie_prompt": "🤳 Envoyez maintenant un selfie (photo de votre visage), pour vérifier que c'est bien vous sur la pièce d'identité.",
+  "provider_selfie_invalid": "Envoyez une photo de votre visage.",
+  "provider_portfolio_prompt": "📸 Envoyez des photos de vos réalisations si vous en avez (optionnel), ou appuyez directement sur Terminé.",
+  "provider_portfolio_invalid": "Envoyez une photo, ou appuyez sur Terminé.",
+  "provider_portfolio_added": "✅ Photo ajoutée ({count}). Envoyez-en d'autres ou appuyez sur Terminé.",
+  "provider_portfolio_done_button": "✅ Terminé",
+  "provider_verified_and_active": "✅ <b>Votre profil prestataire a été vérifié par Nexis.</b>\n\nVous pouvez maintenant recevoir des demandes selon vos services et communes.",
+  "provider_suspended_notice": "⛔ <b>Votre profil prestataire a été suspendu par Nexis.</b>\n\nContactez le support si vous pensez qu'il s'agit d'une erreur.",
+  "provider_unsuspended_notice": "♻️ <b>Votre profil prestataire a été réactivé par Nexis.</b>",
+  "provider_registration_rejected": "❌ <b>Votre inscription prestataire n'a pas été validée.</b>\n\nContactez le support pour en savoir plus."
 }

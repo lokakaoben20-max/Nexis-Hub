@@ -49,6 +49,9 @@ def upsert_provider(
     services: list[str],
     communes: list[str],
     language: str = "fr",
+    id_document_file_id: str | None = None,
+    selfie_file_id: str | None = None,
+    portfolio_file_ids: list[str] | None = None,
 ) -> BotProvider:
     provider = db.get(BotProvider, telegram_id)
     is_new = provider is None
@@ -61,6 +64,14 @@ def upsert_provider(
     provider.communes = communes
     provider.language = language
     provider.module = _compute_module(services)
+    # None = pas fourni sur cet appel (ex. mise à jour de profil) : ne pas écraser
+    # des documents déjà soumis avec du vide.
+    if id_document_file_id is not None:
+        provider.id_document_file_id = id_document_file_id
+    if selfie_file_id is not None:
+        provider.selfie_file_id = selfie_file_id
+    if portfolio_file_ids is not None:
+        provider.portfolio_file_ids = portfolio_file_ids
     if not is_new:
         provider.status = "available"
     db.commit()

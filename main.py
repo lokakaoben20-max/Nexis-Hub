@@ -32,6 +32,7 @@ from db import (
     get_all_providers,
     get_all_users,
     get_disputed_missions,
+    get_provider_by_id,
     get_provider_by_telegram_id,
     get_provider_missions,
     get_provider_service_requests,
@@ -50,6 +51,7 @@ from db import (
     set_provider_suspended,
     set_provider_verified,
     start_mission,
+    update_provider_status,
     update_service_request_status,
 )
 # Phase 3 (voir V5_MIGRATION_PLAN.md) : les flows inscription/profil et
@@ -64,6 +66,7 @@ from telegram_bot.backend_client import (
     get_state_language,
     get_user_language,
     load_profile_from_backend,
+    sync_provider_status_to_backend,
 )
 from telegram_bot.keyboards import (
     MINI_APP_URL,
@@ -256,6 +259,7 @@ def clavier_admin_menu():
 def clavier_admin_provider(provider_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Vérifier", callback_data=f"admin_verify_provider_{provider_id}")
+    builder.button(text="❌ Refuser", callback_data=f"admin_reject_provider_{provider_id}")
     builder.button(text="⛔ Suspendre", callback_data=f"admin_suspend_provider_{provider_id}")
     builder.button(text="♻️ Réactiver", callback_data=f"admin_unsuspend_provider_{provider_id}")
     builder.button(text="⬅️ Admin", callback_data="admin_home")
@@ -613,20 +617,67 @@ async def admin_verify_provider(callback: CallbackQuery):
         await callback.answer("Prestataire introuvable.", show_alert=True)
         return
 
-    await _safe_backend_call(sync_provider_verified_to_backend(provider_id))
+    # Lève le blocage matching posé à l'inscription (V5_MIGRATION_PLAN.md,
+    # vérification obligatoire) : find_matching_providers ne filtre que sur
+    # status='available', donc c'est ce qui rend le prestataire matchable à nouveau.
+    provider = update_provider_status(provider["telegram_id"], "available")
+
+    # Bug corrigé : ces deux appels utilisaient `provider_id` (id interne SQLite,
+    # auto-increment) au lieu de `provider["telegram_id"]` (clé primaire côté
+    # backend Postgres) — le sync backend échouait silencieusement à tous les coups
+    # depuis le début (404 avalé par _safe_backend_call), ou pire, aurait pu agir
+    # sur un autre prestataire en cas de collision numérique entre les deux espaces.
+    await _safe_backend_call(sync_provider_verified_to_backend(provider["telegram_id"]))
+    await _safe_backend_call(sync_provider_status_to_backend(provider["telegram_id"], "available"))
 
     await callback.message.edit_text(
         f"✅ Prestataire vérifié : <b>{html.escape(provider['full_name'])}</b>",
         parse_mode="HTML",
         reply_markup=clavier_admin_menu(),
     )
+    provider_lang = await get_provider_language(provider["telegram_id"])
     await bot.send_message(
         provider["telegram_id"],
-        "✅ <b>Votre profil prestataire a été vérifié par Nexis.</b>\n\n"
-        "Vous pouvez maintenant recevoir des demandes selon vos services et communes.",
+        get_message("provider_verified_and_active", provider_lang),
         parse_mode="HTML",
     )
     await callback.answer("Prestataire vérifié")
+
+
+@dp.callback_query(F.data.startswith("admin_reject_provider_"))
+async def admin_reject_provider(callback: CallbackQuery):
+    """Refuse un prestataire en attente de validation (V5_MIGRATION_PLAN.md,
+    vérification obligatoire). Distinct de admin_suspend_provider : suspendre
+    implique "était actif, mis en pause", refuser implique "jamais approuvé,
+    documents insuffisants" — messages et statuts différents. `status="rejected"`
+    ne correspond à aucune valeur filtrée par find_matching_providers, donc le
+    prestataire reste invisible du matching comme s'il était toujours en attente.
+    """
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Accès admin refusé.", show_alert=True)
+        return
+
+    provider_id = int(callback.data.replace("admin_reject_provider_", "", 1))
+    provider = get_provider_by_id(provider_id)
+    if provider is None:
+        await callback.answer("Prestataire introuvable.", show_alert=True)
+        return
+
+    provider = update_provider_status(provider["telegram_id"], "rejected")
+    await _safe_backend_call(sync_provider_status_to_backend(provider["telegram_id"], "rejected"))
+
+    await callback.message.edit_text(
+        f"❌ Prestataire refusé : <b>{html.escape(provider['full_name'])}</b>",
+        parse_mode="HTML",
+        reply_markup=clavier_admin_menu(),
+    )
+    provider_lang = await get_provider_language(provider["telegram_id"])
+    await bot.send_message(
+        provider["telegram_id"],
+        get_message("provider_registration_rejected", provider_lang),
+        parse_mode="HTML",
+    )
+    await callback.answer("Prestataire refusé")
 
 
 @dp.callback_query(F.data.startswith("admin_suspend_provider_"))
@@ -641,17 +692,20 @@ async def admin_suspend_provider(callback: CallbackQuery):
         await callback.answer("Prestataire introuvable.", show_alert=True)
         return
 
-    await _safe_backend_call(sync_provider_suspended_to_backend(provider_id))
+    # Même bug que admin_verify_provider : provider_id (id interne SQLite) au lieu
+    # de provider["telegram_id"] (clé primaire backend) — le sync échouait
+    # silencieusement depuis le début.
+    await _safe_backend_call(sync_provider_suspended_to_backend(provider["telegram_id"]))
 
     await callback.message.edit_text(
         f"⛔ Prestataire suspendu : <b>{html.escape(provider['full_name'])}</b>",
         parse_mode="HTML",
         reply_markup=clavier_admin_menu(),
     )
+    provider_lang = await get_provider_language(provider["telegram_id"])
     await bot.send_message(
         provider["telegram_id"],
-        "⛔ <b>Votre profil prestataire a été suspendu par Nexis.</b>\n\n"
-        "Contactez le support si vous pensez qu'il s'agit d'une erreur.",
+        get_message("provider_suspended_notice", provider_lang),
         parse_mode="HTML",
     )
     await callback.answer("Prestataire suspendu")
@@ -669,16 +723,18 @@ async def admin_unsuspend_provider(callback: CallbackQuery):
         await callback.answer("Prestataire introuvable.", show_alert=True)
         return
 
-    await _safe_backend_call(sync_provider_unsuspended_to_backend(provider_id))
+    # Même bug que admin_verify_provider (id interne SQLite au lieu de telegram_id).
+    await _safe_backend_call(sync_provider_unsuspended_to_backend(provider["telegram_id"]))
 
     await callback.message.edit_text(
         f"♻️ Prestataire réactivé : <b>{html.escape(provider['full_name'])}</b>",
         parse_mode="HTML",
         reply_markup=clavier_admin_menu(),
     )
+    provider_lang = await get_provider_language(provider["telegram_id"])
     await bot.send_message(
         provider["telegram_id"],
-        "♻️ <b>Votre profil prestataire a été réactivé par Nexis.</b>",
+        get_message("provider_unsuspended_notice", provider_lang),
         parse_mode="HTML",
     )
     await callback.answer("Prestataire réactivé")

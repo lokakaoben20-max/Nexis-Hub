@@ -276,6 +276,68 @@ réimporter `main`, et ce qui rend les envois sortants mockables en test.
 C'est le dernier gros bloc de `main.py`, et celui qui touche à l'argent : à extraire
 avec la même prudence (double écriture, aucun changement de source de vérité).
 
+## Vérification obligatoire des prestataires (documents + validation admin)
+
+**Motif** : le produit se positionne sur la confiance ("WHERE TRUST MEETS SERVICE"),
+mais un prestataire s'inscrivait jusqu'ici avec juste téléphone/nom/services/communes
+et devenait immédiatement `status="available"` (matchable), sans qu'aucun humain ne
+vérifie qui il est. L'infrastructure `is_verified`/`admin_verify_provider` existait
+déjà mais **n'était jamais consultée par `find_matching_providers`** (filtre
+uniquement sur `is_active`/`is_suspended`/`status='available'`). Le texte
+`provider_registered` promettait même déjà "La validation admin et le matching
+suivront" — jamais implémenté avant maintenant.
+
+**Décision (cas ambigu, skill `nouvelle-fonctionnalite`)** : `db.py` avait déjà deux
+colonnes mortes (`id_document_url`/`portfolio_urls`, jamais lues ni écrites) — ni
+vraiment du legacy-first, ni vraiment neuf. Tranché avec l'utilisateur : le **statut**
+qui bloque le matching (`pending_verification`) doit vivre dans `db.py`, car
+`find_matching_providers` n'y lit que cette table — un verrou posé uniquement côté
+backend n'aurait aucun effet réel tant que le flow mission/matching n'est pas migré.
+Les **documents** (pièce d'identité, selfie, portfolio optionnel) sont stockés comme
+`file_id` Telegram (pas d'hébergement de fichier) — nouvelles colonnes
+`id_document_file_id`/`selfie_file_id`/`portfolio_file_ids`, en plus des deux mortes
+laissées telles quelles. Double écriture vers le backend (mêmes champs sur
+`BotProvider`, migration `a761a48e9136`), suivant le pattern déjà établi dans cette
+Phase 3.
+
+**Flow** : `telegram_bot/registration.py`, `ProviderRegistration` gagne 3 états après
+`communes` (`id_document`, `selfie`, `portfolio` — portfolio optionnel avec bouton
+"Terminé"). La création réelle (`create_provider`) et le statut
+`pending_verification` ne sont posés qu'à la toute fin
+(`finaliser_inscription_prestataire`), pas dès le choix des communes comme avant.
+
+**Nouveau pattern** : push proactif vers l'admin à l'inscription
+(`_notifier_admin_nouveau_prestataire`) — récapitulatif + les documents + boutons
+Approuver/Refuser. Rien de tel n'existait côté bot synchrone (`main.py`) jusqu'ici,
+mais le mécanisme (`bot.send_message(ADMIN_TELEGRAM_ID, ...)`) était déjà éprouvé côté
+Celery (`backend/app/tasks.py:send_daily_analytics`).
+
+**Décision produit actée avec l'utilisateur** : validation **manuelle** par l'admin,
+pas de vérification automatisée par IA/service tiers (Onfido, Jumio, Veriff…) pour
+cette itération — combiner OCR + détection de faux documents + face matching est un
+chantier à part, avec un fournisseur externe et un coût par vérification, hors scope
+ici.
+
+**Trois bugs corrigés au passage, trouvés dans le code étendu**
+(`admin_verify_provider`/`admin_suspend_provider`/`admin_unsuspend_provider`,
+`main.py`) :
+1. Les trois handlers envoyaient l'**id interne SQLite** (`provider["id"]`,
+   auto-increment) aux endpoints backend `.../providers/{telegram_id}/...`, qui
+   attendent la clé primaire Postgres (`telegram_id`). Le sync backend échouait
+   silencieusement (404 avalé par `_safe_backend_call`) depuis le tout début — ces
+   trois actions n'avaient **jamais** été reflétées côté backend. Corrigé en passant
+   `provider["telegram_id"]`.
+2. Les 3 notifications au prestataire étaient du texte français câblé en dur — même
+   piège que le flow mission, corrigé de la même façon (`get_message` +
+   `get_provider_language`).
+3. **Faille de contournement via la Mini App** : `mini_app/app.py` a son propre
+   endpoint d'inscription prestataire (`POST /api/provider/{id}/register`), qui
+   appelait `create_provider` sans jamais passer par la collecte de documents. Un
+   prestataire aurait pu s'inscrire via le web pour éviter la vérification. Corrigé
+   au minimum : `status="pending_verification"` forcé après `create_provider` là
+   aussi, même si la Mini App ne collecte pas encore les documents elle-même (chantier
+   séparé, non lancé).
+
 ## Phase 4 — Canal WhatsApp
 
 **Objectif** : ajouter `whatsapp_bot/` comme second canal, une fois que le

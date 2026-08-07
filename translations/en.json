@@ -153,5 +153,17 @@
   "provider_choose_services": "🧰 Which services do you offer?\n\nYou can pick several, then tap Continue.",
   "provider_phone_saved": "✅ Number saved.\n\nType your full name or your business name.",
   "provider_registered": "✅ <b>Provider profile created.</b>\n\nStatus: <b>{status}</b>\nBadge: <b>{badge}</b>\n\nYour profile is saved. Admin validation and matching will follow.",
+  "provider_id_document_prompt": "🪪 <b>Identity verification</b>\n\nSend a photo of your ID (ID card or passport) to finish your registration.",
+  "provider_id_document_invalid": "Send a photo of your ID.",
+  "provider_selfie_prompt": "🤳 Now send a selfie (a photo of your face), to verify it's really you on the ID.",
+  "provider_selfie_invalid": "Send a photo of your face.",
+  "provider_portfolio_prompt": "📸 Send photos of your past work if you have any (optional), or tap Done directly.",
+  "provider_portfolio_invalid": "Send a photo, or tap Done.",
+  "provider_portfolio_added": "✅ Photo added ({count}). Send more or tap Done.",
+  "provider_portfolio_done_button": "✅ Done",
+  "provider_verified_and_active": "✅ <b>Your provider profile has been verified by Nexis.</b>\n\nYou can now receive requests matching your services and districts.",
+  "provider_suspended_notice": "⛔ <b>Your provider profile has been suspended by Nexis.</b>\n\nContact support if you think this is a mistake.",
+  "provider_unsuspended_notice": "♻️ <b>Your provider profile has been reactivated by Nexis.</b>",
+  "provider_registration_rejected": "❌ <b>Your provider registration was not approved.</b>\n\nContact support for more information.",
   "new_mission_alert": "🔔 <b>New request!</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\nService: <b>{service}</b>\nDistrict: <b>{commune}</b>\nUrgent: <b>{urgent}</b>\n\n⏰ You have <b>20 minutes</b> to respond."
 }
