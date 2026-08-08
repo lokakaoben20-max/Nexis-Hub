@@ -65,7 +65,7 @@ def test_wallet_payment_debits_client_and_marks_mission_paid(tmp_path):
     with db.get_connection() as conn:
         conn.execute("UPDATE users SET wallet_balance_usd = ? WHERE telegram_id = ?", (200.0, 1001))
 
-    result = db.mark_quote_paid_with_wallet(quote_id, operator="wallet")
+    result = db.mark_quote_paid_with_wallet(quote_id, 1001, operator="wallet")
 
     assert result["status"] == "success"
     assert result["quote"]["id"] == quote_id

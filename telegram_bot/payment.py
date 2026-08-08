@@ -66,7 +66,11 @@ class RatingFlow(StatesGroup):
 @router.callback_query(F.data.startswith("client_accept_quote_"))
 async def client_accepte_devis(callback: CallbackQuery):
     quote_id, backend_quote_id = _parse_quote_callback_ids(callback.data.replace("client_accept_quote_", "", 1))
-    quote = accept_quote(quote_id)
+    try:
+        quote = accept_quote(quote_id, callback.from_user.id)
+    except ValueError as error:
+        await callback.answer(str(error), show_alert=True)
+        return
     if backend_quote_id is not None:
         await _safe_backend_call(sync_quote_accept_to_backend(backend_quote_id))
     total_client = quote["amount"]
@@ -126,7 +130,11 @@ async def client_accepte_devis(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("pay_mobile_"))
 async def paiement_mobile_money(callback: CallbackQuery):
     quote_id = int(callback.data.replace("pay_mobile_", "", 1))
-    payment = mark_quote_paid(quote_id, operator="mobile_money_simulation")
+    try:
+        payment = mark_quote_paid(quote_id, callback.from_user.id, operator="mobile_money_simulation")
+    except ValueError as error:
+        await callback.answer(str(error), show_alert=True)
+        return
     quote = payment["quote"]
 
     await _safe_backend_call(sync_payment_to_backend(quote_id, "paid_escrow", mission_id=quote["mission_id"]))
@@ -217,7 +225,7 @@ async def prestataire_termine_mission(callback: CallbackQuery):
 async def client_confirme_mission_terminee(callback: CallbackQuery, state: FSMContext):
     mission_id = int(callback.data.replace("client_confirm_done_", "", 1))
     try:
-        mission = release_payment(mission_id)
+        mission = release_payment(mission_id, callback.from_user.id)
     except ValueError as error:
         await callback.answer(str(error), show_alert=True)
         return
@@ -339,7 +347,7 @@ async def client_signale_probleme(callback: CallbackQuery):
 async def paiement_wallet(callback: CallbackQuery):
     quote_id = int(callback.data.replace("pay_wallet_", "", 1))
     try:
-        payment = mark_quote_paid_with_wallet(quote_id, operator="wallet")
+        payment = mark_quote_paid_with_wallet(quote_id, callback.from_user.id, operator="wallet")
     except ValueError as error:
         await callback.answer(str(error), show_alert=True)
         return
@@ -381,7 +389,11 @@ async def paiement_wallet(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("client_reject_quote_"))
 async def client_refuse_devis(callback: CallbackQuery):
     quote_id, backend_quote_id = _parse_quote_callback_ids(callback.data.replace("client_reject_quote_", "", 1))
-    quote = reject_quote(quote_id)
+    try:
+        quote = reject_quote(quote_id, callback.from_user.id)
+    except ValueError as error:
+        await callback.answer(str(error), show_alert=True)
+        return
     if backend_quote_id is not None:
         await _safe_backend_call(sync_quote_reject_to_backend(backend_quote_id))
     client_lang = await get_user_language(callback.from_user.id)

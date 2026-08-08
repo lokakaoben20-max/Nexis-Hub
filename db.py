@@ -876,10 +876,12 @@ def get_quote_by_id(quote_id: int):
         ).fetchone()
 
 
-def accept_quote(quote_id: int):
+def accept_quote(quote_id: int, client_telegram_id: int):
     quote = get_quote_by_id(quote_id)
     if quote is None:
         raise ValueError("Devis introuvable")
+    if quote["client_telegram_id"] != client_telegram_id:
+        raise ValueError("Ce devis n'appartient pas à ce client")
 
     with get_connection() as conn:
         conn.execute(
@@ -897,10 +899,12 @@ def accept_quote(quote_id: int):
     return quote
 
 
-def reject_quote(quote_id: int):
+def reject_quote(quote_id: int, client_telegram_id: int):
     quote = get_quote_by_id(quote_id)
     if quote is None:
         raise ValueError("Devis introuvable")
+    if quote["client_telegram_id"] != client_telegram_id:
+        raise ValueError("Ce devis n'appartient pas à ce client")
 
     with get_connection() as conn:
         conn.execute(
@@ -928,10 +932,12 @@ def calculate_payment_amounts(amount: float, currency: str, urgent: bool = False
     }
 
 
-def mark_quote_paid(quote_id: int, operator: str = "simulation"):
+def mark_quote_paid(quote_id: int, client_telegram_id: int, operator: str = "simulation"):
     quote = get_quote_by_id(quote_id)
     if quote is None:
         raise ValueError("Devis introuvable")
+    if quote["client_telegram_id"] != client_telegram_id:
+        raise ValueError("Ce devis n'appartient pas à ce client")
 
     mission = get_mission_by_id(quote["mission_id"])
     if mission is None:
@@ -998,10 +1004,12 @@ def mark_quote_paid(quote_id: int, operator: str = "simulation"):
     }
 
 
-def mark_quote_paid_with_wallet(quote_id: int, operator: str = "wallet"):
+def mark_quote_paid_with_wallet(quote_id: int, client_telegram_id: int, operator: str = "wallet"):
     quote = get_quote_by_id(quote_id)
     if quote is None:
         raise ValueError("Devis introuvable")
+    if quote["client_telegram_id"] != client_telegram_id:
+        raise ValueError("Ce devis n'appartient pas à ce client")
 
     mission = get_mission_by_id(quote["mission_id"])
     if mission is None:
@@ -1156,10 +1164,12 @@ def reset_consecutive_ignored(telegram_id: int):
         )
 
 
-def release_payment(mission_id: int):
+def release_payment(mission_id: int, client_telegram_id: int):
     mission = get_mission_by_id(mission_id)
     if mission is None:
         raise ValueError("Mission introuvable")
+    if mission["client_telegram_id"] != client_telegram_id:
+        raise ValueError("Cette mission n'appartient pas à ce client")
     if mission["payment_status"] != "paid_escrow":
         raise ValueError("Aucun paiement escrow à libérer")
 

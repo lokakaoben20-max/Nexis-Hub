@@ -165,7 +165,7 @@ def _setup_accepted_quote(tmp_path, monkeypatch, currency="USD"):
         "urgent": False,
     })
     quote_id = db.create_quote(mission_id, 200, 50.0, currency, 4, "")
-    db.accept_quote(quote_id)
+    db.accept_quote(quote_id, 100)
     monkeypatch.setattr(payment, "get_user_language", lambda tid: _async_return("fr"))
     monkeypatch.setattr(payment, "get_provider_language", lambda tid: _async_return("fr"))
     return mission_id, quote_id
@@ -282,6 +282,97 @@ def test_client_refuse_devis_notifies_provider(tmp_path, monkeypatch):
     assert db.get_quote_by_id(quote_id)["status"] == "rejected"
     assert len(bot.messages) == 1
     assert bot.messages[0].chat_id == 400
+
+
+def _setup_pending_quote(tmp_path, monkeypatch, currency="USD"):
+    """Comme _setup_accepted_quote, mais le devis reste 'pending' (pas encore accepté).
+
+    Ajoute aussi un second client (999) qui n'a rien à voir avec cette mission,
+    pour les tests de vérification de propriétaire ci-dessous.
+    """
+    _init_db(tmp_path)
+    _use_dummy_backend(monkeypatch)
+    db.create_user(100, "+243800000100", "Cliente", language="fr")
+    db.create_user(999, "+243800000999", "Intrus", language="fr")
+    db.create_provider(200, "+243800000200", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+    mission_id = db.create_mission(100, {
+        "service": "service_plomberie",
+        "commune": "Gombe",
+        "currency": currency,
+        "description": "Fuite d'eau",
+        "urgent": False,
+    })
+    quote_id = db.create_quote(mission_id, 200, 50.0, currency, 4, "")
+    monkeypatch.setattr(payment, "get_user_language", lambda tid: _async_return("fr"))
+    monkeypatch.setattr(payment, "get_provider_language", lambda tid: _async_return("fr"))
+    return mission_id, quote_id
+
+
+def test_client_accepte_devis_rejects_a_caller_who_is_not_the_client(tmp_path, monkeypatch):
+    mission_id, quote_id = _setup_pending_quote(tmp_path, monkeypatch)
+
+    callback = DummyCallback(telegram_id=999, data=f"client_accept_quote_{quote_id}:-", bot=DummyBot())
+    asyncio.run(payment.client_accepte_devis(callback))
+
+    assert callback.answered is not None, "un client tiers doit recevoir une alerte, pas un succès silencieux"
+    assert db.get_quote_by_id(quote_id)["status"] == "pending", "le devis d'un autre client ne doit pas être accepté"
+
+
+def test_client_refuse_devis_rejects_a_caller_who_is_not_the_client(tmp_path, monkeypatch):
+    mission_id, quote_id = _setup_pending_quote(tmp_path, monkeypatch)
+
+    callback = DummyCallback(telegram_id=999, data=f"client_reject_quote_{quote_id}:-", bot=DummyBot())
+    asyncio.run(payment.client_refuse_devis(callback))
+
+    assert callback.answered is not None
+    assert db.get_quote_by_id(quote_id)["status"] == "pending"
+
+
+def test_paiement_mobile_money_rejects_a_caller_who_is_not_the_client(tmp_path, monkeypatch):
+    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch)
+
+    callback = DummyCallback(telegram_id=999, data=f"pay_mobile_{quote_id}", bot=DummyBot())
+    asyncio.run(payment.paiement_mobile_money(callback))
+
+    assert callback.answered is not None
+    assert db.get_mission_by_id(mission_id)["payment_status"] == "unpaid", "un tiers ne doit pas pouvoir payer le devis d'un autre"
+
+
+def test_paiement_wallet_rejects_a_caller_who_is_not_the_client(tmp_path, monkeypatch):
+    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch)
+    db.create_user(999, "+243800000999", "Intrus", language="fr")
+    with db.get_connection() as conn:
+        # L'intrus (999) a bien un wallet suffisant : le test isole la
+        # vérification de propriétaire du cas "solde insuffisant".
+        conn.execute("UPDATE users SET wallet_balance_usd = ? WHERE telegram_id = ?", (200.0, 999))
+
+    callback = DummyCallback(telegram_id=999, data=f"pay_wallet_{quote_id}", bot=DummyBot())
+    asyncio.run(payment.paiement_wallet(callback))
+
+    assert callback.answered is not None
+    assert db.get_mission_by_id(mission_id)["payment_status"] == "unpaid"
+    intrus_wallet = db.get_user_by_telegram_id(999)["wallet_balance_usd"]
+    assert intrus_wallet == 200.0, "le wallet de l'intrus ne doit pas être débité pour la mission d'un autre"
+
+
+def test_client_confirme_mission_terminee_rejects_a_caller_who_is_not_the_client(tmp_path, monkeypatch):
+    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch)
+    payment_result = db.mark_quote_paid(quote_id, 100, operator="mobile_money_simulation")
+    db.start_mission(mission_id, 200)
+    db.finish_mission(mission_id, 200)
+    provider_before = db.get_provider_by_telegram_id(200)
+
+    callback = DummyCallback(telegram_id=999, data=f"client_confirm_done_{mission_id}", bot=DummyBot())
+    state = DummyState()
+    asyncio.run(payment.client_confirme_mission_terminee(callback, state))
+
+    assert callback.answered is not None
+    final_mission = db.get_mission_by_id(mission_id)
+    assert final_mission["status"] == "awaiting_confirmation", "un tiers ne doit pas pouvoir libérer l'escrow d'une autre mission"
+    assert final_mission["payment_status"] == "paid_escrow"
+    provider_after = db.get_provider_by_telegram_id(200)
+    assert provider_after["wallet_balance_usd"] == provider_before["wallet_balance_usd"]
+    assert state.state is None, "le flow de notation ne doit pas démarrer pour une libération refusée"
 
 
 def test_rating_skip_clears_state_without_backend_call(tmp_path, monkeypatch):
