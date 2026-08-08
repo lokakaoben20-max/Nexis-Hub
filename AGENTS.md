@@ -158,54 +158,60 @@ c:/Users/Ben L/OneDrive/Desktop/Startup_Nexis_Hub/nexis_hub_bot/.venv/Scripts/py
 
 ## Prochaine étape logique — reprendre ici (2026-08-08)
 
-**Phase 3, flow 3 (paiement/lifecycle/notation) : terminé.** 13 handlers + FSM
-`RatingFlow` + helper `_finalize_review` déplacés de `main.py` vers le nouveau
-`telegram_bot/payment.py` ; 5 fonctions `sync_*` ajoutées à
-`telegram_bot/backend_client.py` ; claviers + `_rich_cell` +
-`build_quote_accept_rich_message` ajoutés à `telegram_bot/keyboards.py`.
-`dp.include_router(payment.router)` ajouté dans `main.py`. Tests dédiés dans
-`tests/test_payment_flow_extraction.py` (cycle complet devis accepté → paiement
-mobile money/wallet → mission démarrée → terminée → confirmée → escrow libéré →
-notation). Les tests existants qui référençaient les symboles déplacés
-(`tests/test_bot_backend_sync.py`, `tests/test_v5_payments_flow.py`,
-`tests/test_v5_mission_lifecycle.py`) ont été mis à jour pour pointer vers
-`telegram_bot.backend_client`/`telegram_bot.payment`/`telegram_bot.keyboards` au
-lieu de `main`. Suite complète : 135 passed. Agents `security-reviewer` et
-`backend-parity-auditor` lancés avant commit — aucune vulnérabilité ni divergence
-de données introduite par l'extraction (le déplacement est un pur "move", seul
-changement délibéré : `bot.send_message` → `callback.bot.send_message`/
-`message.bot.send_message`).
+**Phase 3, flow 3 (paiement/lifecycle/notation) : terminé**, puis deux
+correctifs et une nouvelle feature construits dans la foulée sur ce même flow :
 
-**Trouvaille déjà identifiée, toujours pas corrigée** (documentée aussi dans
-`V5_MIGRATION_PLAN.md` et dans le docstring de `telegram_bot/payment.py`) :
-`client_signale_probleme` affiche "paiement maintenu en escrow" mais ne change
-aucun statut réel — pas de `mission.status = "disputed"`, aucun gel effectif de
-`release_payment`. `"disputed"` existe comme valeur de statut ailleurs
-(`_FAILURE_STATUSES` dans `backend/app/crud.py`), donc l'infrastructure l'attend,
-juste jamais posée par ce handler. Décision produit non triviale, pas une simple
-correction — à trancher avec l'utilisateur séparément.
+1. **Extraction paiement/lifecycle/notation** vers `telegram_bot/payment.py`
+   (13 handlers + `RatingFlow`), 5 `sync_*` ajoutées à `backend_client.py`,
+   claviers + rich-message vers `keyboards.py`. Tests dans
+   `tests/test_payment_flow_extraction.py`.
+2. **Trou de sécurité corrigé** : `accept_quote`/`reject_quote`/
+   `mark_quote_paid*`/`release_payment` (db.py) ne vérifiaient pas que
+   l'appelant était le client propriétaire — ajout d'un paramètre
+   `client_telegram_id` obligatoire partout, 5 tests de régression.
+3. **Écart d'argent backend corrigé** : le bot n'appelait que deux endpoints
+   génériques (`/api/bot/missions/status`, `/api/bot/payments`) qui posaient
+   des flags sans jamais créditer les wallets Postgres. Étendus pour créer
+   de vraies `BotTransaction` et créditer réellement, avec idempotence basée
+   sur l'existence de transaction (pas sur `payment_status`, qui peut être
+   réécrit sans condition — piège trouvé par `security-reviewer`).
+4. **Système de litiges construit** (motif client → statut `disputed` réel +
+   gel de `release_payment` → résolution admin : rembourser / payer / partager
+   à l'amiable). Deux failles réelles trouvées en revue et corrigées avant
+   commit : `open_dispute` sans garde d'état permettait de rouvrir un litige
+   sur une mission déjà réglée (double paiement) ; le partage à l'amiable ne
+   transmettait pas la part réduite du prestataire au backend (sur-crédit).
+   Voir le commit `a405532` pour le détail complet.
 
-**Point relevé par `security-reviewer` pendant cette revue, préexistant et non
-corrigé** (hors scope du déplacement, à trancher séparément) : `accept_quote`,
-`reject_quote`, `mark_quote_paid`, `mark_quote_paid_with_wallet` et
-`release_payment` dans `db.py` ne vérifient pas que l'appelant (`callback.from_user.id`)
-est bien le client propriétaire de la mission/du devis — contrairement à
-`start_mission`/`finish_mission` qui vérifient `provider_telegram_id`. Ça touche
-directement l'argent (paiement, escrow) donc à évaluer avant la mise en
-production, mais indépendant de ce flow d'extraction.
+Suite complète à jour : **171 passed**. Chaque étape a été revue par
+`security-reviewer`/`backend-parity-auditor` (et `i18n-reviewer` pour les
+nouvelles clés de message) avant son commit.
 
-**Prochaine étape** : il reste l'admin (12 handlers) et l'affichage
-missions/wallet (6 handlers) dans `main.py`, plus petits et moins sensibles que
-ce qui vient d'être extrait. Une fois tout extrait, le vrai objectif de Phase 3
-(un service `telegram_bot/` séparé, déployé indépendamment) reste à faire —
-bloqué jusque-là par le long-polling Telegram (un seul process consommateur par
-token), voir `V5_MIGRATION_PLAN.md`.
+**Restent en attente de décision utilisateur, pas construits** :
+- Le **partage à l'amiable** ne recalcule pas `success_rate`/`total_missions`
+  côté SQLite local (contrairement au backend, corrigé) — `db.py` ne calcule
+  ces stats nulle part (confirmé par une note plus bas dans ce fichier),
+  cohérent avec l'existant, mais à garder en tête si ces stats deviennent
+  affichées côté bot un jour.
+- L'étiquette technique `"Mission : NXH-XXXX"` (~100 occurrences dans
+  `ln.json`) — l'utilisateur a mis cette question de côté sans trancher.
+- Le **partage à l'amiable côté client** : aujourd'hui uniquement déclenché
+  par l'admin (aucune demande explicite du client pour un partage) — comme
+  voulu.
+
+**Prochaine étape** : il reste l'admin (12 handlers, hors ceux de résolution
+de litige déjà ajoutés) et l'affichage missions/wallet (6 handlers) dans
+`main.py`, plus petits et moins sensibles. Une fois tout extrait, le vrai
+objectif de Phase 3 (un service `telegram_bot/` séparé, déployé
+indépendamment) reste à faire — bloqué jusque-là par le long-polling Telegram
+(un seul process consommateur par token), voir `V5_MIGRATION_PLAN.md`.
 
 **Sujets déjà traités, ne pas refaire** : Phase 2 (Celery+Redis), extraction
 inscription/profil, extraction mission/devis, vérification obligatoire des
-prestataires (documents + validation admin), extraction paiement/lifecycle/
-notation — tous committés et poussés sur `feature/v5-migration` (commits
-`ae07050`, `99c7526`, `117e60b`, `b60400e`, et le commit de ce flow).
+prestataires, extraction paiement/lifecycle/notation, correctif propriétaire
+devis/mission, miroir paiement/libération backend, système de litiges — tous
+committés et poussés sur `feature/v5-migration` (commits `ae07050`, `99c7526`,
+`117e60b`, `b60400e`, `6ca58a1`, `077b8d3`, `a69dd3a`, `a405532`).
 
 Voir aussi [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md) pour le plan de migration
 complet vers l'architecture cible `nexis-hub-v5`.
