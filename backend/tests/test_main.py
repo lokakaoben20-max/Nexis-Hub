@@ -372,6 +372,248 @@ def test_wallet_payment_succeeds_and_debits_balance(tmp_path, monkeypatch):
         assert profile["client"]["wallet_balance_usd"] == 100.0  # 200 - 100 (devis seul, plus de frais Tola)
 
 
+def _paid_escrow_payload(mission_id=1001, quote_id=501, amount=100.0, currency="USD", via_wallet=False):
+    """Mêmes clés que `telegram_bot.backend_client.sync_payment_to_backend` quand
+    `amounts` est fourni — reproduit ce que le bot envoie réellement après un
+    paiement local (db.py) réussi, pour tester le miroir sans revalidation."""
+    return {
+        "quote_id": quote_id,
+        "mission_id": mission_id,
+        "payment_status": "paid_escrow",
+        "amount": amount,
+        "currency": currency,
+        "commission_amount": 10.0,
+        "tola_fee": 0.0,
+        "aggregator_fee": 0.0,
+        "total_client": amount,
+        "net_provider": amount - 10.0,
+        "mobile_money_ref": f"SIM-{quote_id:04d}",
+        "operator": "mobile_money_simulation",
+        "via_wallet": via_wallet,
+    }
+
+
+def test_generic_payment_endpoint_mirrors_transaction_without_revalidating(tmp_path, monkeypatch):
+    """Le miroir (option B, cf. discussion) ne revalide rien (pas de re-check
+    de solde wallet côté backend) : il enregistre juste ce que db.py a déjà
+    validé localement."""
+    from backend.app.models import BotTransaction
+
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+
+        response = test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
+        assert response.status_code == 200
+        mission = response.json()["mission"]
+        assert mission["payment_status"] == "paid_escrow"
+        assert mission["net_provider"] == 90.0
+        assert mission["commission_amount"] == 10.0
+
+    with database_module.SessionLocal() as db:
+        transactions = db.query(BotTransaction).filter(BotTransaction.mission_id == 1001).all()
+        assert len(transactions) == 1
+        assert transactions[0].type == "escrow_in"
+        assert transactions[0].amount == 100.0
+        assert transactions[0].net_provider == 90.0
+        assert transactions[0].mobile_money_ref == f"SIM-{quote_id:04d}"
+
+
+def test_generic_payment_endpoint_debits_wallet_when_via_wallet(tmp_path, monkeypatch):
+    from backend.app.models import BotUser
+
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+
+        with database_module.SessionLocal() as db:
+            db.get(BotUser, 42).wallet_balance_usd = 200.0
+            db.commit()
+
+        response = test_client.post(
+            "/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id, via_wallet=True)
+        )
+        assert response.status_code == 200
+
+    with database_module.SessionLocal() as db:
+        user = db.get(BotUser, 42)
+        assert user.wallet_balance_usd == 100.0, "200 - 100 (le devis), débité sans revalider le solde côté backend"
+
+
+def test_generic_payment_endpoint_is_idempotent_on_replay(tmp_path, monkeypatch):
+    """Un retry best-effort (sync_payment_to_backend rejoué) ne doit pas créer
+    une deuxième transaction ni débiter le wallet deux fois."""
+    from backend.app.models import BotTransaction, BotUser
+
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+
+        with database_module.SessionLocal() as db:
+            db.get(BotUser, 42).wallet_balance_usd = 200.0
+            db.commit()
+
+        payload = _paid_escrow_payload(quote_id=quote_id, via_wallet=True)
+        first = test_client.post("/api/bot/payments", json=payload)
+        second = test_client.post("/api/bot/payments", json=payload)
+        assert first.status_code == 200
+        assert second.status_code == 200
+
+    with database_module.SessionLocal() as db:
+        transactions = db.query(BotTransaction).filter(BotTransaction.mission_id == 1001).all()
+        assert len(transactions) == 1, "le deuxième appel ne doit pas créer une deuxième transaction"
+        user = db.get(BotUser, 42)
+        assert user.wallet_balance_usd == 100.0, "le deuxième appel ne doit pas débiter le wallet une deuxième fois"
+
+
+def test_generic_mission_status_release_credits_provider_wallet_and_stats(tmp_path, monkeypatch):
+    """Reproduit ce que sync_mission_status_to_backend(mission_id, 'completed',
+    payment_status='released') doit maintenant déclencher côté backend, sans
+    passer par l'endpoint spécifique /missions/{id}/release."""
+    from backend.app.models import BotTransaction
+
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
+
+        response = test_client.post(
+            "/api/bot/missions/status",
+            json={"mission_id": 1001, "status": "completed", "payment_status": "released"},
+        )
+        assert response.status_code == 200
+        mission = response.json()["mission"]
+        assert mission["status"] == "completed"
+        assert mission["payment_status"] == "released"
+
+        provider_profile = test_client.get("/api/profile/7").json()
+        assert provider_profile["provider"]["wallet_balance_usd"] == 90.0
+        assert provider_profile["provider"]["total_missions"] == 1, "_recompute_provider_stats doit tourner comme dans crud.release_payment"
+
+    with database_module.SessionLocal() as db:
+        release_transactions = (
+            db.query(BotTransaction).filter(BotTransaction.mission_id == 1001, BotTransaction.type == "release").all()
+        )
+        assert len(release_transactions) == 1
+        assert release_transactions[0].net_provider == 90.0
+
+
+def test_generic_mission_status_release_is_idempotent_on_replay(tmp_path, monkeypatch):
+    from backend.app.models import BotTransaction
+
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
+
+        payload = {"mission_id": 1001, "status": "completed", "payment_status": "released"}
+        test_client.post("/api/bot/missions/status", json=payload)
+        test_client.post("/api/bot/missions/status", json=payload)
+
+        provider_profile = test_client.get("/api/profile/7").json()
+        assert provider_profile["provider"]["wallet_balance_usd"] == 90.0, "pas crédité deux fois"
+
+    with database_module.SessionLocal() as db:
+        release_transactions = (
+            db.query(BotTransaction).filter(BotTransaction.mission_id == 1001, BotTransaction.type == "release").all()
+        )
+        assert len(release_transactions) == 1
+
+
+def test_generic_payment_endpoint_still_records_transaction_after_a_bare_status_call(tmp_path, monkeypatch):
+    """Régression : security-reviewer a signalé que l'ancien garde
+    (`mission.payment_status != "paid_escrow"`) pouvait être empoisonné par
+    un appel sans `amount` (compat arrière) qui pose payment_status sans
+    créer de transaction — un vrai paiement arrivant ensuite se retrouvait
+    silencieusement ignoré alors que payment_status affichait déjà
+    "paid_escrow" comme si tout s'était bien passé. Le garde doit se baser
+    sur l'existence réelle d'une transaction, pas sur ce champ."""
+    from backend.app.models import BotTransaction
+
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+
+        # Appel "bare" : pose payment_status sans jamais créer de transaction.
+        bare_response = test_client.post(
+            "/api/bot/payments", json={"quote_id": quote_id, "mission_id": 1001, "payment_status": "paid_escrow"}
+        )
+        assert bare_response.json()["mission"]["payment_status"] == "paid_escrow"
+
+        # Le vrai paiement arrive ensuite : doit quand même créer la transaction.
+        real_response = test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
+        assert real_response.status_code == 200
+        assert real_response.json()["mission"]["net_provider"] == 90.0
+
+    with database_module.SessionLocal() as db:
+        transactions = db.query(BotTransaction).filter(BotTransaction.mission_id == 1001).all()
+        assert len(transactions) == 1, "le vrai paiement ne doit pas être ignoré à cause de l'appel bare précédent"
+        assert transactions[0].net_provider == 90.0
+
+
+def test_generic_mission_status_release_requires_a_prior_payment_transaction(tmp_path, monkeypatch):
+    """Le garde de libération se base maintenant sur l'existence d'une
+    transaction escrow_in (pas sur payment_status, poisonnable de la même
+    façon) : sans paiement réel enregistré, une libération ne doit rien
+    créditer."""
+    from backend.app.models import BotProvider, BotTransaction
+
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+
+        # payment_status posé à "paid_escrow" sans jamais créer de transaction (appel bare).
+        test_client.post(
+            "/api/bot/payments", json={"quote_id": quote_id, "mission_id": 1001, "payment_status": "paid_escrow"}
+        )
+
+        response = test_client.post(
+            "/api/bot/missions/status",
+            json={"mission_id": 1001, "status": "completed", "payment_status": "released"},
+        )
+        assert response.status_code == 200
+
+    with database_module.SessionLocal() as db:
+        assert db.query(BotTransaction).filter(BotTransaction.mission_id == 1001, BotTransaction.type == "release").count() == 0
+        assert db.get(BotProvider, 7).wallet_balance_usd == 0.0, "pas de paiement réel enregistré -> pas de crédit"
+
+
+def test_generic_payment_endpoint_without_amount_only_sets_status(tmp_path, monkeypatch):
+    """Compat arrière : un appelant qui n'envoie pas `amount` (ancien format)
+    ne doit ni planter, ni créer de transaction — juste poser payment_status,
+    comme avant cette évolution."""
+    from backend.app.models import BotTransaction
+
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+
+        response = test_client.post(
+            "/api/bot/payments", json={"quote_id": quote_id, "mission_id": 1001, "payment_status": "paid_escrow"}
+        )
+        assert response.status_code == 200
+        assert response.json()["mission"]["payment_status"] == "paid_escrow"
+
+    with database_module.SessionLocal() as db:
+        assert db.query(BotTransaction).filter(BotTransaction.mission_id == 1001).count() == 0
+
+
 def test_consecutive_ignored_auto_pauses_provider_after_three(tmp_path, monkeypatch):
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from backend.app import crud
 from backend.app.database import SessionLocal, init_db
-from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotUser
+from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotTransaction, BotUser
 
 load_dotenv()
 BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
@@ -82,6 +82,21 @@ class PaymentPayload(BaseModel):
     quote_id: int
     payment_status: str
     mission_id: int | None = None
+    # Champs optionnels : quand présents (paiement réellement effectué côté
+    # bot), le backend reflète la transaction et débite le wallet client sans
+    # rejouer sa propre validation — db.py reste la source de vérité. Absents,
+    # le comportement retombe sur l'ancien (juste poser payment_status), pour
+    # ne rien casser côté appelants qui n'envoient pas encore ces champs.
+    amount: float | None = None
+    currency: str | None = None
+    commission_amount: float | None = None
+    tola_fee: float = 0.0
+    aggregator_fee: float = 0.0
+    total_client: float | None = None
+    net_provider: float | None = None
+    mobile_money_ref: str | None = None
+    operator: str | None = None
+    via_wallet: bool = False
 
 
 class ProviderServicesPayload(BaseModel):
@@ -459,11 +474,53 @@ def update_mission_status(payload: MissionStatusPayload):
         mission = db.get(BotMission, payload.mission_id)
         if mission is None:
             return {"status": "not_found"}
+        # Idempotence basée sur l'existence d'une transaction "release", pas
+        # sur mission.payment_status : ce champ est réécrit sans condition
+        # juste en dessous (compat arrière, cf. update_payment) et pourrait
+        # déjà valoir "released" suite à un appel qui n'a jamais réellement
+        # crédité le prestataire — s'appuyer dessus laisserait une vraie
+        # libération se faire silencieusement ignorer. On vérifie aussi
+        # qu'un paiement escrow a bien été enregistré avant de créditer.
+        already_released = (
+            db.query(BotTransaction)
+            .filter(BotTransaction.mission_id == mission.mission_id, BotTransaction.type == "release")
+            .first()
+            is not None
+        )
+        was_paid = (
+            db.query(BotTransaction)
+            .filter(BotTransaction.mission_id == mission.mission_id, BotTransaction.type == "escrow_in")
+            .first()
+            is not None
+        )
+        releasing = payload.payment_status == "released" and was_paid and not already_released
         mission.status = payload.status
         if payload.payment_status:
             mission.payment_status = payload.payment_status
+        if releasing:
+            db.add(
+                BotTransaction(
+                    mission_id=mission.mission_id,
+                    quote_id=None,
+                    type="release",
+                    amount=mission.net_provider,
+                    currency=mission.currency,
+                    net_provider=mission.net_provider,
+                    status="success",
+                )
+            )
+            if mission.provider_telegram_id is not None:
+                provider = db.get(BotProvider, mission.provider_telegram_id)
+                if provider is not None:
+                    if mission.currency == "USD":
+                        provider.wallet_balance_usd += mission.net_provider
+                    else:
+                        provider.wallet_balance_cdf += mission.net_provider
         db.commit()
         db.refresh(mission)
+        if releasing and mission.provider_telegram_id is not None:
+            crud._recompute_provider_stats(db, mission.provider_telegram_id)
+            db.commit()
         return {"status": "ok", "mission": _mission_to_dict(mission)}
 
 
@@ -472,7 +529,59 @@ def update_payment(payload: PaymentPayload):
     with SessionLocal() as db:
         mission = db.get(BotMission, payload.mission_id) if payload.mission_id is not None else None
         if mission is not None:
+            # Idempotence basée sur l'existence d'une transaction "escrow_in",
+            # pas sur mission.payment_status : même raison que dans
+            # update_mission_status ci-dessus — payment_status peut déjà
+            # valoir "paid_escrow" suite à un appel sans `amount` (compat
+            # arrière ci-dessous) sans qu'aucune transaction n'ait jamais été
+            # créée, ce qui ferait ignorer silencieusement le vrai paiement.
+            already_paid = (
+                db.query(BotTransaction)
+                .filter(BotTransaction.mission_id == mission.mission_id, BotTransaction.type == "escrow_in")
+                .first()
+                is not None
+            )
+            paying = (
+                payload.payment_status == "paid_escrow"
+                and not already_paid
+                and payload.amount is not None
+            )
             mission.payment_status = payload.payment_status
+            if paying:
+                total_client = payload.total_client if payload.total_client is not None else payload.amount
+                currency = payload.currency or mission.currency
+                mission.commission_amount = payload.commission_amount or 0.0
+                mission.tola_fee = payload.tola_fee
+                mission.aggregator_fee = payload.aggregator_fee
+                mission.total_client = total_client
+                mission.net_provider = payload.net_provider or 0.0
+                db.add(
+                    BotTransaction(
+                        mission_id=mission.mission_id,
+                        # Pas le quote_id backend (séquence Postgres indépendante
+                        # de l'id local envoyé par le bot) : mission_id suffit à
+                        # tracer cette transaction, mieux vaut None qu'un FK
+                        # pointant vers le mauvais devis.
+                        quote_id=None,
+                        type="escrow_in",
+                        amount=total_client,
+                        currency=currency,
+                        commission_amount=payload.commission_amount or 0.0,
+                        tola_fee=payload.tola_fee,
+                        aggregator_fee=payload.aggregator_fee,
+                        net_provider=payload.net_provider or 0.0,
+                        status="success",
+                        mobile_money_ref=payload.mobile_money_ref,
+                        operator=payload.operator,
+                    )
+                )
+                if payload.via_wallet:
+                    user = db.get(BotUser, mission.telegram_id)
+                    if user is not None:
+                        if currency == "USD":
+                            user.wallet_balance_usd -= total_client
+                        else:
+                            user.wallet_balance_cdf -= total_client
             db.commit()
             db.refresh(mission)
         return {

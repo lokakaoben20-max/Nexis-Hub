@@ -177,10 +177,38 @@ async def sync_mission_status_to_backend(mission_id: int, status: str, payment_s
         return response.json()
 
 
-async def sync_payment_to_backend(quote_id: int, payment_status: str, mission_id: int | None = None) -> dict:
+async def sync_payment_to_backend(
+    quote_id: int,
+    payment_status: str,
+    mission_id: int | None = None,
+    amounts: dict | None = None,
+    via_wallet: bool = False,
+) -> dict:
+    """`amounts` : le dict retourné par `db.mark_quote_paid`/`mark_quote_paid_with_wallet`
+    (mêmes clés : commission_amount, tola_fee, aggregator_fee, total_client,
+    net_provider, mobile_money_ref, operator, quote). Quand fourni, le backend
+    reflète la transaction et débite le wallet (si `via_wallet`) sans revalider
+    — db.py reste la source de vérité, voir backend/app/main.py::PaymentPayload.
+    """
     payload = {"quote_id": quote_id, "payment_status": payment_status}
     if mission_id is not None:
         payload["mission_id"] = mission_id
+    if amounts is not None:
+        quote = amounts["quote"]
+        payload.update(
+            {
+                "amount": quote["amount"],
+                "currency": quote["currency"],
+                "commission_amount": amounts["commission_amount"],
+                "tola_fee": amounts["tola_fee"],
+                "aggregator_fee": amounts["aggregator_fee"],
+                "total_client": amounts["total_client"],
+                "net_provider": amounts["net_provider"],
+                "mobile_money_ref": amounts["mobile_money_ref"],
+                "operator": amounts["operator"],
+                "via_wallet": via_wallet,
+            }
+        )
     async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/payments", json=payload)
         response.raise_for_status()

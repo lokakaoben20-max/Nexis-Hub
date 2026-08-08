@@ -137,7 +137,9 @@ async def paiement_mobile_money(callback: CallbackQuery):
         return
     quote = payment["quote"]
 
-    await _safe_backend_call(sync_payment_to_backend(quote_id, "paid_escrow", mission_id=quote["mission_id"]))
+    await _safe_backend_call(
+        sync_payment_to_backend(quote_id, "paid_escrow", mission_id=quote["mission_id"], amounts=payment)
+    )
     client_lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
         get_message(
@@ -353,7 +355,11 @@ async def paiement_wallet(callback: CallbackQuery):
         return
 
     quote = payment["quote"]
-    await _safe_backend_call(sync_payment_to_backend(quote_id, "paid_escrow", mission_id=quote["mission_id"]))
+    await _safe_backend_call(
+        sync_payment_to_backend(
+            quote_id, "paid_escrow", mission_id=quote["mission_id"], amounts=payment, via_wallet=True
+        )
+    )
     client_lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
         get_message(
