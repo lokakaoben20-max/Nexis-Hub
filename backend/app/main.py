@@ -76,6 +76,18 @@ class MissionStatusPayload(BaseModel):
     mission_id: int
     status: str
     payment_status: str | None = None
+    dispute_reason: str | None = None
+    # Montant à rembourser au client (résolution de litige). Explicite plutôt
+    # que dérivé de total_client/net_provider côté serveur : un partage à
+    # l'amiable libère net_provider ET rembourse une partie du reste, deux
+    # montants indépendants qu'aucun champ existant ne permet de reconstruire
+    # de façon fiable après coup.
+    refund_amount: float | None = None
+    # Part réduite du prestataire pour un partage à l'amiable (sinon la
+    # branche "releasing" créditerait le net_provider ORIGINAL, posé au
+    # paiement escrow initial, pas la part réellement due après le partage —
+    # bug trouvé par security-reviewer/backend-parity-auditor).
+    net_provider: float | None = None
 
 
 class PaymentPayload(BaseModel):
@@ -487,6 +499,12 @@ def update_mission_status(payload: MissionStatusPayload):
             .first()
             is not None
         )
+        already_refunded = (
+            db.query(BotTransaction)
+            .filter(BotTransaction.mission_id == mission.mission_id, BotTransaction.type == "refund")
+            .first()
+            is not None
+        )
         was_paid = (
             db.query(BotTransaction)
             .filter(BotTransaction.mission_id == mission.mission_id, BotTransaction.type == "escrow_in")
@@ -494,9 +512,19 @@ def update_mission_status(payload: MissionStatusPayload):
             is not None
         )
         releasing = payload.payment_status == "released" and was_paid and not already_released
+        # Indépendant de `releasing` : un partage à l'amiable de litige libère
+        # net_provider ET rembourse une partie au client dans le même appel.
+        refunding = payload.refund_amount is not None and was_paid and not already_refunded
         mission.status = payload.status
         if payload.payment_status:
             mission.payment_status = payload.payment_status
+        if payload.dispute_reason is not None:
+            mission.dispute_reason = payload.dispute_reason
+        if payload.net_provider is not None:
+            # Partage à l'amiable : la part due au prestataire n'est plus le
+            # net_provider posé au paiement escrow initial. Doit être appliqué
+            # AVANT le crédit ci-dessous, qui lit mission.net_provider.
+            mission.net_provider = payload.net_provider
         if releasing:
             db.add(
                 BotTransaction(
@@ -516,9 +544,31 @@ def update_mission_status(payload: MissionStatusPayload):
                         provider.wallet_balance_usd += mission.net_provider
                     else:
                         provider.wallet_balance_cdf += mission.net_provider
+        if refunding:
+            db.add(
+                BotTransaction(
+                    mission_id=mission.mission_id,
+                    quote_id=None,
+                    type="refund",
+                    amount=payload.refund_amount,
+                    currency=mission.currency,
+                    status="success",
+                )
+            )
+            user = db.get(BotUser, mission.telegram_id)
+            if user is not None:
+                if mission.currency == "USD":
+                    user.wallet_balance_usd += payload.refund_amount
+                else:
+                    user.wallet_balance_cdf += payload.refund_amount
         db.commit()
         db.refresh(mission)
-        if releasing and mission.provider_telegram_id is not None:
+        # crud._SUCCESS_STATUS/_FAILURE_STATUSES comptent completed/disputed/
+        # cancelled dans le calcul de success_rate — recalculer sur ces trois
+        # transitions, pas seulement "releasing", sinon un litige ouvert ou un
+        # remboursement pur laisse le badge/success_rate du prestataire figé
+        # sur une ancienne valeur (trouvaille backend-parity-auditor).
+        if payload.status in ("completed", "disputed", "cancelled") and mission.provider_telegram_id is not None:
             crud._recompute_provider_stats(db, mission.provider_telegram_id)
             db.commit()
         return {"status": "ok", "mission": _mission_to_dict(mission)}

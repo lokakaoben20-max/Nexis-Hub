@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -672,7 +673,7 @@ def get_disputed_missions(limit: int = 10):
             FROM missions
             JOIN users ON users.id = missions.user_id
             LEFT JOIN providers ON providers.id = missions.provider_id
-            WHERE missions.status = 'disputed' OR missions.dispute_reason IS NOT NULL
+            WHERE missions.status = 'disputed'
             ORDER BY missions.id DESC
             LIMIT ?
             """,
@@ -690,7 +691,7 @@ def get_admin_stats():
                 "SELECT COUNT(*) FROM service_requests WHERE status = 'pending'"
             ).fetchone()[0],
             "disputes": conn.execute(
-                "SELECT COUNT(*) FROM missions WHERE status = 'disputed' OR dispute_reason IS NOT NULL"
+                "SELECT COUNT(*) FROM missions WHERE status = 'disputed'"
             ).fetchone()[0],
         }
 
@@ -1164,43 +1165,185 @@ def reset_consecutive_ignored(telegram_id: int):
         )
 
 
+def _credit_provider_and_complete(conn, mission):
+    """Insère la transaction 'release' et crédite le prestataire — partagé
+    entre release_payment (confirmation client normale) et
+    resolve_dispute_release_provider (résolution admin d'un litige)."""
+    wallet_column = "wallet_balance_usd" if mission["currency"] == "USD" else "wallet_balance_cdf"
+    conn.execute(
+        """
+        INSERT INTO transactions (
+            mission_id, type, amount, currency, net_provider, status
+        )
+        VALUES (?, 'release', ?, ?, ?, 'success')
+        """,
+        (
+            mission["id"],
+            mission["net_provider"],
+            mission["currency"],
+            mission["net_provider"],
+        ),
+    )
+    conn.execute(
+        f"UPDATE providers SET {wallet_column} = {wallet_column} + ? WHERE id = ?",
+        (mission["net_provider"], mission["provider_id"]),
+    )
+    conn.execute(
+        """
+        UPDATE missions
+        SET status = 'completed',
+            payment_status = 'released'
+        WHERE id = ?
+        """,
+        (mission["id"],),
+    )
+
+
 def release_payment(mission_id: int, client_telegram_id: int):
     mission = get_mission_by_id(mission_id)
     if mission is None:
         raise ValueError("Mission introuvable")
     if mission["client_telegram_id"] != client_telegram_id:
         raise ValueError("Cette mission n'appartient pas à ce client")
+    if mission["status"] == "disputed":
+        raise ValueError("Mission en litige : la résolution passe par l'admin")
     if mission["payment_status"] != "paid_escrow":
         raise ValueError("Aucun paiement escrow à libérer")
 
-    wallet_column = "wallet_balance_usd" if mission["currency"] == "USD" else "wallet_balance_cdf"
+    with get_connection() as conn:
+        _credit_provider_and_complete(conn, mission)
+    return get_mission_by_id(mission_id)
 
+
+# Délai avant résolution attendue d'un litige. Correspond à la valeur du
+# paramètre `delay_dispute_resolution` déjà seedé dans platform_settings
+# (jamais lu par aucun code actif — voir balayage db.py/backend) : codé en
+# dur ici plutôt que de brancher toute la table pour ce seul flow.
+DISPUTE_RESOLUTION_DELAY_MINUTES = 2880
+
+
+# États depuis lesquels un litige peut légitimement s'ouvrir : après paiement
+# escrow, avant toute résolution finale. Exclut explicitement 'disputed' (déjà
+# ouvert), 'completed'/'cancelled' (mission déjà réglée — sans cette liste
+# positive, rouvrir un litige sur une mission déjà résolue permettait un
+# double remboursement/double paiement, trouvé par security-reviewer).
+_DISPUTE_ELIGIBLE_STATUSES = {"confirmed", "in_progress", "awaiting_confirmation"}
+
+
+def open_dispute(mission_id: int, client_telegram_id: int, reason: str):
+    mission = get_mission_by_id(mission_id)
+    if mission is None:
+        raise ValueError("Mission introuvable")
+    if mission["client_telegram_id"] != client_telegram_id:
+        raise ValueError("Cette mission n'appartient pas à ce client")
+    if mission["payment_status"] != "paid_escrow" or mission["status"] not in _DISPUTE_ELIGIBLE_STATUSES:
+        raise ValueError("Cette mission ne peut pas être mise en litige dans son état actuel")
+
+    deadline = (datetime.utcnow() + timedelta(minutes=DISPUTE_RESOLUTION_DELAY_MINUTES)).isoformat()
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE missions SET status = 'disputed', dispute_reason = ?, dispute_deadline = ? WHERE id = ?",
+            (reason, deadline, mission_id),
+        )
+    return get_mission_by_id(mission_id)
+
+
+def resolve_dispute_refund_client(mission_id: int):
+    mission = get_mission_by_id(mission_id)
+    if mission is None:
+        raise ValueError("Mission introuvable")
+    # Double vérification (status ET payment_status) en défense en profondeur :
+    # open_dispute garantit déjà cet invariant, mais un correctif futur qui
+    # l'affaiblirait ne doit pas suffire à permettre un double remboursement.
+    if mission["status"] != "disputed" or mission["payment_status"] != "paid_escrow":
+        raise ValueError("Cette mission n'est pas en litige")
+
+    wallet_column = "wallet_balance_usd" if mission["currency"] == "USD" else "wallet_balance_cdf"
     with get_connection() as conn:
         conn.execute(
             """
             INSERT INTO transactions (
-                mission_id, type, amount, currency, net_provider, status
+                mission_id, type, amount, currency, status
             )
-            VALUES (?, 'release', ?, ?, ?, 'success')
+            VALUES (?, 'refund', ?, ?, 'success')
             """,
-            (
-                mission_id,
-                mission["net_provider"],
-                mission["currency"],
-                mission["net_provider"],
-            ),
+            (mission_id, mission["total_client"], mission["currency"]),
         )
         conn.execute(
-            f"UPDATE providers SET {wallet_column} = {wallet_column} + ? WHERE id = ?",
-            (mission["net_provider"], mission["provider_id"]),
+            f"UPDATE users SET {wallet_column} = {wallet_column} + ? WHERE id = ?",
+            (mission["total_client"], mission["user_id"]),
         )
         conn.execute(
-            """
-            UPDATE missions
-            SET status = 'completed',
-                payment_status = 'released'
-            WHERE id = ?
-            """,
+            "UPDATE missions SET status = 'cancelled', payment_status = 'refunded' WHERE id = ?",
             (mission_id,),
+        )
+    return get_mission_by_id(mission_id)
+
+
+def resolve_dispute_release_provider(mission_id: int):
+    mission = get_mission_by_id(mission_id)
+    if mission is None:
+        raise ValueError("Mission introuvable")
+    if mission["status"] != "disputed" or mission["payment_status"] != "paid_escrow":
+        raise ValueError("Cette mission n'est pas en litige")
+
+    with get_connection() as conn:
+        _credit_provider_and_complete(conn, mission)
+    return get_mission_by_id(mission_id)
+
+
+def resolve_dispute_split(mission_id: int, provider_percentage: float):
+    """Résolution à l'amiable : partage l'escrow entre prestataire et client.
+
+    `provider_percentage` (0-100) du montant total payé (`total_client`) va
+    au prestataire ; le reste est remboursé au client. Dérivé plutôt que
+    calculé indépendamment pour les deux montants, afin qu'ils somment
+    toujours exactement au total escrow (pas de dérive d'arrondi).
+    """
+    mission = get_mission_by_id(mission_id)
+    if mission is None:
+        raise ValueError("Mission introuvable")
+    if mission["status"] != "disputed" or mission["payment_status"] != "paid_escrow":
+        raise ValueError("Cette mission n'est pas en litige")
+    if not (0 <= provider_percentage <= 100):
+        raise ValueError("Le pourcentage doit être entre 0 et 100")
+
+    total = mission["total_client"]
+    provider_share = round(total * provider_percentage / 100, 2)
+    client_share = round(total - provider_share, 2)
+    wallet_column = "wallet_balance_usd" if mission["currency"] == "USD" else "wallet_balance_cdf"
+
+    with get_connection() as conn:
+        if provider_share > 0:
+            conn.execute(
+                """
+                INSERT INTO transactions (
+                    mission_id, type, amount, currency, net_provider, status
+                )
+                VALUES (?, 'release', ?, ?, ?, 'success')
+                """,
+                (mission_id, provider_share, mission["currency"], provider_share),
+            )
+            conn.execute(
+                f"UPDATE providers SET {wallet_column} = {wallet_column} + ? WHERE id = ?",
+                (provider_share, mission["provider_id"]),
+            )
+        if client_share > 0:
+            conn.execute(
+                """
+                INSERT INTO transactions (
+                    mission_id, type, amount, currency, status
+                )
+                VALUES (?, 'refund', ?, ?, 'success')
+                """,
+                (mission_id, client_share, mission["currency"]),
+            )
+            conn.execute(
+                f"UPDATE users SET {wallet_column} = {wallet_column} + ? WHERE id = ?",
+                (client_share, mission["user_id"]),
+            )
+        conn.execute(
+            "UPDATE missions SET status = 'completed', payment_status = 'released', net_provider = ? WHERE id = ?",
+            (provider_share, mission_id),
         )
     return get_mission_by_id(mission_id)

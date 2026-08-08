@@ -530,6 +530,90 @@ def test_generic_mission_status_release_is_idempotent_on_replay(tmp_path, monkey
         assert len(release_transactions) == 1
 
 
+def test_generic_mission_status_refund_amount_credits_client_wallet(tmp_path, monkeypatch):
+    """Résolution de litige (remboursement pur) : payment_status="refunded" +
+    refund_amount, sans "released" -> seul le client est crédité."""
+    from backend.app.models import BotTransaction
+
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
+
+        response = test_client.post(
+            "/api/bot/missions/status",
+            json={"mission_id": 1001, "status": "cancelled", "payment_status": "refunded", "refund_amount": 100.0},
+        )
+        assert response.status_code == 200
+
+        client_profile = test_client.get("/api/profile/42").json()
+        assert client_profile["client"]["wallet_balance_usd"] == 100.0
+        provider_profile = test_client.get("/api/profile/7").json()
+        assert provider_profile["provider"]["wallet_balance_usd"] == 0.0, "le prestataire ne doit rien recevoir"
+
+    with database_module.SessionLocal() as db:
+        refunds = db.query(BotTransaction).filter(BotTransaction.mission_id == 1001, BotTransaction.type == "refund").all()
+        assert len(refunds) == 1
+        assert refunds[0].amount == 100.0
+
+
+def test_generic_mission_status_split_credits_both_provider_and_client_in_one_call(tmp_path, monkeypatch):
+    """Partage à l'amiable : reproduit le VRAI chemin d'appel du bot —
+    net_provider (part réduite) et refund_amount arrivent tous les deux dans
+    l'appel /api/bot/missions/status de résolution, PAS dans le paiement
+    escrow initial (qui reste le net_provider plein, 90, comme toujours).
+    Régression : sans le champ `net_provider` explicite dans ce payload, le
+    backend créditait le prestataire du net_provider ORIGINAL (90) en plus de
+    sa part (60) au lieu de seulement sa part — sur-crédit trouvé en revue."""
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))  # net_provider plein = 90
+
+        response = test_client.post(
+            "/api/bot/missions/status",
+            json={
+                "mission_id": 1001,
+                "status": "completed",
+                "payment_status": "released",
+                "refund_amount": 30.0,
+                "net_provider": 60.0,
+            },
+        )
+        assert response.status_code == 200
+
+        provider_profile = test_client.get("/api/profile/7").json()
+        assert provider_profile["provider"]["wallet_balance_usd"] == 60.0, (
+            "doit recevoir sa part réduite (60), pas le net_provider original (90) ni 90+30"
+        )
+        client_profile = test_client.get("/api/profile/42").json()
+        assert client_profile["client"]["wallet_balance_usd"] == 30.0
+        # 60 (part prestataire) + 30 (part remboursée) = 90 (net_provider plein,
+        # 100 - 10 de commission) : la commission plateforme n'est reversée à
+        # personne, mais rien n'a été créé ni perdu au-delà d'elle.
+        assert provider_profile["provider"]["wallet_balance_usd"] + client_profile["client"]["wallet_balance_usd"] == 90.0
+
+
+def test_generic_mission_status_refund_is_idempotent_on_replay(tmp_path, monkeypatch):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
+
+        payload = {"mission_id": 1001, "status": "cancelled", "payment_status": "refunded", "refund_amount": 100.0}
+        test_client.post("/api/bot/missions/status", json=payload)
+        test_client.post("/api/bot/missions/status", json=payload)
+
+        client_profile = test_client.get("/api/profile/42").json()
+        assert client_profile["client"]["wallet_balance_usd"] == 100.0, "pas crédité deux fois"
+
+
 def test_generic_payment_endpoint_still_records_transaction_after_a_bare_status_call(tmp_path, monkeypatch):
     """Régression : security-reviewer a signalé que l'ancien garde
     (`mission.payment_status != "paid_escrow"`) pouvait être empoisonné par

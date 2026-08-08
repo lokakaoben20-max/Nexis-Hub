@@ -173,5 +173,14 @@
   "provider_verified_and_active": "✅ <b>Votre profil prestataire a été vérifié par Nexis.</b>\n\nVous pouvez maintenant recevoir des demandes selon vos services et communes.",
   "provider_suspended_notice": "⛔ <b>Votre profil prestataire a été suspendu par Nexis.</b>\n\nContactez le support si vous pensez qu'il s'agit d'une erreur.",
   "provider_unsuspended_notice": "♻️ <b>Votre profil prestataire a été réactivé par Nexis.</b>",
-  "provider_registration_rejected": "❌ <b>Votre inscription prestataire n'a pas été validée.</b>\n\nContactez le support pour en savoir plus."
+  "provider_registration_rejected": "❌ <b>Votre inscription prestataire n'a pas été validée.</b>\n\nContactez le support pour en savoir plus.",
+  "dispute_reason_prompt": "✏️ Décrivez le problème rencontré avec cette mission.\n\nMission : <b>NXH-{mission_id:04d}</b>",
+  "dispute_reason_invalid": "Merci d'envoyer une description du problème.",
+  "dispute_opened_provider_notify": "⚠️ <b>Un litige a été ouvert</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nLe client a signalé un problème. Notre équipe va examiner la situation.",
+  "dispute_resolved_refund_client": "💸 <b>Litige résolu : remboursement</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nVotre paiement a été remboursé sur votre wallet.",
+  "dispute_resolved_refund_provider": "⚠️ <b>Litige résolu</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nAprès examen, le client a été remboursé pour cette mission.",
+  "dispute_resolved_release_client": "✅ <b>Litige résolu</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nAprès examen, le paiement a été libéré au prestataire.",
+  "dispute_resolved_release_provider": "💸 <b>Litige résolu en votre faveur</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nMontant ajouté à votre wallet : <b>{net} {currency}</b>",
+  "dispute_resolved_split_client": "🤝 <b>Litige résolu : partage</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nAprès examen, {refund} {currency} vous ont été remboursés sur votre wallet.",
+  "dispute_resolved_split_provider": "🤝 <b>Litige résolu : partage</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nMontant ajouté à votre wallet : <b>{net} {currency}</b>"
 }

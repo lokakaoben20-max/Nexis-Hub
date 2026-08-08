@@ -41,6 +41,9 @@ from db import (
     get_user_by_telegram_id,
     get_user_missions,
     init_db,
+    resolve_dispute_refund_client,
+    resolve_dispute_release_provider,
+    resolve_dispute_split,
     set_provider_suspended,
     set_provider_verified,
     update_provider_status,
@@ -60,6 +63,7 @@ from telegram_bot.backend_client import (
     get_state_language,
     get_user_language,
     load_profile_from_backend,
+    sync_mission_status_to_backend,
     sync_provider_status_to_backend,
 )
 from telegram_bot.keyboards import (
@@ -179,6 +183,10 @@ class ProviderServiceRequest(StatesGroup):
     description = State()
 
 
+class AdminDisputeSplit(StatesGroup):
+    percentage = State()
+
+
 def clavier_admin_service_request(request_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Accepter", callback_data=f"admin_accept_service_{request_id}")
@@ -206,6 +214,16 @@ def clavier_admin_provider(provider_id: int):
     builder.button(text="⛔ Suspendre", callback_data=f"admin_suspend_provider_{provider_id}")
     builder.button(text="♻️ Réactiver", callback_data=f"admin_unsuspend_provider_{provider_id}")
     builder.button(text="⬅️ Admin", callback_data="admin_home")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_admin_dispute(mission_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💸 Rembourser le client", callback_data=f"admin_dispute_refund_{mission_id}")
+    builder.button(text="✅ Payer le prestataire", callback_data=f"admin_dispute_release_{mission_id}")
+    builder.button(text="🤝 Partager", callback_data=f"admin_dispute_split_{mission_id}")
+    builder.button(text="⬅️ Litiges", callback_data="admin_disputes")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -430,19 +448,178 @@ async def admin_disputes(callback: CallbackQuery):
         await callback.answer()
         return
 
-    lines = []
+    await callback.message.edit_text("⚠️ <b>Litiges ouverts</b>", parse_mode="HTML", reply_markup=clavier_admin_menu())
     for mission in disputes:
-        lines.append(
+        text = (
             f"NXH-{mission['id']:04d} | {SERVICES.get(mission['service'], mission['service'])}\n"
             f"Client : {mission['client_name'] or 'Client'} | Prestataire : {mission['provider_name'] or 'Non attribué'}\n"
-            f"Raison : {mission['dispute_reason'] or 'Non précisée'}"
+            f"Montant escrow : {mission['total_client']:.2f} {mission['currency']}\n"
+            f"Raison : {mission['dispute_reason'] or 'Non précisée'}\n"
+            f"Délai résolution : {mission['dispute_deadline'] or 'N/A'}"
         )
-    await callback.message.edit_text(
-        "⚠️ <b>Litiges</b>\n\n" + "\n\n".join(html.escape(line) for line in lines),
+        await callback.message.answer(
+            html.escape(text),
+            reply_markup=clavier_admin_dispute(mission["id"]),
+        )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("admin_dispute_refund_"))
+async def admin_litige_rembourser(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Accès admin refusé.", show_alert=True)
+        return
+
+    mission_id = int(callback.data.replace("admin_dispute_refund_", "", 1))
+    try:
+        mission = resolve_dispute_refund_client(mission_id)
+    except ValueError as error:
+        await callback.answer(str(error), show_alert=True)
+        return
+
+    await _safe_backend_call(
+        sync_mission_status_to_backend(
+            mission_id, "cancelled", payment_status="refunded", refund_amount=mission["total_client"]
+        )
+    )
+    await callback.message.edit_text(f"💸 Litige NXH-{mission_id:04d} : client remboursé.")
+
+    client_lang = await get_user_language(mission["client_telegram_id"])
+    await callback.bot.send_message(
+        mission["client_telegram_id"],
+        get_message("dispute_resolved_refund_client", client_lang, mission_id=mission_id),
         parse_mode="HTML",
-        reply_markup=clavier_admin_menu(),
+    )
+    if mission["provider_telegram_id"]:
+        provider_lang = await get_provider_language(mission["provider_telegram_id"])
+        await callback.bot.send_message(
+            mission["provider_telegram_id"],
+            get_message("dispute_resolved_refund_provider", provider_lang, mission_id=mission_id),
+            parse_mode="HTML",
+        )
+    await callback.answer("Client remboursé")
+
+
+@dp.callback_query(F.data.startswith("admin_dispute_release_"))
+async def admin_litige_payer_prestataire(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Accès admin refusé.", show_alert=True)
+        return
+
+    mission_id = int(callback.data.replace("admin_dispute_release_", "", 1))
+    try:
+        mission = resolve_dispute_release_provider(mission_id)
+    except ValueError as error:
+        await callback.answer(str(error), show_alert=True)
+        return
+
+    await _safe_backend_call(sync_mission_status_to_backend(mission_id, "completed", payment_status="released"))
+    await callback.message.edit_text(f"✅ Litige NXH-{mission_id:04d} : prestataire payé.")
+
+    client_lang = await get_user_language(mission["client_telegram_id"])
+    await callback.bot.send_message(
+        mission["client_telegram_id"],
+        get_message("dispute_resolved_release_client", client_lang, mission_id=mission_id),
+        parse_mode="HTML",
+    )
+    if mission["provider_telegram_id"]:
+        provider_lang = await get_provider_language(mission["provider_telegram_id"])
+        await callback.bot.send_message(
+            mission["provider_telegram_id"],
+            get_message(
+                "dispute_resolved_release_provider",
+                provider_lang,
+                mission_id=mission_id,
+                net=f"{mission['net_provider']:.2f}",
+                currency=mission["currency"],
+            ),
+            parse_mode="HTML",
+        )
+    await callback.answer("Prestataire payé")
+
+
+@dp.callback_query(F.data.startswith("admin_dispute_split_"))
+async def admin_litige_demarrer_partage(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Accès admin refusé.", show_alert=True)
+        return
+
+    mission_id = int(callback.data.replace("admin_dispute_split_", "", 1))
+    await state.set_state(AdminDisputeSplit.percentage)
+    await state.update_data(dispute_split_mission_id=mission_id)
+    await callback.message.answer(
+        f"🤝 Litige NXH-{mission_id:04d} : quel pourcentage du montant escrow va au prestataire ?\n\n"
+        "Envoie un nombre entre 0 et 100 (le reste est remboursé au client). Exemple : 50"
     )
     await callback.answer()
+
+
+@dp.message(AdminDisputeSplit.percentage)
+async def admin_litige_partage_recu(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        return
+
+    data = await state.get_data()
+    mission_id = data["dispute_split_mission_id"]
+    text = (message.text or "").strip().replace(",", ".")
+    try:
+        percentage = float(text)
+    except ValueError:
+        await message.answer("Envoie un nombre entre 0 et 100. Exemple : 50")
+        return
+
+    try:
+        mission = resolve_dispute_split(mission_id, percentage)
+    except ValueError as error:
+        await message.answer(str(error))
+        await state.clear()
+        return
+    await state.clear()
+
+    client_refund = round(mission["total_client"] - mission["net_provider"], 2)
+    await _safe_backend_call(
+        sync_mission_status_to_backend(
+            mission_id,
+            "completed",
+            payment_status="released",
+            refund_amount=client_refund if client_refund > 0 else None,
+            # Sans ça, le backend créditerait le prestataire de son net_provider
+            # ORIGINAL (posé au paiement escrow, avant tout litige) au lieu de
+            # sa part réduite après partage — sur-crédit trouvé en revue.
+            net_provider=mission["net_provider"],
+        )
+    )
+    await message.answer(
+        f"🤝 Litige NXH-{mission_id:04d} résolu : {mission['net_provider']:.2f} {mission['currency']} au "
+        f"prestataire, {client_refund:.2f} {mission['currency']} remboursés au client."
+    )
+
+    client_lang = await get_user_language(mission["client_telegram_id"])
+    await message.bot.send_message(
+        mission["client_telegram_id"],
+        get_message(
+            "dispute_resolved_split_client",
+            client_lang,
+            mission_id=mission_id,
+            refund=f"{client_refund:.2f}",
+            currency=mission["currency"],
+        ),
+        parse_mode="HTML",
+    )
+    if mission["provider_telegram_id"]:
+        provider_lang = await get_provider_language(mission["provider_telegram_id"])
+        await message.bot.send_message(
+            mission["provider_telegram_id"],
+            get_message(
+                "dispute_resolved_split_provider",
+                provider_lang,
+                mission_id=mission_id,
+                net=f"{mission['net_provider']:.2f}",
+                currency=mission["currency"],
+            ),
+            parse_mode="HTML",
+        )
 
 
 @dp.callback_query(F.data == "admin_service_requests")

@@ -167,5 +167,14 @@
   "mission_photo_caption": "📷 Foto ya mission NXH-{mission_id:04d}",
   "mission_voice_caption": "🎙️ Note vocale ya mission NXH-{mission_id:04d}",
   "quote_no_message": "Message te",
-  "new_mission_alert": "🔔 <b>Demande ya sika !</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nMosala : <b>{service}</b>\nCommune : <b>{commune}</b>\nUrgence : <b>{urgent}</b>\n\n⏰ Ozali na <b>miniti 20</b> mpo na kopesa eyano."
+  "new_mission_alert": "🔔 <b>Demande ya sika !</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nMosala : <b>{service}</b>\nCommune : <b>{commune}</b>\nUrgence : <b>{urgent}</b>\n\n⏰ Ozali na <b>miniti 20</b> mpo na kopesa eyano.",
+  "dispute_reason_prompt": "✏️ Limbola likambo oyo ekweyi na mission oyo.\n\nMission : <b>NXH-{mission_id:04d}</b>",
+  "dispute_reason_invalid": "Tinda ndimbola ya likambo oyo.",
+  "dispute_opened_provider_notify": "⚠️ <b>Litige efungwami</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nMosengi asakoli likambo moko. Ekipe na biso ekotala likambo yango.",
+  "dispute_resolved_refund_client": "💸 <b>Litige esili : lifuti ezongi</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nLifuti na yo ezongi na wallet na yo.",
+  "dispute_resolved_refund_provider": "⚠️ <b>Litige esili</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nNsima ya kotala, mosengi azongiseli lifuti mpo na mission oyo.",
+  "dispute_resolved_release_client": "✅ <b>Litige esili</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nNsima ya kotala, lifuti ekomi epai ya mosali.",
+  "dispute_resolved_release_provider": "💸 <b>Litige esili na litomba na yo</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nMbongo ebakisami na wallet na yo : <b>{net} {currency}</b>",
+  "dispute_resolved_split_client": "🤝 <b>Litige esili : bakabola yango</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nNsima ya kotala, {refund} {currency} ezongi na wallet na yo.",
+  "dispute_resolved_split_provider": "🤝 <b>Litige esili : bakabola yango</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nMbongo ebakisami na wallet na yo : <b>{net} {currency}</b>"
 }

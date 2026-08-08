@@ -167,10 +167,31 @@ async def sync_quote_reject_to_backend(backend_quote_id: int) -> dict:
         return response.json()
 
 
-async def sync_mission_status_to_backend(mission_id: int, status: str, payment_status: str | None = None) -> dict:
+async def sync_mission_status_to_backend(
+    mission_id: int,
+    status: str,
+    payment_status: str | None = None,
+    dispute_reason: str | None = None,
+    refund_amount: float | None = None,
+    net_provider: float | None = None,
+) -> dict:
+    """`refund_amount`/`net_provider` : résolution de litige. Combinables avec
+    `payment_status="released"` pour un partage à l'amiable (le prestataire
+    reçoit `net_provider` — sa part réduite, PAS le net_provider posé au
+    paiement escrow initial — le client `refund_amount`, dans le même appel).
+    Sans `net_provider` explicite, le backend garderait la valeur pleine déjà
+    stockée et sur-créditerait le prestataire — voir backend/app/main.py::
+    update_mission_status.
+    """
     payload = {"mission_id": mission_id, "status": status}
     if payment_status:
         payload["payment_status"] = payment_status
+    if dispute_reason is not None:
+        payload["dispute_reason"] = dispute_reason
+    if refund_amount is not None:
+        payload["refund_amount"] = refund_amount
+    if net_provider is not None:
+        payload["net_provider"] = net_provider
     async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/missions/status", json=payload)
         response.raise_for_status()

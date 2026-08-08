@@ -9,9 +9,10 @@ aiogram dédié, double écriture backend + `db.py` maintenue côté paiement/mi
 `callback.bot`/`message.bot` plutôt que l'instance globale `bot` (voir la note dans
 `telegram_bot/mission.py` sur `from main import`).
 
-Trouvaille connue, pas corrigée ici (décision produit à trancher séparément — voir
-AGENTS.md) : `client_signale_probleme` affiche un message de litige mais ne pose
-aucun statut `disputed` réel ni ne gèle `release_payment`.
+Litiges : `client_signale_probleme` démarre un FSM (motif du problème), pose un
+vrai statut `disputed` et gèle `release_payment` (voir db.open_dispute). La
+résolution (rembourser le client ou payer le prestataire) est une action admin,
+gérée dans main.py (handlers admin pas encore extraits vers telegram_bot/).
 """
 
 import html
@@ -28,6 +29,7 @@ from db import (
     get_user_by_telegram_id,
     mark_quote_paid,
     mark_quote_paid_with_wallet,
+    open_dispute,
     reject_quote,
     release_payment,
     start_mission,
@@ -61,6 +63,10 @@ router = Router()
 class RatingFlow(StatesGroup):
     rating = State()
     comment = State()
+
+
+class DisputeFlow(StatesGroup):
+    reason = State()
 
 
 @router.callback_query(F.data.startswith("client_accept_quote_"))
@@ -334,15 +340,49 @@ async def notation_commentaire_ignore(callback: CallbackQuery, state: FSMContext
 
 
 @router.callback_query(F.data.startswith("client_report_issue_"))
-async def client_signale_probleme(callback: CallbackQuery):
+async def client_signale_probleme(callback: CallbackQuery, state: FSMContext):
     mission_id = int(callback.data.replace("client_report_issue_", "", 1))
+    await state.set_state(DisputeFlow.reason)
+    await state.update_data(dispute_mission_id=mission_id)
     lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
+        get_message("dispute_reason_prompt", lang, mission_id=mission_id),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(DisputeFlow.reason)
+async def litige_motif_recu(message: Message, state: FSMContext):
+    data = await state.get_data()
+    mission_id = data["dispute_mission_id"]
+    reason = (message.text or "").strip()
+    lang = await get_user_language(message.from_user.id)
+    if not reason:
+        await message.answer(get_message("dispute_reason_invalid", lang), parse_mode="HTML")
+        return
+
+    try:
+        mission = open_dispute(mission_id, message.from_user.id, reason)
+    except ValueError as error:
+        await message.answer(str(error))
+        await state.clear()
+        return
+    await state.clear()
+
+    await _safe_backend_call(sync_mission_status_to_backend(mission_id, "disputed", dispute_reason=reason))
+    await message.answer(
         get_message("dispute_opened", lang, mission_id=mission_id),
         parse_mode="HTML",
         reply_markup=clavier_client(lang),
     )
-    await callback.answer(get_message("toast_dispute_opened", lang))
+    if mission["provider_telegram_id"]:
+        provider_lang = await get_provider_language(mission["provider_telegram_id"])
+        await message.bot.send_message(
+            mission["provider_telegram_id"],
+            get_message("dispute_opened_provider_notify", provider_lang, mission_id=mission_id),
+            parse_mode="HTML",
+        )
 
 
 @router.callback_query(F.data.startswith("pay_wallet_"))
