@@ -16,7 +16,6 @@ from aiogram.types import (
     InputRichBlockTable,
     InputRichMessage,
     Message,
-    RichBlockTableCell,
     WebAppInfo,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -25,7 +24,6 @@ from aiogram.exceptions import TelegramBadRequest
 
 from messages import get_message
 from db import (
-    accept_quote,
     create_service_request,
     get_mission_by_id,
     get_admin_stats,
@@ -43,21 +41,17 @@ from db import (
     get_user_by_telegram_id,
     get_user_missions,
     init_db,
-    finish_mission,
-    mark_quote_paid,
-    mark_quote_paid_with_wallet,
-    reject_quote,
-    release_payment,
     set_provider_suspended,
     set_provider_verified,
-    start_mission,
     update_provider_status,
     update_service_request_status,
 )
-# Phase 3 (voir V5_MIGRATION_PLAN.md) : les flows inscription/profil et
-# mission/devis vivent maintenant dans telegram_bot/ (modules séparés, même
-# process — pas encore des services à part, voir dp.include_router ci-dessous).
+# Phase 3 (voir V5_MIGRATION_PLAN.md) : les flows inscription/profil,
+# mission/devis et paiement/lifecycle/notation vivent maintenant dans
+# telegram_bot/ (modules séparés, même process — pas encore des services à
+# part, voir dp.include_router ci-dessous).
 from telegram_bot import mission as mission_flow
+from telegram_bot import payment
 from telegram_bot import registration
 from telegram_bot.backend_client import (
     _safe_backend_call,
@@ -71,7 +65,7 @@ from telegram_bot.backend_client import (
 from telegram_bot.keyboards import (
     MINI_APP_URL,
     SERVICES,
-    _parse_quote_callback_ids,
+    _rich_cell,
     button_label,
     clavier_client,
     clavier_langue,
@@ -97,6 +91,7 @@ dp = Dispatcher(storage=MemoryStorage())
 # sur `dp`. Voir telegram_bot/registration.py et telegram_bot/mission.py.
 dp.include_router(registration.router)
 dp.include_router(mission_flow.router)
+dp.include_router(payment.router)
 
 
 _original_edit_text = Message.edit_text
@@ -147,33 +142,6 @@ PAYMENT_STATUS_LABELS = {
 }
 
 
-async def sync_review_to_backend(mission_id: int, client_telegram_id: int, rating: int, comment: str = "") -> dict:
-    payload = {
-        "mission_id": mission_id,
-        "client_telegram_id": client_telegram_id,
-        "rating": rating,
-        "comment": comment,
-    }
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/reviews", json=payload)
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_quote_accept_to_backend(backend_quote_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes/{backend_quote_id}/accept")
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_quote_reject_to_backend(backend_quote_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes/{backend_quote_id}/reject")
-        response.raise_for_status()
-        return response.json()
-
-
 async def sync_provider_verified_to_backend(telegram_id: int) -> dict:
     async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/verify")
@@ -206,34 +174,9 @@ async def fetch_backend_missions(telegram_id: int) -> list[dict]:
         return []
 
 
-async def sync_mission_status_to_backend(mission_id: int, status: str, payment_status: str | None = None) -> dict:
-    payload = {"mission_id": mission_id, "status": status}
-    if payment_status:
-        payload["payment_status"] = payment_status
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/missions/status", json=payload)
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_payment_to_backend(quote_id: int, payment_status: str, mission_id: int | None = None) -> dict:
-    payload = {"quote_id": quote_id, "payment_status": payment_status}
-    if mission_id is not None:
-        payload["mission_id"] = mission_id
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/payments", json=payload)
-        response.raise_for_status()
-        return response.json()
-
-
 class ProviderServiceRequest(StatesGroup):
     service_name = State()
     description = State()
-
-
-class RatingFlow(StatesGroup):
-    rating = State()
-    comment = State()
 
 
 def clavier_admin_service_request(request_id: int):
@@ -263,50 +206,6 @@ def clavier_admin_provider(provider_id: int):
     builder.button(text="⛔ Suspendre", callback_data=f"admin_suspend_provider_{provider_id}")
     builder.button(text="♻️ Réactiver", callback_data=f"admin_unsuspend_provider_{provider_id}")
     builder.button(text="⬅️ Admin", callback_data="admin_home")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def clavier_paiement(quote_id: int):
-    builder = InlineKeyboardBuilder()
-    builder.button(text="📱 Payer via Mobile Money", callback_data=f"pay_mobile_{quote_id}")
-    builder.button(text="👛 Payer avec Wallet", callback_data=f"pay_wallet_{quote_id}")
-    builder.button(text="⬅️ Plus tard", callback_data="profil_client")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def clavier_mission_prestataire(mission_id: int, action: str, lang: str = "fr"):
-    builder = InlineKeyboardBuilder()
-    if action == "start":
-        builder.button(text=get_message("button_start_mission", lang), callback_data=f"mission_start_{mission_id}")
-    elif action == "finish":
-        builder.button(text=get_message("button_finish_mission", lang), callback_data=f"mission_finish_{mission_id}")
-    builder.button(text=get_message("button_provider_menu", lang), callback_data="profil_prestataire")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def clavier_confirmation_client(mission_id: int):
-    builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Confirmer et libérer le paiement", callback_data=f"client_confirm_done_{mission_id}")
-    builder.button(text="⚠️ Signaler un problème", callback_data=f"client_report_issue_{mission_id}")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def clavier_notation(mission_id: int, lang: str = "fr"):
-    builder = InlineKeyboardBuilder()
-    for i in range(1, 6):
-        builder.button(text="⭐" * i, callback_data=f"rate_star_{mission_id}_{i}")
-    builder.button(text=button_label("skip_rating", lang), callback_data=f"rate_skip_{mission_id}")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def clavier_notation_commentaire(mission_id: int, lang: str = "fr"):
-    builder = InlineKeyboardBuilder()
-    builder.button(text=button_label("skip_comment", lang), callback_data=f"rate_comment_skip_{mission_id}")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -866,346 +765,6 @@ async def recevoir_description_service_manquant(message: Message, state: FSMCont
     )
 
 
-@dp.callback_query(F.data.startswith("client_accept_quote_"))
-async def client_accepte_devis(callback: CallbackQuery):
-    quote_id, backend_quote_id = _parse_quote_callback_ids(callback.data.replace("client_accept_quote_", "", 1))
-    quote = accept_quote(quote_id)
-    if backend_quote_id is not None:
-        await _safe_backend_call(sync_quote_accept_to_backend(backend_quote_id))
-    total_client = quote["amount"]
-
-    client_lang = await get_user_language(callback.from_user.id)
-    client_user = get_user_by_telegram_id(callback.from_user.id)
-    wallet_balance = 0.0
-    if client_user is not None:
-        wallet_balance = (
-            client_user["wallet_balance_usd"] if quote["currency"] == "USD" else client_user["wallet_balance_cdf"]
-        )
-
-    try:
-        await callback.message.edit_text(
-            rich_message=build_quote_accept_rich_message(
-                client_lang,
-                mission_id=quote["mission_id"],
-                prestataire=quote["provider_name"],
-                devis=quote["amount"],
-                total=total_client,
-                currency=quote["currency"],
-                wallet_balance=wallet_balance,
-            ),
-            reply_markup=clavier_paiement(quote_id),
-        )
-    except Exception:
-        await callback.message.edit_text(
-            get_message(
-                "quote_accept_confirmation",
-                client_lang,
-                mission_id=quote["mission_id"],
-                prestataire=html.escape(quote["provider_name"]),
-                devis=quote["amount"],
-                total=total_client,
-                currency=quote["currency"],
-                wallet_balance=wallet_balance,
-            ),
-            parse_mode="HTML",
-            reply_markup=clavier_paiement(quote_id),
-        )
-
-    provider_lang = await get_provider_language(quote["provider_telegram_id"])
-    await bot.send_message(
-        quote["provider_telegram_id"],
-        get_message(
-            "quote_accept_provider_notify",
-            provider_lang,
-            mission_id=quote["mission_id"],
-            amount=quote["amount"],
-            currency=quote["currency"],
-        ),
-        parse_mode="HTML",
-    )
-    await callback.answer(get_message("toast_quote_accepted", client_lang))
-
-
-@dp.callback_query(F.data.startswith("pay_mobile_"))
-async def paiement_mobile_money(callback: CallbackQuery):
-    quote_id = int(callback.data.replace("pay_mobile_", "", 1))
-    payment = mark_quote_paid(quote_id, operator="mobile_money_simulation")
-    quote = payment["quote"]
-
-    await _safe_backend_call(sync_payment_to_backend(quote_id, "paid_escrow", mission_id=quote["mission_id"]))
-    client_lang = await get_user_language(callback.from_user.id)
-    await callback.message.edit_text(
-        get_message(
-            "payment_mobile_confirmed_client",
-            client_lang,
-            mission_id=quote["mission_id"],
-            ref=payment["mobile_money_ref"],
-            total=payment["total_client"],
-            currency=quote["currency"],
-        ),
-        parse_mode="HTML",
-        reply_markup=clavier_client(client_lang),
-    )
-
-    provider_lang = await get_provider_language(quote["provider_telegram_id"])
-    await bot.send_message(
-        quote["provider_telegram_id"],
-        get_message(
-            "payment_confirmed_provider_notify",
-            provider_lang,
-            mission_id=quote["mission_id"],
-            brut=quote["amount"],
-            commission=payment["commission_amount"],
-            net=payment["net_provider"],
-            currency=quote["currency"],
-        ),
-        parse_mode="HTML",
-            reply_markup=clavier_mission_prestataire(quote["mission_id"], "start", provider_lang),
-    )
-    await callback.answer(get_message("toast_payment_confirmed", client_lang))
-
-
-@dp.callback_query(F.data.startswith("mission_start_"))
-async def prestataire_demarre_mission(callback: CallbackQuery):
-    mission_id = int(callback.data.replace("mission_start_", "", 1))
-    try:
-        mission = start_mission(mission_id, callback.from_user.id)
-    except ValueError as error:
-        await callback.answer(str(error), show_alert=True)
-        return
-
-    provider_lang = await get_provider_language(callback.from_user.id)
-    await _safe_backend_call(sync_mission_status_to_backend(mission_id, "in_progress"))
-    await callback.message.edit_text(
-        get_message("provider_mission_started", provider_lang, mission_id=mission_id),
-        parse_mode="HTML",
-        reply_markup=clavier_mission_prestataire(mission_id, "finish", provider_lang),
-    )
-    client_lang = await get_user_language(mission["client_telegram_id"])
-    await bot.send_message(
-        mission["client_telegram_id"],
-        get_message("mission_started", client_lang, mission_id=mission_id),
-        parse_mode="HTML",
-    )
-    await callback.answer(get_message("toast_mission_started", provider_lang))
-
-
-@dp.callback_query(F.data.startswith("mission_finish_"))
-async def prestataire_termine_mission(callback: CallbackQuery):
-    mission_id = int(callback.data.replace("mission_finish_", "", 1))
-    try:
-        mission = finish_mission(mission_id, callback.from_user.id)
-    except ValueError as error:
-        await callback.answer(str(error), show_alert=True)
-        return
-
-    await _safe_backend_call(sync_mission_status_to_backend(mission_id, "awaiting_confirmation"))
-    provider_lang = await get_provider_language(callback.from_user.id)
-    await callback.message.edit_text(
-        get_message("provider_mission_finished", provider_lang, mission_id=mission_id),
-        parse_mode="HTML",
-        reply_markup=clavier_prestataire(provider_lang),
-    )
-    client_lang = await get_user_language(mission["client_telegram_id"])
-    await bot.send_message(
-        mission["client_telegram_id"],
-        get_message("mission_finished_client", client_lang, mission_id=mission_id),
-        parse_mode="HTML",
-        reply_markup=clavier_confirmation_client(mission_id),
-    )
-    await callback.answer(get_message("toast_client_notified", provider_lang))
-
-
-@dp.callback_query(F.data.startswith("client_confirm_done_"))
-async def client_confirme_mission_terminee(callback: CallbackQuery, state: FSMContext):
-    mission_id = int(callback.data.replace("client_confirm_done_", "", 1))
-    try:
-        mission = release_payment(mission_id)
-    except ValueError as error:
-        await callback.answer(str(error), show_alert=True)
-        return
-
-    await _safe_backend_call(sync_mission_status_to_backend(mission_id, "completed", payment_status="released"))
-    lang = await get_user_language(callback.from_user.id)
-    await callback.message.edit_text(
-        get_message("payment_released_client", lang, mission_id=mission_id),
-        parse_mode="HTML",
-        reply_markup=clavier_client(lang),
-    )
-    if mission["provider_telegram_id"]:
-        provider_lang = await get_provider_language(mission["provider_telegram_id"])
-        await bot.send_message(
-            mission["provider_telegram_id"],
-            get_message(
-                "payment_released_provider",
-                provider_lang,
-                mission_id=mission_id,
-                net=f"{mission['net_provider']:.2f}",
-                currency=mission["currency"],
-            ),
-            parse_mode="HTML",
-            reply_markup=clavier_prestataire(provider_lang),
-        )
-
-    provider = get_provider_by_telegram_id(mission["provider_telegram_id"]) if mission["provider_telegram_id"] else None
-    if provider is not None:
-        await state.set_state(RatingFlow.rating)
-        await state.update_data(rating_mission_id=mission_id)
-        await callback.message.answer(
-            get_message("rate_provider", lang, mission_id=mission_id, prestataire=provider["full_name"]),
-            parse_mode="HTML",
-            reply_markup=clavier_notation(mission_id, lang),
-        )
-    await callback.answer(get_message("toast_payment_released", lang))
-
-
-@dp.callback_query(RatingFlow.rating, F.data.startswith("rate_star_"))
-async def notation_etoile_recue(callback: CallbackQuery, state: FSMContext):
-    remainder = callback.data.removeprefix("rate_star_")
-    mission_id_str, _, rating_str = remainder.rpartition("_")
-    mission_id = int(mission_id_str)
-    await state.update_data(rating_value=int(rating_str))
-    await state.set_state(RatingFlow.comment)
-    lang = await get_user_language(callback.from_user.id)
-    await callback.message.edit_text(
-        get_message("rate_comment_prompt", lang),
-        parse_mode="HTML",
-        reply_markup=clavier_notation_commentaire(mission_id, lang),
-    )
-    await callback.answer()
-
-
-@dp.callback_query(RatingFlow.rating, F.data.startswith("rate_skip_"))
-async def notation_ignoree(callback: CallbackQuery, state: FSMContext):
-    lang = await get_user_language(callback.from_user.id)
-    await state.clear()
-    await callback.message.edit_text(get_message("rate_skipped", lang), parse_mode="HTML")
-    await callback.answer()
-
-
-async def _finalize_review(telegram_id: int, data: dict, comment: str | None, state: FSMContext) -> dict | None:
-    result = await _safe_backend_call(
-        sync_review_to_backend(
-            mission_id=data["rating_mission_id"],
-            client_telegram_id=telegram_id,
-            rating=data["rating_value"],
-            comment=comment or "",
-        )
-    )
-    # Reviews exist only in the V5 backend. Unlike the legacy flows, there is
-    # no local fallback to replay a failed write, so preserve the FSM state on
-    # an outage and let the client retry instead of confirming a lost review.
-    if result is not None:
-        await state.clear()
-    return result
-
-
-@dp.message(RatingFlow.comment)
-async def notation_commentaire_recu(message: Message, state: FSMContext):
-    data = await state.get_data()
-    comment = (message.text or "").strip()
-    if comment == "-":
-        comment = None
-    lang = await get_user_language(message.from_user.id)
-    result = await _finalize_review(message.from_user.id, data, comment, state)
-    if result is None:
-        await message.answer(get_message("rate_save_failed", lang), parse_mode="HTML")
-        return
-    await message.answer(get_message("rate_thanks", lang), parse_mode="HTML", reply_markup=clavier_client(lang))
-
-
-@dp.callback_query(RatingFlow.comment, F.data.startswith("rate_comment_skip_"))
-async def notation_commentaire_ignore(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    lang = await get_user_language(callback.from_user.id)
-    result = await _finalize_review(callback.from_user.id, data, None, state)
-    if result is None:
-        await callback.answer(get_message("rate_save_failed", lang), show_alert=True)
-        return
-    await callback.message.edit_text(get_message("rate_thanks", lang), parse_mode="HTML")
-    await callback.answer()
-
-
-@dp.callback_query(F.data.startswith("client_report_issue_"))
-async def client_signale_probleme(callback: CallbackQuery):
-    mission_id = int(callback.data.replace("client_report_issue_", "", 1))
-    lang = await get_user_language(callback.from_user.id)
-    await callback.message.edit_text(
-        get_message("dispute_opened", lang, mission_id=mission_id),
-        parse_mode="HTML",
-        reply_markup=clavier_client(lang),
-    )
-    await callback.answer(get_message("toast_dispute_opened", lang))
-
-
-@dp.callback_query(F.data.startswith("pay_wallet_"))
-async def paiement_wallet(callback: CallbackQuery):
-    quote_id = int(callback.data.replace("pay_wallet_", "", 1))
-    try:
-        payment = mark_quote_paid_with_wallet(quote_id, operator="wallet")
-    except ValueError as error:
-        await callback.answer(str(error), show_alert=True)
-        return
-
-    quote = payment["quote"]
-    await _safe_backend_call(sync_payment_to_backend(quote_id, "paid_escrow", mission_id=quote["mission_id"]))
-    client_lang = await get_user_language(callback.from_user.id)
-    await callback.message.edit_text(
-        get_message(
-            "payment_wallet_confirmed_client",
-            client_lang,
-            mission_id=quote["mission_id"],
-            ref=payment["mobile_money_ref"],
-            total=payment["total_client"],
-            currency=quote["currency"],
-        ),
-        parse_mode="HTML",
-        reply_markup=clavier_client(client_lang),
-    )
-
-    provider_lang = await get_provider_language(quote["provider_telegram_id"])
-    await bot.send_message(
-        quote["provider_telegram_id"],
-        get_message(
-            "payment_wallet_confirmed_provider_notify",
-            provider_lang,
-            mission_id=quote["mission_id"],
-            brut=quote["amount"],
-            commission=payment["commission_amount"],
-            net=payment["net_provider"],
-            currency=quote["currency"],
-        ),
-        parse_mode="HTML",
-        reply_markup=clavier_mission_prestataire(quote["mission_id"], "start", provider_lang),
-    )
-    await callback.answer(get_message("toast_wallet_payment_confirmed", client_lang))
-
-
-@dp.callback_query(F.data.startswith("client_reject_quote_"))
-async def client_refuse_devis(callback: CallbackQuery):
-    quote_id, backend_quote_id = _parse_quote_callback_ids(callback.data.replace("client_reject_quote_", "", 1))
-    quote = reject_quote(quote_id)
-    if backend_quote_id is not None:
-        await _safe_backend_call(sync_quote_reject_to_backend(backend_quote_id))
-    client_lang = await get_user_language(callback.from_user.id)
-    await callback.message.edit_text(
-        get_message(
-            "quote_rejected_client",
-            client_lang,
-            mission_id=quote["mission_id"],
-            prestataire=html.escape(quote["provider_name"]),
-        ),
-        parse_mode="HTML",
-    )
-    provider_lang = await get_provider_language(quote["provider_telegram_id"])
-    await bot.send_message(
-        quote["provider_telegram_id"],
-        get_message("quote_rejected_provider_notify", provider_lang, mission_id=quote["mission_id"]),
-        parse_mode="HTML",
-    )
-    await callback.answer(get_message("toast_quote_rejected", client_lang))
-
-
 @dp.callback_query(F.data == "client_missions")
 async def afficher_missions_client(callback: CallbackQuery):
     lang = await get_user_language(callback.from_user.id)
@@ -1339,10 +898,6 @@ async def afficher_historique_client(callback: CallbackQuery):
     await callback.answer()
 
 
-def _rich_cell(text: str, header: bool = False) -> RichBlockTableCell:
-    return RichBlockTableCell(text=text, is_header=header, align="left", valign="middle")
-
-
 def build_help_rich_message(lang: str = "fr") -> InputRichMessage:
     faq_items = [
         ("help_faq_1_q", "help_faq_1_a"),
@@ -1360,41 +915,6 @@ def build_help_rich_message(lang: str = "fr") -> InputRichMessage:
         )
     blocks.append(InputRichBlockParagraph(text=get_message("help_contact", lang)))
     return InputRichMessage(blocks=blocks)
-
-
-def build_quote_accept_rich_message(
-    lang: str,
-    mission_id: int,
-    prestataire: str,
-    devis: float,
-    total: float,
-    currency: str,
-    wallet_balance: float,
-) -> InputRichMessage:
-    rows = [
-        (get_message("table_row_provider", lang), prestataire),
-        (get_message("table_row_quote", lang), f"{devis:.2f} {currency}"),
-        (get_message("table_row_total", lang), f"{total:.2f} {currency}"),
-        (get_message("table_row_wallet", lang), f"{wallet_balance:.2f} {currency}"),
-    ]
-    table = InputRichBlockTable(
-        cells=[
-            [
-                _rich_cell(get_message("table_col_detail", lang), header=True),
-                _rich_cell(get_message("table_col_amount", lang), header=True),
-            ],
-            *[[_rich_cell(label), _rich_cell(value)] for label, value in rows],
-        ],
-        is_bordered=True,
-        is_striped=True,
-    )
-    return InputRichMessage(
-        blocks=[
-            InputRichBlockParagraph(text=get_message("quote_accept_title", lang, mission_id=mission_id)),
-            table,
-            InputRichBlockParagraph(text=get_message("quote_accept_choose_payment", lang)),
-        ]
-    )
 
 
 def build_history_rich_message(lang: str, missions: list) -> InputRichMessage:

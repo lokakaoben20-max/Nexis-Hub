@@ -1,10 +1,9 @@
-"""Client backend V5 pour le flow inscription/profil (Phase 3, pilote).
+"""Client backend V5 partagé par les flows extraits de `main.py` (Phase 3).
 
-Déplacé depuis `main.py` — seuls les helpers utilisés par `telegram_bot/registration.py`
-sont ici. Les helpers `sync_*` des flows mission/devis/paiement (pas encore migrés)
-restent dans `main.py` ; `main.py` importe les fonctions ci-dessous au lieu de les
-redéfinir, pour que les ~30 handlers hors scope qui les utilisent encore n'aient rien
-à changer.
+Déplacé depuis `main.py` — regroupe les helpers `sync_*`/`fetch_*` utilisés par
+`telegram_bot/registration.py`, `telegram_bot/mission.py` et `telegram_bot/payment.py`.
+`main.py` importe les fonctions ci-dessous au lieu de les redéfinir, pour que les
+handlers hors scope qui les utilisent encore n'aient rien à changer.
 
 Double écriture maintenue (backend + `db.py`) pour toutes les écritures de ce module :
 `find_matching_providers` (flow mission, pas migré) et la Mini App lisent encore
@@ -150,6 +149,53 @@ async def sync_quote_to_backend(mission_id: int, provider_telegram_id: int, amou
     }
     async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_quote_accept_to_backend(backend_quote_id: int) -> dict:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes/{backend_quote_id}/accept")
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_quote_reject_to_backend(backend_quote_id: int) -> dict:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes/{backend_quote_id}/reject")
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_mission_status_to_backend(mission_id: int, status: str, payment_status: str | None = None) -> dict:
+    payload = {"mission_id": mission_id, "status": status}
+    if payment_status:
+        payload["payment_status"] = payment_status
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/missions/status", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_payment_to_backend(quote_id: int, payment_status: str, mission_id: int | None = None) -> dict:
+    payload = {"quote_id": quote_id, "payment_status": payment_status}
+    if mission_id is not None:
+        payload["mission_id"] = mission_id
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/payments", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_review_to_backend(mission_id: int, client_telegram_id: int, rating: int, comment: str = "") -> dict:
+    payload = {
+        "mission_id": mission_id,
+        "client_telegram_id": client_telegram_id,
+        "rating": rating,
+        "comment": comment,
+    }
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/reviews", json=payload)
         response.raise_for_status()
         return response.json()
 

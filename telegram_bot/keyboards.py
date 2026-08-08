@@ -11,7 +11,15 @@ définir localement — rien ne change pour les handlers hors scope qui les util
 
 import os
 
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, WebAppInfo
+from aiogram.types import (
+    InputRichBlockParagraph,
+    InputRichBlockTable,
+    InputRichMessage,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    RichBlockTableCell,
+    WebAppInfo,
+)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from dotenv import load_dotenv
 
@@ -415,6 +423,92 @@ def clavier_portfolio_prestataire(lang: str = "fr"):
     builder.button(text=get_message("provider_portfolio_done_button", lang), callback_data="provider_portfolio_done")
     builder.adjust(1)
     return builder.as_markup()
+
+
+# ── Flow paiement / lifecycle / notation (Phase 3, flow 3) ─────────────────
+
+
+def clavier_paiement(quote_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📱 Payer via Mobile Money", callback_data=f"pay_mobile_{quote_id}")
+    builder.button(text="👛 Payer avec Wallet", callback_data=f"pay_wallet_{quote_id}")
+    builder.button(text="⬅️ Plus tard", callback_data="profil_client")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_mission_prestataire(mission_id: int, action: str, lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    if action == "start":
+        builder.button(text=get_message("button_start_mission", lang), callback_data=f"mission_start_{mission_id}")
+    elif action == "finish":
+        builder.button(text=get_message("button_finish_mission", lang), callback_data=f"mission_finish_{mission_id}")
+    builder.button(text=get_message("button_provider_menu", lang), callback_data="profil_prestataire")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_confirmation_client(mission_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Confirmer et libérer le paiement", callback_data=f"client_confirm_done_{mission_id}")
+    builder.button(text="⚠️ Signaler un problème", callback_data=f"client_report_issue_{mission_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_notation(mission_id: int, lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    for i in range(1, 6):
+        builder.button(text="⭐" * i, callback_data=f"rate_star_{mission_id}_{i}")
+    builder.button(text=button_label("skip_rating", lang), callback_data=f"rate_skip_{mission_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_notation_commentaire(mission_id: int, lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=button_label("skip_comment", lang), callback_data=f"rate_comment_skip_{mission_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def _rich_cell(text: str, header: bool = False) -> RichBlockTableCell:
+    return RichBlockTableCell(text=text, is_header=header, align="left", valign="middle")
+
+
+def build_quote_accept_rich_message(
+    lang: str,
+    mission_id: int,
+    prestataire: str,
+    devis: float,
+    total: float,
+    currency: str,
+    wallet_balance: float,
+) -> InputRichMessage:
+    rows = [
+        (get_message("table_row_provider", lang), prestataire),
+        (get_message("table_row_quote", lang), f"{devis:.2f} {currency}"),
+        (get_message("table_row_total", lang), f"{total:.2f} {currency}"),
+        (get_message("table_row_wallet", lang), f"{wallet_balance:.2f} {currency}"),
+    ]
+    table = InputRichBlockTable(
+        cells=[
+            [
+                _rich_cell(get_message("table_col_detail", lang), header=True),
+                _rich_cell(get_message("table_col_amount", lang), header=True),
+            ],
+            *[[_rich_cell(label), _rich_cell(value)] for label, value in rows],
+        ],
+        is_bordered=True,
+        is_striped=True,
+    )
+    return InputRichMessage(
+        blocks=[
+            InputRichBlockParagraph(text=get_message("quote_accept_title", lang, mission_id=mission_id)),
+            table,
+            InputRichBlockParagraph(text=get_message("quote_accept_choose_payment", lang)),
+        ]
+    )
 
 
 def clavier_admin_new_provider(provider_id: int):

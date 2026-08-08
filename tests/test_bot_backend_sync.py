@@ -11,7 +11,7 @@ os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
 import db
 import main
-from telegram_bot import backend_client
+from telegram_bot import backend_client, keyboards, payment
 
 
 class DummyResponse:
@@ -239,22 +239,22 @@ def test_sync_quote_to_backend_posts_payload(monkeypatch):
 def test_sync_quote_accept_and_reject_to_backend(monkeypatch):
     monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
 
-    accept_result = asyncio.run(main.sync_quote_accept_to_backend(501))
-    reject_result = asyncio.run(main.sync_quote_reject_to_backend(501))
+    accept_result = asyncio.run(backend_client.sync_quote_accept_to_backend(501))
+    reject_result = asyncio.run(backend_client.sync_quote_reject_to_backend(501))
 
     assert accept_result["quote"]["status"] == "accepted"
     assert reject_result["quote"]["status"] == "rejected"
 
 
 def test_parse_quote_callback_ids_with_backend_id():
-    local_id, backend_id = main._parse_quote_callback_ids("5:501")
+    local_id, backend_id = keyboards._parse_quote_callback_ids("5:501")
 
     assert local_id == 5
     assert backend_id == 501
 
 
 def test_parse_quote_callback_ids_without_backend_id():
-    local_id, backend_id = main._parse_quote_callback_ids("5:-")
+    local_id, backend_id = keyboards._parse_quote_callback_ids("5:-")
 
     assert local_id == 5
     assert backend_id is None
@@ -272,10 +272,10 @@ def test_finalize_review_clears_state_after_backend_success(monkeypatch):
     async def save_review(*args, **kwargs):
         return {"status": "ok"}
 
-    monkeypatch.setattr(main, "sync_review_to_backend", save_review)
+    monkeypatch.setattr(payment, "sync_review_to_backend", save_review)
     state = DummyState()
 
-    result = asyncio.run(main._finalize_review(42, {"rating_mission_id": 1, "rating_value": 5}, "Excellent", state))
+    result = asyncio.run(payment._finalize_review(42, {"rating_mission_id": 1, "rating_value": 5}, "Excellent", state))
 
     assert result == {"status": "ok"}
     assert state.cleared is True
@@ -285,10 +285,10 @@ def test_finalize_review_keeps_state_when_backend_is_unavailable(monkeypatch):
     async def save_review(*args, **kwargs):
         raise RuntimeError("backend unreachable")
 
-    monkeypatch.setattr(main, "sync_review_to_backend", save_review)
+    monkeypatch.setattr(payment, "sync_review_to_backend", save_review)
     state = DummyState()
 
-    result = asyncio.run(main._finalize_review(42, {"rating_mission_id": 1, "rating_value": 5}, None, state))
+    result = asyncio.run(payment._finalize_review(42, {"rating_mission_id": 1, "rating_value": 5}, None, state))
 
     assert result is None
     assert state.cleared is False
