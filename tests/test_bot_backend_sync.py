@@ -10,8 +10,7 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
 import db
-import main
-from telegram_bot import backend_client, keyboards, payment
+from telegram_bot import backend_client, dashboard, keyboards, payment
 
 
 class DummyResponse:
@@ -77,7 +76,7 @@ class RaisingAsyncClient:
 
 
 def test_sync_user_to_backend_posts_payload(monkeypatch):
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
 
     result = asyncio.run(backend_client.sync_user_to_backend(42, first_name="Alice", phone_number="+243", language="fr"))
 
@@ -86,16 +85,16 @@ def test_sync_user_to_backend_posts_payload(monkeypatch):
 
 
 def test_fetch_backend_profile_returns_payload(monkeypatch):
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
 
-    result = asyncio.run(main.fetch_backend_profile(42))
+    result = asyncio.run(backend_client.fetch_backend_profile(42))
 
     assert result["client"]["first_name"] == "Alice"
     assert result["client_missions"][0]["mission_id"] == 1
 
 
 def test_persist_client_registration_returns_backend_and_local(monkeypatch):
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
 
     result = asyncio.run(backend_client.persist_client_registration(77, first_name="Bob", phone_number="+243", language="fr"))
 
@@ -104,7 +103,7 @@ def test_persist_client_registration_returns_backend_and_local(monkeypatch):
 
 
 def test_persist_mission_creation_returns_backend_and_local(monkeypatch):
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
 
     result = asyncio.run(backend_client.persist_mission_creation(88, 999, {"service": "service_plomberie", "commune": "Gombe", "currency": "USD"}))
 
@@ -113,7 +112,7 @@ def test_persist_mission_creation_returns_backend_and_local(monkeypatch):
 
 
 def test_persist_mission_creation_survives_backend_outage(monkeypatch):
-    monkeypatch.setattr(main.httpx, "AsyncClient", RaisingAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", RaisingAsyncClient)
 
     result = asyncio.run(backend_client.persist_mission_creation(88, 999, {"service": "service_plomberie", "commune": "Gombe", "currency": "USD"}))
 
@@ -122,7 +121,7 @@ def test_persist_mission_creation_survives_backend_outage(monkeypatch):
 
 
 def test_sync_provider_status_to_backend_patches_status(monkeypatch):
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
 
     result = asyncio.run(backend_client.sync_provider_status_to_backend(1, "offline"))
 
@@ -131,7 +130,7 @@ def test_sync_provider_status_to_backend_patches_status(monkeypatch):
 
 
 def test_sync_user_language_to_backend_patches_language(monkeypatch):
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
 
     result = asyncio.run(backend_client.sync_user_language_to_backend(1, "ln"))
 
@@ -139,7 +138,7 @@ def test_sync_user_language_to_backend_patches_language(monkeypatch):
 
 
 def test_sync_provider_language_to_backend_patches_language(monkeypatch):
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
 
     result = asyncio.run(backend_client.sync_provider_language_to_backend(1, "en"))
 
@@ -147,7 +146,7 @@ def test_sync_provider_language_to_backend_patches_language(monkeypatch):
 
 
 def test_sync_provider_services_to_backend_patches_services(monkeypatch):
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
 
     result = asyncio.run(backend_client.sync_provider_services_to_backend(1, ["service_peinture"]))
 
@@ -155,7 +154,7 @@ def test_sync_provider_services_to_backend_patches_services(monkeypatch):
 
 
 def test_sync_provider_ignored_increment_and_reset_to_backend(monkeypatch):
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
 
     increment_result = asyncio.run(backend_client.sync_provider_ignored_increment_to_backend(1))
     reset_result = asyncio.run(backend_client.sync_provider_ignored_reset_to_backend(1))
@@ -165,9 +164,9 @@ def test_sync_provider_ignored_increment_and_reset_to_backend(monkeypatch):
 
 
 def test_safe_backend_call_swallows_network_errors(monkeypatch):
-    monkeypatch.setattr(main.httpx, "AsyncClient", RaisingAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", RaisingAsyncClient)
 
-    result = asyncio.run(main._safe_backend_call(backend_client.sync_provider_status_to_backend(1, "available")))
+    result = asyncio.run(backend_client._safe_backend_call(backend_client.sync_provider_status_to_backend(1, "available")))
 
     assert result is None
 
@@ -176,10 +175,7 @@ def test_get_user_language_prefers_backend_value(monkeypatch, tmp_path):
     db.DB_PATH = tmp_path / "test_nexis_hub.db"
     db.init_db()
     db.create_user(42, "+243800000042", "Alice", language="fr")
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
-    # get_user_language résout fetch_backend_profile dans son propre module
-    # (telegram_bot.backend_client) — patcher main.fetch_backend_profile n'a
-    # aucun effet dessus, même si `main` réexporte le même nom.
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
     monkeypatch.setattr(backend_client, "fetch_backend_profile", lambda telegram_id: _async_return({"client": {"language": "en"}}))
 
     result = asyncio.run(backend_client.get_user_language(42))
@@ -225,7 +221,7 @@ async def _async_return(value):
 
 
 def test_sync_quote_to_backend_posts_payload(monkeypatch):
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
 
     result = asyncio.run(backend_client.sync_quote_to_backend(
         mission_id=1001, provider_telegram_id=7, amount=50.0, currency="USD", delay_hours=2, message="ok",
@@ -237,7 +233,7 @@ def test_sync_quote_to_backend_posts_payload(monkeypatch):
 
 
 def test_sync_quote_accept_and_reject_to_backend(monkeypatch):
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
 
     accept_result = asyncio.run(backend_client.sync_quote_accept_to_backend(501))
     reject_result = asyncio.run(backend_client.sync_quote_reject_to_backend(501))
@@ -303,8 +299,8 @@ def test_backend_mission_is_rendered_without_legacy_only_fields():
         "payment_status": "released",
     }
 
-    rendered = main.format_mission_client(mission)
-    rich_message = main.build_history_rich_message("fr", [mission])
+    rendered = dashboard.format_mission_client(mission)
+    rich_message = dashboard.build_history_rich_message("fr", [mission])
 
     assert "NXH-0017" in rendered
     assert "Non attribué" in rendered

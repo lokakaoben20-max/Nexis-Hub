@@ -9,7 +9,7 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
-import main
+from telegram_bot import backend_client
 
 
 class DummyResponse:
@@ -40,7 +40,7 @@ class DummyAsyncClient:
 
 
 def test_load_profile_from_backend_prefers_backend_payload(monkeypatch):
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
-    result = asyncio.run(main.load_profile_from_backend(555, fallback_user={"first_name": "Old", "phone_number": "x"}))
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
+    result = asyncio.run(backend_client.load_profile_from_backend(555, fallback_user={"first_name": "Old", "phone_number": "x"}))
     assert result["client"]["first_name"] == "Laura"
     assert result["client_missions"][0]["mission_id"] == 7

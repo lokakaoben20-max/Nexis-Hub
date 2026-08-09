@@ -9,7 +9,6 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
-import main
 from telegram_bot import backend_client
 
 
@@ -41,7 +40,7 @@ class DummyAsyncClient:
 
 
 def test_sync_mission_status_to_backend_posts_status(monkeypatch):
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
     result = asyncio.run(backend_client.sync_mission_status_to_backend(10, "in_progress"))
     assert result["status"] == "ok"
     assert result["mission"]["status"] == "in_progress"
@@ -65,8 +64,8 @@ def test_mission_status_transition_survives_backend_outage(monkeypatch):
     # Regression guard: start_mission/finish_mission/release_payment already
     # committed locally by the time this sync runs — a backend outage here
     # must not stop the bot from notifying the client/provider.
-    monkeypatch.setattr(main.httpx, "AsyncClient", RaisingAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", RaisingAsyncClient)
 
-    result = asyncio.run(main._safe_backend_call(backend_client.sync_mission_status_to_backend(10, "in_progress")))
+    result = asyncio.run(backend_client._safe_backend_call(backend_client.sync_mission_status_to_backend(10, "in_progress")))
 
     assert result is None

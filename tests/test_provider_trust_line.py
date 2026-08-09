@@ -9,7 +9,7 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
 import db
-from main import provider_trust_line
+from telegram_bot.mission import provider_trust_line
 
 
 def _provider(**overrides):

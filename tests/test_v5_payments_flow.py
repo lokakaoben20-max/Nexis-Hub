@@ -9,7 +9,6 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
-import main
 from telegram_bot import backend_client
 
 
@@ -41,7 +40,7 @@ class DummyAsyncClient:
 
 
 def test_sync_payment_to_backend_posts_payment_status(monkeypatch):
-    monkeypatch.setattr(main.httpx, "AsyncClient", DummyAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
     result = asyncio.run(backend_client.sync_payment_to_backend(5, "paid_escrow", mission_id=7))
     assert result["status"] == "ok"
     assert result["payment_status"] == "paid_escrow"
@@ -66,8 +65,8 @@ def test_payment_confirmation_survives_backend_outage(monkeypatch):
     # (mark_quote_paid / mark_quote_paid_with_wallet) by the time this sync
     # runs — if the backend is down, the client/provider must still get their
     # confirmation instead of the handler crashing on this best-effort mirror.
-    monkeypatch.setattr(main.httpx, "AsyncClient", RaisingAsyncClient)
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", RaisingAsyncClient)
 
-    result = asyncio.run(main._safe_backend_call(backend_client.sync_payment_to_backend(5, "paid_escrow", mission_id=7)))
+    result = asyncio.run(backend_client._safe_backend_call(backend_client.sync_payment_to_backend(5, "paid_escrow", mission_id=7)))
 
     assert result is None
