@@ -226,7 +226,7 @@ async def afficher_missions_client(callback: CallbackQuery):
         return
 
     text = get_message("missions_title", lang) + "\n\n" + "\n\n".join(
-        html.escape(format_mission_client(mission)) if isinstance(mission, dict) and "service" in mission else html.escape(str(mission))
+        html.escape(format_mission_client(mission)) if mission_value(mission, "service") is not None else html.escape(str(mission))
         for mission in missions
     )
     await callback.message.edit_text(

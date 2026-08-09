@@ -207,13 +207,9 @@ def test_afficher_missions_client_lists_local_mission_when_backend_unavailable(t
     callback = DummyCallback(telegram_id)
     asyncio.run(dashboard.afficher_missions_client(callback))
 
-    # Comportement préexistant (copié à l'identique de main.py, pas une
-    # régression de cette extraction) : `isinstance(mission, dict)` est False
-    # pour un sqlite3.Row, donc une mission locale (backend indisponible)
-    # tombe dans le fallback `str(mission)` au lieu d'être formatée par
-    # format_mission_client — voir tâche de suivi spawn_task.
     assert callback.message.edited_text is not None
-    assert "sqlite3.Row" in callback.message.edited_text
+    assert "NXH-0001" in callback.message.edited_text
+    assert "sqlite3.Row" not in callback.message.edited_text
 
 
 def test_afficher_wallet_client_requires_existing_client(tmp_path, monkeypatch):
