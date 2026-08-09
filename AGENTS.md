@@ -199,12 +199,70 @@ nouvelles clés de message) avant son commit.
   par l'admin (aucune demande explicite du client pour un partage) — comme
   voulu.
 
-**Prochaine étape** : il reste l'admin (12 handlers, hors ceux de résolution
-de litige déjà ajoutés) et l'affichage missions/wallet (6 handlers) dans
-`main.py`, plus petits et moins sensibles. Une fois tout extrait, le vrai
-objectif de Phase 3 (un service `telegram_bot/` séparé, déployé
-indépendamment) reste à faire — bloqué jusque-là par le long-polling Telegram
-(un seul process consommateur par token), voir `V5_MIGRATION_PLAN.md`.
+**Prochaine étape — EN COURS, reprendre ici (2026-08-09).** L'utilisateur a
+validé oralement : "bien, allons-y" sur l'extraction admin + missions/wallet.
+Rien n'a encore été modifié — juste un `grep` de reconnaissance fait sur
+`main.py` (`^@dp\.\|^async def\|^def `) pour lister précisément ce qui reste.
+Ne pas redemander à l'utilisateur, relancer ce grep suffit pour confirmer les
+lignes exactes (elles auront bougé si autre chose a été commité entre-temps).
+
+Le compte "12 handlers admin" de l'estimation précédente est **périmé** — le
+flow litiges de cette session en a ajouté 4 (`admin_litige_rembourser`,
+`admin_litige_payer_prestataire`, `admin_litige_demarrer_partage`,
+`admin_litige_partage_recu` + FSM `AdminDisputeSplit`). Liste exacte trouvée
+le 2026-08-09 :
+
+**Groupe admin** (candidat `telegram_bot/admin.py`) : `cmd_admin`,
+`admin_home`, `admin_stats`, `admin_providers`, `admin_missions`,
+`admin_clients`, `admin_disputes`, `admin_litige_rembourser`,
+`admin_litige_payer_prestataire`, `admin_litige_demarrer_partage`,
+`admin_litige_partage_recu`, `admin_service_requests`,
+`admin_accept_service`, `admin_reject_service`, `admin_verify_provider`,
+`admin_reject_provider`, `admin_suspend_provider`,
+`admin_unsuspend_provider` (18 handlers) + helper `is_admin` + FSM
+`AdminDisputeSplit` + claviers `clavier_admin_service_request`/
+`clavier_admin_menu`/`clavier_admin_provider`/`clavier_admin_dispute`
+(→ `keyboards.py`, même pattern que les autres flows) + fonctions backend
+`sync_provider_verified_to_backend`/`sync_provider_suspended_to_backend`/
+`sync_provider_unsuspended_to_backend` (→ `backend_client.py`).
+
+**Groupe missions/wallet** (candidat pour un nouveau module, nom à décider —
+`telegram_bot/dashboard.py` ou similaire) : `afficher_services_prestataire`,
+`proposer_service_manquant`, `recevoir_nom_service_manquant`,
+`recevoir_description_service_manquant` (FSM `ProviderServiceRequest`),
+`afficher_missions_client`, `afficher_wallet_client`,
+`afficher_missions_prestataire`, `afficher_wallet_prestataire`,
+`afficher_historique_client`, `afficher_aide_client` (10 handlers) + helpers
+`build_help_rich_message`/`build_history_rich_message`.
+
+**Restent dans `main.py`** (bootstrap, pas de flow à extraire) : `cmd_start`,
+`cmd_app`, `fonctionnalite_a_venir`, `clavier_mini_app`,
+`mission_value`/`mission_id`/`format_mission_client`/`format_mission_provider`
+(helpers partagés — vérifier qui les utilise encore avant de les déplacer),
+`fetch_backend_missions`, les dicts `STATUS_LABELS`/`PAYMENT_STATUS_LABELS`.
+
+Suivre exactement le même protocole que les 3 flows précédents de cette
+session : lire chaque handler en entier, extraire vers le nouveau module,
+déplacer imports/claviers/sync au bon endroit, tests dédiés, `pytest -q`
+complet, PUIS `security-reviewer` + `backend-parity-auditor` avant tout
+commit (le groupe admin touche la vérification prestataire et la résolution
+de litige — sensible). Faire le groupe admin en premier (plus gros, plus
+sensible), missions/wallet ensuite en commit séparé.
+
+Une fois tout extrait, le vrai objectif de Phase 3 (un service
+`telegram_bot/` séparé, déployé indépendamment) reste à faire — bloqué
+jusque-là par le long-polling Telegram (un seul process consommateur par
+token), voir `V5_MIGRATION_PLAN.md`.
+
+**Contexte produit à ne pas re-découvrir** : l'utilisateur a envoyé deux
+documents de spec (`D:\NEXIS_HUB_Spec_Technique_Bot_v4.docx` et
+`D:\NEXIS_HUB_v5_Spec_Technique.pdf`) et a confirmé explicitement que V5 est
+l'architecture cible actuelle (déjà suivie via `V5_MIGRATION_PLAN.md`,
+correspondance vérifiée ligne à ligne) et que les règles métier détaillées du
+v4 (commissions par cas, modules prestataire A/B, badges, actions de
+résolution de litige, textes d'écran) restent valables tant que rien de plus
+récent ne les contredit — voir la mémoire persistante `spec_v4_v5_relationship`
+pour le détail complet. Ne pas redemander cet arbitrage à l'utilisateur.
 
 **Sujets déjà traités, ne pas refaire** : Phase 2 (Celery+Redis), extraction
 inscription/profil, extraction mission/devis, vérification obligatoire des
