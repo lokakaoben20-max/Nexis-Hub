@@ -276,6 +276,33 @@ réimporter `main`, et ce qui rend les envois sortants mockables en test.
 C'est le dernier gros bloc de `main.py`, et celui qui touche à l'argent : à extraire
 avec la même prudence (double écriture, aucun changement de source de vérité).
 
+**Mise à jour (2026-08-09) : découpage de `main.py` intégralement terminé.**
+Les flows paiement/lifecycle/notation, admin (18 handlers) et
+missions/wallet (10 handlers, dernier groupe) ont été extraits à leur tour
+vers `telegram_bot/payment.py`, `telegram_bot/admin.py` et
+`telegram_bot/dashboard.py` (voir `AGENTS.md` pour le détail commit par
+commit). `main.py` ne contient plus que le bootstrap. Les deux précisions
+notées plus haut restent vraies : double écriture `db.py` + backend
+maintenue partout, et **pas encore un service séparé** — `telegram_bot/`
+reste un ensemble de routers montés dans le même process que `main.py`.
+
+**Contrainte long-polling levée côté code (2026-08-09, EN COURS).** Le
+paragraphe ci-dessus ("Le bot fait du long-polling Telegram — un seul
+process peut consommer les updates avec le token du bot à la fois")
+n'est plus un blocage absolu : `telegram_bot/webhook_server.py` ajoute un
+mode webhook (`BOT_RUN_MODE=webhook`), dual avec le polling classique
+(toujours le défaut). Deux raisons distinctes empêchent encore le vrai
+découplage en process séparé :
+1. **Couplage `db.py` intact** — ~40 fonctions SQLite legacy encore
+   appelées directement à travers tout `telegram_bot/` (chaque flow migré
+   continue d'écrire dans `db.py` en plus du backend). Décidé
+   explicitement avec l'utilisateur : chantier séparé, non lancé, périmètre
+   de la migration webhook volontairement restreint pour ne pas le
+   toucher.
+2. **Aucun hébergement de production** — le webhook nécessite une URL
+   HTTPS publique ; en attendant un vrai déploiement, seul un tunnel local
+   (ngrok/Cloudflare Tunnel) le rend utilisable, en dev uniquement.
+
 ## Vérification obligatoire des prestataires (documents + validation admin)
 
 **Motif** : le produit se positionne sur la confiance ("WHERE TRUST MEETS SERVICE"),

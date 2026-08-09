@@ -64,13 +64,20 @@ Ce couplage disparaîtra le jour où la Mini App passera par le backend V5 au li
 | --- | --- | --- |
 | Backend V5 | 8000 | `.venv\Scripts\python.exe -m uvicorn backend.app.main:app --reload` |
 | Mini App | 8001 | `.venv\Scripts\python.exe -m uvicorn mini_app.app:app --reload --host 127.0.0.1 --port 8001` |
-| Bot Telegram | — | `.venv\Scripts\python.exe main.py` |
+| Bot Telegram (polling, défaut) | — | `.venv\Scripts\python.exe main.py` |
+| Bot Telegram (webhook, optionnel) | 8002 | `BOT_RUN_MODE=webhook` dans `.env` + `.venv\Scripts\python.exe main.py` |
 | Redis (broker Celery) | 6379 | `docker compose up -d redis` |
 | Worker Celery | — | `.venv\Scripts\python.exe -m celery -A backend.app.celery_app worker --loglevel=info --pool=solo` |
 | Beat Celery (planificateur) | — | `.venv\Scripts\python.exe -m celery -A backend.app.celery_app beat --loglevel=info` |
 
 Ne remets pas la Mini App sur le port 8000 : il appartient au backend V5
 (`BACKEND_BASE_URL`). Voir [mini_app/README.md](mini_app/README.md).
+
+Le port 8002 (mode webhook) est le port d'**écoute local** du bot — c'est le
+tunnel (ngrok/Cloudflare Tunnel) qui doit le cibler, pas un port exposé
+directement sur le réseau. Voir la section démarrage du bot ci-dessous et
+le skill `demarrage-local` pour le détail du geste manuel (tunnel à relancer
+à chaque session, `WEBHOOK_URL` à mettre à jour dans `.env`).
 
 **Worker Celery : toujours `python -m celery`, jamais `celery` seul.** Invoqué
 directement, l'exécutable `celery` place son propre dossier (`Scripts/`) en
@@ -134,6 +141,18 @@ fonctionne pas).
 ```bash
 c:/Users/Ben L/OneDrive/Desktop/Startup_Nexis_Hub/nexis_hub_bot/.venv/Scripts/python.exe main.py
 ```
+
+Par défaut (`BOT_RUN_MODE` absent ou `polling` dans `.env`) : long-polling
+classique, aucun tunnel nécessaire. Pour tester le mode webhook (voir
+`telegram_bot/webhook_server.py`, `V5_MIGRATION_PLAN.md` section Phase 3) :
+lancer un tunnel local (`ngrok http 8002` ou équivalent), copier son URL
+HTTPS dans `WEBHOOK_URL`, générer un `WEBHOOK_SECRET_TOKEN`
+(`python -c "import secrets; print(secrets.token_hex(32))"`), passer
+`BOT_RUN_MODE=webhook` dans `.env`, puis relancer la commande ci-dessus.
+L'URL ngrok change à chaque relance du tunnel (offre gratuite) : à remettre
+à jour dans `.env` à chaque session. Aucun hébergement de production
+n'existe encore pour ce projet — le webhook n'est utilisable qu'avec un
+tunnel local pour l'instant.
 
 ### Lancer le backend V5 en local
 
@@ -279,16 +298,28 @@ indépendamment plutôt que monté dans le même process via
 Telegram (un seul process consommateur par token), voir
 `V5_MIGRATION_PLAN.md`.
 
-**Prochaine étape — à décider avec l'utilisateur.** Aucune tâche de
-découpage `main.py` ne reste dans le backlog défini le 2026-08-08/09. Options
-possibles pour la suite (ne pas choisir seul, redemander à l'utilisateur) :
-le vrai découpage en service séparé (bloqué par le long-polling, voir
-ci-dessus), la correction du bug `sqlite3.Row` signalé ci-dessus, ou un tout
-autre chantier. Les deux commits de cette session (`05e7c95` groupe admin,
-`d76600d` groupe missions/wallet) ne sont **pas encore poussés** sur
-`origin/feature/v5-migration` — vérifier `git log origin/feature/v5-migration..HEAD`
-avant de supposer l'un ou l'autre déjà sur le remote, et ne pousser qu'avec
-l'autorisation explicite de l'utilisateur.
+**Commits `05e7c95` (groupe admin), `d76600d` (groupe missions/wallet),
+`d6f455d` (doc Phase 3) : poussés sur `origin/feature/v5-migration`
+(2026-08-09).**
+
+**Migration webhook Telegram (2026-08-09, EN COURS).** L'utilisateur a
+choisi le "vrai découplage" (webhooks) comme prochain chantier, périmètre
+volontairement restreint après clarification : webhooks seulement, `db.py`
+reste couplé comme avant dans `telegram_bot/` (chantier séparé, non lancé),
+exposition HTTPS via tunnel local (ngrok/Cloudflare Tunnel) — aucun
+hébergement de production n'existe. Voir le plan détaillé et son statut
+d'avancement dans la session en cours ; résumé une fois terminé : nouveau
+`telegram_bot/webhook_server.py` (`build_webhook_app`/`run_webhook`),
+`main.py` en mode dual via `BOT_RUN_MODE` (`polling` par défaut,
+`webhook` optionnel), `tests/test_webhook_server.py`, `aiohttp` ajouté à
+`requirements.txt`, nouveau bloc `WEBHOOK_*`/`BOT_RUN_MODE` dans
+`.env.example`.
+
+**Bug `sqlite3.Row` dans `afficher_missions_client`** (signalé plus haut,
+tâche de suivi `spawn_task`) : en cours de correction dans une session
+séparée au moment de la rédaction de cette note — vérifier l'état réel
+(`git log`, `git diff telegram_bot/dashboard.py`) avant de supposer que
+c'est fait ou pas.
 
 **Contexte produit à ne pas re-découvrir** : l'utilisateur a envoyé deux
 documents de spec (`D:\NEXIS_HUB_Spec_Technique_Bot_v4.docx` et

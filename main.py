@@ -24,6 +24,7 @@ from telegram_bot import payment
 from telegram_bot import registration
 from telegram_bot.backend_client import get_user_language
 from telegram_bot.keyboards import MINI_APP_URL, button_label, clavier_langue
+from telegram_bot.webhook_server import run_webhook
 
 
 load_dotenv()
@@ -104,8 +105,16 @@ async def fonctionnalite_a_venir(callback: CallbackQuery):
 
 async def main():
     init_db()
-    print("✅ NEXIS HUB Bot démarré.")
-    await dp.start_polling(bot)
+    mode = os.getenv("BOT_RUN_MODE", "polling").strip().lower()
+    if mode == "webhook":
+        await run_webhook(bot, dp)
+    else:
+        # Defensive : si un webhook était enregistré lors d'une session
+        # précédente (switch webhook -> polling), getUpdates échoue avec
+        # TelegramConflictError tant que le webhook est actif.
+        await bot.delete_webhook(drop_pending_updates=False)
+        print("✅ NEXIS HUB Bot démarré (polling).")
+        await dp.start_polling(bot)
 
 
 if __name__ == "__main__":

@@ -13,10 +13,35 @@ backend) :
 | Postgres | 5432 | `docker compose up -d` |
 | Backend V5 | 8000 | `.venv\Scripts\python.exe -m uvicorn backend.app.main:app --reload` |
 | Mini App | 8001 | `.venv\Scripts\python.exe -m uvicorn mini_app.app:app --reload --host 127.0.0.1 --port 8001` |
-| Bot Telegram | — | `.venv\Scripts\python.exe main.py` |
+| Bot Telegram (polling, défaut) | — | `.venv\Scripts\python.exe main.py` |
 
 Ne jamais mettre la Mini App sur 8000 — occupé par le backend
 (`BACKEND_BASE_URL`). Voir `mini_app/README.md`.
+
+## Démarrer le bot en mode webhook (optionnel)
+
+Par défaut le bot tourne en long-polling (`BOT_RUN_MODE` absent ou
+`polling`) — aucun geste supplémentaire. Pour tester le mode webhook
+(`telegram_bot/webhook_server.py`) :
+
+1. Lancer un tunnel HTTPS local : `ngrok http 8002` (ou Cloudflare Tunnel
+   équivalent). Noter l'URL `https://...` affichée.
+2. Dans `.env` : `BOT_RUN_MODE=webhook`, `WEBHOOK_URL=<url du tunnel, sans
+   le chemin>`, `WEBHOOK_SECRET_TOKEN=<généré une fois avec
+   python -c "import secrets; print(secrets.token_hex(32))">`.
+3. Lancer `.venv\Scripts\python.exe main.py` comme d'habitude.
+
+**L'URL ngrok change à chaque relance du tunnel** (offre gratuite) — à
+remettre à jour dans `WEBHOOK_URL` à chaque session, puis redémarrer le bot
+(`set_webhook` est rappelé à chaque démarrage, donc la nouvelle URL est
+réenregistrée automatiquement côté Telegram, aucun autre geste nécessaire).
+Si `python main.py` échoue immédiatement avec un message `WEBHOOK_URL
+manquant` ou `WEBHOOK_SECRET_TOKEN manquant`, ces variables ne sont pas
+posées dans `.env`. Si `set_webhook` échoue avec une erreur réseau, vérifier
+que le tunnel est bien lancé et que l'URL dans `.env` est à jour.
+
+Aucun hébergement de production n'existe pour ce projet — le mode webhook
+n'est utilisable qu'avec un tunnel local pour l'instant.
 
 ## "Le bot/backend ne répond pas" — vérifier avant de paniquer
 
