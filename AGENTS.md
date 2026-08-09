@@ -199,60 +199,96 @@ nouvelles clés de message) avant son commit.
   par l'admin (aucune demande explicite du client pour un partage) — comme
   voulu.
 
-**Prochaine étape — EN COURS, reprendre ici (2026-08-09).** L'utilisateur a
-validé oralement : "bien, allons-y" sur l'extraction admin + missions/wallet.
-Rien n'a encore été modifié — juste un `grep` de reconnaissance fait sur
-`main.py` (`^@dp\.\|^async def\|^def `) pour lister précisément ce qui reste.
-Ne pas redemander à l'utilisateur, relancer ce grep suffit pour confirmer les
-lignes exactes (elles auront bougé si autre chose a été commité entre-temps).
+**Groupe admin : terminé et committé (2026-08-09, commit `05e7c95`, pas encore
+poussé).** 18 handlers (`cmd_admin`, `admin_home`, `admin_stats`,
+`admin_providers`, `admin_missions`, `admin_clients`, `admin_disputes`,
+`admin_litige_rembourser`, `admin_litige_payer_prestataire`,
+`admin_litige_demarrer_partage`, `admin_litige_partage_recu`,
+`admin_service_requests`, `admin_accept_service`, `admin_reject_service`,
+`admin_verify_provider`, `admin_reject_provider`, `admin_suspend_provider`,
+`admin_unsuspend_provider`) extraits vers `telegram_bot/admin.py`, avec
+`is_admin`/`ADMIN_TELEGRAM_ID` (copie locale, même pattern que
+`registration.py`) et FSM `AdminDisputeSplit`. Claviers admin déplacés vers
+`keyboards.py`, `sync_provider_verified/suspended/unsuspended_to_backend`
+vers `backend_client.py`. Correctif au passage : 6 handlers
+(`admin_accept_service`, `admin_verify_provider`, `admin_reject_provider`,
+`admin_suspend_provider`, `admin_unsuspend_provider`, `admin_reject_service`)
+utilisaient encore le `bot` global de `main.py` — passés à `callback.bot`.
+Tests existants (`test_dispute_flow.py`, `test_provider_verification.py`,
+`test_bot_backend_sync.py`) mis à jour pour patcher `telegram_bot.admin`/
+`telegram_bot.backend_client` au lieu de `main`. Nouveau
+`test_admin_flow_extraction.py` (7 tests). Suite complète : **178 passed**.
+Revu par `security-reviewer` et `backend-parity-auditor` avant commit,
+aucune régression trouvée.
 
-Le compte "12 handlers admin" de l'estimation précédente est **périmé** — le
-flow litiges de cette session en a ajouté 4 (`admin_litige_rembourser`,
-`admin_litige_payer_prestataire`, `admin_litige_demarrer_partage`,
-`admin_litige_partage_recu` + FSM `AdminDisputeSplit`). Liste exacte trouvée
-le 2026-08-09 :
+**Groupe missions/wallet : terminé et committé (2026-08-09, commit
+`d76600d`, pas encore poussé).** Dernier groupe restant — 10 handlers
+(`afficher_services_prestataire`, `proposer_service_manquant`,
+`recevoir_nom_service_manquant`, `recevoir_description_service_manquant`
+avec FSM `ProviderServiceRequest`, `afficher_missions_client`,
+`afficher_wallet_client`, `afficher_missions_prestataire`,
+`afficher_wallet_prestataire`, `afficher_historique_client`,
+`afficher_aide_client`) + helpers (`mission_value`/`mission_id`/
+`format_mission_client`/`format_mission_provider`/`build_help_rich_message`/
+`build_history_rich_message`/`STATUS_LABELS`/`PAYMENT_STATUS_LABELS`/
+`fetch_backend_missions`) extraits vers `telegram_bot/dashboard.py`. Nouveau
+`test_dashboard_flow_extraction.py` (14 tests) — ce groupe n'avait aucun
+test dédié avant. Suite complète : **192 passed**. Revu par
+`security-reviewer` et `backend-parity-auditor` avant commit (deux
+corrections mineures appliquées : garde `isinstance(dict)` dans
+`fetch_backend_missions`, mock de test corrigé).
 
-**Groupe admin** (candidat `telegram_bot/admin.py`) : `cmd_admin`,
-`admin_home`, `admin_stats`, `admin_providers`, `admin_missions`,
-`admin_clients`, `admin_disputes`, `admin_litige_rembourser`,
-`admin_litige_payer_prestataire`, `admin_litige_demarrer_partage`,
-`admin_litige_partage_recu`, `admin_service_requests`,
-`admin_accept_service`, `admin_reject_service`, `admin_verify_provider`,
-`admin_reject_provider`, `admin_suspend_provider`,
-`admin_unsuspend_provider` (18 handlers) + helper `is_admin` + FSM
-`AdminDisputeSplit` + claviers `clavier_admin_service_request`/
-`clavier_admin_menu`/`clavier_admin_provider`/`clavier_admin_dispute`
-(→ `keyboards.py`, même pattern que les autres flows) + fonctions backend
-`sync_provider_verified_to_backend`/`sync_provider_suspended_to_backend`/
-`sync_provider_unsuspended_to_backend` (→ `backend_client.py`).
+**Phase 3 (extraction de `main.py` vers `telegram_bot/`) : intégralement
+terminée.** `main.py` ne contient plus que le bootstrap (113 lignes :
+démarrage, `/start`, `/app`, `fonctionnalite_a_venir`). Tous les flows
+métier vivent désormais dans `telegram_bot/` : `registration.py`,
+`mission.py`, `payment.py`, `admin.py`, `dashboard.py` — plus
+`backend_client.py`/`keyboards.py` pour le code partagé.
 
-**Groupe missions/wallet** (candidat pour un nouveau module, nom à décider —
-`telegram_bot/dashboard.py` ou similaire) : `afficher_services_prestataire`,
-`proposer_service_manquant`, `recevoir_nom_service_manquant`,
-`recevoir_description_service_manquant` (FSM `ProviderServiceRequest`),
-`afficher_missions_client`, `afficher_wallet_client`,
-`afficher_missions_prestataire`, `afficher_wallet_prestataire`,
-`afficher_historique_client`, `afficher_aide_client` (10 handlers) + helpers
-`build_help_rich_message`/`build_history_rich_message`.
+Nettoyage transversal découvert en cours de route (pas des régressions,
+des ré-exports/imports morts déjà présents avant cette session) :
+`from telegram_bot.mission import provider_trust_line` dans `main.py`
+n'était jamais utilisé par `main.py` lui-même, mais `tests/test_provider_trust_line.py`
+comptait dessus via `from main import provider_trust_line` — corrigé pour
+importer directement depuis `telegram_bot.mission`. Plusieurs tests
+(`test_v5_provider_profile.py`, `test_v5_profile_flow.py`,
+`test_v5_payments_flow.py`, `test_v5_mission_lifecycle.py`,
+`test_v5_missions_flow.py`, `test_v5_migration.py`,
+`test_bot_backend_sync.py`) patchaient `main.httpx` et appelaient des
+fonctions ré-exportées par `main.py` (`fetch_backend_profile`,
+`load_profile_from_backend`, `_safe_backend_call`, etc.) — corrigés pour
+référencer directement `telegram_bot.backend_client`/`telegram_bot.dashboard`.
+**Leçon pour la suite** : après avoir retiré un import de `main.py`,
+grep `from main import` en plus de `main\.` — un ré-export mort dans
+`main.py` peut être invisible à `main\.` seul si le seul appelant importe
+le symbole directement plutôt que d'accéder à l'attribut du module.
 
-**Restent dans `main.py`** (bootstrap, pas de flow à extraire) : `cmd_start`,
-`cmd_app`, `fonctionnalite_a_venir`, `clavier_mini_app`,
-`mission_value`/`mission_id`/`format_mission_client`/`format_mission_provider`
-(helpers partagés — vérifier qui les utilise encore avant de les déplacer),
-`fetch_backend_missions`, les dicts `STATUS_LABELS`/`PAYMENT_STATUS_LABELS`.
+Bug préexistant découvert (pas une régression, code copié à l'identique) et
+volontairement laissé en l'état, avec un test qui documente le comportement
+actuel plutôt que de le masquer : dans `afficher_missions_client`,
+`isinstance(mission, dict)` est `False` pour un `sqlite3.Row` (missions
+locales, fallback quand le backend est indisponible), donc ces missions
+s'affichent comme `<sqlite3.Row object at ...>` au lieu du texte formaté.
+`afficher_historique_client` n'a PAS ce bug (appelle `format_mission_client`
+directement, sans le garde `isinstance`). Correctif de suivi créé
+séparément (spawn_task, pas encore traité).
 
-Suivre exactement le même protocole que les 3 flows précédents de cette
-session : lire chaque handler en entier, extraire vers le nouveau module,
-déplacer imports/claviers/sync au bon endroit, tests dédiés, `pytest -q`
-complet, PUIS `security-reviewer` + `backend-parity-auditor` avant tout
-commit (le groupe admin touche la vérification prestataire et la résolution
-de litige — sensible). Faire le groupe admin en premier (plus gros, plus
-sensible), missions/wallet ensuite en commit séparé.
+Le vrai objectif de Phase 3 (un service `telegram_bot/` séparé, déployé
+indépendamment plutôt que monté dans le même process via
+`dp.include_router`) reste à faire — bloqué jusque-là par le long-polling
+Telegram (un seul process consommateur par token), voir
+`V5_MIGRATION_PLAN.md`.
 
-Une fois tout extrait, le vrai objectif de Phase 3 (un service
-`telegram_bot/` séparé, déployé indépendamment) reste à faire — bloqué
-jusque-là par le long-polling Telegram (un seul process consommateur par
-token), voir `V5_MIGRATION_PLAN.md`.
+**Prochaine étape — à décider avec l'utilisateur.** Aucune tâche de
+découpage `main.py` ne reste dans le backlog défini le 2026-08-08/09. Options
+possibles pour la suite (ne pas choisir seul, redemander à l'utilisateur) :
+le vrai découpage en service séparé (bloqué par le long-polling, voir
+ci-dessus), la correction du bug `sqlite3.Row` signalé ci-dessus, ou un tout
+autre chantier. Les deux commits de cette session (`05e7c95` groupe admin,
+`d76600d` groupe missions/wallet) ne sont **pas encore poussés** sur
+`origin/feature/v5-migration` — vérifier `git log origin/feature/v5-migration..HEAD`
+avant de supposer l'un ou l'autre déjà sur le remote, et ne pousser qu'avec
+l'autorisation explicite de l'utilisateur.
 
 **Contexte produit à ne pas re-découvrir** : l'utilisateur a envoyé deux
 documents de spec (`D:\NEXIS_HUB_Spec_Technique_Bot_v4.docx` et
@@ -269,7 +305,12 @@ inscription/profil, extraction mission/devis, vérification obligatoire des
 prestataires, extraction paiement/lifecycle/notation, correctif propriétaire
 devis/mission, miroir paiement/libération backend, système de litiges — tous
 committés et poussés sur `feature/v5-migration` (commits `ae07050`, `99c7526`,
-`117e60b`, `b60400e`, `6ca58a1`, `077b8d3`, `a69dd3a`, `a405532`).
+`117e60b`, `b60400e`, `6ca58a1`, `077b8d3`, `a69dd3a`, `a405532`). Extraction
+groupe admin (commit `05e7c95`) et groupe missions/wallet (commit `d76600d`,
+Phase 3 de découpage `main.py` intégralement terminée) : committées mais
+**pas encore poussées** au moment de la rédaction de cette note — vérifier
+`git log origin/feature/v5-migration..HEAD` avant de supposer que c'est déjà
+sur le remote.
 
 Voir aussi [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md) pour le plan de migration
 complet vers l'architecture cible `nexis-hub-v5`.
