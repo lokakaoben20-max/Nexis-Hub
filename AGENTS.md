@@ -302,24 +302,35 @@ Telegram (un seul process consommateur par token), voir
 `d6f455d` (doc Phase 3) : poussés sur `origin/feature/v5-migration`
 (2026-08-09).**
 
-**Migration webhook Telegram (2026-08-09, EN COURS).** L'utilisateur a
-choisi le "vrai découplage" (webhooks) comme prochain chantier, périmètre
-volontairement restreint après clarification : webhooks seulement, `db.py`
-reste couplé comme avant dans `telegram_bot/` (chantier séparé, non lancé),
-exposition HTTPS via tunnel local (ngrok/Cloudflare Tunnel) — aucun
-hébergement de production n'existe. Voir le plan détaillé et son statut
-d'avancement dans la session en cours ; résumé une fois terminé : nouveau
+**Migration webhook Telegram : terminée et validée en conditions réelles
+(2026-08-09, commit `1eae8aa`).** L'utilisateur a choisi le "vrai
+découplage" (webhooks) comme chantier, périmètre volontairement restreint
+après clarification : webhooks seulement, `db.py` reste couplé comme avant
+dans `telegram_bot/` (chantier séparé, non lancé), exposition HTTPS via
+tunnel local (ngrok) — aucun hébergement de production n'existe. Nouveau
 `telegram_bot/webhook_server.py` (`build_webhook_app`/`run_webhook`),
 `main.py` en mode dual via `BOT_RUN_MODE` (`polling` par défaut,
-`webhook` optionnel), `tests/test_webhook_server.py`, `aiohttp` ajouté à
-`requirements.txt`, nouveau bloc `WEBHOOK_*`/`BOT_RUN_MODE` dans
-`.env.example`.
+`webhook` optionnel), `tests/test_webhook_server.py` (6 tests, secret
+token vérifié en temps constant), `aiohttp` ajouté à `requirements.txt`,
+nouveau bloc `WEBHOOK_*`/`BOT_RUN_MODE` dans `.env.example`. Suite
+complète : 198 passed. Revu par `security-reviewer` (correctif appliqué :
+garde du secret déplacée dans `build_webhook_app` elle-même, pas
+seulement dans `run_webhook`).
 
-**Bug `sqlite3.Row` dans `afficher_missions_client`** (signalé plus haut,
-tâche de suivi `spawn_task`) : en cours de correction dans une session
-séparée au moment de la rédaction de cette note — vérifier l'état réel
-(`git log`, `git diff telegram_bot/dashboard.py`) avant de supposer que
-c'est fait ou pas.
+**Test end-to-end réel effectué le 2026-08-09** : ngrok installé
+(`winget install Ngrok.Ngrok`, nécessite `ngrok update` après coup — la
+version winget est trop ancienne pour l'API ngrok actuelle) et configuré
+par l'utilisateur (compte + authtoken), tunnel lancé sur le port 8002,
+`BOT_RUN_MODE=webhook` + `WEBHOOK_URL`/`WEBHOOK_SECRET_TOKEN` posés dans
+`.env` local (jamais commité), bot lancé et `/start` envoyé depuis
+Telegram réel — réponse confirmée par l'utilisateur. Le mode webhook
+fonctionne bout en bout, pas seulement en test synthétique.
+
+**Bug `sqlite3.Row` dans `afficher_missions_client` : corrigé et committé**
+(commit `0012891`, pas encore poussé au moment de la rédaction de cette
+note — vérifier `git log origin/feature/v5-migration..HEAD`), dans une
+session séparée qui a démarré depuis la tâche de suivi `spawn_task`
+laissée plus haut.
 
 **Contexte produit à ne pas re-découvrir** : l'utilisateur a envoyé deux
 documents de spec (`D:\NEXIS_HUB_Spec_Technique_Bot_v4.docx` et
