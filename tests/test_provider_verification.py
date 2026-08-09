@@ -18,8 +18,7 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
 import db
-import main
-from telegram_bot import backend_client, registration
+from telegram_bot import admin, backend_client, registration
 
 
 class DummyResponse:
@@ -198,9 +197,8 @@ def test_admin_verify_provider_uses_telegram_id_for_backend_sync(monkeypatch, tm
     _init_db(tmp_path)
     _use_dummy_backend(monkeypatch)
     dummy_bot = DummyBot()
-    monkeypatch.setattr(main, "bot", dummy_bot)
-    monkeypatch.setattr(main, "is_admin", lambda telegram_id: True)
-    monkeypatch.setattr(main, "get_provider_language", lambda telegram_id: _async_return("fr"))
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "get_provider_language", lambda telegram_id: _async_return("fr"))
 
     telegram_id = 1020
     db.create_provider(telegram_id, "+243800001020", "A Verifier", ["service_plomberie"], ["Gombe"], language="fr")
@@ -208,7 +206,7 @@ def test_admin_verify_provider_uses_telegram_id_for_backend_sync(monkeypatch, tm
     local_id = db.get_provider_by_telegram_id(telegram_id)["id"]
 
     callback = DummyCallback(999, data=f"admin_verify_provider_{local_id}", bot=dummy_bot)
-    asyncio.run(main.admin_verify_provider(callback))
+    asyncio.run(admin.admin_verify_provider(callback))
 
     assert DummyAsyncClient.last_request["url"].endswith(f"/api/bot/providers/{telegram_id}/status"), (
         "le sync backend doit cibler telegram_id, pas l'id interne SQLite"
@@ -225,9 +223,8 @@ def test_admin_reject_provider_keeps_provider_excluded(monkeypatch, tmp_path):
     _init_db(tmp_path)
     _use_dummy_backend(monkeypatch)
     dummy_bot = DummyBot()
-    monkeypatch.setattr(main, "bot", dummy_bot)
-    monkeypatch.setattr(main, "is_admin", lambda telegram_id: True)
-    monkeypatch.setattr(main, "get_provider_language", lambda telegram_id: _async_return("fr"))
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "get_provider_language", lambda telegram_id: _async_return("fr"))
 
     telegram_id = 1030
     db.create_provider(telegram_id, "+243800001030", "A Refuser", ["service_plomberie"], ["Gombe"], language="fr")
@@ -235,7 +232,7 @@ def test_admin_reject_provider_keeps_provider_excluded(monkeypatch, tmp_path):
     local_id = db.get_provider_by_telegram_id(telegram_id)["id"]
 
     callback = DummyCallback(999, data=f"admin_reject_provider_{local_id}", bot=dummy_bot)
-    asyncio.run(main.admin_reject_provider(callback))
+    asyncio.run(admin.admin_reject_provider(callback))
 
     provider = db.get_provider_by_telegram_id(telegram_id)
     assert provider["status"] == "rejected"

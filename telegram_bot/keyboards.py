@@ -511,6 +511,50 @@ def build_quote_accept_rich_message(
     )
 
 
+# ── Flow admin (Phase 3, groupe admin) ──────────────────────────────────────
+
+
+def clavier_admin_service_request(request_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Accepter", callback_data=f"admin_accept_service_{request_id}")
+    builder.button(text="❌ Refuser", callback_data=f"admin_reject_service_{request_id}")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def clavier_admin_menu():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📊 Statistiques", callback_data="admin_stats")
+    builder.button(text="🔧 Prestataires", callback_data="admin_providers")
+    builder.button(text="📋 Missions", callback_data="admin_missions")
+    builder.button(text="👥 Clients", callback_data="admin_clients")
+    builder.button(text="⚠️ Litiges", callback_data="admin_disputes")
+    builder.button(text="➕ Services proposés", callback_data="admin_service_requests")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def clavier_admin_provider(provider_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Vérifier", callback_data=f"admin_verify_provider_{provider_id}")
+    builder.button(text="❌ Refuser", callback_data=f"admin_reject_provider_{provider_id}")
+    builder.button(text="⛔ Suspendre", callback_data=f"admin_suspend_provider_{provider_id}")
+    builder.button(text="♻️ Réactiver", callback_data=f"admin_unsuspend_provider_{provider_id}")
+    builder.button(text="⬅️ Admin", callback_data="admin_home")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_admin_dispute(mission_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💸 Rembourser le client", callback_data=f"admin_dispute_refund_{mission_id}")
+    builder.button(text="✅ Payer le prestataire", callback_data=f"admin_dispute_release_{mission_id}")
+    builder.button(text="🤝 Partager", callback_data=f"admin_dispute_split_{mission_id}")
+    builder.button(text="⬅️ Litiges", callback_data="admin_disputes")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def clavier_admin_new_provider(provider_id: int):
     """Boutons Approuver/Refuser sur la notification admin poussée à l'inscription.
 

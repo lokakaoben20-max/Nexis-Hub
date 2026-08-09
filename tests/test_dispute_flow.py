@@ -20,8 +20,7 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
 import db
-import main
-from telegram_bot import backend_client, payment
+from telegram_bot import admin, backend_client, payment
 
 
 class DummyResponse:
@@ -372,16 +371,16 @@ def test_litige_motif_recu_rejects_empty_reason(tmp_path, monkeypatch):
     assert len(message.answers) == 1
 
 
-# --- main.py : résolution admin ---------------------------------------------
+# --- telegram_bot/admin.py : résolution admin --------------------------------
 
 
 def test_admin_dispute_refund_requires_admin(tmp_path, monkeypatch):
     mission_id = _setup_paid_mission(tmp_path, monkeypatch)
     db.open_dispute(mission_id, 100, "Motif")
-    monkeypatch.setattr(main, "is_admin", lambda telegram_id: False)
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: False)
 
     callback = DummyCallback(telegram_id=999, data=f"admin_dispute_refund_{mission_id}", bot=DummyBot())
-    asyncio.run(main.admin_litige_rembourser(callback))
+    asyncio.run(admin.admin_litige_rembourser(callback))
 
     assert callback.answered is not None
     assert db.get_mission_by_id(mission_id)["status"] == "disputed", "aucune résolution ne doit avoir lieu sans droits admin"
@@ -390,13 +389,13 @@ def test_admin_dispute_refund_requires_admin(tmp_path, monkeypatch):
 def test_admin_dispute_refund_credits_client_and_notifies_both_parties(tmp_path, monkeypatch):
     mission_id = _setup_paid_mission(tmp_path, monkeypatch, amount=100.0)
     db.open_dispute(mission_id, 100, "Mission jamais réalisée")
-    monkeypatch.setattr(main, "is_admin", lambda telegram_id: True)
-    monkeypatch.setattr(main, "get_user_language", lambda tid: _async_return("fr"))
-    monkeypatch.setattr(main, "get_provider_language", lambda tid: _async_return("fr"))
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "get_user_language", lambda tid: _async_return("fr"))
+    monkeypatch.setattr(admin, "get_provider_language", lambda tid: _async_return("fr"))
 
     bot = DummyBot()
     callback = DummyCallback(telegram_id=1, data=f"admin_dispute_refund_{mission_id}", bot=bot)
-    asyncio.run(main.admin_litige_rembourser(callback))
+    asyncio.run(admin.admin_litige_rembourser(callback))
 
     mission = db.get_mission_by_id(mission_id)
     assert mission["payment_status"] == "refunded"
@@ -409,13 +408,13 @@ def test_admin_dispute_refund_credits_client_and_notifies_both_parties(tmp_path,
 def test_admin_dispute_release_credits_provider_and_notifies_both_parties(tmp_path, monkeypatch):
     mission_id = _setup_paid_mission(tmp_path, monkeypatch, amount=100.0)
     db.open_dispute(mission_id, 100, "Litige contestable")
-    monkeypatch.setattr(main, "is_admin", lambda telegram_id: True)
-    monkeypatch.setattr(main, "get_user_language", lambda tid: _async_return("fr"))
-    monkeypatch.setattr(main, "get_provider_language", lambda tid: _async_return("fr"))
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "get_user_language", lambda tid: _async_return("fr"))
+    monkeypatch.setattr(admin, "get_provider_language", lambda tid: _async_return("fr"))
 
     bot = DummyBot()
     callback = DummyCallback(telegram_id=1, data=f"admin_dispute_release_{mission_id}", bot=bot)
-    asyncio.run(main.admin_litige_payer_prestataire(callback))
+    asyncio.run(admin.admin_litige_payer_prestataire(callback))
 
     mission = db.get_mission_by_id(mission_id)
     assert mission["payment_status"] == "released"
@@ -429,27 +428,27 @@ def test_admin_dispute_release_credits_provider_and_notifies_both_parties(tmp_pa
 def test_admin_dispute_split_starts_fsm(tmp_path, monkeypatch):
     mission_id = _setup_paid_mission(tmp_path, monkeypatch)
     db.open_dispute(mission_id, 100, "Motif")
-    monkeypatch.setattr(main, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
 
     callback = DummyCallback(telegram_id=1, data=f"admin_dispute_split_{mission_id}", bot=DummyBot())
     state = DummyState()
-    asyncio.run(main.admin_litige_demarrer_partage(callback, state))
+    asyncio.run(admin.admin_litige_demarrer_partage(callback, state))
 
-    assert state.state == main.AdminDisputeSplit.percentage
+    assert state.state == admin.AdminDisputeSplit.percentage
     assert state._data["dispute_split_mission_id"] == mission_id
 
 
 def test_admin_dispute_split_divides_between_provider_and_client_and_notifies_both(tmp_path, monkeypatch):
     mission_id = _setup_paid_mission(tmp_path, monkeypatch, amount=100.0)
     db.open_dispute(mission_id, 100, "Travail partiellement fait")
-    monkeypatch.setattr(main, "is_admin", lambda telegram_id: True)
-    monkeypatch.setattr(main, "get_user_language", lambda tid: _async_return("fr"))
-    monkeypatch.setattr(main, "get_provider_language", lambda tid: _async_return("fr"))
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "get_user_language", lambda tid: _async_return("fr"))
+    monkeypatch.setattr(admin, "get_provider_language", lambda tid: _async_return("fr"))
 
     bot = DummyBot()
     state = DummyState(data={"dispute_split_mission_id": mission_id})
     message = DummyMessage(telegram_id=1, text="70", bot=bot)
-    asyncio.run(main.admin_litige_partage_recu(message, state))
+    asyncio.run(admin.admin_litige_partage_recu(message, state))
 
     mission = db.get_mission_by_id(mission_id)
     assert mission["payment_status"] == "released"
@@ -470,11 +469,11 @@ def test_admin_dispute_split_divides_between_provider_and_client_and_notifies_bo
 def test_admin_dispute_split_rejects_non_numeric_input_without_crashing(tmp_path, monkeypatch):
     mission_id = _setup_paid_mission(tmp_path, monkeypatch)
     db.open_dispute(mission_id, 100, "Motif")
-    monkeypatch.setattr(main, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
 
     state = DummyState(data={"dispute_split_mission_id": mission_id})
     message = DummyMessage(telegram_id=1, text="pas un nombre", bot=DummyBot())
-    asyncio.run(main.admin_litige_partage_recu(message, state))
+    asyncio.run(admin.admin_litige_partage_recu(message, state))
 
     assert db.get_mission_by_id(mission_id)["status"] == "disputed", "aucune résolution ne doit avoir lieu"
     assert state.cleared is False, "le FSM doit rester actif pour laisser l'admin réessayer"
