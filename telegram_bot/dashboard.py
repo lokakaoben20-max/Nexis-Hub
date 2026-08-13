@@ -120,10 +120,18 @@ async def afficher_services_prestataire(callback: CallbackQuery):
         await callback.answer(get_message("provider_profile_required", lang), show_alert=True)
         return
 
-    try:
-        selected_services = json.loads(provider["services"] or "[]")
-    except json.JSONDecodeError:
-        selected_services = []
+    # Lecture backend-first : `services` y est déjà une liste Python (colonne
+    # JSON SQLAlchemy), pas une chaîne à parser comme côté db.py. Repli local
+    # identique à avant si le backend ne répond pas.
+    backend_profile = await fetch_backend_profile(callback.from_user.id)
+    provider_data = (backend_profile or {}).get("provider") if backend_profile else None
+    if provider_data is not None:
+        selected_services = provider_data.get("services") or []
+    else:
+        try:
+            selected_services = json.loads(provider["services"] or "[]")
+        except json.JSONDecodeError:
+            selected_services = []
 
     service_labels = [SERVICES.get(service, service) for service in selected_services]
     requests = get_provider_service_requests(callback.from_user.id)

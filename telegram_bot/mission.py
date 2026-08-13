@@ -34,6 +34,7 @@ from db import (
 from messages import get_message
 from telegram_bot.backend_client import (
     _safe_backend_call,
+    fetch_backend_profile,
     get_provider_language,
     get_state_language,
     get_user_language,
@@ -489,6 +490,27 @@ async def devis_message_recu(message: Message, state: FSMContext):
     )
     backend_quote_id = backend_quote["quote"]["id"] if backend_quote else None
 
+    # Lecture backend-first pour l'affichage (nom + ligne de confiance) :
+    # total_missions/success_rate/badge sont réellement recalculés côté
+    # backend (crud._recompute_provider_stats), contrairement à db.py où ces
+    # colonnes ne sont jamais écrites. `rating` (db.py comme backend) reste
+    # toujours à 0 des deux côtés — le champ réellement alimenté est
+    # `average_rating`, d'où le mapping explicite ci-dessous. Repli local
+    # identique à avant si le backend ne répond pas.
+    backend_profile = await fetch_backend_profile(message.from_user.id)
+    provider_data = (backend_profile or {}).get("provider") if backend_profile else None
+    display_full_name = provider_data.get("full_name") if provider_data else provider["full_name"]
+    if provider_data:
+        trust_source = {
+            "rating": provider_data.get("average_rating", 0) or 0,
+            "total_missions": provider_data.get("total_missions", 0) or 0,
+            "success_rate": provider_data.get("success_rate", 0) or 0,
+            "badge": provider_data.get("badge"),
+            "is_verified": provider_data.get("is_verified", False),
+        }
+    else:
+        trust_source = provider
+
     client_lang = await get_user_language(mission["client_telegram_id"])
     await message.bot.send_message(
         mission["client_telegram_id"],
@@ -496,8 +518,8 @@ async def devis_message_recu(message: Message, state: FSMContext):
             "new_quote_received_client",
             client_lang,
             mission_id=data["quote_mission_id"],
-            prestataire=html.escape(provider["full_name"]),
-            trust_line=provider_trust_line(provider),
+            prestataire=html.escape(display_full_name),
+            trust_line=provider_trust_line(trust_source),
             amount=data["quote_amount"],
             currency=data["quote_currency"],
             delay=data["quote_delay_hours"],

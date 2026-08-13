@@ -37,6 +37,7 @@ from db import (
 from messages import get_message
 from telegram_bot.backend_client import (
     _safe_backend_call,
+    fetch_backend_profile,
     get_provider_language,
     get_user_language,
     sync_mission_status_to_backend,
@@ -262,10 +263,16 @@ async def client_confirme_mission_terminee(callback: CallbackQuery, state: FSMCo
 
     provider = get_provider_by_telegram_id(mission["provider_telegram_id"]) if mission["provider_telegram_id"] else None
     if provider is not None:
+        # Lecture backend-first pour le nom affiché uniquement — l'existence
+        # du prestataire (déclenche ou non le flow de notation) reste sur la
+        # lecture locale ci-dessus, inchangée.
+        backend_profile = await fetch_backend_profile(mission["provider_telegram_id"])
+        provider_data = (backend_profile or {}).get("provider") if backend_profile else None
+        display_full_name = provider_data.get("full_name") if provider_data else provider["full_name"]
         await state.set_state(RatingFlow.rating)
         await state.update_data(rating_mission_id=mission_id)
         await callback.message.answer(
-            get_message("rate_provider", lang, mission_id=mission_id, prestataire=provider["full_name"]),
+            get_message("rate_provider", lang, mission_id=mission_id, prestataire=display_full_name),
             parse_mode="HTML",
             reply_markup=clavier_notation(mission_id, lang),
         )

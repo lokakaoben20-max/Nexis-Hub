@@ -618,7 +618,7 @@ async def afficher_profil_client(callback: CallbackQuery):
 
     lang = await get_user_language(callback.from_user.id)
     lang_labels = {"fr": "Français", "ln": "Lingala", "en": "English"}
-    lang_label = lang_labels.get(user["language"] if user else "fr", "Français")
+    lang_label = lang_labels.get(client_profile.get("language") or (user["language"] if user else "fr"), "Français")
 
     await callback.message.edit_text(
         get_message(
