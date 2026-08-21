@@ -232,6 +232,48 @@ def test_quote_creation_writes_backend_and_local(monkeypatch, tmp_path):
     assert state.cleared is True
 
 
+def test_devis_message_recu_uses_backend_stats_when_available(monkeypatch, tmp_path):
+    """rating côté backend reste toujours 0 (jamais alimenté) : le mapping
+    doit lire average_rating, pas rating, pour afficher la vraie note."""
+    _init_db(tmp_path)
+    _use_dummy_backend(monkeypatch)
+    db.create_user(930, "+243800000930", "Cliente", language="fr")
+    db.create_provider(931, "+243800000931", "Nom Local", ["service_plomberie"], ["Gombe"], language="fr")
+    mission_id = db.create_mission(930, {
+        "service": "service_plomberie", "commune": "Gombe", "currency": "USD",
+        "description": "Fuite", "urgent": False,
+    })
+
+    monkeypatch.setattr(mission, "get_provider_language", lambda tid: _async_return("fr"))
+    monkeypatch.setattr(mission, "get_user_language", lambda tid: _async_return("fr"))
+    monkeypatch.setattr(mission, "fetch_backend_profile", lambda tid: _async_return({
+        "provider": {
+            "full_name": "Nom Backend",
+            "rating": 0,
+            "average_rating": 4.8,
+            "total_missions": 12,
+            "success_rate": 91,
+            "badge": "partner",
+            "is_verified": True,
+        }
+    }))
+
+    bot = DummyBot()
+    message = DummyMessage(telegram_id=931, text="Disponible demain", bot=bot)
+    state = DummyState(data={
+        "quote_mission_id": mission_id, "quote_amount": 50.0,
+        "quote_currency": "USD", "quote_delay_hours": 3,
+    })
+
+    asyncio.run(mission.devis_message_recu(message, state))
+
+    sent = bot.messages[0].text
+    assert "Nom Backend" in sent
+    assert "4.8/5" in sent
+    assert "12 missions" in sent
+    assert "91% de réussite" in sent
+
+
 def test_provider_skip_increments_ignored_counter(monkeypatch, tmp_path):
     _init_db(tmp_path)
     _use_dummy_backend(monkeypatch)

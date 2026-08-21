@@ -228,3 +228,36 @@ def test_langue_fr_updates_both_user_and_provider_language(monkeypatch, tmp_path
     # celle du prestataire (envoyée en second), mais l'appel côté client a bien
     # eu lieu avant de lever une éventuelle exception (RuntimeError sinon).
     assert DummyAsyncClient.last_request["json"]["language"] == "fr"
+
+
+def test_afficher_profil_client_survives_backend_unavailable(monkeypatch, tmp_path):
+    """Régression backend-parity-auditor : load_profile_from_backend propageait
+    le sqlite3.Row de fallback_user tel quel ; client_profile.get(...) plantait
+    (AttributeError) dès que le backend ne répond pas. Exerce le vrai chemin de
+    repli (fetch_backend_profile -> None), pas un mock de load_profile_from_backend."""
+    _init_db(tmp_path)
+    db.create_user(507, "+243800000507", "Cliente Locale", language="ln")
+    _use_dummy_backend(monkeypatch)  # fetch_backend_profile -> None
+
+    callback = DummyCallback(telegram_id=507, data="client_profil")
+    asyncio.run(registration.afficher_profil_client(callback))
+
+    assert "Cliente Locale" in callback.message.edited_text
+    assert "Lingala" in callback.message.edited_text
+
+
+def test_afficher_profil_client_shows_backend_language_label(monkeypatch, tmp_path):
+    """lang_label doit suivre client_profile (backend), pas la variable
+    locale user["language"] laissée de côté par erreur (incohérence corrigée)."""
+    _init_db(tmp_path)
+    db.create_user(506, "+243800000506", "Cliente", language="fr")
+    _use_dummy_backend(monkeypatch)
+    monkeypatch.setattr(registration, "load_profile_from_backend", lambda tid, fallback_user=None: _async_return({
+        "client": {"first_name": "Cliente", "phone_number": "+243800000506", "language": "ln"},
+        "client_missions": [],
+    }))
+
+    callback = DummyCallback(telegram_id=506, data="client_profil")
+    asyncio.run(registration.afficher_profil_client(callback))
+
+    assert "Lingala" in callback.message.edited_text

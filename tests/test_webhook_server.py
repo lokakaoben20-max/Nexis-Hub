@@ -100,11 +100,15 @@ def test_health_endpoint_returns_ok(monkeypatch):
 
 
 def test_run_webhook_requires_webhook_url(monkeypatch):
-    monkeypatch.delenv("WEBHOOK_URL", raising=False)
-    monkeypatch.setenv("WEBHOOK_SECRET_TOKEN", SECRET)
     from telegram_bot import webhook_server
 
-    importlib.reload(webhook_server)
+    # Patch direct des constantes du module plutôt qu'un reload piloté par
+    # les variables d'env : si le vrai .env local a WEBHOOK_URL/
+    # WEBHOOK_SECRET_TOKEN posés (test manuel avec un tunnel réel),
+    # `load_dotenv()` (non-override par défaut) les réinjecterait après un
+    # `monkeypatch.delenv`, et ce test appellerait alors le vrai Telegram.
+    monkeypatch.setattr(webhook_server, "WEBHOOK_URL", None)
+    monkeypatch.setattr(webhook_server, "WEBHOOK_SECRET_TOKEN", SECRET)
 
     bot = Bot(token="123:ABC")
     dp = Dispatcher(storage=MemoryStorage())
@@ -116,11 +120,10 @@ def test_run_webhook_requires_webhook_url(monkeypatch):
 
 
 def test_run_webhook_requires_secret_token(monkeypatch):
-    monkeypatch.setenv("WEBHOOK_URL", "https://example.ngrok-free.app")
-    monkeypatch.delenv("WEBHOOK_SECRET_TOKEN", raising=False)
     from telegram_bot import webhook_server
 
-    importlib.reload(webhook_server)
+    monkeypatch.setattr(webhook_server, "WEBHOOK_URL", "https://example.ngrok-free.app")
+    monkeypatch.setattr(webhook_server, "WEBHOOK_SECRET_TOKEN", None)
 
     bot = Bot(token="123:ABC")
     dp = Dispatcher(storage=MemoryStorage())

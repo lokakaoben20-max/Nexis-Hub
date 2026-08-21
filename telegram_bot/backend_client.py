@@ -295,7 +295,10 @@ async def load_profile_from_backend(telegram_id: int, fallback_user: dict | None
     backend_profile = await fetch_backend_profile(telegram_id)
     if backend_profile:
         return backend_profile
-    return {"client": fallback_user or {"telegram_id": telegram_id, "first_name": "Client"}, "provider": None, "client_missions": [], "provider_missions": []}
+    # fallback_user vient souvent de db.py (sqlite3.Row, pas de .get()) ; les
+    # appelants traitent toujours profile_data["client"] comme un dict.
+    client = dict(fallback_user) if fallback_user else {"telegram_id": telegram_id, "first_name": "Client"}
+    return {"client": client, "provider": None, "client_missions": [], "provider_missions": []}
 
 
 async def get_state_language(state) -> str:

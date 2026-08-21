@@ -131,6 +131,23 @@ def test_afficher_services_prestataire_lists_active_and_pending(tmp_path, monkey
     assert "SRV-" in callback.message.edited_text
 
 
+def test_afficher_services_prestataire_uses_backend_services_when_available(tmp_path, monkeypatch):
+    _init_db(tmp_path)
+    _use_dummy_backend(monkeypatch)
+    telegram_id = 3002
+    db.create_provider(telegram_id, "+243800003002", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+    monkeypatch.setattr(dashboard, "fetch_backend_profile", lambda tid: _async_return({
+        "provider": {"services": ["service_electricite"]}
+    }))
+
+    callback = DummyCallback(telegram_id)
+    asyncio.run(dashboard.afficher_services_prestataire(callback))
+
+    text = callback.message.edited_text.lower()
+    assert "electricit" in text
+    assert "plomberie" not in text, "la liste locale ne doit plus apparaître quand le backend répond"
+
+
 def test_proposer_service_manquant_starts_fsm(tmp_path, monkeypatch):
     _init_db(tmp_path)
     _use_dummy_backend(monkeypatch)

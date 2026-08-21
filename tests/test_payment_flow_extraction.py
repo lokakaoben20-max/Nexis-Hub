@@ -375,6 +375,23 @@ def test_client_confirme_mission_terminee_rejects_a_caller_who_is_not_the_client
     assert state.state is None, "le flow de notation ne doit pas démarrer pour une libération refusée"
 
 
+def test_client_confirme_mission_terminee_uses_backend_provider_name(tmp_path, monkeypatch):
+    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch)
+    db.mark_quote_paid(quote_id, 100, operator="mobile_money_simulation")
+    db.start_mission(mission_id, 200)
+    db.finish_mission(mission_id, 200)
+    monkeypatch.setattr(payment, "fetch_backend_profile", lambda tid: _async_return({
+        "provider": {"full_name": "Nom Backend"}
+    }))
+
+    callback = DummyCallback(telegram_id=100, data=f"client_confirm_done_{mission_id}", bot=DummyBot())
+    state = DummyState()
+    asyncio.run(payment.client_confirme_mission_terminee(callback, state))
+
+    assert "Nom Backend" in callback.message.answered_texts[-1]
+    assert state.state == payment.RatingFlow.rating, "l'existence du prestataire doit rester basée sur db.py"
+
+
 def test_rating_skip_clears_state_without_backend_call(tmp_path, monkeypatch):
     _init_db(tmp_path)
     _use_dummy_backend(monkeypatch)
