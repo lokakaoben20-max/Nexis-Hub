@@ -303,6 +303,46 @@ découplage en process séparé :
    HTTPS publique ; en attendant un vrai déploiement, seul un tunnel local
    (ngrok/Cloudflare Tunnel) le rend utilisable, en dev uniquement.
 
+**Webhook validé en conditions réelles (2026-08-09).** Testé bout en bout
+avec un vrai tunnel ngrok et un vrai message Telegram (`/start`), pas
+seulement en test synthétique.
+
+### Chantier de coupure `db.py` — étapes A-D
+
+Audit complet effectué (3 agents d'exploration + vérification manuelle)
+avant de coder quoi que ce soit : le périmètre réel est bien plus large
+que "remplacer ~40 appels". Plusieurs pans entiers du backend V5 sont
+manquants (litiges, services proposés, stats admin), un bug backend
+bloque la lecture des missions prestataire, et `find_matching_providers`
+a un algorithme de score différent côté backend (décision produit à
+trancher, pas un swap technique). Détail complet dans `AGENTS.md`.
+
+- **Étape A (terminée, commit `bb04d3c`)** : lectures pures — nom,
+  ligne de confiance (badge/total_missions/success_rate), services du
+  prestataire, cohérence de la langue affichée au profil client — lues
+  en priorité depuis `GET /api/profile/{telegram_id}`, repli identique
+  à avant sur `db.py` si le backend ne répond pas. Zéro écriture
+  touchée. **Bug réel trouvé en revue** (`backend-parity-auditor`) et
+  corrigé : `load_profile_from_backend` (`telegram_bot/backend_client.py`)
+  propageait le `sqlite3.Row` de secours tel quel, alors que tous les
+  appelants font `.get()` dessus (dict uniquement) — `AttributeError` au
+  premier client qui ouvrait son profil backend indisponible, bug
+  préexistant depuis la Phase 3 pilote, aggravé sans être vu par cette
+  étape avant la revue. Corrigé à la source (`dict(fallback_user)`).
+- **Étape B (à faire)** : corriger le bug backend `profile()`
+  (`provider_missions` filtré sur la mauvaise colonne, confirmé), avec
+  ses propres tests backend, PUIS migrer
+  `dashboard.py::afficher_missions_prestataire`.
+- **Étape C (à faire)** : construire un vrai équivalent backend pour les
+  "services proposés" (modèle SQLAlchemy + migration + endpoints CRUD —
+  aujourd'hui zéro table, zéro endpoint côté backend).
+- **Étape D (à faire, la plus risquée)** : porter la logique de décision
+  de litige vers le backend, trancher l'algorithme de matching
+  (`find_matching_providers` legacy vs score backend différent), refaire
+  le schéma `callback_data` admin (basé sur l'id SQLite interne), migrer
+  enfin les lectures de solde wallet. Argent réel — à découper en
+  plusieurs sous-sessions, chacune revue séparément.
+
 ## Vérification obligatoire des prestataires (documents + validation admin)
 
 **Motif** : le produit se positionne sur la confiance ("WHERE TRUST MEETS SERVICE"),

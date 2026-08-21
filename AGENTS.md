@@ -327,10 +327,51 @@ Telegram réel — réponse confirmée par l'utilisateur. Le mode webhook
 fonctionne bout en bout, pas seulement en test synthétique.
 
 **Bug `sqlite3.Row` dans `afficher_missions_client` : corrigé et committé**
-(commit `0012891`, pas encore poussé au moment de la rédaction de cette
-note — vérifier `git log origin/feature/v5-migration..HEAD`), dans une
-session séparée qui a démarré depuis la tâche de suivi `spawn_task`
-laissée plus haut.
+(commit `0012891`), dans une session séparée qui a démarré depuis la
+tâche de suivi `spawn_task` laissée plus haut.
+
+**Chantier de coupure `db.py`, étape A : terminée et committée**
+(commit `bb04d3c`, `feat: lire le profil prestataire depuis le backend V5
+en priorité`). Audit complet fait avant de coder (3 agents d'exploration
++ vérification manuelle des fichiers cités) : le vrai périmètre est bien
+plus gros que "remplacer ~40 appels" — litiges, services proposés et
+stats admin n'ont **aucun** équivalent backend, un bug backend bloque la
+lecture des missions prestataire, et `find_matching_providers` a un
+algorithme de score différent côté backend. Roadmap complète (étapes A-D)
+documentée dans `V5_MIGRATION_PLAN.md`, section "Chantier de coupure
+db.py". Étape A codée : 4 sites de lecture pure (nom/trust-line/services
+prestataire, cohérence langue client) basculés backend-first avec repli
+identique à avant, zéro écriture touchée —
+`telegram_bot/mission.py::devis_message_recu`,
+`telegram_bot/payment.py::client_confirme_mission_terminee`,
+`telegram_bot/dashboard.py::afficher_services_prestataire`,
+`telegram_bot/registration.py::afficher_profil_client`. Point technique à
+retenir : `BotProvider.rating` (backend) n'est **jamais** alimenté, comme
+`providers.rating` dans `db.py` — le champ réellement recalculé
+(`crud._recompute_provider_stats`) est `average_rating`, d'où un mapping
+explicite plutôt qu'un forward direct du dict backend.
+
+**Bug réel trouvé par `backend-parity-auditor` en revue, corrigé avant
+commit** : `telegram_bot/backend_client.py::load_profile_from_backend`
+propageait `fallback_user` (un `sqlite3.Row` venant de `db.py`) tel quel
+dans `{"client": fallback_user, ...}`, alors que tous les appelants font
+`.get()` dessus (dict uniquement — `sqlite3.Row` n'a pas cette méthode).
+Résultat : `AttributeError` pour tout client ouvrant son profil pendant
+que le backend est indisponible — bug préexistant depuis la Phase 3
+pilote (commit `99c7526`), pas introduit par l'étape A, mais une
+troisième occurrence du même anti-pattern y avait été ajoutée sans le
+voir (le test écrit dans la foulée mockait `load_profile_from_backend`
+directement, court-circuitant le vrai chemin de repli — corrigé aussi,
+`test_afficher_profil_client_survives_backend_unavailable` exerce
+maintenant le vrai chemin). Correctif à la racine (fonction partagée,
+pas chaque appelant) : `load_profile_from_backend` normalise désormais
+`fallback_user` en dict avant de le renvoyer.
+
+**Prochaine étape — à décider avec l'utilisateur.** Étape A du chantier
+`db.py` terminée ; étapes B/C/D (détail dans `V5_MIGRATION_PLAN.md`)
+nécessitent chacune de construire du code backend avant de toucher au
+bot — à ne pas lancer sans validation explicite du périmètre, comme pour
+l'étape A.
 
 **Contexte produit à ne pas re-découvrir** : l'utilisateur a envoyé deux
 documents de spec (`D:\NEXIS_HUB_Spec_Technique_Bot_v4.docx` et
