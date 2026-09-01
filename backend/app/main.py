@@ -646,16 +646,26 @@ def profile(telegram_id: int):
     with SessionLocal() as db:
         user = db.get(BotUser, telegram_id)
         provider = db.get(BotProvider, telegram_id)
-        missions = [
+        client_missions = [
             _mission_to_dict(mission)
             for mission in db.query(BotMission).filter(BotMission.telegram_id == telegram_id).all()
         ]
+        provider_missions = []
+        for mission in db.query(BotMission).filter(BotMission.provider_telegram_id == telegram_id).all():
+            mission_data = _mission_to_dict(mission)
+            client = db.get(BotUser, mission.telegram_id)
+            # `get_provider_missions` dans db.py expose déjà ce champ grâce à
+            # sa jointure avec users ; le conserver dans le contrat V5 évite
+            # d'appauvrir l'affichage prestataire lors du basculement de lecture.
+            mission_data["client_name"] = client.first_name if client else None
+            provider_missions.append(mission_data)
+
         return {
             "telegram_id": telegram_id,
             "client": _user_to_dict(user) if user else None,
             "provider": _provider_to_dict(provider) if provider else None,
-            "client_missions": missions,
-            "provider_missions": missions,
+            "client_missions": client_missions,
+            "provider_missions": provider_missions,
             "service_requests": [],
             "profile_type": "client" if user else "provider" if provider else "guest",
         }

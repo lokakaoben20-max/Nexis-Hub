@@ -72,6 +72,17 @@ async def fetch_backend_missions(telegram_id: int) -> list[dict]:
     return profile.get("client_missions", []) if isinstance(profile, dict) else []
 
 
+async def fetch_backend_provider_missions(telegram_id: int) -> list[dict]:
+    """Retourne les missions attribuées au prestataire depuis le profil V5.
+
+    Une liste vide garde le même contrat que ``fetch_backend_missions`` :
+    l'appelant peut alors réutiliser les données SQLite locales si le backend
+    est indisponible ou ne contient pas encore de mission synchronisée.
+    """
+    profile = await fetch_backend_profile(telegram_id)
+    return profile.get("provider_missions", []) if isinstance(profile, dict) else []
+
+
 def mission_value(mission, key: str, default=None):
     """Read fields from either a SQLite Row or a backend V5 dictionary."""
     try:
@@ -101,13 +112,17 @@ def format_mission_client(mission) -> str:
 
 
 def format_mission_provider(mission) -> str:
-    service = SERVICES.get(mission["service"], mission["service"])
-    status = STATUS_LABELS.get(mission["status"], mission["status"])
-    payment_status = PAYMENT_STATUS_LABELS.get(mission["payment_status"], mission["payment_status"])
-    client = mission["client_name"] or "Client"
+    """Formate indifféremment une mission SQLite ou une mission du backend V5."""
+    service_key = mission_value(mission, "service", "")
+    status_key = mission_value(mission, "status", "")
+    payment_key = mission_value(mission, "payment_status", "")
+    service = SERVICES.get(service_key, service_key)
+    status = STATUS_LABELS.get(status_key, status_key)
+    payment_status = PAYMENT_STATUS_LABELS.get(payment_key, payment_key)
+    client = mission_value(mission, "client_name", "Client")
     return (
-        f"NXH-{mission['id']:04d} | {service}\n"
-        f"Client : {client} | Commune : {mission['commune']}\n"
+        f"NXH-{mission_id(mission):04d} | {service}\n"
+        f"Client : {client} | Commune : {mission_value(mission, 'commune', '')}\n"
         f"Statut : {status} | Paiement : {payment_status}"
     )
 
@@ -269,7 +284,9 @@ async def afficher_wallet_client(callback: CallbackQuery):
 @router.callback_query(F.data == "prest_missions")
 async def afficher_missions_prestataire(callback: CallbackQuery):
     lang = await get_provider_language(callback.from_user.id)
-    missions = get_provider_missions(callback.from_user.id)
+    local_missions = get_provider_missions(callback.from_user.id)
+    backend_missions = await fetch_backend_provider_missions(callback.from_user.id)
+    missions = backend_missions or local_missions
     if not missions:
         await callback.message.edit_text(
             get_message("provider_missions_empty", lang),

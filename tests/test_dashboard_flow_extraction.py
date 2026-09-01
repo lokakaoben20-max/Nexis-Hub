@@ -265,6 +265,38 @@ def test_afficher_missions_prestataire_shows_empty_state(tmp_path, monkeypatch):
     assert callback.message.edited_text is not None
 
 
+def test_afficher_missions_prestataire_prefers_backend_payload(tmp_path, monkeypatch):
+    _init_db(tmp_path)
+    _use_dummy_backend(monkeypatch)
+    telegram_id = 3009
+    db.create_provider(telegram_id, "+243800003009", "Prestataire", ["service_peinture"], ["Gombe"], language="fr")
+    monkeypatch.setattr(
+        dashboard,
+        "fetch_backend_profile",
+        lambda _telegram_id: _async_return(
+            {
+                "provider_missions": [
+                    {
+                        "mission_id": 42,
+                        "service": "service_peinture",
+                        "commune": "Gombe",
+                        "status": "in_progress",
+                        "payment_status": "paid_escrow",
+                        "client_name": "Client V5",
+                    }
+                ]
+            }
+        ),
+    )
+
+    callback = DummyCallback(telegram_id)
+    asyncio.run(dashboard.afficher_missions_prestataire(callback))
+
+    assert "NXH-0042" in callback.message.edited_text
+    assert "Client V5" in callback.message.edited_text
+    assert "En cours" in callback.message.edited_text
+
+
 def test_afficher_wallet_prestataire_requires_profile(tmp_path, monkeypatch):
     _init_db(tmp_path)
     _use_dummy_backend(monkeypatch)

@@ -372,6 +372,27 @@ def test_wallet_payment_succeeds_and_debits_balance(tmp_path, monkeypatch):
         assert profile["client"]["wallet_balance_usd"] == 100.0  # 200 - 100 (devis seul, plus de frais Tola)
 
 
+def test_profile_provider_missions_are_filtered_by_provider_not_client(tmp_path, monkeypatch):
+    """Régression backend-parity-auditor : provider_missions réutilisait le
+    même filtre que client_missions (BotMission.telegram_id) au lieu de
+    filtrer sur provider_telegram_id — un prestataire ne voyait jamais ses
+    missions assignées (ou, pire, celles d'un client au même telegram_id)."""
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+
+        client_profile = test_client.get("/api/profile/42").json()
+        provider_profile = test_client.get("/api/profile/7").json()
+
+        assert len(client_profile["client_missions"]) == 1
+        assert len(provider_profile["provider_missions"]) == 1
+        assert provider_profile["provider_missions"][0]["mission_id"] == 1001
+        assert provider_profile["provider_missions"][0]["client_name"] == "Client"
+        assert provider_profile["client_missions"] == [], "7 n'est pas client de la mission 1001"
+
+
 def _paid_escrow_payload(mission_id=1001, quote_id=501, amount=100.0, currency="USD", via_wallet=False):
     """Mêmes clés que `telegram_bot.backend_client.sync_payment_to_backend` quand
     `amounts` est fourni — reproduit ce que le bot envoie réellement après un
