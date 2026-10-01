@@ -367,11 +367,30 @@ maintenant le vrai chemin). Correctif à la racine (fonction partagée,
 pas chaque appelant) : `load_profile_from_backend` normalise désormais
 `fallback_user` en dict avant de le renvoyer.
 
-**Prochaine étape — à décider avec l'utilisateur.** Étape A du chantier
-`db.py` terminée ; étapes B/C/D (détail dans `V5_MIGRATION_PLAN.md`)
-nécessitent chacune de construire du code backend avant de toucher au
-bot — à ne pas lancer sans validation explicite du périmètre, comme pour
-l'étape A.
+**Étape B : terminée et poussée** (commit `c838383`). Bug backend
+`profile()` corrigé (`provider_missions` filtrait sur
+`BotMission.telegram_id` au lieu de `provider_telegram_id`) +
+`dashboard.py::afficher_missions_prestataire` migré vers ce endpoint.
+Vérifié avant de corriger : la Mini App a son propre `/api/profile/{id}`
+séparé (port 8001, `mini_app/app.py`), non affecté par ce fix backend
+V5 (port 8000).
+
+**Étape C : backend construit (modèle, migration, 4 endpoints CRUD pour
+les services proposés), mais pas encore câblé côté bot** —
+`telegram_bot/dashboard.py`/`admin.py` utilisent toujours `db.py` pour
+ce flow, aucune migration bot faite cette session. Détail et point à
+trancher avant bascule (garde "déjà traité" plus stricte côté backend
+que `db.py`) dans `V5_MIGRATION_PLAN.md`. Correctif de sécurité appliqué
+avant commit : `update_service_request_status` utilisait un
+SELECT-puis-check (race condition possible en Postgres avec deux PATCH
+simultanés) — remplacé par un UPDATE conditionnel atomique.
+
+**Prochaine étape — à décider avec l'utilisateur.** Étapes A et B du
+chantier `db.py` terminées ; étape C backend construite mais pas câblée
+côté bot ; étape D (détail dans `V5_MIGRATION_PLAN.md`) nécessite
+encore de construire du code backend (litiges) avant de toucher au bot
+— à ne pas lancer sans validation explicite du périmètre, comme pour
+les étapes précédentes.
 
 **Contexte produit à ne pas re-découvrir** : l'utilisateur a envoyé deux
 documents de spec (`D:\NEXIS_HUB_Spec_Technique_Bot_v4.docx` et

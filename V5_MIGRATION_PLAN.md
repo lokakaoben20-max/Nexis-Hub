@@ -329,13 +329,30 @@ trancher, pas un swap technique). Détail complet dans `AGENTS.md`.
   premier client qui ouvrait son profil backend indisponible, bug
   préexistant depuis la Phase 3 pilote, aggravé sans être vu par cette
   étape avant la revue. Corrigé à la source (`dict(fallback_user)`).
-- **Étape B (à faire)** : corriger le bug backend `profile()`
-  (`provider_missions` filtré sur la mauvaise colonne, confirmé), avec
-  ses propres tests backend, PUIS migrer
-  `dashboard.py::afficher_missions_prestataire`.
-- **Étape C (à faire)** : construire un vrai équivalent backend pour les
-  "services proposés" (modèle SQLAlchemy + migration + endpoints CRUD —
-  aujourd'hui zéro table, zéro endpoint côté backend).
+- **Étape B (terminée, commit `c838383`)** : bug backend `profile()`
+  corrigé (`provider_missions` filtrait sur la mauvaise colonne —
+  `BotMission.telegram_id` au lieu de `provider_telegram_id`), test
+  backend dédié, PUIS `dashboard.py::afficher_missions_prestataire`
+  migré vers ce endpoint corrigé (même pattern backend-first/repli
+  local que l'étape A). Vérifié avant correction : la Mini App a son
+  propre endpoint `/api/profile/{id}` séparé (port 8001), non affecté.
+- **Étape C (backend terminé, pas encore câblé côté bot)** : modèle
+  `BotServiceRequest` + migration Alembic + 4 endpoints CRUD pour les
+  "services proposés" (`backend/app/models.py`, `crud.py`, `main.py`,
+  `backend/tests/test_service_requests.py`). `telegram_bot/dashboard.py`/
+  `admin.py` utilisent encore `db.py` pour ce flow — pas de migration
+  bot dans cette session. **Point à trancher avant de câbler le bot
+  dessus** (trouvé par `backend-parity-auditor`) : le nouveau
+  `update_service_request_status` backend refuse de retraiter une
+  demande déjà acceptée/refusée (`ValueError`, 400), alors que
+  `db.py::update_service_request_status` écrase silencieusement sans
+  vérifier l'état actuel — comportement plus strict, volontaire mais
+  à valider avant bascule (un admin qui retente une action sur une
+  demande déjà traitée verrait une erreur 400 qu'il n'avait jamais vue
+  avant). Correctif appliqué en revue (`security-reviewer`) : le garde
+  anti-double-traitement utilisait un SELECT puis check Python
+  (race condition possible en Postgres avec deux PATCH simultanés) —
+  remplacé par un UPDATE conditionnel atomique.
 - **Étape D (à faire, la plus risquée)** : porter la logique de décision
   de litige vers le backend, trancher l'algorithme de matching
   (`find_matching_providers` legacy vs score backend différent), refaire
