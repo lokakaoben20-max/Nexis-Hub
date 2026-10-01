@@ -3,10 +3,11 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotTransaction, BotUser
+from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotTransaction, BotUser
 
 MODULE_B_SERVICES = {"service_plomberie", "service_electricite", "service_climatisation"}
 BADGE_SCORES = {"partner": 30, "expert": 20, "premium": 10, "verified": 5, "pending": 0}
+SERVICE_REQUEST_STATUSES = {"pending", "accepted", "rejected"}
 
 # Nombre de missions terminées à partir duquel le taux de succès devient un
 # signal exploitable dans le matching (en dessous, il n'est pas représentatif).
@@ -665,3 +666,96 @@ def find_missions_needing_reminder(db: Session) -> dict[str, list[BotMission]]:
 
     db.commit()
     return {"first": first_tier, "second": second_tier}
+
+
+def _service_request_to_dict(req: BotServiceRequest, provider: BotProvider | None = None) -> dict:
+    data = {
+        "id": req.id,
+        "provider_telegram_id": req.provider_telegram_id,
+        "service_name": req.service_name,
+        "description": req.description,
+        "status": req.status,
+        "admin_note": req.admin_note,
+        "created_at": req.created_at.isoformat() if req.created_at else None,
+        "reviewed_at": req.reviewed_at.isoformat() if req.reviewed_at else None,
+    }
+    if provider is not None:
+        data["provider_name"] = provider.full_name
+    return data
+
+
+def create_service_request(
+    db: Session,
+    provider_telegram_id: int,
+    service_name: str,
+    description: str = "",
+) -> BotServiceRequest:
+    provider = db.get(BotProvider, provider_telegram_id)
+    if provider is None:
+        raise ValueError("Prestataire introuvable")
+    req = BotServiceRequest(
+        provider_telegram_id=provider_telegram_id,
+        service_name=service_name,
+        description=description,
+        status="pending",
+    )
+    db.add(req)
+    db.commit()
+    db.refresh(req)
+    return req
+
+
+def get_provider_service_requests(db: Session, provider_telegram_id: int) -> list[BotServiceRequest]:
+    return (
+        db.query(BotServiceRequest)
+        .filter(BotServiceRequest.provider_telegram_id == provider_telegram_id)
+        .order_by(BotServiceRequest.id.desc())
+        .limit(10)
+        .all()
+    )
+
+
+def get_pending_service_requests(db: Session, limit: int = 10) -> list[tuple[BotServiceRequest, BotProvider]]:
+    return (
+        db.query(BotServiceRequest, BotProvider)
+        .join(BotProvider, BotProvider.telegram_id == BotServiceRequest.provider_telegram_id)
+        .filter(BotServiceRequest.status == "pending")
+        .order_by(BotServiceRequest.id.asc())
+        .limit(limit)
+        .all()
+    )
+
+
+def get_service_request_by_id(db: Session, request_id: int) -> tuple[BotServiceRequest, BotProvider] | None:
+    return (
+        db.query(BotServiceRequest, BotProvider)
+        .join(BotProvider, BotProvider.telegram_id == BotServiceRequest.provider_telegram_id)
+        .filter(BotServiceRequest.id == request_id)
+        .first()
+    )
+
+
+def update_service_request_status(
+    db: Session,
+    request_id: int,
+    status: str,
+    admin_note: str = "",
+) -> BotServiceRequest | None:
+    if status not in SERVICE_REQUEST_STATUSES:
+        raise ValueError("Statut de proposition invalide")
+    # UPDATE conditionnel atomique plutôt que SELECT puis check Python : en
+    # Postgres, deux PATCH simultanés pouvaient tous les deux lire "pending"
+    # avant le commit de l'autre et écraser le résultat sans erreur
+    # (ponytail : pas de verrou distribué, une seule colonne à protéger).
+    updated = (
+        db.query(BotServiceRequest)
+        .filter(BotServiceRequest.id == request_id, BotServiceRequest.status == "pending")
+        .update({"status": status, "admin_note": admin_note, "reviewed_at": datetime.utcnow()})
+    )
+    db.commit()
+    if updated == 0:
+        if db.get(BotServiceRequest, request_id) is None:
+            return None
+        raise ValueError("Cette proposition a déjà été traitée")
+    return db.get(BotServiceRequest, request_id)
+

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from backend.app import crud
 from backend.app.database import SessionLocal, init_db
-from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotTransaction, BotUser
+from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotTransaction, BotUser
 
 load_dotenv()
 BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
@@ -151,6 +151,17 @@ class ReviewCreatePayload(BaseModel):
     comment: str | None = None
 
 
+class ServiceRequestPayload(BaseModel):
+    provider_telegram_id: int
+    service_name: str
+    description: str = ""
+
+
+class ServiceRequestStatusPayload(BaseModel):
+    status: str
+    admin_note: str = ""
+
+
 def _user_to_dict(user: BotUser) -> dict:
     return {
         "telegram_id": user.telegram_id,
@@ -235,6 +246,22 @@ def _review_to_dict(review: BotReview) -> dict:
         "comment": review.comment,
         "created_at": review.created_at.isoformat() if review.created_at else None,
     }
+
+
+def _service_request_to_dict(req: BotServiceRequest, provider: BotProvider | None = None) -> dict:
+    data = {
+        "id": req.id,
+        "provider_telegram_id": req.provider_telegram_id,
+        "service_name": req.service_name,
+        "description": req.description,
+        "status": req.status,
+        "admin_note": req.admin_note,
+        "created_at": req.created_at.isoformat() if req.created_at else None,
+        "reviewed_at": req.reviewed_at.isoformat() if req.reviewed_at else None,
+    }
+    if provider is not None:
+        data["provider_name"] = provider.full_name
+    return data
 
 
 @app.get("/health")
@@ -641,6 +668,56 @@ def update_payment(payload: PaymentPayload):
         }
 
 
+@router.post("/api/bot/service-requests")
+def create_service_request(payload: ServiceRequestPayload):
+    with SessionLocal() as db:
+        try:
+            req = crud.create_service_request(
+                db,
+                provider_telegram_id=payload.provider_telegram_id,
+                service_name=payload.service_name,
+                description=payload.description,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"status": "ok", "service_request": _service_request_to_dict(req)}
+
+
+@router.get("/api/bot/service-requests/pending")
+def get_pending_service_requests(limit: int = 10):
+    with SessionLocal() as db:
+        results = crud.get_pending_service_requests(db, limit=limit)
+        serialized = [_service_request_to_dict(req, provider) for req, provider in results]
+        return {"status": "ok", "service_requests": serialized}
+
+
+@router.get("/api/bot/service-requests/{request_id}")
+def get_service_request(request_id: int):
+    with SessionLocal() as db:
+        result = crud.get_service_request_by_id(db, request_id)
+        if result is None:
+            raise HTTPException(status_code=404, detail="service_request_not_found")
+        req, provider = result
+        return {"status": "ok", "service_request": _service_request_to_dict(req, provider)}
+
+
+@router.patch("/api/bot/service-requests/{request_id}/status")
+def update_service_request_status(request_id: int, payload: ServiceRequestStatusPayload):
+    with SessionLocal() as db:
+        try:
+            req = crud.update_service_request_status(
+                db,
+                request_id=request_id,
+                status=payload.status,
+                admin_note=payload.admin_note,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if req is None:
+            raise HTTPException(status_code=404, detail="service_request_not_found")
+        return {"status": "ok", "service_request": _service_request_to_dict(req)}
+
+
 @router.get("/api/profile/{telegram_id}")
 def profile(telegram_id: int):
     with SessionLocal() as db:
@@ -660,13 +737,20 @@ def profile(telegram_id: int):
             mission_data["client_name"] = client.first_name if client else None
             provider_missions.append(mission_data)
 
+        service_requests = []
+        if provider:
+            service_requests = [
+                _service_request_to_dict(req)
+                for req in crud.get_provider_service_requests(db, telegram_id)
+            ]
+
         return {
             "telegram_id": telegram_id,
             "client": _user_to_dict(user) if user else None,
             "provider": _provider_to_dict(provider) if provider else None,
             "client_missions": client_missions,
             "provider_missions": provider_missions,
-            "service_requests": [],
+            "service_requests": service_requests,
             "profile_type": "client" if user else "provider" if provider else "guest",
         }
 
