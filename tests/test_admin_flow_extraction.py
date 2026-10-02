@@ -242,3 +242,79 @@ def test_admin_service_requests_lists_pending_only(tmp_path, monkeypatch):
     listed_ids = {int(text.split("SRV-")[1][:4]) for text in callback.message.answered_texts if "SRV-" in text}
     assert pending_id in listed_ids
     assert accepted_id not in listed_ids, "une proposition déjà traitée ne doit plus apparaître dans la file"
+
+
+# --- services proposés : décision unique + recopie backend (étape C) ---------
+
+
+def _pending_request(telegram_id, backend_request_id=None):
+    db.create_provider(telegram_id, f"+2438000{telegram_id}", "Proposeur", ["service_plomberie"], ["Gombe"], language="fr")
+    request_id = db.create_service_request(telegram_id, "Service exotique", "Description suffisamment longue.")
+    if backend_request_id is not None:
+        db.set_service_request_backend_id(request_id, backend_request_id)
+    return request_id
+
+
+def test_admin_cannot_decide_a_service_request_twice(tmp_path, monkeypatch):
+    """Avant l'étape C, un second clic (refuser après accepter) écrasait le
+    statut et renotifiait le prestataire. Désormais : alerte, rien ne change."""
+    _init_db(tmp_path)
+    _use_dummy_backend(monkeypatch)
+    telegram_id = 2010
+    request_id = _pending_request(telegram_id)
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+
+    bot = DummyBot()
+    asyncio.run(admin.admin_accept_service(DummyCallback(999, data=f"admin_accept_service_{request_id}", bot=bot)))
+    second = DummyCallback(999, data=f"admin_reject_service_{request_id}", bot=bot)
+    asyncio.run(admin.admin_reject_service(second))
+
+    assert db.get_service_request_by_id(request_id)["status"] == "accepted"
+    assert second.answered == "Cette proposition a déjà été traitée."
+    assert second.message.edited_text is None
+    assert len(bot.messages) == 1, "le prestataire ne doit être notifié qu'une fois"
+
+
+def test_admin_decision_is_mirrored_to_backend_when_backend_id_known(tmp_path, monkeypatch):
+    _init_db(tmp_path)
+    _use_dummy_backend(monkeypatch)
+    telegram_id = 2011
+    request_id = _pending_request(telegram_id, backend_request_id=55)
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+
+    asyncio.run(admin.admin_reject_service(DummyCallback(999, data=f"admin_reject_service_{request_id}")))
+
+    assert DummyAsyncClient.last_request == {
+        "method": "patch",
+        "url": f"{backend_client.BACKEND_BASE_URL}/api/bot/service-requests/55/status",
+        "json": {"status": "rejected", "admin_note": "Service non pris en charge pour le moment."},
+    }
+
+
+def test_admin_decision_without_backend_id_stays_local(tmp_path, monkeypatch):
+    """Proposition créée via la Mini App (jamais recopiée au backend) : la
+    décision s'applique en local sans appel backend."""
+    _init_db(tmp_path)
+    _use_dummy_backend(monkeypatch)
+    telegram_id = 2012
+    request_id = _pending_request(telegram_id)
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+
+    asyncio.run(admin.admin_accept_service(DummyCallback(999, data=f"admin_accept_service_{request_id}")))
+
+    assert db.get_service_request_by_id(request_id)["status"] == "accepted"
+    assert DummyAsyncClient.last_request is None
+
+
+def test_backend_request_id_column_added_to_existing_database(tmp_path):
+    db.DB_PATH = tmp_path / "old.db"
+    with db.get_connection() as conn:
+        conn.execute(
+            "CREATE TABLE service_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, provider_id INTEGER NOT NULL,"
+            " service_name TEXT NOT NULL, description TEXT NOT NULL, status TEXT DEFAULT 'pending',"
+            " admin_note TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)"
+        )
+    db.init_db()
+    with db.get_connection() as conn:
+        columns = [row[1] for row in conn.execute("PRAGMA table_info(service_requests)").fetchall()]
+    assert "backend_request_id" in columns

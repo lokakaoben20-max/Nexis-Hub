@@ -196,6 +196,54 @@ def test_full_service_request_flow_creates_pending_request(tmp_path, monkeypatch
     assert requests[0]["status"] == "pending"
 
 
+def _submit_service_request(telegram_id):
+    state = DummyState({"missing_service_name": "Service exotique"})
+    asyncio.run(dashboard.recevoir_description_service_manquant(
+        DummyMessage(telegram_id, text="Description suffisamment longue pour passer la validation."), state
+    ))
+    return db.get_provider_service_requests(telegram_id)
+
+
+def test_service_request_is_mirrored_to_backend_and_keeps_backend_id(tmp_path, monkeypatch):
+    """Étape C : la proposition est recopiée au backend et son id backend est
+    gardé en local, pour que la décision admin puisse suivre."""
+    _init_db(tmp_path)
+    _use_dummy_backend(monkeypatch)
+    telegram_id = 3010
+    db.create_provider(telegram_id, "+243800003010", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+    sent = []
+
+    async def fake_sync(provider_telegram_id, service_name, description=""):
+        sent.append((provider_telegram_id, service_name, description))
+        return {"status": "ok", "service_request": {"id": 77}}
+
+    monkeypatch.setattr(dashboard, "sync_service_request_to_backend", fake_sync)
+
+    requests = _submit_service_request(telegram_id)
+
+    assert sent == [(telegram_id, "Service exotique", "Description suffisamment longue pour passer la validation.")]
+    assert len(requests) == 1
+    assert requests[0]["backend_request_id"] == 77
+
+
+def test_service_request_still_created_locally_when_backend_unavailable(tmp_path, monkeypatch):
+    _init_db(tmp_path)
+    _use_dummy_backend(monkeypatch)
+    telegram_id = 3011
+    db.create_provider(telegram_id, "+243800003011", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+
+    async def failing_sync(*args, **kwargs):
+        raise RuntimeError("backend indisponible")
+
+    monkeypatch.setattr(dashboard, "sync_service_request_to_backend", failing_sync)
+
+    requests = _submit_service_request(telegram_id)
+
+    assert len(requests) == 1
+    assert requests[0]["status"] == "pending"
+    assert requests[0]["backend_request_id"] is None
+
+
 # --- missions / wallet client ---------------------------------------------
 
 

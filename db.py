@@ -207,6 +207,10 @@ def init_db():
             )
             """
         )
+        # Id de la même proposition côté backend V5 (étape C) : les deux bases
+        # numérotent indépendamment, et la Mini App ne crée qu'en local, donc
+        # NULL tant que la proposition n'a pas été recopiée au backend.
+        ensure_column(conn, "service_requests", "backend_request_id", "INTEGER")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS services (
@@ -817,6 +821,31 @@ def update_service_request_status(request_id: int, status: str, admin_note: str 
             """,
             (status, admin_note, request_id),
         )
+
+
+def set_service_request_backend_id(request_id: int, backend_request_id: int):
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE service_requests SET backend_request_id = ? WHERE id = ?",
+            (backend_request_id, request_id),
+        )
+
+
+def decide_pending_service_request(request_id: int, status: str, admin_note: str = "") -> bool:
+    """Comme `update_service_request_status`, mais seulement si la proposition
+    est encore `pending` (UPDATE conditionnel atomique, même règle que le
+    backend V5). Renvoie False si elle a déjà été traitée. Fonction ajoutée
+    plutôt que modifier l'existante, que les tests utilisent encore."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE service_requests
+            SET status = ?, admin_note = ?
+            WHERE id = ? AND status = 'pending'
+            """,
+            (status, admin_note, request_id),
+        )
+        return cursor.rowcount == 1
 
 
 def create_quote(

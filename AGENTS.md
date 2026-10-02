@@ -375,19 +375,15 @@ Vérifié avant de corriger : la Mini App a son propre `/api/profile/{id}`
 séparé (port 8001, `mini_app/app.py`), non affecté par ce fix backend
 V5 (port 8000).
 
-**Étape C : backend construit (modèle, migration, 4 endpoints CRUD pour
-les services proposés), mais pas encore câblé côté bot** —
-`telegram_bot/dashboard.py`/`admin.py` utilisent toujours `db.py` pour
-ce flow, aucune migration bot faite cette session. Détail et point à
-trancher avant bascule (garde "déjà traité" plus stricte côté backend
-que `db.py`) dans `V5_MIGRATION_PLAN.md`. Correctif de sécurité appliqué
-avant commit : `update_service_request_status` utilisait un
-SELECT-puis-check (race condition possible en Postgres avec deux PATCH
-simultanés) — remplacé par un UPDATE conditionnel atomique.
+**Étape C : terminée** (backend `9ba1de6`, câblage bot 2026-10-02).
+Création et décision admin des services proposés recopiées au backend,
+db.py reste la référence (la Mini App n'écrit que dans db.py). Id backend
+dans `service_requests.backend_request_id`. Décision admin désormais unique
+(`db.py::decide_pending_service_request`), règle stricte validée par
+l'utilisateur. Détail dans `V5_MIGRATION_PLAN.md`.
 
-**Prochaine étape — à décider avec l'utilisateur.** Étapes A et B du
-chantier `db.py` terminées ; étape C backend construite mais pas câblée
-côté bot ; étape D (détail dans `V5_MIGRATION_PLAN.md`) nécessite
+**Prochaine étape — à décider avec l'utilisateur.** Étapes A, B et C du
+chantier `db.py` terminées ; étape D (détail dans `V5_MIGRATION_PLAN.md`) nécessite
 encore de construire du code backend (litiges) avant de toucher au bot
 — à ne pas lancer sans validation explicite du périmètre, comme pour
 les étapes précédentes.

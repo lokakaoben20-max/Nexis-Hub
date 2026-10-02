@@ -188,6 +188,28 @@ async def sync_quote_reject_to_backend(backend_quote_id: int) -> dict:
         return response.json()
 
 
+async def sync_service_request_to_backend(provider_telegram_id: int, service_name: str, description: str = "") -> dict:
+    payload = {
+        "provider_telegram_id": provider_telegram_id,
+        "service_name": service_name,
+        "description": description,
+    }
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/service-requests", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+
+async def sync_service_request_status_to_backend(backend_request_id: int, status: str, admin_note: str = "") -> dict:
+    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+        response = await client.patch(
+            f"{BACKEND_BASE_URL}/api/bot/service-requests/{backend_request_id}/status",
+            json={"status": status, "admin_note": admin_note},
+        )
+        response.raise_for_status()
+        return response.json()
+
+
 async def sync_mission_status_to_backend(
     mission_id: int,
     status: str,

@@ -32,6 +32,7 @@ from aiogram.types import CallbackQuery, Message
 from dotenv import load_dotenv
 
 from db import (
+    decide_pending_service_request,
     get_admin_stats,
     get_all_providers,
     get_all_users,
@@ -46,7 +47,6 @@ from db import (
     set_provider_suspended,
     set_provider_verified,
     update_provider_status,
-    update_service_request_status,
 )
 from messages import get_message
 from telegram_bot.backend_client import (
@@ -58,6 +58,7 @@ from telegram_bot.backend_client import (
     sync_provider_suspended_to_backend,
     sync_provider_unsuspended_to_backend,
     sync_provider_verified_to_backend,
+    sync_service_request_status_to_backend,
 )
 from telegram_bot.keyboards import (
     SERVICES,
@@ -435,6 +436,28 @@ async def admin_service_requests(callback: CallbackQuery):
     await callback.answer()
 
 
+async def _decide_service_request(callback: CallbackQuery, request_id: int, status: str, admin_note: str):
+    """Applique la décision admin une seule fois (étape C).
+
+    Même règle que le backend V5 : une proposition déjà acceptée ou refusée
+    n'est plus retraitée. Avant, un second clic écrasait le statut et
+    renotifiait le prestataire. La décision locale fait foi (la Mini App lit
+    db.py) ; le backend est mis à jour quand la proposition y a été recopiée.
+    """
+    request = get_service_request_by_id(request_id)
+    if request is None:
+        await callback.answer("Proposition introuvable.", show_alert=True)
+        return None
+    if not decide_pending_service_request(request_id, status, admin_note):
+        await callback.answer("Cette proposition a déjà été traitée.", show_alert=True)
+        return None
+    if request["backend_request_id"] is not None:
+        await _safe_backend_call(
+            sync_service_request_status_to_backend(request["backend_request_id"], status, admin_note)
+        )
+    return request
+
+
 @router.callback_query(F.data.startswith("admin_accept_service_"))
 async def admin_accept_service(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -442,12 +465,10 @@ async def admin_accept_service(callback: CallbackQuery):
         return
 
     request_id = int(callback.data.replace("admin_accept_service_", "", 1))
-    request = get_service_request_by_id(request_id)
+    request = await _decide_service_request(callback, request_id, "accepted", "Accepté par Nexis.")
     if request is None:
-        await callback.answer("Proposition introuvable.", show_alert=True)
         return
 
-    update_service_request_status(request_id, "accepted", "Accepté par Nexis.")
     await callback.message.edit_text(
         "✅ <b>Service accepté</b>\n\n"
         f"Référence : <b>SRV-{request_id:04d}</b>\n"
@@ -606,12 +627,12 @@ async def admin_reject_service(callback: CallbackQuery):
         return
 
     request_id = int(callback.data.replace("admin_reject_service_", "", 1))
-    request = get_service_request_by_id(request_id)
+    request = await _decide_service_request(
+        callback, request_id, "rejected", "Service non pris en charge pour le moment."
+    )
     if request is None:
-        await callback.answer("Proposition introuvable.", show_alert=True)
         return
 
-    update_service_request_status(request_id, "rejected", "Service non pris en charge pour le moment.")
     await callback.message.edit_text(
         "❌ <b>Service refusé</b>\n\n"
         f"Référence : <b>SRV-{request_id:04d}</b>\n"

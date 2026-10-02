@@ -336,23 +336,35 @@ trancher, pas un swap technique). Détail complet dans `AGENTS.md`.
   migré vers ce endpoint corrigé (même pattern backend-first/repli
   local que l'étape A). Vérifié avant correction : la Mini App a son
   propre endpoint `/api/profile/{id}` séparé (port 8001), non affecté.
-- **Étape C (backend terminé, pas encore câblé côté bot)** : modèle
-  `BotServiceRequest` + migration Alembic + 4 endpoints CRUD pour les
-  "services proposés" (`backend/app/models.py`, `crud.py`, `main.py`,
-  `backend/tests/test_service_requests.py`). `telegram_bot/dashboard.py`/
-  `admin.py` utilisent encore `db.py` pour ce flow — pas de migration
-  bot dans cette session. **Point à trancher avant de câbler le bot
-  dessus** (trouvé par `backend-parity-auditor`) : le nouveau
-  `update_service_request_status` backend refuse de retraiter une
-  demande déjà acceptée/refusée (`ValueError`, 400), alors que
-  `db.py::update_service_request_status` écrase silencieusement sans
-  vérifier l'état actuel — comportement plus strict, volontaire mais
-  à valider avant bascule (un admin qui retente une action sur une
-  demande déjà traitée verrait une erreur 400 qu'il n'avait jamais vue
-  avant). Correctif appliqué en revue (`security-reviewer`) : le garde
-  anti-double-traitement utilisait un SELECT puis check Python
-  (race condition possible en Postgres avec deux PATCH simultanés) —
-  remplacé par un UPDATE conditionnel atomique.
+- **Étape C (terminée)** : modèle `BotServiceRequest` + migration Alembic
+  + 4 endpoints CRUD pour les "services proposés" (`backend/app/models.py`,
+  `crud.py`, `main.py`, `backend/tests/test_service_requests.py`), puis
+  câblage bot (2026-10-02) : la création côté prestataire
+  (`dashboard.py::recevoir_description_service_manquant`) et la décision
+  admin (`admin.py::_decide_service_request`) sont recopiées au backend.
+  **db.py reste la référence** pour ce flow, en lecture comme en écriture :
+  la Mini App crée et lit ses propositions uniquement dans db.py, donc lire
+  la liste depuis le backend ferait disparaître ses propositions et changer
+  les numéros SRV-. L'id backend est gardé dans la nouvelle colonne SQLite
+  `service_requests.backend_request_id` (NULL pour une proposition Mini App
+  ou si le backend était indisponible à la création ; la décision reste
+  alors locale). **Règle stricte validée par Ben** : une proposition déjà
+  acceptée/refusée n'est plus retraitée, ni côté backend ni côté bot
+  (`db.py::decide_pending_service_request`, UPDATE conditionnel ; avant, un
+  second clic écrasait le statut et renotifiait le prestataire) ; l'admin
+  voit "Cette proposition a déjà été traitée." Correctif appliqué en revue
+  (`security-reviewer`) côté backend : le garde anti-double-traitement
+  utilisait un SELECT puis check Python, remplacé par un UPDATE conditionnel
+  atomique. Reste pour basculer la lecture au backend : faire écrire la Mini
+  App au backend et recopier les propositions existantes (backfill). Ce
+  backfill devra aussi rattraper deux dérives possibles, invisibles
+  aujourd'hui car personne ne lit cette liste côté backend (trouvées par
+  `backend-parity-auditor`) : une décision admin dont le PATCH backend a
+  échoué (local `accepted`, Postgres encore `pending`), et une création
+  reçue par le backend dont la réponse a expiré (ligne Postgres orpheline,
+  `backend_request_id` NULL en local, risque de doublon si on recopie
+  naïvement toutes les lignes sans id backend). `audit_backend_parity.py`
+  ne compare pas encore ce flow.
 - **Étape D (à faire, la plus risquée)** : porter la logique de décision
   de litige vers le backend, trancher l'algorithme de matching
   (`find_matching_providers` legacy vs score backend différent), refaire

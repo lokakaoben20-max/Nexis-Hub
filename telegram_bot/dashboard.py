@@ -35,9 +35,16 @@ from db import (
     get_provider_service_requests,
     get_user_by_telegram_id,
     get_user_missions,
+    set_service_request_backend_id,
 )
 from messages import get_message
-from telegram_bot.backend_client import fetch_backend_profile, get_provider_language, get_user_language
+from telegram_bot.backend_client import (
+    _safe_backend_call,
+    fetch_backend_profile,
+    get_provider_language,
+    get_user_language,
+    sync_service_request_to_backend,
+)
 from telegram_bot.keyboards import SERVICES, _rich_cell, clavier_client, clavier_prestataire, clavier_services_actions
 
 router = Router()
@@ -219,7 +226,19 @@ async def recevoir_description_service_manquant(message: Message, state: FSMCont
         service_name=data["missing_service_name"],
         description=description,
     )
+    # Vidé avant l'appel backend (jusqu'à 5 s) : un second message pendant
+    # l'attente ne doit pas créer une seconde proposition.
     await state.clear()
+    # Double écriture (étape C) : la Mini App crée et lit ses propositions
+    # uniquement dans db.py, donc l'écriture locale reste la référence (et le
+    # numéro SRV- affiché). On garde l'id backend pour que la décision admin
+    # puisse être recopiée au backend.
+    backend_result = await _safe_backend_call(
+        sync_service_request_to_backend(message.from_user.id, data["missing_service_name"], description)
+    )
+    backend_request = (backend_result or {}).get("service_request") if isinstance(backend_result, dict) else None
+    if isinstance(backend_request, dict) and backend_request.get("id") is not None:
+        set_service_request_backend_id(request_id, backend_request["id"])
     await message.answer(
         get_message(
             "provider_missing_service_created",
