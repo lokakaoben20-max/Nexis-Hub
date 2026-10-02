@@ -4,6 +4,31 @@ Ce fichier est le point d'entrée commun pour **tout outil IA** qui travaille su
 (remplace l'ancien `MANUS_HANDOFF.md`, qui était spécifique à un seul outil — son contenu
 a été fusionné ici).
 
+## Exigence de qualité (non négociable, demandée par Ben le 2026-10-02)
+
+Nexis Hub manipule de l'argent réel. Ben veut un produit très solide et n'acceptera
+jamais de solution provisoire. Cette exigence s'applique à tout agent et à toute tâche,
+et passe avant la rapidité.
+
+- **Aucune solution provisoire.** Pas de contournement, pas de pansement, pas d'état
+  intermédiaire fragile, pas de « on corrigera plus tard ».
+- **Proposer la bonne solution**, même si elle est plus grosse que prévu : avec son
+  découpage en étapes, ses risques et les tests qui la prouvent. Chaque étape livrée doit
+  être complète et correcte en elle-même.
+- **Si ce n'est pas faisable proprement maintenant, le dire** au lieu de livrer un
+  demi-correctif : expliquer ce qui manque (décision, accès, prérequis) et ce qu'il faut
+  pour le faire correctement.
+- **Toute règle qui touche à l'argent** (paiement, escrow, wallet, commission, litige,
+  remboursement, versement) :
+  - a **une seule source de vérité** ;
+  - est **atomique** (tout ou rien, jamais à moitié écrite) ;
+  - est **idempotente** (un double clic, un rejeu ou une relance ne paie jamais deux fois) ;
+  - est **testée**, y compris les cas d'échec et de panne ;
+  - **échoue en sécurité** : en cas de doute ou de service injoignable, on refuse
+    l'opération plutôt que de risquer un mauvais mouvement d'argent.
+- Une recommandation présentée à Ben est la solution définitive visée, jamais une
+  étape « en attendant ».
+
 ## Objectif du projet
 
 Ce dépôt contient un bot Telegram pour Nexis Hub avec une migration progressive vers une
