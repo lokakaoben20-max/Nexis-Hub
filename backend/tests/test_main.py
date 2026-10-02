@@ -53,7 +53,7 @@ def _credit_client_wallet(database_module, telegram_id, amount, currency="USD"):
 
     with database_module.SessionLocal() as db:
         account_id = ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
-        ledger.record_opening_balance(db, ledger.CLIENT, account_id, currency, amount)
+        ledger.record_opening_balance(db, account_id, currency, amount)
         db.commit()
 
 
@@ -353,7 +353,7 @@ def test_full_escrow_and_release_flow(tmp_path, monkeypatch):
 
         provider_profile = test_client.get("/api/profile/7").json()
         assert provider_profile["provider"]["wallet_balance_usd"] == 90.0
-        assert test_client.get("/api/bot/wallets/7").json()["provider"]["wallet_balance_usd"] == 90.0
+        assert test_client.get("/api/bot/wallets/7").json()["wallet"]["wallet_balance_usd"] == 90.0
 
 
 def test_wallet_payment_fails_when_balance_insufficient(tmp_path, monkeypatch):
@@ -431,8 +431,8 @@ def test_dispute_freezes_funds_and_admin_split_pays_both_parties(tmp_path, monke
         assert resolved.json()["money"]["settlement"]["provider_amount"] == "45.00"
         assert resolved.json()["money"]["settlement"]["client_amount"] == "45.00"
         assert resolved.json()["money"]["settlement"]["platform_amount"] == "10.00"
-        assert test_client.get("/api/bot/wallets/7").json()["provider"]["wallet_balance_usd"] == 45.0
-        assert test_client.get("/api/bot/wallets/42").json()["client"]["wallet_balance_usd"] == 45.0
+        assert test_client.get("/api/bot/wallets/7").json()["wallet"]["wallet_balance_usd"] == 45.0
+        assert test_client.get("/api/bot/wallets/42").json()["wallet"]["wallet_balance_usd"] == 45.0
 
         again = test_client.post(
             "/api/bot/missions/1001/dispute/resolve",

@@ -304,9 +304,9 @@ async def resolve_dispute(mission_id: int, decision: str, admin_telegram_id: int
 
 
 async def fetch_wallets(telegram_id: int) -> dict | None:
-    """Soldes client et prestataire, lus dans le registre. None si le backend
-    ne répond pas : l'écran affiche alors « solde indisponible », jamais un
-    chiffre local."""
+    """Wallet de la personne (un seul, qu'elle soit cliente, prestataire ou
+    les deux), lu dans le registre. None si le backend ne répond pas : l'écran
+    affiche alors « solde indisponible », jamais un chiffre local."""
     try:
         async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
             response = await client.get(f"{BACKEND_BASE_URL}/api/bot/wallets/{telegram_id}")
@@ -328,10 +328,9 @@ def money_failure_text(mission_id: int, error: Exception, lang: str) -> str:
     return get_message("money_backend_unavailable", lang)
 
 
-def wallet_balance(wallets: dict | None, role: str, currency: str) -> float | None:
-    """Solde d'un rôle (`client`/`provider`) dans une devise, ou None si
-    inconnu (backend injoignable ou compte absent du backend)."""
-    entity = (wallets or {}).get(role)
+def wallet_balance(wallets: dict | None, currency: str) -> float | None:
+    """Solde dans une devise, ou None si inconnu (backend injoignable)."""
+    entity = (wallets or {}).get("wallet")
     if not isinstance(entity, dict):
         return None
     value = entity.get("wallet_balance_usd" if currency == "USD" else "wallet_balance_cdf")

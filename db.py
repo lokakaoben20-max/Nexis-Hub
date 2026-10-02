@@ -871,6 +871,11 @@ def create_quote(
     provider = get_provider_by_telegram_id(provider_telegram_id)
     if provider is None:
         raise ValueError("Prestataire introuvable pour ce devis")
+    mission = get_mission_by_id(mission_id)
+    if mission is not None and mission["client_telegram_id"] == provider_telegram_id:
+        # Un prestataire peut commander comme client, jamais chiffrer sa
+        # propre mission (le backend refuse aussi devis et paiement).
+        raise ValueError("Vous ne pouvez pas faire de devis sur votre propre mission")
 
     with get_connection() as conn:
         cursor = conn.execute(

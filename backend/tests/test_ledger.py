@@ -71,7 +71,7 @@ def disputed(db, mission_id=1, **kwargs):
 def bal(db, account_type, account_id, currency="USD"):
     """Pour un client ou un prestataire, `account_id` est le telegram_id : on
     passe par son compte Nexis, comme le reste du système."""
-    if account_type in (ledger.CLIENT, ledger.PROVIDER):
+    if account_type == ledger.WALLET:
         account_id = ledger.account_id_for(db, ledger.TELEGRAM, account_id)
         if account_id is None:
             return money(0)
@@ -80,7 +80,7 @@ def bal(db, account_type, account_id, currency="USD"):
 
 def open_wallet(db, telegram_id, amount, currency="USD"):
     account_id = ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
-    ledger.record_opening_balance(db, ledger.CLIENT, account_id, currency, amount)
+    ledger.record_opening_balance(db, account_id, currency, amount)
     db.commit()
 
 
@@ -168,7 +168,7 @@ def test_wallet_payment_is_refused_when_the_balance_is_short_and_writes_nothing(
 
     assert db.get(BotMission, 3) is None
     assert operations(db, 3) == []
-    assert bal(db, ledger.CLIENT, CLIENT_ID) == money("99.99")
+    assert bal(db, ledger.WALLET, CLIENT_ID) == money("99.99")
 
 
 def test_wallet_payment_debits_the_client_wallet(db):
@@ -176,7 +176,7 @@ def test_wallet_payment_debits_the_client_wallet(db):
 
     fund(db, method="wallet")
 
-    assert bal(db, ledger.CLIENT, CLIENT_ID) == money(150)
+    assert bal(db, ledger.WALLET, CLIENT_ID) == money(150)
     assert bal(db, ledger.ESCROW, 1) == money(100)
     assert ledger.mission_money_state(db, 1)["funding"]["reference"] == "WLT-0005"
     assert_books_balanced(db)
@@ -263,7 +263,7 @@ def test_client_confirmation_pays_the_provider_net_and_the_platform_commission(d
     mission = ledger.confirm_completion(db, 1, CLIENT_ID)
 
     assert (mission.status, mission.payment_status) == ("completed", "released")
-    assert bal(db, ledger.PROVIDER, PROVIDER_ID) == money(85)
+    assert bal(db, ledger.WALLET, PROVIDER_ID) == money(85)
     assert bal(db, ledger.PLATFORM, None) == money(15)
     assert bal(db, ledger.ESCROW, 1) == money(0)
     assert db.get(BotProvider, PROVIDER_ID).total_missions == 1
@@ -275,7 +275,7 @@ def test_confirming_twice_pays_once(db):
     ledger.confirm_completion(db, 1, CLIENT_ID)
     ledger.confirm_completion(db, 1, CLIENT_ID)
 
-    assert bal(db, ledger.PROVIDER, PROVIDER_ID) == money(90)
+    assert bal(db, ledger.WALLET, PROVIDER_ID) == money(90)
     assert len(operations(db)) == 2
 
 
@@ -297,7 +297,7 @@ def test_auto_release_waits_24_hours(db):
     mission.status_changed_at = mission.status_changed_at - timedelta(hours=25)
     db.commit()
     assert ledger.auto_release(db, 1).payment_status == "released"
-    assert bal(db, ledger.PROVIDER, PROVIDER_ID) == money(90)
+    assert bal(db, ledger.WALLET, PROVIDER_ID) == money(90)
 
 
 # --- Litige ---------------------------------------------------------------------
@@ -316,7 +316,7 @@ def test_dispute_freezes_the_escrow(db):
     refused("mission_disputed", lambda: ledger.confirm_completion(db, 1, CLIENT_ID))
     refused("mission_disputed", lambda: ledger.auto_release(db, 1))
     assert bal(db, ledger.ESCROW, 1) == money(100)
-    assert bal(db, ledger.PROVIDER, PROVIDER_ID) == money(0)
+    assert bal(db, ledger.WALLET, PROVIDER_ID) == money(0)
 
 
 def test_dispute_can_be_opened_from_any_unsettled_paid_state(db):
@@ -351,9 +351,9 @@ def test_full_refund_returns_everything_to_the_client_fees_included(db):
     mission = ledger.resolve_dispute(db, 1, decision="refund", admin_telegram_id=1)
 
     assert (mission.status, mission.payment_status) == ("cancelled", "refunded")
-    assert bal(db, ledger.CLIENT, CLIENT_ID) == money(100)
+    assert bal(db, ledger.WALLET, CLIENT_ID) == money(100)
     assert bal(db, ledger.PLATFORM, None) == money(0)
-    assert bal(db, ledger.PROVIDER, PROVIDER_ID) == money(0)
+    assert bal(db, ledger.WALLET, PROVIDER_ID) == money(0)
     assert_books_balanced(db)
 
 
@@ -363,7 +363,7 @@ def test_admin_release_pays_the_provider_like_a_confirmation(db):
     mission = ledger.resolve_dispute(db, 1, decision="release", admin_telegram_id=1)
 
     assert (mission.status, mission.payment_status) == ("completed", "released")
-    assert bal(db, ledger.PROVIDER, PROVIDER_ID) == money(90)
+    assert bal(db, ledger.WALLET, PROVIDER_ID) == money(90)
     assert bal(db, ledger.PLATFORM, None) == money(10)
 
 
@@ -377,8 +377,8 @@ def test_split_shares_the_provider_net_and_the_platform_keeps_its_commission(db,
     mission = ledger.resolve_dispute(db, 1, decision="split", provider_percentage=percentage, admin_telegram_id=1)
 
     assert (mission.status, mission.payment_status) == ("completed", "split")
-    assert bal(db, ledger.PROVIDER, PROVIDER_ID) == money(provider)
-    assert bal(db, ledger.CLIENT, CLIENT_ID) == money(client)
+    assert bal(db, ledger.WALLET, PROVIDER_ID) == money(provider)
+    assert bal(db, ledger.WALLET, CLIENT_ID) == money(client)
     assert bal(db, ledger.PLATFORM, None) == money(10)
     assert bal(db, ledger.ESCROW, 1) == money(0)
     settlement = ledger.mission_money_state(db, 1)["settlement"]
@@ -399,8 +399,8 @@ def test_a_dispute_is_settled_once(db):
     refused("already_settled", lambda: ledger.resolve_dispute(db, 1, decision="refund", admin_telegram_id=1))
     refused("already_settled", lambda: ledger.resolve_dispute(db, 1, decision="split", provider_percentage=60, admin_telegram_id=1))
 
-    assert bal(db, ledger.PROVIDER, PROVIDER_ID) == money(45)
-    assert bal(db, ledger.CLIENT, CLIENT_ID) == money(45)
+    assert bal(db, ledger.WALLET, PROVIDER_ID) == money(45)
+    assert bal(db, ledger.WALLET, CLIENT_ID) == money(45)
 
 
 def test_only_a_disputed_mission_can_be_resolved(db):
@@ -415,7 +415,7 @@ def test_wallet_refund_can_pay_a_later_mission(db):
 
     fund(db, mission_id=2, method="wallet", quote_ref=8)
 
-    assert bal(db, ledger.CLIENT, CLIENT_ID) == money(0)
+    assert bal(db, ledger.WALLET, CLIENT_ID) == money(0)
     assert bal(db, ledger.ESCROW, 2) == money(100)
     assert_books_balanced(db)
 
@@ -430,7 +430,53 @@ def test_wallets_belong_to_a_channel_neutral_nexis_account(db):
     db.add(ledger.ChannelIdentity(account_id=account_id, channel="whatsapp", external_id="+243810000000"))
     db.commit()
 
-    assert ledger.wallet_balances(db, ledger.CLIENT, "whatsapp", "+243810000000")["USD"] == money(100)
-    entries = db.query(LedgerEntry).filter(LedgerEntry.account_type == ledger.CLIENT).all()
+    assert ledger.wallet_balances(db, "whatsapp", "+243810000000")["USD"] == money(100)
+    entries = db.query(LedgerEntry).filter(LedgerEntry.account_type == ledger.WALLET).all()
     assert {entry.account_id for entry in entries} == {account_id}
     assert db.get(BotMission, 1).client_account_id == account_id
+
+
+def test_one_person_has_a_single_wallet_whether_client_or_provider(db):
+    """Le prestataire 7 commande à son tour comme client : son wallet est le
+    même, il peut payer avec ce qu'il a gagné."""
+    finished(db)
+    ledger.confirm_completion(db, 1, CLIENT_ID)
+    db.add(BotUser(telegram_id=PROVIDER_ID, first_name="Prestataire"))
+    db.commit()
+
+    ledger.fund_mission(
+        db,
+        2,
+        method="wallet",
+        client_telegram_id=PROVIDER_ID,
+        provider_telegram_id=CLIENT_ID,
+        quote_ref=9,
+        amount=40,
+        currency="USD",
+        urgent=False,
+        service="service_plomberie",
+        commune="Gombe",
+    )
+
+    assert bal(db, ledger.WALLET, PROVIDER_ID) == money(50)
+
+
+def test_a_provider_can_never_be_paid_for_their_own_mission(db):
+    refused(
+        "provider_is_client",
+        lambda: ledger.fund_mission(
+            db,
+            1,
+            method="mobile_money",
+            client_telegram_id=CLIENT_ID,
+            provider_telegram_id=CLIENT_ID,
+            quote_ref=1,
+            amount=10,
+            currency="USD",
+            urgent=False,
+            service="service_plomberie",
+            commune="Gombe",
+        ),
+    )
+    db.rollback()
+    assert db.query(MoneyOperation).count() == 0

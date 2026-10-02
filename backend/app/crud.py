@@ -263,6 +263,10 @@ def create_quote(
     mission = db.get(BotMission, mission_id)
     if mission is None:
         return None
+    if mission.telegram_id == provider_telegram_id:
+        # Un prestataire peut commander comme client, jamais chiffrer sa
+        # propre mission (le paiement le refuserait aussi : ledger).
+        raise ValueError("provider_is_client")
     quote = BotQuote(
         mission_id=mission_id,
         provider_telegram_id=provider_telegram_id,

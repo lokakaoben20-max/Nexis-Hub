@@ -147,9 +147,10 @@ class ServiceRequestStatusPayload(BaseModel):
     admin_note: str = ""
 
 
-def _wallet_fields(db, account_type: str, telegram_id: int) -> dict:
+def _wallet_fields(db, telegram_id: int) -> dict:
     # Calculés depuis le registre, seule source de vérité (backend/app/ledger.py).
-    balances = ledger.wallet_balances(db, account_type, ledger.TELEGRAM, telegram_id)
+    # Un seul wallet par personne, qu'elle soit cliente, prestataire ou les deux.
+    balances = ledger.wallet_balances(db, ledger.TELEGRAM, telegram_id)
     return {"wallet_balance_usd": float(balances["USD"]), "wallet_balance_cdf": float(balances["CDF"])}
 
 
@@ -159,7 +160,7 @@ def _user_to_dict(user: BotUser, db) -> dict:
         "first_name": user.first_name,
         "phone_number": user.phone_number,
         "language": user.language,
-        **_wallet_fields(db, ledger.CLIENT, user.telegram_id),
+        **_wallet_fields(db, user.telegram_id),
         "total_missions": user.total_missions,
     }
 
@@ -184,7 +185,7 @@ def _provider_to_dict(provider: BotProvider, db) -> dict:
         "is_active": provider.is_active,
         "is_suspended": provider.is_suspended,
         "consecutive_ignored": provider.consecutive_ignored,
-        **_wallet_fields(db, ledger.PROVIDER, provider.telegram_id),
+        **_wallet_fields(db, provider.telegram_id),
         "id_document_file_id": provider.id_document_file_id,
         "selfie_file_id": provider.selfie_file_id,
         "portfolio_file_ids": provider.portfolio_file_ids,
@@ -408,15 +409,18 @@ def rank_providers(payload: ProviderRankPayload):
 @router.post("/api/bot/quotes")
 def create_quote(payload: QuoteCreatePayload):
     with SessionLocal() as db:
-        quote = crud.create_quote(
-            db,
-            mission_id=payload.mission_id,
-            provider_telegram_id=payload.provider_telegram_id,
-            amount=payload.amount,
-            currency=payload.currency,
-            delay_hours=payload.delay_hours,
-            message=payload.message,
-        )
+        try:
+            quote = crud.create_quote(
+                db,
+                mission_id=payload.mission_id,
+                provider_telegram_id=payload.provider_telegram_id,
+                amount=payload.amount,
+                currency=payload.currency,
+                delay_hours=payload.delay_hours,
+                message=payload.message,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
         if quote is None:
             raise HTTPException(status_code=404, detail="mission_not_found")
         return {"status": "ok", "quote": _quote_to_dict(quote)}
@@ -551,14 +555,7 @@ def get_mission(mission_id: int):
 @router.get("/api/bot/wallets/{telegram_id}")
 def get_wallets(telegram_id: int):
     with SessionLocal() as db:
-        client = db.get(BotUser, telegram_id)
-        provider = db.get(BotProvider, telegram_id)
-        return {
-            "status": "ok",
-            "telegram_id": telegram_id,
-            "client": _wallet_fields(db, ledger.CLIENT, telegram_id) if client else None,
-            "provider": _wallet_fields(db, ledger.PROVIDER, telegram_id) if provider else None,
-        }
+        return {"status": "ok", "telegram_id": telegram_id, "wallet": _wallet_fields(db, telegram_id)}
 
 
 @router.post("/api/bot/service-requests")

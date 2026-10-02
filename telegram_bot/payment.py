@@ -84,7 +84,7 @@ async def client_accepte_devis(callback: CallbackQuery):
     total_client = quote["amount"]
 
     client_lang = await get_user_language(callback.from_user.id)
-    balance = wallet_balance(await fetch_wallets(callback.from_user.id), "client", quote["currency"])
+    balance = wallet_balance(await fetch_wallets(callback.from_user.id), quote["currency"])
 
     try:
         await callback.message.edit_text(

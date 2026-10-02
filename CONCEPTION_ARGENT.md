@@ -19,6 +19,29 @@ porte elle-même les informations nécessaires (mission, client, prestataire,
 montant, devise, urgence), le backend ne dépend donc d'aucune recopie
 antérieure.
 
+## Comptes Nexis : l'argent ne dépend d'aucun canal
+
+Décidé par Ben le 2026-10-02 (fil « Architecture du bot WhatsApp ») : les
+clients pourront passer par WhatsApp ou Telegram, les prestataires
+uniquement par Telegram, la Mini App ou la future application.
+
+- `accounts` : une personne pour Nexis Hub. Elle peut être cliente,
+  prestataire ou les deux, avec **un seul wallet**.
+- `channel_identities` : une porte d'entrée vers un compte (`telegram` +
+  telegram_id aujourd'hui, `whatsapp` + wa_id demain). Unique sur (canal,
+  identifiant) et un seul canal de chaque type par compte.
+- Le registre ne connaît que l'identifiant du compte, jamais un identifiant
+  Telegram ou WhatsApp. Ajouter WhatsApp, c'est rattacher une identité au
+  compte : aucun mouvement d'argent à migrer.
+- Chaque mission payée retient les comptes du client et du prestataire
+  (`client_account_id`, `provider_account_id`) ; le règlement crédite ces
+  comptes, quel que soit le canal.
+- Un prestataire peut commander comme client, jamais sur sa propre mission :
+  le backend refuse le devis et le paiement (`provider_is_client`).
+- Les autres attributs du compte (rôles, numéro vérifié, langue), la liaison
+  entre canaux et le passage des missions à `account_id` relèvent du chantier
+  d'identité WhatsApp ; ils étendent ces tables sans toucher au registre.
+
 ## Registre (ledger) en partie double
 
 Deux tables, écrites uniquement par `backend/app/ledger.py` :
@@ -40,8 +63,7 @@ Comptes :
 | Compte | Identifiant | Rôle |
 | --- | --- | --- |
 | `external` | — | argent venu de l'extérieur (Mobile Money) |
-| `client` | telegram_id | wallet client |
-| `provider` | telegram_id | wallet prestataire |
+| `wallet` | id du compte Nexis | wallet unique de la personne |
 | `escrow` | mission_id | argent bloqué d'une mission |
 | `platform` | — | commissions de Nexis Hub |
 
@@ -58,10 +80,10 @@ reçoit le devis moins la commission.
 | Opération | Mouvements |
 | --- | --- |
 | Paiement Mobile Money | external −total, escrow +total |
-| Paiement wallet | client −total, escrow +total (refusé si solde insuffisant) |
-| Libération (client confirme, auto 24 h, admin « payer le prestataire ») | escrow −total, provider +net, platform +commission |
-| Remboursement total (admin) | escrow −total, client +total (frais compris) |
-| Partage à p % (admin) | escrow −total, provider +net×p, client +net×(1−p), platform +commission |
+| Paiement wallet | wallet client −total, escrow +total (refusé si solde insuffisant) |
+| Libération (client confirme, auto 24 h, admin « payer le prestataire ») | escrow −total, wallet prestataire +net, platform +commission |
+| Remboursement total (admin) | escrow −total, wallet client +total (frais compris) |
+| Partage à p % (admin) | escrow −total, wallet prestataire +net×p, wallet client +net×(1−p), platform +commission |
 
 États d'une mission payée (`status` / `payment_status`) :
 
@@ -99,12 +121,12 @@ Remplacent les anciens endpoints de recopie (`/api/bot/payments`,
 - `POST /api/bot/missions/{id}/dispute`
 - `POST /api/bot/missions/{id}/dispute/resolve` (`refund`, `release`, `split` + pourcentage, admin)
 - `GET /api/bot/missions/{id}`
-- `GET /api/bot/wallets/{telegram_id}`
+- `GET /api/bot/wallets/{telegram_id}` (résout l'identité Telegram vers le compte Nexis)
 
 Refus métier : HTTP 409 (ou 404 / 403) avec un code stable (`already_paid`,
 `insufficient_balance`, `not_paid`, `invalid_state`, `mission_disputed`,
 `already_settled`, `not_mission_client`, `not_mission_provider`,
-`invalid_percentage`…) et l'état courant de la mission, que le bot recopie.
+`provider_is_client`, `invalid_percentage`…) et l'état courant de la mission, que le bot recopie.
 
 ## Bot
 
@@ -124,9 +146,11 @@ Refus métier : HTTP 409 (ou 404 / 403) avec un code stable (`already_paid`,
 
 ## Migration des données
 
-Migration Alembic : création des deux tables et des colonnes de litige
-(`dispute_opened_at`, `dispute_deadline`) ; chaque solde wallet existant
-devient une opération « solde d'ouverture » (external → wallet) ; chaque
+Migration Alembic : création des comptes Nexis (un par telegram_id connu,
+avec son identité `telegram`), des deux tables du registre et des colonnes
+de litige et de comptes des missions ; le solde client et le solde
+prestataire d'une même personne sont additionnés dans son wallet unique, en
+une opération « solde d'ouverture » (external → wallet) ; chaque
 mission encore en escrow reçoit son opération de paiement ; puis les colonnes
 de solde sont supprimées. `bot_transactions` est conservée en lecture seule
 (historique), plus jamais écrite. Côté SQLite, colonnes de solde et table
@@ -144,7 +168,9 @@ de solde sont supprimées. `bot_transactions` est conservée en lecture seule
 ## Tests
 
 - Règles du registre : chaque opération, sommes nulles, soldes, arrondis,
-  partage aux bornes (0 %, 100 %, décimales), remboursement total.
+  partage aux bornes (0 %, 100 %, décimales), remboursement total, wallet
+  unique client et prestataire, refus d'un prestataire sur sa propre mission,
+  wallet retrouvé par un autre canal rattaché au même compte.
 - Idempotence et concurrence : double paiement, double règlement, paiement
   wallet pendant un autre débit, rejeu identique.
 - Sécurité : mauvais client, mauvais prestataire, litige après règlement,

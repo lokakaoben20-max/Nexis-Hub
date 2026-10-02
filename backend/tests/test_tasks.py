@@ -124,7 +124,7 @@ def test_release_auto_confirmed_missions_only_after_24h(monkeypatch, tmp_path):
     with database_module.SessionLocal() as db:
         assert db.get(models.BotMission, 1).status == "completed"
         assert db.get(models.BotMission, 2).status == "awaiting_confirmation"
-        assert ledger.balance(db, ledger.PROVIDER, 7, "USD") == ledger.to_money("9.00")
+        assert ledger.wallet_balances(db, ledger.TELEGRAM, 7)["USD"] == ledger.to_money("9.00")
 
     # Une notification au client et une au prestataire, pour la seule mission libérée.
     assert len(sent) == 2
@@ -150,7 +150,7 @@ def test_auto_release_never_pays_a_disputed_mission(monkeypatch, tmp_path):
 
     with database_module.SessionLocal() as db:
         assert db.get(models.BotMission, 1).status == "disputed"
-        assert ledger.balance(db, ledger.PROVIDER, 7, "USD") == ledger.to_money(0)
+        assert ledger.wallet_balances(db, ledger.TELEGRAM, 7)["USD"] == ledger.to_money(0)
         assert ledger.balance(db, ledger.ESCROW, 1, "USD") == ledger.to_money("10.00")
 
 
