@@ -251,6 +251,18 @@ async def recevoir_description_service_manquant(message: Message, state: FSMCont
     )
 
 
+def wallet_balances(backend_entity, local_row) -> tuple:
+    """Soldes (USD, CDF) lus en priorité dans le dict backend (`client` ou
+    `provider` de `/api/profile/{telegram_id}`), repli sur la ligne db.py
+    si le backend ne répond pas ou ne connaît pas ce compte (étape D)."""
+    if isinstance(backend_entity, dict):
+        usd = backend_entity.get("wallet_balance_usd")
+        cdf = backend_entity.get("wallet_balance_cdf")
+        if isinstance(usd, (int, float)) and isinstance(cdf, (int, float)):
+            return usd, cdf
+    return local_row["wallet_balance_usd"], local_row["wallet_balance_cdf"]
+
+
 @router.callback_query(F.data == "client_missions")
 async def afficher_missions_client(callback: CallbackQuery):
     lang = await get_user_language(callback.from_user.id)
@@ -287,13 +299,10 @@ async def afficher_wallet_client(callback: CallbackQuery):
         return
 
     lang = await get_user_language(callback.from_user.id)
+    backend_profile = await fetch_backend_profile(callback.from_user.id)
+    usd, cdf = wallet_balances((backend_profile or {}).get("client"), user)
     await callback.message.edit_text(
-        get_message(
-            "wallet_title",
-            lang,
-            usd=user["wallet_balance_usd"],
-            cdf=user["wallet_balance_cdf"],
-        ),
+        get_message("wallet_title", lang, usd=usd, cdf=cdf),
         parse_mode="HTML",
         reply_markup=clavier_client(lang),
     )
@@ -334,13 +343,10 @@ async def afficher_wallet_prestataire(callback: CallbackQuery):
         await callback.answer(get_message("provider_not_found", lang), show_alert=True)
         return
 
+    backend_profile = await fetch_backend_profile(callback.from_user.id)
+    usd, cdf = wallet_balances((backend_profile or {}).get("provider"), provider)
     await callback.message.edit_text(
-        get_message(
-            "provider_wallet_title",
-            lang,
-            usd=provider["wallet_balance_usd"],
-            cdf=provider["wallet_balance_cdf"],
-        ),
+        get_message("provider_wallet_title", lang, usd=usd, cdf=cdf),
         parse_mode="HTML",
         reply_markup=clavier_prestataire(lang),
     )
