@@ -477,3 +477,84 @@ def test_admin_dispute_split_rejects_non_numeric_input_without_crashing(tmp_path
 
     assert db.get_mission_by_id(mission_id)["status"] == "disputed", "aucune résolution ne doit avoir lieu"
     assert state.cleared is False, "le FSM doit rester actif pour laisser l'admin réessayer"
+
+
+# --- mission auto-libérée côté backend (Celery 24h) : pas de double versement --
+
+
+def _backend_says(monkeypatch, mission_id, payment_status):
+    monkeypatch.setattr(backend_client, "fetch_backend_profile", lambda tid: _async_return({
+        "client_missions": [{"mission_id": mission_id, "status": "completed", "payment_status": payment_status}],
+    }))
+
+
+def test_client_cannot_open_dispute_on_mission_auto_released_by_backend(tmp_path, monkeypatch):
+    """L'auto-libération Celery a déjà payé le prestataire côté Postgres sans
+    que db.py le sache. Le litige est refusé et db.py est aligné (prestataire
+    crédité en local aussi), au lieu d'ouvrir un litige remboursable."""
+    mission_id = _setup_paid_mission(tmp_path, monkeypatch, amount=100.0)
+    _backend_says(monkeypatch, mission_id, "released")
+    monkeypatch.setattr(payment, "get_user_language", lambda tid: _async_return("fr"))
+
+    bot = DummyBot()
+    state = DummyState(data={"dispute_mission_id": mission_id})
+    message = DummyMessage(telegram_id=100, text="Problème", bot=bot)
+    asyncio.run(payment.litige_motif_recu(message, state))
+
+    mission = db.get_mission_by_id(mission_id)
+    assert mission["status"] == "completed"
+    assert mission["payment_status"] == "released"
+    assert db.get_provider_by_telegram_id(200)["wallet_balance_usd"] == 90.0
+    assert state.cleared is True
+    assert "déjà confirmée" in message.answers[0]
+    assert bot.messages == [], "aucune notification de litige au prestataire"
+    assert DummyAsyncClient.last_request is None, "rien à renvoyer au backend, il est déjà à jour"
+
+
+def test_admin_refund_refused_when_backend_already_released(tmp_path, monkeypatch):
+    mission_id = _setup_paid_mission(tmp_path, monkeypatch, amount=100.0)
+    db.open_dispute(mission_id, 100, "Litige ouvert avant le correctif")
+    _backend_says(monkeypatch, mission_id, "released")
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+
+    bot = DummyBot()
+    callback = DummyCallback(telegram_id=1, data=f"admin_dispute_refund_{mission_id}", bot=bot)
+    asyncio.run(admin.admin_litige_rembourser(callback))
+
+    assert callback.answered == admin.DISPUTE_ALREADY_RELEASED_ADMIN
+    assert len(admin.DISPUTE_ALREADY_RELEASED_ADMIN) <= 200, "limite Telegram des alertes"
+    assert db.get_mission_by_id(mission_id)["status"] == "disputed"
+    assert db.get_user_by_telegram_id(100)["wallet_balance_usd"] == 0.0
+    assert bot.messages == []
+
+
+def test_admin_split_refused_when_backend_already_released(tmp_path, monkeypatch):
+    mission_id = _setup_paid_mission(tmp_path, monkeypatch, amount=100.0)
+    db.open_dispute(mission_id, 100, "Litige ouvert avant le correctif")
+    _backend_says(monkeypatch, mission_id, "released")
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+
+    state = DummyState(data={"dispute_split_mission_id": mission_id})
+    message = DummyMessage(telegram_id=1, text="50", bot=DummyBot())
+    asyncio.run(admin.admin_litige_partage_recu(message, state))
+
+    assert message.answers == [admin.DISPUTE_ALREADY_RELEASED_ADMIN]
+    assert state.cleared is True
+    assert db.get_mission_by_id(mission_id)["status"] == "disputed"
+    assert db.get_user_by_telegram_id(100)["wallet_balance_usd"] == 0.0
+    assert db.get_provider_by_telegram_id(200)["wallet_balance_usd"] == 0.0
+
+
+def test_admin_refund_still_works_when_backend_holds_escrow(tmp_path, monkeypatch):
+    mission_id = _setup_paid_mission(tmp_path, monkeypatch, amount=100.0)
+    db.open_dispute(mission_id, 100, "Mission jamais réalisée")
+    _backend_says(monkeypatch, mission_id, "paid_escrow")
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "get_user_language", lambda tid: _async_return("fr"))
+    monkeypatch.setattr(admin, "get_provider_language", lambda tid: _async_return("fr"))
+
+    callback = DummyCallback(telegram_id=1, data=f"admin_dispute_refund_{mission_id}", bot=DummyBot())
+    asyncio.run(admin.admin_litige_rembourser(callback))
+
+    assert db.get_mission_by_id(mission_id)["payment_status"] == "refunded"
+    assert db.get_user_by_telegram_id(100)["wallet_balance_usd"] == 100.0

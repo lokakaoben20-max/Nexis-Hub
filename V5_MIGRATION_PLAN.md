@@ -375,14 +375,15 @@ trancher, pas un swap technique). Détail complet dans `AGENTS.md`.
 - **Double versement backend corrigé (2026-10-02)** : `/api/bot/missions/status`
   refuse (409, avant écriture) un remboursement après une libération et
   l'inverse ; `crud.release_payment` refuse une mission en litige ou déjà
-  réglée. **Reste ouvert, côté bot** (`security-reviewer`) : l'auto-libération
-  Celery à 24h crédite le prestataire dans Postgres sans que db.py le sache.
-  La mission reste `awaiting_confirmation` en local, le client peut encore
-  ouvrir un litige, et un "rembourser" admin crédite le client en SQLite (le
-  409 backend est avalé). Le double versement est donc bloqué côté Postgres
-  mais toujours possible côté db.py. À traiter avec la sous-étape litiges :
-  le bot doit vérifier l'état backend avant de décider, ou Celery doit
-  prévenir le bot.
+  réglée. **Côté bot, corrigé le même jour** : avant d'ouvrir un litige
+  (`payment.litige_motif_recu`) et avant un remboursement ou un partage
+  admin, le bot demande au backend si la mission a déjà été libérée
+  (`backend_client.backend_mission_already_released`). Si oui : litige
+  refusé au client (et db.py aligné via `release_payment`), remboursement et
+  partage refusés à l'admin ("payer le prestataire" reste permis, il aligne
+  db.py). **Risque résiduel** (`security-reviewer`) : si le backend ne répond
+  pas au moment du clic admin, le garde laisse passer comme avant. Bloquer
+  dans ce cas est une décision produit à prendre avec Ben.
 - **Étape D (à faire, la plus risquée)** : porter la logique de décision
   de litige vers le backend, trancher l'algorithme de matching
   (`find_matching_providers` legacy vs score backend différent), refaire

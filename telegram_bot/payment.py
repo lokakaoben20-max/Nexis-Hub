@@ -37,6 +37,7 @@ from db import (
 from messages import get_message
 from telegram_bot.backend_client import (
     _safe_backend_call,
+    backend_mission_already_released,
     fetch_backend_profile,
     get_provider_language,
     get_user_language,
@@ -367,6 +368,22 @@ async def litige_motif_recu(message: Message, state: FSMContext):
     lang = await get_user_language(message.from_user.id)
     if not reason:
         await message.answer(get_message("dispute_reason_invalid", lang), parse_mode="HTML")
+        return
+
+    if await backend_mission_already_released(message.from_user.id, mission_id):
+        # Auto-libérée côté backend : le prestataire est déjà payé. Plus de
+        # litige possible (sinon un remboursement admin paierait deux fois) ;
+        # on aligne db.py en créditant aussi le prestataire en local.
+        try:
+            release_payment(mission_id, message.from_user.id)
+        except ValueError:
+            pass
+        await state.clear()
+        await message.answer(
+            get_message("dispute_already_released", lang, mission_id=mission_id),
+            parse_mode="HTML",
+            reply_markup=clavier_client(lang),
+        )
         return
 
     try:

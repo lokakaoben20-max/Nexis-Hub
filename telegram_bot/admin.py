@@ -37,6 +37,7 @@ from db import (
     get_all_providers,
     get_all_users,
     get_disputed_missions,
+    get_mission_by_id,
     get_pending_service_requests,
     get_provider_by_id,
     get_recent_missions,
@@ -51,6 +52,7 @@ from db import (
 from messages import get_message
 from telegram_bot.backend_client import (
     _safe_backend_call,
+    backend_mission_already_released,
     get_provider_language,
     get_user_language,
     sync_mission_status_to_backend,
@@ -248,6 +250,22 @@ async def admin_disputes(callback: CallbackQuery):
     await callback.answer()
 
 
+# Moins de 200 caractères : limite Telegram des alertes de callback.
+DISPUTE_ALREADY_RELEASED_ADMIN = (
+    "Déjà payé au prestataire (libération auto 24h). Rembourser paierait deux fois : "
+    "choisis « Payer le prestataire » pour aligner."
+)
+
+
+async def _dispute_already_released(mission_id: int) -> bool:
+    """Le backend a-t-il déjà payé le prestataire (auto-libération Celery que
+    db.py ne voit pas) ? Vérifié avant tout remboursement, total ou partiel."""
+    mission = get_mission_by_id(mission_id)
+    if mission is None:
+        return False
+    return await backend_mission_already_released(mission["client_telegram_id"], mission_id)
+
+
 @router.callback_query(F.data.startswith("admin_dispute_refund_"))
 async def admin_litige_rembourser(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -255,6 +273,9 @@ async def admin_litige_rembourser(callback: CallbackQuery):
         return
 
     mission_id = int(callback.data.replace("admin_dispute_refund_", "", 1))
+    if await _dispute_already_released(mission_id):
+        await callback.answer(DISPUTE_ALREADY_RELEASED_ADMIN, show_alert=True)
+        return
     try:
         mission = resolve_dispute_refund_client(mission_id)
     except ValueError as error:
@@ -351,6 +372,11 @@ async def admin_litige_partage_recu(message: Message, state: FSMContext):
         percentage = float(text)
     except ValueError:
         await message.answer("Envoie un nombre entre 0 et 100. Exemple : 50")
+        return
+
+    if await _dispute_already_released(mission_id):
+        await state.clear()
+        await message.answer(DISPUTE_ALREADY_RELEASED_ADMIN)
         return
 
     try:
