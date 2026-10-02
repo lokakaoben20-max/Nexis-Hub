@@ -41,8 +41,8 @@ from telegram_bot.backend_client import (
     fetch_backend_profile,
     get_provider_language,
     get_user_language,
-    sync_mission_status_to_backend,
-    sync_payment_to_backend,
+    queue_mission_status,
+    queue_payment,
     sync_quote_accept_to_backend,
     sync_quote_reject_to_backend,
     sync_review_to_backend,
@@ -145,9 +145,7 @@ async def paiement_mobile_money(callback: CallbackQuery):
         return
     quote = payment["quote"]
 
-    await _safe_backend_call(
-        sync_payment_to_backend(quote_id, "paid_escrow", mission_id=quote["mission_id"], amounts=payment)
-    )
+    await queue_payment(quote_id, "paid_escrow", mission_id=quote["mission_id"], amounts=payment)
     client_lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
         get_message(
@@ -190,7 +188,7 @@ async def prestataire_demarre_mission(callback: CallbackQuery):
         return
 
     provider_lang = await get_provider_language(callback.from_user.id)
-    await _safe_backend_call(sync_mission_status_to_backend(mission_id, "in_progress"))
+    await queue_mission_status(mission_id, "in_progress")
     await callback.message.edit_text(
         get_message("provider_mission_started", provider_lang, mission_id=mission_id),
         parse_mode="HTML",
@@ -214,7 +212,7 @@ async def prestataire_termine_mission(callback: CallbackQuery):
         await callback.answer(str(error), show_alert=True)
         return
 
-    await _safe_backend_call(sync_mission_status_to_backend(mission_id, "awaiting_confirmation"))
+    await queue_mission_status(mission_id, "awaiting_confirmation")
     provider_lang = await get_provider_language(callback.from_user.id)
     await callback.message.edit_text(
         get_message("provider_mission_finished", provider_lang, mission_id=mission_id),
@@ -240,7 +238,7 @@ async def client_confirme_mission_terminee(callback: CallbackQuery, state: FSMCo
         await callback.answer(str(error), show_alert=True)
         return
 
-    await _safe_backend_call(sync_mission_status_to_backend(mission_id, "completed", payment_status="released"))
+    await queue_mission_status(mission_id, "completed", payment_status="released")
     lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
         get_message("payment_released_client", lang, mission_id=mission_id),
@@ -394,7 +392,7 @@ async def litige_motif_recu(message: Message, state: FSMContext):
         return
     await state.clear()
 
-    await _safe_backend_call(sync_mission_status_to_backend(mission_id, "disputed", dispute_reason=reason))
+    await queue_mission_status(mission_id, "disputed", dispute_reason=reason)
     await message.answer(
         get_message("dispute_opened", lang, mission_id=mission_id),
         parse_mode="HTML",
@@ -419,10 +417,8 @@ async def paiement_wallet(callback: CallbackQuery):
         return
 
     quote = payment["quote"]
-    await _safe_backend_call(
-        sync_payment_to_backend(
-            quote_id, "paid_escrow", mission_id=quote["mission_id"], amounts=payment, via_wallet=True
-        )
+    await queue_payment(
+        quote_id, "paid_escrow", mission_id=quote["mission_id"], amounts=payment, via_wallet=True
     )
     client_lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(

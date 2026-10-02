@@ -259,6 +259,22 @@ def init_db():
             )
             """
         )
+        # File d'attente des appels backend qui déplacent de l'argent (paiement
+        # escrow, libération, remboursement, statut de mission). Un appel qui
+        # échoue (backend coupé) y reste et sera rejoué dans l'ordre : sans ça,
+        # le wallet backend restait faux pour toujours après une panne.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS backend_outbox (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                path TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                attempts INTEGER DEFAULT 0,
+                last_error TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
         seed_default_services(conn)
         seed_platform_settings(conn)
 
@@ -1393,3 +1409,39 @@ def resolve_dispute_split(mission_id: int, provider_percentage: float):
             (provider_share, mission_id),
         )
     return get_mission_by_id(mission_id)
+
+
+def enqueue_backend_call(path: str, payload: dict) -> int:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "INSERT INTO backend_outbox (path, payload) VALUES (?, ?)",
+            (path, json.dumps(payload)),
+        )
+        return cursor.lastrowid
+
+
+def get_backend_outbox(limit: int = 100) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, path, payload, attempts FROM backend_outbox ORDER BY id LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [{"id": r[0], "path": r[1], "payload": json.loads(r[2]), "attempts": r[3]} for r in rows]
+
+
+def count_backend_outbox() -> int:
+    with get_connection() as conn:
+        return conn.execute("SELECT COUNT(*) FROM backend_outbox").fetchone()[0]
+
+
+def delete_backend_outbox_entry(entry_id: int):
+    with get_connection() as conn:
+        conn.execute("DELETE FROM backend_outbox WHERE id = ?", (entry_id,))
+
+
+def mark_backend_outbox_failure(entry_id: int, error: str):
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE backend_outbox SET attempts = attempts + 1, last_error = ? WHERE id = ?",
+            (error[:500], entry_id),
+        )

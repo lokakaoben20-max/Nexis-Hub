@@ -57,7 +57,7 @@ from telegram_bot.backend_client import (
     backend_mission_payment_status,
     get_provider_language,
     get_user_language,
-    sync_mission_status_to_backend,
+    queue_mission_status,
     sync_provider_status_to_backend,
     sync_provider_suspended_to_backend,
     sync_provider_unsuspended_to_backend,
@@ -297,10 +297,8 @@ async def admin_litige_rembourser(callback: CallbackQuery):
         await callback.answer(str(error), show_alert=True)
         return
 
-    await _safe_backend_call(
-        sync_mission_status_to_backend(
-            mission_id, "cancelled", payment_status="refunded", refund_amount=mission["total_client"]
-        )
+    await queue_mission_status(
+        mission_id, "cancelled", payment_status="refunded", refund_amount=mission["total_client"]
     )
     await callback.message.edit_text(f"💸 Litige NXH-{mission_id:04d} : client remboursé.")
 
@@ -333,7 +331,7 @@ async def admin_litige_payer_prestataire(callback: CallbackQuery):
         await callback.answer(str(error), show_alert=True)
         return
 
-    await _safe_backend_call(sync_mission_status_to_backend(mission_id, "completed", payment_status="released"))
+    await queue_mission_status(mission_id, "completed", payment_status="released")
     await callback.message.edit_text(f"✅ Litige NXH-{mission_id:04d} : prestataire payé.")
 
     client_lang = await get_user_language(mission["client_telegram_id"])
@@ -404,17 +402,15 @@ async def admin_litige_partage_recu(message: Message, state: FSMContext):
     await state.clear()
 
     client_refund = round(mission["total_client"] - mission["net_provider"], 2)
-    await _safe_backend_call(
-        sync_mission_status_to_backend(
-            mission_id,
-            "completed",
-            payment_status="released",
-            refund_amount=client_refund if client_refund > 0 else None,
-            # Sans ça, le backend créditerait le prestataire de son net_provider
-            # ORIGINAL (posé au paiement escrow, avant tout litige) au lieu de
-            # sa part réduite après partage — sur-crédit trouvé en revue.
-            net_provider=mission["net_provider"],
-        )
+    await queue_mission_status(
+        mission_id,
+        "completed",
+        payment_status="released",
+        refund_amount=client_refund if client_refund > 0 else None,
+        # Sans ça, le backend créditerait le prestataire de son net_provider
+        # ORIGINAL (posé au paiement escrow, avant tout litige) au lieu de
+        # sa part réduite après partage — sur-crédit trouvé en revue.
+        net_provider=mission["net_provider"],
     )
     await message.answer(
         f"🤝 Litige NXH-{mission_id:04d} résolu : {mission['net_provider']:.2f} {mission['currency']} au "

@@ -365,13 +365,29 @@ trancher, pas un swap technique). Détail complet dans `AGENTS.md`.
   `backend_request_id` NULL en local, risque de doublon si on recopie
   naïvement toutes les lignes sans id backend). `audit_backend_parity.py`
   ne compare pas encore ce flow.
-- **Étape D, soldes wallet (codée, mise de côté 2026-10-02)** : lecture
-  backend-first des écrans wallet client/prestataire, sur la branche
-  `claude/project-thread-een159` (commit `c83e373`), pas fusionnée. Raison
-  (`backend-parity-auditor`) : chaque miroir wallet passe par
-  `_safe_backend_call` sans rejeu, donc après une panne backend l'écran
-  afficherait un solde que le paiement wallet (db.py) refuse. À fusionner
-  quand `audit_backend_parity.py` est propre sur les vraies bases.
+- **Étape D, soldes wallet (fusionnée 2026-10-02, merge `533919a`)** :
+  lecture backend-first des écrans wallet client/prestataire (commit
+  `c83e373`). Fusionnée avec l'accord de Ben : le seul écart relevé par
+  `audit_backend_parity.py` est le wallet prestataire de test de Ben
+  (8 680 USD dans db.py, 0 dans Postgres : trois libérations simulées
+  antérieures au backend, et `backfill_providers_to_backend.py` ne copie pas
+  le wallet). Écart laissé volontairement comme cas de test de l'audit.
+- **Rejeu des miroirs argent (2026-10-02)** : la raison de la mise de côté
+  ci-dessus (miroir perdu après une panne backend, écran affichant un solde
+  que le paiement db.py refuse) est traitée. Paiement escrow, libération,
+  remboursement, partage et statuts de mission passent par
+  `backend_client.queue_payment` / `queue_mission_status` : l'appel est mis
+  dans la table `backend_outbox` (db.py) puis envoyé, dans l'ordre d'arrivée.
+  En échec réseau ou 5xx il reste en file et bloque les suivants (pas de
+  statut qui recule) ; un refus 4xx (409 mission déjà réglée...) est retiré
+  et journalisé. Rejeu à chaque nouvel appel et toutes les minutes
+  (`run_backend_outbox_retry_loop`, lancé par `main.py`). Rejouer est sans
+  danger : le backend ne crédite/débite qu'une fois par mission (idempotence
+  sur ses transactions). Tant que la file n'est pas vide, le dashboard
+  affiche les soldes db.py. Tests : `tests/test_backend_outbox.py`. Une
+  libération encore en file n'est pas vue par
+  `backend_mission_already_released`, sans risque : db.py l'a déjà
+  appliquée et refuse alors litige, remboursement et partage.
 - **Double versement backend corrigé (2026-10-02)** : `/api/bot/missions/status`
   refuse (409, avant écriture) un remboursement après une libération et
   l'inverse ; `crud.release_payment` refuse une mission en litige ou déjà

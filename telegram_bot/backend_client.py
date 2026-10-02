@@ -11,18 +11,31 @@ Double écriture maintenue (backend + `db.py`) pour toutes les écritures de ce 
 maintenant leur ferait lire une donnée périmée. Voir V5_MIGRATION_PLAN.md, Phase 3.
 """
 
+import asyncio
 import json
+import logging
 import os
 
 import httpx
 from dotenv import load_dotenv
 
-from db import create_user, get_mission_by_id, get_provider_by_telegram_id, get_user_by_telegram_id
+from db import (
+    count_backend_outbox,
+    create_user,
+    delete_backend_outbox_entry,
+    enqueue_backend_call,
+    get_backend_outbox,
+    get_mission_by_id,
+    get_provider_by_telegram_id,
+    get_user_by_telegram_id,
+    mark_backend_outbox_failure,
+)
 
 load_dotenv()
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://127.0.0.1:8000")
 BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
 BACKEND_AUTH_HEADERS = {"X-API-Key": BACKEND_API_KEY}
+logger = logging.getLogger(__name__)
 
 
 async def _safe_backend_call(coro):
@@ -226,6 +239,11 @@ async def sync_mission_status_to_backend(
     stockée et sur-créditerait le prestataire — voir backend/app/main.py::
     update_mission_status.
     """
+    payload = _mission_status_payload(mission_id, status, payment_status, dispute_reason, refund_amount, net_provider)
+    return await _post_backend(MISSION_STATUS_PATH, payload)
+
+
+def _mission_status_payload(mission_id, status, payment_status=None, dispute_reason=None, refund_amount=None, net_provider=None) -> dict:
     payload = {"mission_id": mission_id, "status": status}
     if payment_status:
         payload["payment_status"] = payment_status
@@ -235,10 +253,7 @@ async def sync_mission_status_to_backend(
         payload["refund_amount"] = refund_amount
     if net_provider is not None:
         payload["net_provider"] = net_provider
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/missions/status", json=payload)
-        response.raise_for_status()
-        return response.json()
+    return payload
 
 
 async def sync_payment_to_backend(
@@ -254,6 +269,11 @@ async def sync_payment_to_backend(
     reflète la transaction et débite le wallet (si `via_wallet`) sans revalider
     — db.py reste la source de vérité, voir backend/app/main.py::PaymentPayload.
     """
+    payload = _payment_payload(quote_id, payment_status, mission_id, amounts, via_wallet)
+    return await _post_backend(PAYMENT_PATH, payload)
+
+
+def _payment_payload(quote_id, payment_status, mission_id=None, amounts=None, via_wallet=False) -> dict:
     payload = {"quote_id": quote_id, "payment_status": payment_status}
     if mission_id is not None:
         payload["mission_id"] = mission_id
@@ -273,10 +293,82 @@ async def sync_payment_to_backend(
                 "via_wallet": via_wallet,
             }
         )
+    return payload
+
+
+async def _post_backend(path: str, payload: dict) -> dict:
     async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/payments", json=payload)
+        response = await client.post(f"{BACKEND_BASE_URL}{path}", json=payload)
         response.raise_for_status()
         return response.json()
+
+
+# --- File d'attente des appels qui déplacent de l'argent -------------------
+# Paiement escrow, libération, remboursement et statuts de mission passaient
+# par `_safe_backend_call` : backend coupé = appel perdu, wallet backend faux
+# pour toujours. Ils passent maintenant par `backend_outbox` (db.py) : mis en
+# file, puis envoyés dans l'ordre d'arrivée. Un appel qui échoue reste en
+# file et bloque les suivants (un vieux "in_progress" rejoué après un
+# "completed" ferait reculer la mission). Rejouer est sans danger : le
+# backend ne crédite/débite qu'une fois par mission, en se basant sur ses
+# transactions (voir backend/app/main.py::update_mission_status et
+# update_payment).
+MISSION_STATUS_PATH = "/api/bot/missions/status"
+PAYMENT_PATH = "/api/bot/payments"
+
+
+async def flush_backend_outbox() -> bool:
+    """Envoie la file dans l'ordre. True si elle est vide à la fin."""
+    for entry in get_backend_outbox():
+        try:
+            await _post_backend(entry["path"], entry["payload"])
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code < 500:
+                # Refus définitif du backend (409 mission déjà réglée, 422...) :
+                # le rejouer ne changera rien et bloquerait toute la file.
+                logger.warning("Appel backend refusé, retiré de la file : %s %s -> %s", entry["path"], entry["payload"], error)
+                delete_backend_outbox_entry(entry["id"])
+                continue
+            mark_backend_outbox_failure(entry["id"], repr(error))
+            return False
+        except Exception as error:
+            mark_backend_outbox_failure(entry["id"], repr(error))
+            return False
+        delete_backend_outbox_entry(entry["id"])
+    return True
+
+
+async def _queue_backend_call(path: str, payload: dict) -> bool:
+    enqueue_backend_call(path, payload)
+    try:
+        return await flush_backend_outbox()
+    except Exception:
+        return False
+
+
+async def queue_mission_status(mission_id: int, status: str, **kwargs) -> bool:
+    """Comme `sync_mission_status_to_backend`, mais rejoué plus tard si le backend ne répond pas."""
+    return await _queue_backend_call(MISSION_STATUS_PATH, _mission_status_payload(mission_id, status, **kwargs))
+
+
+async def queue_payment(quote_id: int, payment_status: str, **kwargs) -> bool:
+    """Comme `sync_payment_to_backend`, mais rejoué plus tard si le backend ne répond pas."""
+    return await _queue_backend_call(PAYMENT_PATH, _payment_payload(quote_id, payment_status, **kwargs))
+
+
+def backend_wallet_sync_pending() -> bool:
+    """Des mouvements d'argent attendent d'être envoyés au backend : ses
+    soldes sont en retard sur db.py, ne pas les afficher."""
+    return count_backend_outbox() > 0
+
+
+async def run_backend_outbox_retry_loop(interval_seconds: float = 60.0):
+    while True:
+        try:
+            await flush_backend_outbox()
+        except Exception:
+            logger.exception("Rejeu de la file backend en échec")
+        await asyncio.sleep(interval_seconds)
 
 
 async def sync_review_to_backend(mission_id: int, client_telegram_id: int, rating: int, comment: str = "") -> dict:

@@ -40,6 +40,7 @@ from db import (
 from messages import get_message
 from telegram_bot.backend_client import (
     _safe_backend_call,
+    backend_wallet_sync_pending,
     fetch_backend_profile,
     get_provider_language,
     get_user_language,
@@ -254,8 +255,10 @@ async def recevoir_description_service_manquant(message: Message, state: FSMCont
 def wallet_balances(backend_entity, local_row) -> tuple:
     """Soldes (USD, CDF) lus en priorité dans le dict backend (`client` ou
     `provider` de `/api/profile/{telegram_id}`), repli sur la ligne db.py
-    si le backend ne répond pas ou ne connaît pas ce compte (étape D)."""
-    if isinstance(backend_entity, dict):
+    si le backend ne répond pas ou ne connaît pas ce compte (étape D).
+    Repli aussi tant que des mouvements d'argent attendent d'être rejoués
+    vers le backend (`backend_outbox`) : ses soldes sont alors en retard."""
+    if isinstance(backend_entity, dict) and not backend_wallet_sync_pending():
         usd = backend_entity.get("wallet_balance_usd")
         cdf = backend_entity.get("wallet_balance_cdf")
         if isinstance(usd, (int, float)) and isinstance(cdf, (int, float)):

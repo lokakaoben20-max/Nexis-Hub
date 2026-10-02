@@ -22,7 +22,7 @@ from telegram_bot import dashboard
 from telegram_bot import mission as mission_flow
 from telegram_bot import payment
 from telegram_bot import registration
-from telegram_bot.backend_client import get_user_language
+from telegram_bot.backend_client import get_user_language, run_backend_outbox_retry_loop
 from telegram_bot.keyboards import MINI_APP_URL, button_label, clavier_langue
 from telegram_bot.webhook_server import run_webhook
 
@@ -105,6 +105,9 @@ async def fonctionnalite_a_venir(callback: CallbackQuery):
 
 async def main():
     init_db()
+    # Rejoue toutes les minutes les paiements/statuts restés en file pendant
+    # une panne du backend (voir backend_client.flush_backend_outbox).
+    outbox_retry_task = asyncio.create_task(run_backend_outbox_retry_loop())  # noqa: F841 (garder une référence)
     mode = os.getenv("BOT_RUN_MODE", "polling").strip().lower()
     if mode == "webhook":
         await run_webhook(bot, dp)
