@@ -161,6 +161,20 @@ fonctionne pas).
 3. Vérifier la branche courante et le statut git (`git status`, `git branch`, `git remote -v`).
 4. Ne pas committer `.venv/`, `__pycache__/`, `*.db`, `.env` (voir `.gitignore`).
 
+### Argent (règle de structure)
+
+Le registre du backend (`backend/app/ledger.py`) est la seule source de
+vérité de l'argent : paiement, démarrage et fin de mission, confirmation,
+libération, litige, décision admin, soldes. Le bot et la Mini App demandent
+et recopient l'état renvoyé ; `db.py` ne contient aucun solde ni aucune règle
+d'argent. Backend injoignable = aucune action d'argent. Les wallets sont
+rattachés à un compte Nexis (`accounts` + `channel_identities`), jamais à un
+canal. Détails : `CONCEPTION_ARGENT.md`.
+
+Le schéma Postgres est géré uniquement par Alembic : lancer
+`alembic upgrade head` avant de démarrer le backend (il ne crée plus ses
+tables au démarrage).
+
 ### Lancer le bot
 
 ```bash
