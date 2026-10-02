@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.app import crud
 from backend.app.database import SessionLocal, init_db
@@ -149,6 +149,10 @@ class ReviewCreatePayload(BaseModel):
     client_telegram_id: int
     rating: int
     comment: str | None = None
+
+
+class ProviderRankPayload(BaseModel):
+    telegram_ids: list[int] = Field(max_length=100)
 
 
 class ServiceRequestPayload(BaseModel):
@@ -405,6 +409,14 @@ def matching_providers(service: str, commune: str):
     with SessionLocal() as db:
         providers = crud.find_matching_providers(db, service, commune)
         return {"status": "ok", "providers": [_provider_to_dict(provider) for provider in providers]}
+
+
+@router.post("/api/bot/providers/rank")
+def rank_providers(payload: ProviderRankPayload):
+    # Ne renvoie que l'ordre (pas de téléphone ni de pièce d'identité) : le bot
+    # a déjà la liste des prestataires disponibles, il lui manque le score.
+    with SessionLocal() as db:
+        return {"status": "ok", "telegram_ids": crud.rank_providers(db, payload.telegram_ids)}
 
 
 @router.post("/api/bot/quotes")

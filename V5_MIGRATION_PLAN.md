@@ -385,6 +385,18 @@ trancher, pas un swap technique). Détail complet dans `AGENTS.md`.
   clic admin, remboursement et partage sont refusés ("réessaie dans quelques
   minutes") plutôt que risquer un double versement. L'ouverture d'un litige
   par le client reste permise backend coupé (elle ne déplace pas d'argent).
+- **Étape D, matching (terminée 2026-10-02, choix de Ben : "mélange")** :
+  `telegram_bot/mission.py::choose_providers_to_alert`. db.py décide qui est
+  éligible (disponible, actif, non suspendu, service et commune : la Mini App
+  ne les écrit que là), le backend classe ces prestataires au score réel
+  (`POST /api/bot/providers/rank`, ids seulement, sans filtre de
+  disponibilité). Inconnus du backend : après les classés. Backend coupé :
+  ordre local comme avant. Avant, db.py ne calculant jamais note, missions ni
+  taux de succès, les 3 premiers inscrits recevaient toutes les alertes.
+  **Trouvé en revue, préexistant, non corrigé** (`backend-parity-auditor`) :
+  un prestataire non vérifié ou refusé peut se remettre `available` lui-même
+  (Mini App `save_provider_status`, bot `changer_disponibilite`), et le
+  matching ne filtre pas `is_verified` : il peut alors être alerté.
 - **Étape D (à faire, la plus risquée)** : porter la logique de décision
   de litige vers le backend, trancher l'algorithme de matching
   (`find_matching_providers` legacy vs score backend différent), refaire

@@ -1103,3 +1103,30 @@ def test_release_endpoint_refuses_disputed_or_already_refunded_mission(tmp_path,
 
         assert test_client.post("/api/bot/missions/1001/release").status_code == 400
         assert test_client.get("/api/profile/7").json()["provider"]["wallet_balance_usd"] == 0.0
+
+
+def test_rank_providers_orders_given_ids_by_score_without_availability_filter(tmp_path, monkeypatch):
+    """Matching "mélange" : le bot envoie les prestataires disponibles selon
+    db.py ; le backend ne fait que les classer, même s'il les croit
+    indisponibles ou sans ce service (changements faits via la Mini App)."""
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        for telegram_id in (1, 2, 3):
+            _register_provider(test_client, telegram_id, ["service_peinture"], ["Gombe"])
+        with database_module.SessionLocal() as db:
+            from backend.app.models import BotProvider
+
+            best = db.get(BotProvider, 3)
+            best.average_rating = 5.0
+            best.status = "offline"  # périmé : le prestataire s'est remis disponible via la Mini App
+            db.get(BotProvider, 2).average_rating = 4.0
+            db.commit()
+
+        response = test_client.post("/api/bot/providers/rank", json={"telegram_ids": [1, 2, 3, 999]})
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok", "telegram_ids": [3, 2, 1]}, "999 inconnu : omis"
+        assert set(response.json()) == {"status", "telegram_ids"}, "aucune donnée personnelle renvoyée"
+        too_many = test_client.post("/api/bot/providers/rank", json={"telegram_ids": list(range(101))})
+        assert too_many.status_code == 422

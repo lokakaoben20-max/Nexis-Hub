@@ -187,24 +187,39 @@ def find_matching_providers(db: Session, service: str, commune: str) -> list[Bot
     matches = []
     for provider in providers:
         if service in (provider.services or []) and commune in (provider.communes or []):
-            score = BADGE_SCORES.get(provider.badge, 0)
-            # `average_rating` (moyenne réelle des avis) et non l'ancien champ
-            # `rating`, qui n'a jamais été alimenté et vaut 0 partout : la note
-            # d'un prestataire ne pesait donc rien dans le classement.
-            score += provider.average_rating * 10
-            score += min(provider.total_missions, 50) * 0.2
-            # Le bonus de fiabilité demande un minimum d'historique : sans lui,
-            # un prestataire sans aucune mission (success_rate initialisé à
-            # 100 %) partait à égalité avec un vétéran irréprochable.
-            if provider.total_missions >= MIN_MISSIONS_FOR_SUCCESS_BONUS:
-                if provider.success_rate == 100:
-                    score += 15
-                elif provider.success_rate >= 90:
-                    score += 8
-            matches.append((score, provider))
+            matches.append((_matching_score(provider), provider))
 
     matches.sort(key=lambda item: item[0], reverse=True)
     return [provider for _, provider in matches[:3]]
+
+
+def _matching_score(provider: BotProvider) -> float:
+    score = BADGE_SCORES.get(provider.badge, 0)
+    # `average_rating` (moyenne réelle des avis) et non l'ancien champ
+    # `rating`, qui n'a jamais été alimenté et vaut 0 partout : la note
+    # d'un prestataire ne pesait donc rien dans le classement.
+    score += provider.average_rating * 10
+    score += min(provider.total_missions, 50) * 0.2
+    # Le bonus de fiabilité demande un minimum d'historique : sans lui,
+    # un prestataire sans aucune mission (success_rate initialisé à
+    # 100 %) partait à égalité avec un vétéran irréprochable.
+    if provider.total_missions >= MIN_MISSIONS_FOR_SUCCESS_BONUS:
+        if provider.success_rate == 100:
+            score += 15
+        elif provider.success_rate >= 90:
+            score += 8
+    return score
+
+
+def rank_providers(db: Session, telegram_ids: list[int]) -> list[int]:
+    """Classe des prestataires déjà choisis par l'appelant, au score de
+    matching seul : ni disponibilité, ni service, ni commune ne sont filtrés
+    ici (le bot les lit dans db.py, que la Mini App met à jour sans le
+    backend). Les inconnus du backend sont omis ; à égalité, l'ordre reçu."""
+    providers = db.query(BotProvider).filter(BotProvider.telegram_id.in_(telegram_ids)).all()
+    position = {telegram_id: index for index, telegram_id in enumerate(telegram_ids)}
+    providers.sort(key=lambda provider: (-_matching_score(provider), position[provider.telegram_id]))
+    return [provider.telegram_id for provider in providers]
 
 
 def create_mission(

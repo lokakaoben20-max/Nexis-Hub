@@ -313,6 +313,28 @@ async def fetch_backend_profile(telegram_id: int) -> dict | None:
         return None
 
 
+async def fetch_backend_provider_ranking(telegram_ids: list[int]) -> list[int] | None:
+    """Ces prestataires classés par le score backend (vraies notes, missions,
+    taux de succès) ; ceux inconnus du backend sont omis. None si le backend
+    ne répond pas."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+            response = await client.post(
+                f"{BACKEND_BASE_URL}/api/bot/providers/rank", json={"telegram_ids": telegram_ids[:100]}
+            )
+            response.raise_for_status()
+            ranked = response.json().get("telegram_ids")
+    except Exception:
+        return None
+    if not isinstance(ranked, list):
+        return None
+    ranking = []
+    for telegram_id in ranked:
+        if isinstance(telegram_id, int) and telegram_id not in ranking:
+            ranking.append(telegram_id)
+    return ranking
+
+
 BACKEND_UNREACHABLE = "unreachable"
 
 

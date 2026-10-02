@@ -701,6 +701,12 @@ def get_admin_stats():
 
 
 def find_matching_providers(service: str, commune: str):
+    return rank_eligible_providers(service, commune)[:3]
+
+
+def rank_eligible_providers(service: str, commune: str):
+    """Tous les prestataires disponibles pour ce service et cette commune,
+    classés par le score local (même calcul que find_matching_providers)."""
     with get_connection() as conn:
         conn.row_factory = sqlite3.Row
         providers = conn.execute(
@@ -738,7 +744,7 @@ def find_matching_providers(service: str, commune: str):
             matches.append((score, dict(provider)))
 
     matches.sort(key=lambda item: item[0], reverse=True)
-    return [provider for score, provider in matches[:3]]
+    return [provider for score, provider in matches]
 
 
 def create_service_request(telegram_id: int, service_name: str, description: str):

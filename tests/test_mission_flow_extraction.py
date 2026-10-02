@@ -284,3 +284,63 @@ def test_provider_skip_increments_ignored_counter(monkeypatch, tmp_path):
     asyncio.run(mission.passer_mission_prestataire(callback))
 
     assert db.get_provider_by_telegram_id(920)["consecutive_ignored"] == 1
+
+
+# --- matching "mélange" (étape D) : classement backend, disponibilité db.py ---
+
+
+def _matching_db(tmp_path, provider_ids):
+    db.DB_PATH = tmp_path / "test_matching.db"
+    db.init_db()
+    for telegram_id in provider_ids:
+        db.create_provider(telegram_id, f"+2438000{telegram_id}", f"P{telegram_id}", ["service_plomberie"], ["Gombe"], language="fr")
+        db.update_provider_status(telegram_id, "available")
+
+
+def _backend_ranking(monkeypatch, ranking):
+    async def fake(telegram_ids):
+        return None if ranking is None else [tid for tid in ranking if tid in telegram_ids]
+    monkeypatch.setattr(mission, "fetch_backend_provider_ranking", fake)
+
+
+def _ids(providers):
+    return [provider["telegram_id"] for provider in providers]
+
+
+def test_matching_follows_backend_ranking(tmp_path, monkeypatch):
+    _matching_db(tmp_path, [501, 502, 503, 504])
+    _backend_ranking(monkeypatch, [504, 503, 502, 501])
+
+    chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe"))
+
+    assert _ids(chosen) == [504, 503, 502], "le classement backend remplace l'ordre d'inscription"
+
+
+def test_matching_skips_provider_unavailable_locally(tmp_path, monkeypatch):
+    """Passé indisponible via la Mini App (db.py seulement) : jamais alerté,
+    même si le backend le classe premier."""
+    _matching_db(tmp_path, [511, 512, 513, 514])
+    db.update_provider_status(514, "unavailable")
+    _backend_ranking(monkeypatch, [514, 513, 512, 511])
+
+    chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe"))
+
+    assert _ids(chosen) == [513, 512, 511]
+
+
+def test_matching_keeps_local_provider_unknown_to_backend(tmp_path, monkeypatch):
+    _matching_db(tmp_path, [521, 522, 523])
+    _backend_ranking(monkeypatch, [523])  # 521/522 jamais synchronisés au backend
+
+    chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe"))
+
+    assert _ids(chosen) == [523, 521, 522]
+
+
+def test_matching_falls_back_to_local_order_when_backend_down(tmp_path, monkeypatch):
+    _matching_db(tmp_path, [531, 532, 533, 534])
+    _backend_ranking(monkeypatch, None)
+
+    chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe"))
+
+    assert _ids(chosen) == _ids(db.find_matching_providers("service_plomberie", "Gombe"))

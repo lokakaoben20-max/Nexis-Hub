@@ -25,7 +25,7 @@ from aiogram.types import CallbackQuery, Message
 from db import (
     create_mission,
     create_quote,
-    find_matching_providers,
+    rank_eligible_providers,
     get_mission_by_id,
     get_provider_by_telegram_id,
     reset_consecutive_ignored,
@@ -34,6 +34,7 @@ from db import (
 from messages import get_message
 from telegram_bot.backend_client import (
     _safe_backend_call,
+    fetch_backend_provider_ranking,
     fetch_backend_profile,
     get_provider_language,
     get_state_language,
@@ -300,12 +301,32 @@ async def explication_terminee(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+async def choose_providers_to_alert(service: str, commune: str, count: int = 3) -> list:
+    """Matching "mélange" choisi par Ben (étape D) : db.py décide qui est
+    disponible (la Mini App n'écrit que là), le backend décide l'ordre (db.py
+    ne calcule jamais note, missions ni taux de succès, donc tous les vérifiés
+    y sont à égalité). Backend coupé : classement local, comme avant."""
+    eligible = rank_eligible_providers(service, commune)
+    if not eligible:
+        return []
+    ranking = await fetch_backend_provider_ranking([provider["telegram_id"] for provider in eligible])
+    if ranking is None:
+        return eligible[:count]
+    by_id = {provider["telegram_id"]: provider for provider in eligible}
+    ranked_ids = set(ranking)
+    chosen = [by_id[telegram_id] for telegram_id in ranking if telegram_id in by_id]
+    # Inconnus du backend (sync d'inscription ratée) : pas de stats, après
+    # les classés, dans l'ordre local.
+    chosen += [provider for provider in eligible if provider["telegram_id"] not in ranked_ids]
+    return chosen[:count]
+
+
 @router.callback_query(F.data == "mission_confirmer")
 async def mission_confirmer(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     mission_id = create_mission(callback.from_user.id, data)
     await persist_mission_creation(callback.from_user.id, mission_id, data)
-    matching_providers = find_matching_providers(data["service"], data["commune"])
+    matching_providers = await choose_providers_to_alert(data["service"], data["commune"])
 
     photo_file_ids = media_list(data, "photo_file_ids") or media_list(data, "photo_file_id")
     voice_file_ids = media_list(data, "voice_file_ids") or media_list(data, "voice_file_id")
