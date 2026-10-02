@@ -9,7 +9,15 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
+import db
 import main
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def isolated_db(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "test_nexis_hub.db")
+    db.init_db()
 
 
 class DummyResponse:

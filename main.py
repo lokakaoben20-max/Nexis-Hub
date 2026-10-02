@@ -1884,7 +1884,7 @@ async def client_accepte_devis(callback: CallbackQuery):
         f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"
         f"Prestataire : <b>{html.escape(quote['provider_name'])}</b>\n"
         f"Devis : <b>{quote['amount']:.2f} {quote['currency']}</b>\n"
-        f"Frais Tola / techniques : <b>{tola_fee:.2f} {quote['currency']}</b>\n"
+        f"Frais techniques : <b>{tola_fee:.2f} {quote['currency']}</b>\n"
         f"Total à payer : <b>{total_client:.2f} {quote['currency']}</b>\n\n"
         "Choisissez un mode de paiement pour sécuriser la mission.",
         parse_mode="HTML",
@@ -1914,7 +1914,7 @@ async def paiement_mobile_money(callback: CallbackQuery):
         f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"
         f"Référence paiement : <b>{payment['mobile_money_ref']}</b>\n"
         f"Total payé : <b>{payment['total_client']:.2f} {quote['currency']}</b>\n"
-        f"Frais Tola / techniques : <b>{payment['tola_fee']:.2f} {quote['currency']}</b>\n\n"
+        f"Frais techniques : <b>{payment['tola_fee']:.2f} {quote['currency']}</b>\n\n"
         "Le montant du devis est maintenant sécurisé. Le prestataire peut commencer.",
         parse_mode="HTML",
         reply_markup=clavier_client(get_user_language(callback.from_user.id)),
@@ -2041,7 +2041,7 @@ async def paiement_wallet(callback: CallbackQuery):
         f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"
         f"Référence paiement : <b>{payment['mobile_money_ref']}</b>\n"
         f"Total payé : <b>{payment['total_client']:.2f} {quote['currency']}</b>\n"
-        f"Frais Tola / techniques : <b>{payment['tola_fee']:.2f} {quote['currency']}</b>\n\n"
+        f"Frais techniques : <b>{payment['tola_fee']:.2f} {quote['currency']}</b>\n\n"
         "Le montant du devis est maintenant sécurisé. Le prestataire peut commencer.",
         parse_mode="HTML",
         reply_markup=clavier_client(get_user_language(callback.from_user.id)),
