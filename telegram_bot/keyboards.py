@@ -534,12 +534,12 @@ def clavier_admin_menu():
     return builder.as_markup()
 
 
-def clavier_admin_provider(provider_id: int):
+def clavier_admin_provider(telegram_id: int):
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Vérifier", callback_data=f"admin_verify_provider_{provider_id}")
-    builder.button(text="❌ Refuser", callback_data=f"admin_reject_provider_{provider_id}")
-    builder.button(text="⛔ Suspendre", callback_data=f"admin_suspend_provider_{provider_id}")
-    builder.button(text="♻️ Réactiver", callback_data=f"admin_unsuspend_provider_{provider_id}")
+    builder.button(text="✅ Vérifier", callback_data=f"admin_verify_provider_tg_{telegram_id}")
+    builder.button(text="❌ Refuser", callback_data=f"admin_reject_provider_tg_{telegram_id}")
+    builder.button(text="⛔ Suspendre", callback_data=f"admin_suspend_provider_tg_{telegram_id}")
+    builder.button(text="♻️ Réactiver", callback_data=f"admin_unsuspend_provider_tg_{telegram_id}")
     builder.button(text="⬅️ Admin", callback_data="admin_home")
     builder.adjust(1)
     return builder.as_markup()
@@ -555,16 +555,16 @@ def clavier_admin_dispute(mission_id: int):
     return builder.as_markup()
 
 
-def clavier_admin_new_provider(provider_id: int):
+def clavier_admin_new_provider(telegram_id: int):
     """Boutons Approuver/Refuser sur la notification admin poussée à l'inscription.
 
-    Mêmes callback_data que clavier_admin_provider (admin_verify_provider_{id} /
-    admin_reject_provider_{id}, id interne SQLite) : un seul chemin de code géré
-    dans main.py, que l'admin approuve depuis ce push ou depuis la liste
+    Mêmes callback_data que clavier_admin_provider (admin_verify_provider_tg_{telegram_id} /
+    admin_reject_provider_tg_{telegram_id}) : un seul chemin de code dans
+    telegram_bot/admin.py, que l'admin approuve depuis ce push ou depuis la liste
     admin_providers.
     """
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Approuver", callback_data=f"admin_verify_provider_{provider_id}")
-    builder.button(text="❌ Refuser", callback_data=f"admin_reject_provider_{provider_id}")
+    builder.button(text="✅ Approuver", callback_data=f"admin_verify_provider_tg_{telegram_id}")
+    builder.button(text="❌ Refuser", callback_data=f"admin_reject_provider_tg_{telegram_id}")
     builder.adjust(2)
     return builder.as_markup()

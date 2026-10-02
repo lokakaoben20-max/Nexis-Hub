@@ -486,7 +486,7 @@ async def _notifier_admin_nouveau_prestataire(callback: CallbackQuery, provider,
         await callback.bot.send_message(
             admin_id,
             "Approuver ce prestataire ?",
-            reply_markup=clavier_admin_new_provider(provider["id"]),
+            reply_markup=clavier_admin_new_provider(provider["telegram_id"]),
         )
     except Exception:
         pass

@@ -401,6 +401,15 @@ trancher, pas un swap technique). Détail complet dans `AGENTS.md`.
   (`db.provider_can_change_own_status`). Pas de filtre `is_verified` dans le
   matching : les prestataires inscrits avant la vérification obligatoire ont
   `is_verified=0` et en disparaîtraient.
+- **Étape D, boutons admin (terminée 2026-10-02)** : les boutons admin
+  prestataire (vérifier, refuser, suspendre, réactiver, et la notification
+  d'inscription) portent le `telegram_id`, clé commune au bot et au backend
+  (`admin_verify_provider_tg_{telegram_id}`), au lieu de l'id interne SQLite.
+  Les anciens boutons déjà envoyés dans le chat admin restent acceptés
+  (`admin._provider_from_callback`). Les boutons de litige portaient déjà le
+  numéro de mission, identique des deux côtés. Les boutons des services
+  proposés gardent l'id db.py, volontairement : db.py reste la référence de
+  ce flow tant que la Mini App n'écrit pas au backend (voir étape C).
 - **Étape D (à faire, la plus risquée)** : porter la logique de décision
   de litige vers le backend, trancher l'algorithme de matching
   (`find_matching_providers` legacy vs score backend différent), refaire

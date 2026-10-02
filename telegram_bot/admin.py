@@ -40,6 +40,7 @@ from db import (
     get_mission_by_id,
     get_pending_service_requests,
     get_provider_by_id,
+    get_provider_by_telegram_id,
     get_recent_missions,
     get_service_request_by_id,
     resolve_dispute_refund_client,
@@ -167,7 +168,7 @@ async def admin_providers(callback: CallbackQuery):
             f"Statut : {provider['status']} | Vérifié : {'Oui' if provider['is_verified'] else 'Non'}\n"
             f"Suspendu : {'Oui' if provider['is_suspended'] else 'Non'}",
             parse_mode="HTML",
-            reply_markup=clavier_admin_provider(provider["id"]),
+            reply_markup=clavier_admin_provider(provider["telegram_id"]),
         )
     await callback.answer()
 
@@ -526,17 +527,30 @@ async def admin_accept_service(callback: CallbackQuery):
     await callback.answer("Service accepté")
 
 
+def _provider_from_callback(data: str, prefix: str):
+    """Prestataire visé par un bouton admin. Boutons actuels : `{prefix}tg_{telegram_id}`,
+    l'identifiant commun au bot et au backend. Les anciens boutons déjà envoyés
+    dans les chats admin portent encore l'id interne SQLite : toujours acceptés."""
+    raw = data.replace(prefix, "", 1)
+    try:
+        if raw.startswith("tg_"):
+            return get_provider_by_telegram_id(int(raw[3:]))
+        return get_provider_by_id(int(raw))
+    except ValueError:
+        return None
+
+
 @router.callback_query(F.data.startswith("admin_verify_provider_"))
 async def admin_verify_provider(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("Accès admin refusé.", show_alert=True)
         return
 
-    provider_id = int(callback.data.replace("admin_verify_provider_", "", 1))
-    provider = set_provider_verified(provider_id, True)
+    provider = _provider_from_callback(callback.data, "admin_verify_provider_")
     if provider is None:
         await callback.answer("Prestataire introuvable.", show_alert=True)
         return
+    provider = set_provider_verified(provider["id"], True)
 
     # Lève le blocage matching posé à l'inscription (V5_MIGRATION_PLAN.md,
     # vérification obligatoire) : find_matching_providers ne filtre que sur
@@ -578,8 +592,7 @@ async def admin_reject_provider(callback: CallbackQuery):
         await callback.answer("Accès admin refusé.", show_alert=True)
         return
 
-    provider_id = int(callback.data.replace("admin_reject_provider_", "", 1))
-    provider = get_provider_by_id(provider_id)
+    provider = _provider_from_callback(callback.data, "admin_reject_provider_")
     if provider is None:
         await callback.answer("Prestataire introuvable.", show_alert=True)
         return
@@ -607,11 +620,11 @@ async def admin_suspend_provider(callback: CallbackQuery):
         await callback.answer("Accès admin refusé.", show_alert=True)
         return
 
-    provider_id = int(callback.data.replace("admin_suspend_provider_", "", 1))
-    provider = set_provider_suspended(provider_id, True)
+    provider = _provider_from_callback(callback.data, "admin_suspend_provider_")
     if provider is None:
         await callback.answer("Prestataire introuvable.", show_alert=True)
         return
+    provider = set_provider_suspended(provider["id"], True)
 
     # Même bug que admin_verify_provider : provider_id (id interne SQLite) au lieu
     # de provider["telegram_id"] (clé primaire backend) — le sync échouait
@@ -638,11 +651,11 @@ async def admin_unsuspend_provider(callback: CallbackQuery):
         await callback.answer("Accès admin refusé.", show_alert=True)
         return
 
-    provider_id = int(callback.data.replace("admin_unsuspend_provider_", "", 1))
-    provider = set_provider_suspended(provider_id, False)
+    provider = _provider_from_callback(callback.data, "admin_unsuspend_provider_")
     if provider is None:
         await callback.answer("Prestataire introuvable.", show_alert=True)
         return
+    provider = set_provider_suspended(provider["id"], False)
 
     # Même bug que admin_verify_provider (id interne SQLite au lieu de telegram_id).
     await _safe_backend_call(sync_provider_unsuspended_to_backend(provider["telegram_id"]))

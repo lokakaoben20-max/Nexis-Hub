@@ -382,11 +382,19 @@ dans `service_requests.backend_request_id`. Décision admin désormais unique
 (`db.py::decide_pending_service_request`), règle stricte validée par
 l'utilisateur. Détail dans `V5_MIGRATION_PLAN.md`.
 
-**Prochaine étape — à décider avec l'utilisateur.** Étapes A, B et C du
-chantier `db.py` terminées ; étape D (détail dans `V5_MIGRATION_PLAN.md`) nécessite
-encore de construire du code backend (litiges) avant de toucher au bot
-— à ne pas lancer sans validation explicite du périmètre, comme pour
-les étapes précédentes.
+**Étape D : terminée côté code le 2026-10-02** (session cloud depuis le
+téléphone, commits `633fb0b` à aujourd'hui) : double versement fermé
+(backend et bot, remboursement bloqué si le backend ne répond pas),
+matching "mélange" (éligibilité db.py, classement backend via
+`POST /api/bot/providers/rank`), prestataires non validés empêchés de se
+rendre disponibles, boutons admin prestataire sur `telegram_id`. **Reste en
+attente** : la lecture des soldes wallet depuis le backend est codée sur la
+branche `claude/project-thread-een159` (commit `c83e373`), à fusionner
+seulement si `audit_backend_parity.py` ne montre aucun écart de wallet sur
+les vraies bases ; deux textes lingala (`dispute_already_released`,
+`provider_status_locked`) à faire relire. Détail dans `V5_MIGRATION_PLAN.md`.
+
+**Prochaine étape — à décider avec l'utilisateur.**
 
 **Contexte produit à ne pas re-découvrir** : l'utilisateur a envoyé deux
 documents de spec (`D:\NEXIS_HUB_Spec_Technique_Bot_v4.docx` et

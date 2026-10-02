@@ -318,3 +318,62 @@ def test_backend_request_id_column_added_to_existing_database(tmp_path):
     with db.get_connection() as conn:
         columns = [row[1] for row in conn.execute("PRAGMA table_info(service_requests)").fetchall()]
     assert "backend_request_id" in columns
+
+
+# --- boutons admin prestataire : telegram_id plutôt que l'id SQLite (étape D) --
+
+
+def _button_data(markup):
+    return [button.callback_data for row in markup.inline_keyboard for button in row]
+
+
+def test_provider_admin_buttons_carry_telegram_id_not_sqlite_id():
+    """Le telegram_id est la clé commune au bot et au backend ; l'id interne
+    SQLite n'existe que dans db.py."""
+    from telegram_bot import keyboards
+
+    assert _button_data(keyboards.clavier_admin_provider(424242)) == [
+        "admin_verify_provider_tg_424242",
+        "admin_reject_provider_tg_424242",
+        "admin_suspend_provider_tg_424242",
+        "admin_unsuspend_provider_tg_424242",
+        "admin_home",
+    ]
+    assert _button_data(keyboards.clavier_admin_new_provider(424242)) == [
+        "admin_verify_provider_tg_424242",
+        "admin_reject_provider_tg_424242",
+    ]
+    assert all(len(data.encode()) <= 64 for data in _button_data(keyboards.clavier_admin_provider(10**15)))
+
+
+def test_admin_provider_actions_by_telegram_id(tmp_path, monkeypatch):
+    _init_db(tmp_path)
+    _use_dummy_backend(monkeypatch)
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    # Un autre prestataire d'abord : l'id SQLite (1) et le telegram_id diffèrent.
+    db.create_provider(2020, "+243800002020", "Autre", ["service_plomberie"], ["Gombe"], language="fr")
+    db.create_provider(2021, "+243800002021", "Cible", ["service_plomberie"], ["Gombe"], language="fr")
+    db.update_provider_status(2021, "pending_verification")
+
+    bot = DummyBot()
+    asyncio.run(admin.admin_verify_provider(DummyCallback(999, data="admin_verify_provider_tg_2021", bot=bot)))
+    target = db.get_provider_by_telegram_id(2021)
+    assert target["is_verified"] == 1 and target["status"] == "available"
+    assert db.get_provider_by_telegram_id(2020)["is_verified"] == 0, "aucun autre prestataire touché"
+    assert DummyAsyncClient.last_request["url"].endswith("/api/bot/providers/2021/status")
+
+    asyncio.run(admin.admin_suspend_provider(DummyCallback(999, data="admin_suspend_provider_tg_2021", bot=bot)))
+    assert db.get_provider_by_telegram_id(2021)["is_suspended"] == 1
+    asyncio.run(admin.admin_unsuspend_provider(DummyCallback(999, data="admin_unsuspend_provider_tg_2021", bot=bot)))
+    assert db.get_provider_by_telegram_id(2021)["is_suspended"] == 0
+    assert [chat_id for chat_id, _ in bot.messages] == [2021, 2021, 2021]
+
+
+def test_admin_provider_button_with_unknown_or_malformed_id(tmp_path, monkeypatch):
+    _init_db(tmp_path)
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+
+    for data in ("admin_reject_provider_tg_77777", "admin_reject_provider_tg_abc"):
+        callback = DummyCallback(999, data=data)
+        asyncio.run(admin.admin_reject_provider(callback))
+        assert callback.answered == "Prestataire introuvable."
