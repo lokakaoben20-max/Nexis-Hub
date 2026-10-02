@@ -471,10 +471,13 @@ def _money_response(db, mission: BotMission) -> dict:
 def _money_refusal(db, error: ledger.MoneyError) -> HTTPException:
     """Refus métier : code stable + état courant de la mission, que le bot
     recopie pour ne jamais afficher un état périmé."""
+    # Id lu avant l'annulation : une mission créée par cette même demande
+    # disparaît avec elle et l'objet n'est plus lisible ensuite.
+    mission_id = error.mission.mission_id if error.mission is not None else None
     db.rollback()
     detail = {"code": error.code}
-    if error.mission is not None:
-        mission = db.get(BotMission, error.mission.mission_id)
+    if mission_id is not None:
+        mission = db.get(BotMission, mission_id)
         if mission is not None:
             detail["mission"] = _mission_to_dict(mission)
             detail["money"] = ledger.mission_money_state(db, mission.mission_id)

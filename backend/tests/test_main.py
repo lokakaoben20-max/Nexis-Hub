@@ -802,3 +802,31 @@ def test_rank_providers_orders_given_ids_by_score_without_availability_filter(tm
         assert set(response.json()) == {"status", "telegram_ids"}, "aucune donnée personnelle renvoyée"
         too_many = test_client.post("/api/bot/providers/rank", json={"telegram_ids": list(range(101))})
         assert too_many.status_code == 422
+
+
+def test_wallet_refusal_on_a_mission_the_backend_never_saw_returns_409_not_500(tmp_path, monkeypatch):
+    """La mission est créée par la demande de paiement elle-même ; refusée,
+    elle disparaît avec la transaction : la réponse reste un refus propre."""
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        response = _fund(test_client, mission_id=555, method="wallet")
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == {"code": "insufficient_balance"}
+        assert test_client.get("/api/bot/missions/555").status_code == 404
+
+
+def test_backend_refuses_a_quote_from_the_mission_client(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        _setup_mission_with_quote(test_client)
+        _register_provider(test_client, 42, ["service_peinture"], ["Gombe"])
+        response = test_client.post(
+            "/api/bot/quotes",
+            json={"mission_id": 1001, "provider_telegram_id": 42, "amount": 10.0, "currency": "USD", "delay_hours": 1},
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == {"code": "provider_is_client"}

@@ -19,7 +19,10 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
+import httpx
+
 import db
+from messages import get_message
 from telegram_bot import backend_client, payment
 
 
@@ -137,6 +140,16 @@ class DummyState:
         self._data = {}
 
 
+def _refuse(request):
+    raise httpx.ConnectError("backend coupé", request=request)
+
+
+class _OfflineClient(httpx._client.AsyncClient):
+    def __init__(self, *args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(_refuse)
+        super().__init__(*args, **kwargs)
+
+
 def _init_db(tmp_path):
     db.DB_PATH = tmp_path / "test_nexis_hub.db"
     db.init_db()
@@ -152,9 +165,12 @@ async def _async_return(value):
     return value
 
 
-def _setup_accepted_quote(tmp_path, monkeypatch, currency="USD"):
+def _setup_accepted_quote(tmp_path, monkeypatch, currency="USD", live=False):
+    """`live=True` : le vrai backend (fixture live_backend) tient l'argent ;
+    sinon un faux backend minimal pour les flows sans argent."""
     _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
+    if not live:
+        _use_dummy_backend(monkeypatch)
     db.create_user(100, "+243800000100", "Cliente", language="fr")
     db.create_provider(200, "+243800000200", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
     mission_id = db.create_mission(100, {
@@ -185,44 +201,38 @@ def test_client_accepte_devis_shows_payment_options_and_notifies_provider(tmp_pa
     assert "Payer" in callback.message.edited_text or callback.message.edited_text is not None
 
 
-def test_mobile_money_payment_lifecycle_to_release_and_rating(tmp_path, monkeypatch):
-    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch)
+def test_mobile_money_payment_lifecycle_to_release_and_rating(tmp_path, monkeypatch, live_backend):
+    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch, live=True)
 
     client_bot = DummyBot()
     provider_bot = DummyBot()
 
-    # Paiement mobile money.
+    # Paiement mobile money : décidé par le registre, recopié dans db.py.
     pay_callback = DummyCallback(telegram_id=100, data=f"pay_mobile_{quote_id}", bot=client_bot)
     asyncio.run(payment.paiement_mobile_money(pay_callback))
-    assert DummyAsyncClient.last_request["url"].endswith("/api/bot/payments")
+    assert live_backend.mission(mission_id).payment_status == "paid_escrow"
     assert db.get_mission_by_id(mission_id)["payment_status"] == "paid_escrow"
+    assert f"SIM-{quote_id:04d}" in pay_callback.message.edited_text
+    assert client_bot.messages[0].chat_id == 200
 
-    # Démarrage de la mission par le prestataire.
-    start_callback = DummyCallback(telegram_id=200, data=f"mission_start_{mission_id}", bot=provider_bot)
-    asyncio.run(payment.prestataire_demarre_mission(start_callback))
+    # Démarrage puis fin de mission par le prestataire.
+    asyncio.run(payment.prestataire_demarre_mission(DummyCallback(telegram_id=200, data=f"mission_start_{mission_id}", bot=provider_bot)))
     assert db.get_mission_by_id(mission_id)["status"] == "in_progress"
-
-    # Fin de mission par le prestataire.
-    finish_callback = DummyCallback(telegram_id=200, data=f"mission_finish_{mission_id}", bot=provider_bot)
-    asyncio.run(payment.prestataire_termine_mission(finish_callback))
+    asyncio.run(payment.prestataire_termine_mission(DummyCallback(telegram_id=200, data=f"mission_finish_{mission_id}", bot=provider_bot)))
     assert db.get_mission_by_id(mission_id)["status"] == "awaiting_confirmation"
 
-    # Confirmation client -> libération de l'escrow.
-    provider_before = db.get_provider_by_telegram_id(200)
+    # Confirmation client -> libération de l'escrow dans le registre.
     confirm_callback = DummyCallback(telegram_id=100, data=f"client_confirm_done_{mission_id}", bot=client_bot)
     state = DummyState()
     asyncio.run(payment.client_confirme_mission_terminee(confirm_callback, state))
 
     final_mission = db.get_mission_by_id(mission_id)
-    assert final_mission["status"] == "completed"
-    assert final_mission["payment_status"] == "released"
-    provider_after = db.get_provider_by_telegram_id(200)
-    assert provider_after["wallet_balance_usd"] > provider_before["wallet_balance_usd"], (
-        "le net du prestataire doit être crédité sur son wallet à la libération"
-    )
+    assert (final_mission["status"], final_mission["payment_status"]) == ("completed", "released")
+    assert live_backend.balance(200) == 45.0  # 50 - 10 % de commission
+    assert any("45.00" in sent.text for sent in client_bot.messages if sent.chat_id == 200)
     assert state.state == payment.RatingFlow.rating
 
-    # Notation : une étoile, puis un commentaire.
+    # Notation : une étoile, puis un commentaire (enregistré par le backend).
     rate_callback = DummyCallback(telegram_id=100, data=f"rate_star_{mission_id}_5", bot=client_bot)
     asyncio.run(payment.notation_etoile_recue(rate_callback, state))
     assert state.state == payment.RatingFlow.comment
@@ -230,33 +240,52 @@ def test_mobile_money_payment_lifecycle_to_release_and_rating(tmp_path, monkeypa
 
     comment_message = DummyMessage(telegram_id=100, text="Excellent travail", bot=client_bot)
     asyncio.run(payment.notation_commentaire_recu(comment_message, state))
-    assert DummyAsyncClient.last_request["url"].endswith("/api/bot/reviews")
     assert state.cleared is True
 
 
-def test_wallet_payment_debits_client_and_credits_provider_on_release(tmp_path, monkeypatch):
-    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch)
-    with db.get_connection() as conn:
-        conn.execute("UPDATE users SET wallet_balance_usd = ? WHERE telegram_id = ?", (200.0, 100))
+def test_wallet_payment_debits_the_client_wallet_in_the_registry(tmp_path, monkeypatch, live_backend):
+    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch, live=True)
+    live_backend.credit_wallet(100, 200.0)
 
     bot = DummyBot()
     callback = DummyCallback(telegram_id=100, data=f"pay_wallet_{quote_id}", bot=bot)
     asyncio.run(payment.paiement_wallet(callback))
 
-    client = db.get_user_by_telegram_id(100)
-    assert client["wallet_balance_usd"] == 150.0, "50 USD du devis doivent être débités du wallet client"
+    assert live_backend.balance(100) == 150.0, "50 USD du devis doivent être débités du wallet client"
     assert db.get_mission_by_id(mission_id)["payment_status"] == "paid_escrow"
-    assert DummyAsyncClient.last_request["url"].endswith("/api/bot/payments")
+    assert f"WLT-{quote_id:04d}" in callback.message.edited_text
 
 
-def test_wallet_payment_with_insufficient_balance_answers_alert_without_crash(tmp_path, monkeypatch):
-    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch)
+def test_wallet_payment_with_insufficient_balance_answers_alert_without_crash(tmp_path, monkeypatch, live_backend):
+    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch, live=True)
 
     callback = DummyCallback(telegram_id=100, data=f"pay_wallet_{quote_id}", bot=DummyBot())
     asyncio.run(payment.paiement_wallet(callback))
 
-    assert callback.answered is not None
+    assert callback.answered == get_message("money_error_insufficient_balance", "fr")
     assert db.get_mission_by_id(mission_id)["payment_status"] == "unpaid"
+
+
+def test_payment_is_refused_while_the_backend_is_down_and_nothing_changes(tmp_path, monkeypatch):
+    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch)
+    monkeypatch.setattr(payment.backend_client.httpx, "AsyncClient", _OfflineClient)
+
+    callback = DummyCallback(telegram_id=100, data=f"pay_mobile_{quote_id}", bot=DummyBot())
+    asyncio.run(payment.paiement_mobile_money(callback))
+
+    assert callback.answered == get_message("money_backend_unavailable", "fr")
+    assert db.get_mission_by_id(mission_id)["payment_status"] == "unpaid"
+    assert callback.bot.messages == []
+
+
+def test_paying_twice_charges_once(tmp_path, monkeypatch, live_backend):
+    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch, live=True)
+    live_backend.credit_wallet(100, 200.0)
+
+    asyncio.run(payment.paiement_wallet(DummyCallback(telegram_id=100, data=f"pay_wallet_{quote_id}", bot=DummyBot())))
+    asyncio.run(payment.paiement_wallet(DummyCallback(telegram_id=100, data=f"pay_wallet_{quote_id}", bot=DummyBot())))
+
+    assert live_backend.balance(100) == 150.0
 
 
 def test_client_refuse_devis_notifies_provider(tmp_path, monkeypatch):
@@ -338,48 +367,57 @@ def test_paiement_mobile_money_rejects_a_caller_who_is_not_the_client(tmp_path, 
     assert db.get_mission_by_id(mission_id)["payment_status"] == "unpaid", "un tiers ne doit pas pouvoir payer le devis d'un autre"
 
 
-def test_paiement_wallet_rejects_a_caller_who_is_not_the_client(tmp_path, monkeypatch):
-    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch)
+def test_paiement_wallet_rejects_a_caller_who_is_not_the_client(tmp_path, monkeypatch, live_backend):
+    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch, live=True)
     db.create_user(999, "+243800000999", "Intrus", language="fr")
-    with db.get_connection() as conn:
-        # L'intrus (999) a bien un wallet suffisant : le test isole la
-        # vérification de propriétaire du cas "solde insuffisant".
-        conn.execute("UPDATE users SET wallet_balance_usd = ? WHERE telegram_id = ?", (200.0, 999))
+    # L'intrus (999) a bien un wallet suffisant : le test isole la
+    # vérification de propriétaire du cas "solde insuffisant".
+    live_backend.credit_wallet(999, 200.0)
 
     callback = DummyCallback(telegram_id=999, data=f"pay_wallet_{quote_id}", bot=DummyBot())
     asyncio.run(payment.paiement_wallet(callback))
 
-    assert callback.answered is not None
+    assert callback.answered == get_message("money_error_not_mission_client", "fr")
     assert db.get_mission_by_id(mission_id)["payment_status"] == "unpaid"
-    intrus_wallet = db.get_user_by_telegram_id(999)["wallet_balance_usd"]
-    assert intrus_wallet == 200.0, "le wallet de l'intrus ne doit pas être débité pour la mission d'un autre"
+    assert live_backend.balance(999) == 200.0, "le wallet de l'intrus ne doit pas être débité pour la mission d'un autre"
 
 
-def test_client_confirme_mission_terminee_rejects_a_caller_who_is_not_the_client(tmp_path, monkeypatch):
-    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch)
-    payment_result = db.mark_quote_paid(quote_id, 100, operator="mobile_money_simulation")
-    db.start_mission(mission_id, 200)
-    db.finish_mission(mission_id, 200)
-    provider_before = db.get_provider_by_telegram_id(200)
+def _paid_and_finished(mission_id, quote_id):
+    asyncio.run(payment.paiement_mobile_money(DummyCallback(telegram_id=100, data=f"pay_mobile_{quote_id}", bot=DummyBot())))
+    asyncio.run(payment.prestataire_demarre_mission(DummyCallback(telegram_id=200, data=f"mission_start_{mission_id}", bot=DummyBot())))
+    asyncio.run(payment.prestataire_termine_mission(DummyCallback(telegram_id=200, data=f"mission_finish_{mission_id}", bot=DummyBot())))
+
+
+def test_client_confirme_mission_terminee_rejects_a_caller_who_is_not_the_client(tmp_path, monkeypatch, live_backend):
+    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch, live=True)
+    _paid_and_finished(mission_id, quote_id)
 
     callback = DummyCallback(telegram_id=999, data=f"client_confirm_done_{mission_id}", bot=DummyBot())
     state = DummyState()
     asyncio.run(payment.client_confirme_mission_terminee(callback, state))
 
-    assert callback.answered is not None
+    assert callback.answered == get_message("money_error_not_mission_client", "fr")
     final_mission = db.get_mission_by_id(mission_id)
     assert final_mission["status"] == "awaiting_confirmation", "un tiers ne doit pas pouvoir libérer l'escrow d'une autre mission"
     assert final_mission["payment_status"] == "paid_escrow"
-    provider_after = db.get_provider_by_telegram_id(200)
-    assert provider_after["wallet_balance_usd"] == provider_before["wallet_balance_usd"]
+    assert live_backend.balance(200) == 0.0
     assert state.state is None, "le flow de notation ne doit pas démarrer pour une libération refusée"
 
 
-def test_client_confirme_mission_terminee_uses_backend_provider_name(tmp_path, monkeypatch):
-    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch)
-    db.mark_quote_paid(quote_id, 100, operator="mobile_money_simulation")
-    db.start_mission(mission_id, 200)
-    db.finish_mission(mission_id, 200)
+def test_only_the_mission_provider_can_start_it(tmp_path, monkeypatch, live_backend):
+    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch, live=True)
+    asyncio.run(payment.paiement_mobile_money(DummyCallback(telegram_id=100, data=f"pay_mobile_{quote_id}", bot=DummyBot())))
+
+    callback = DummyCallback(telegram_id=999, data=f"mission_start_{mission_id}", bot=DummyBot())
+    asyncio.run(payment.prestataire_demarre_mission(callback))
+
+    assert callback.answered == get_message("money_error_not_mission_provider", "fr")
+    assert live_backend.mission(mission_id).status == "confirmed"
+
+
+def test_client_confirme_mission_terminee_uses_backend_provider_name(tmp_path, monkeypatch, live_backend):
+    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch, live=True)
+    _paid_and_finished(mission_id, quote_id)
     monkeypatch.setattr(payment, "fetch_backend_profile", lambda tid: _async_return({
         "provider": {"full_name": "Nom Backend"}
     }))

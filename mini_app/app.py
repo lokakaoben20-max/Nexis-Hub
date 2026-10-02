@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from db import (
+    apply_backend_mission,
     create_provider,
     create_service_request,
     get_active_services,
@@ -22,11 +23,11 @@ from db import (
     get_user_by_telegram_id,
     get_user_missions,
     provider_can_change_own_status,
-    finish_mission,
-    start_mission,
     update_provider_services,
     update_provider_status,
 )
+from telegram_bot import backend_client
+from telegram_bot.backend_client import BackendUnavailable, MoneyRefused
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -318,29 +319,37 @@ def save_provider_status(
     return {"status": "ok", "provider": updated_provider}
 
 
+async def _mission_action(mission_id: int, action) -> dict:
+    """Démarrer ou finir une mission conditionne la libération des fonds :
+    c'est le registre du backend qui décide (CONCEPTION_ARGENT.md), la Mini App
+    recopie l'état renvoyé. Refus métier : 409 avec son code ; backend
+    injoignable : 503, rien n'a changé."""
+    try:
+        result = await action
+    except MoneyRefused as error:
+        if isinstance(error.mission, dict):
+            apply_backend_mission(mission_id, error.mission)
+        raise HTTPException(status_code=409, detail={"code": error.code})
+    except BackendUnavailable:
+        raise HTTPException(status_code=503, detail={"code": "backend_unavailable"})
+    return {"status": "ok", "mission": compact_mission(apply_backend_mission(mission_id, result["mission"]))}
+
+
 @app.post("/api/provider/{telegram_id}/missions/{mission_id}/start")
-def start_provider_mission(
+async def start_provider_mission(
     telegram_id: int,
     mission_id: int,
     telegram_user: dict = Depends(verify_telegram_init_data),
 ):
     require_same_telegram_user(telegram_id, telegram_user)
-    try:
-        mission = compact_mission(start_mission(mission_id, telegram_id))
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
-    return {"status": "ok", "mission": mission}
+    return await _mission_action(mission_id, backend_client.start_mission(mission_id, telegram_id))
 
 
 @app.post("/api/provider/{telegram_id}/missions/{mission_id}/finish")
-def finish_provider_mission(
+async def finish_provider_mission(
     telegram_id: int,
     mission_id: int,
     telegram_user: dict = Depends(verify_telegram_init_data),
 ):
     require_same_telegram_user(telegram_id, telegram_user)
-    try:
-        mission = compact_mission(finish_mission(mission_id, telegram_id))
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
-    return {"status": "ok", "mission": mission}
+    return await _mission_action(mission_id, backend_client.finish_mission(mission_id, telegram_id))

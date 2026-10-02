@@ -289,3 +289,54 @@ def test_health_needs_no_authentication(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+# --- Démarrer / finir une mission : décidé par le registre du backend -----------
+
+
+def _paid_mission_for_provider(provider_id: int = CLIENT_ID) -> int:
+    import asyncio
+
+    from telegram_bot import backend_client
+
+    db.create_user(OTHER_ID, "+243800009999", "Cliente", language="fr")
+    db.create_provider(provider_id, "+243800004242", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+    mission_id = db.create_mission(OTHER_ID, {
+        "service": "service_plomberie", "commune": "Gombe", "currency": "USD",
+        "description": "Fuite", "urgent": False,
+    })
+    quote_id = db.create_quote(mission_id, provider_id, 30.0, "USD", 2, "")
+    db.accept_quote(quote_id, OTHER_ID)
+    result = asyncio.run(backend_client.fund_mission(db.get_mission_by_id(mission_id), db.get_quote_by_id(quote_id), "mobile_money"))
+    db.apply_backend_mission(mission_id, result["mission"])
+    return mission_id
+
+
+def test_provider_starts_and_finishes_a_paid_mission_through_the_registry(client, live_backend):
+    mission_id = _paid_mission_for_provider()
+
+    started = client.post(f"/api/provider/{CLIENT_ID}/missions/{mission_id}/start", headers=_auth())
+    finished = client.post(f"/api/provider/{CLIENT_ID}/missions/{mission_id}/finish", headers=_auth())
+
+    assert started.status_code == 200 and started.json()["mission"]["status"] == "in_progress"
+    assert finished.status_code == 200 and finished.json()["mission"]["status"] == "awaiting_confirmation"
+    assert live_backend.mission(mission_id).status == "awaiting_confirmation"
+    assert db.get_mission_by_id(mission_id)["status"] == "awaiting_confirmation"
+
+
+def test_mission_actions_are_refused_with_a_code(client, live_backend):
+    mission_id = _paid_mission_for_provider()
+
+    early_finish = client.post(f"/api/provider/{CLIENT_ID}/missions/{mission_id}/finish", headers=_auth())
+
+    assert early_finish.status_code == 409
+    assert early_finish.json()["detail"] == {"code": "invalid_state"}
+
+
+def test_mission_actions_fail_safe_when_the_backend_is_down(client):
+    db.create_provider(CLIENT_ID, "+243800004242", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+
+    response = client.post(f"/api/provider/{CLIENT_ID}/missions/1/start", headers=_auth())
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == {"code": "backend_unavailable"}
