@@ -4,21 +4,6 @@ Ce fichier est le point d'entrée commun pour **tout outil IA** qui travaille su
 (remplace l'ancien `MANUS_HANDOFF.md`, qui était spécifique à un seul outil — son contenu
 a été fusionné ici).
 
-## Exigence de qualité (non négociable, demandée par Ben)
-
-Nexis Hub manipule de l'argent réel. Tout agent qui travaille sur ce dépôt applique ces
-règles, sans exception :
-
-- **Aucune solution provisoire.** Pas de contournement, de pansement, de rustine « en
-  attendant », ni d'état intermédiaire fragile livré sur une branche partagée.
-- **On propose la bonne solution, même si elle est plus grosse.** On la présente avec son
-  découpage, ses risques et ses tests, et on la livre complète, testée, sur une branche
-  dédiée.
-- **Si ça ne peut pas être fait proprement maintenant, on le dit.** On ne livre jamais un
-  demi-correctif à la place.
-- **Toute règle d'argent** a une seule source de vérité, est atomique, idempotente,
-  testée, et échoue en sécurité (en cas de doute ou de panne, aucun argent ne bouge).
-
 ## Objectif du projet
 
 Ce dépôt contient un bot Telegram pour Nexis Hub avec une migration progressive vers une
