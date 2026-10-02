@@ -502,11 +502,28 @@ ici.
 
 ## Phase 4 — Canal WhatsApp
 
-**Objectif** : ajouter `whatsapp_bot/` comme second canal, une fois que le
-backend est channel-agnostic (conséquence de la phase 3).
+**Architecture validée par Ben le 2026-10-02 :
+[docs/ARCHITECTURE_WHATSAPP.md](docs/ARCHITECTURE_WHATSAPP.md).** C'est la
+référence pour tout travail sur ce canal ; ne rien coder qui s'en écarte sans
+la mettre à jour d'abord.
 
-**Risque** : faible techniquement si la phase 3 est bien faite ; dépend surtout
-des accès WhatsApp Business API (à obtenir en amont).
+**Objectif** : ajouter `whatsapp_bot/` comme canal **réservé aux clients**
+(Telegram est peu utilisé à Kinshasa). Les prestataires restent sur le bot
+Telegram, la Mini App, puis l'application Nexis.
+
+**Prérequis** : le backend doit devenir indépendant du canal. Aujourd'hui tout
+est indexé par `telegram_id` (`backend/app/models.py`) et les notifications ne
+partent que par Telegram (`backend/app/notify.py`). Il faut d'abord un compte
+Nexis (`account_id`, rôles client et/ou prestataire, un seul wallet) auquel se
+rattachent les identités de canal, intégré au chantier argent
+(`feature/argent-backend`) pour ne pas migrer les wallets deux fois, puis une
+file de notifications transactionnelle. Découpage complet en 9 étapes dans le
+document d'architecture.
+
+**Risque** : élevé sur la migration d'identité (elle touche toutes les tables
+d'argent) ; moyen sur les démarches Meta (compte Business vérifié, numéro
+dédié, modèles de messages) et l'hébergement HTTPS stable, prérequis à
+l'ouverture.
 
 ## Phase 5 — Fonctionnalités IA (NLP, transcription, anti-fraude)
 
