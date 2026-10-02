@@ -138,6 +138,11 @@ async def _pay(callback: CallbackQuery, quote_id: int, method: str):
     if quote is None or quote["client_telegram_id"] != callback.from_user.id:
         await callback.answer(get_message("money_error_not_mission_client" if quote else "money_error_mission_not_found", lang), show_alert=True)
         return None
+    if quote["status"] != "accepted":
+        # Seul le devis accepté se paie (un ancien bouton d'un devis refusé ou
+        # remplacé ne doit pas payer un autre montant ou un autre prestataire).
+        await callback.answer(get_message("money_error_invalid_state", lang), show_alert=True)
+        return None
     mission = get_mission_by_id(quote["mission_id"])
     try:
         result = await backend_client.fund_mission(mission, quote, method)

@@ -441,3 +441,14 @@ def test_rating_skip_clears_state_without_backend_call(tmp_path, monkeypatch):
 
     assert state.cleared is True
     assert DummyAsyncClient.last_request is None
+
+
+def test_only_the_accepted_quote_can_be_paid(tmp_path, monkeypatch, live_backend):
+    mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch, live=True)
+    other_quote = db.create_quote(mission_id, 200, 999.0, "USD", 1, "")  # jamais accepté
+
+    callback = DummyCallback(telegram_id=100, data=f"pay_mobile_{other_quote}", bot=DummyBot())
+    asyncio.run(payment.paiement_mobile_money(callback))
+
+    assert callback.answered == get_message("money_error_invalid_state", "fr")
+    assert live_backend.mission(mission_id) is None
