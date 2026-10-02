@@ -365,47 +365,14 @@ trancher, pas un swap technique). Détail complet dans `AGENTS.md`.
   `backend_request_id` NULL en local, risque de doublon si on recopie
   naïvement toutes les lignes sans id backend). `audit_backend_parity.py`
   ne compare pas encore ce flow.
-- **Étape D, soldes wallet (fusionnée 2026-10-02, merge `533919a`)** :
-  lecture backend-first des écrans wallet client/prestataire (commit
-  `c83e373`). Fusionnée avec l'accord de Ben : le seul écart relevé par
-  `audit_backend_parity.py` est le wallet prestataire de test de Ben
-  (8 680 USD dans db.py, 0 dans Postgres : trois libérations simulées
-  antérieures au backend, et `backfill_providers_to_backend.py` ne copie pas
-  le wallet). Écart laissé volontairement comme cas de test de l'audit.
-  Pour le résorber : `backfill_wallets_to_backend.py` (simulation par
-  défaut, `--apply` pour écrire ; écrase le solde backend par celui de
-  db.py, refuse tant que `backend_outbox` n'est pas vide). À relire avant
-  `--apply` en prod : une auto-libération Celery, inconnue de db.py, serait
-  effacée.
-- **Rejeu des miroirs argent (2026-10-02)** : la raison de la mise de côté
-  ci-dessus (miroir perdu après une panne backend, écran affichant un solde
-  que le paiement db.py refuse) est traitée. Paiement escrow, libération,
-  remboursement, partage et statuts de mission passent par
-  `backend_client.queue_payment` / `queue_mission_status` : l'appel est mis
-  dans la table `backend_outbox` (db.py) puis envoyé, dans l'ordre d'arrivée.
-  En échec réseau ou 5xx il reste en file et bloque les suivants (pas de
-  statut qui recule) ; un refus 4xx (409 mission déjà réglée...) est retiré
-  et journalisé. Rejeu à chaque nouvel appel et toutes les minutes
-  (`run_backend_outbox_retry_loop`, lancé par `main.py`). Rejouer est sans
-  danger : le backend ne crédite/débite qu'une fois par mission (idempotence
-  sur ses transactions). Tant que la file n'est pas vide, le dashboard
-  affiche les soldes db.py. Tests : `tests/test_backend_outbox.py`. Une
-  libération encore en file n'est pas vue par
-  `backend_mission_already_released`, sans risque : db.py l'a déjà
-  appliquée et refuse alors litige, remboursement et partage.
-- **Double versement backend corrigé (2026-10-02)** : `/api/bot/missions/status`
-  refuse (409, avant écriture) un remboursement après une libération et
-  l'inverse ; `crud.release_payment` refuse une mission en litige ou déjà
-  réglée. **Côté bot, corrigé le même jour** : avant d'ouvrir un litige
-  (`payment.litige_motif_recu`) et avant un remboursement ou un partage
-  admin, le bot demande au backend si la mission a déjà été libérée
-  (`backend_client.backend_mission_already_released`). Si oui : litige
-  refusé au client (et db.py aligné via `release_payment`), remboursement et
-  partage refusés à l'admin ("payer le prestataire" reste permis, il aligne
-  db.py). **Décision de Ben** : si le backend ne répond pas au moment du
-  clic admin, remboursement et partage sont refusés ("réessaie dans quelques
-  minutes") plutôt que risquer un double versement. L'ouverture d'un litige
-  par le client reste permise backend coupé (elle ne déplace pas d'argent).
+- **Argent : backend seule source de vérité (branche `feature/argent-backend`,
+  2026-10-02)** : remplace tout ce qui précédait côté argent (lecture
+  backend-first des soldes, file de rejeu `backend_outbox`, recopie des
+  wallets, vérification « déjà libéré » avant litige). Le registre du backend
+  (`backend/app/ledger.py`) décide et enregistre paiement, démarrage, fin,
+  confirmation, libération auto, litige (fonds gelés) et décision admin ;
+  db.py ne contient plus d'argent et recopie l'état renvoyé. Comptes Nexis
+  indépendants du canal, un wallet par personne. Voir CONCEPTION_ARGENT.md.
 - **Étape D, matching (terminée 2026-10-02, choix de Ben : "mélange")** :
   `telegram_bot/mission.py::choose_providers_to_alert`. db.py décide qui est
   éligible (disponible, actif, non suspendu, service et commune : la Mini App
@@ -431,12 +398,9 @@ trancher, pas un swap technique). Détail complet dans `AGENTS.md`.
   numéro de mission, identique des deux côtés. Les boutons des services
   proposés gardent l'id db.py, volontairement : db.py reste la référence de
   ce flow tant que la Mini App n'écrit pas au backend (voir étape C).
-- **Étape D (à faire, la plus risquée)** : porter la logique de décision
-  de litige vers le backend, trancher l'algorithme de matching
-  (`find_matching_providers` legacy vs score backend différent), refaire
-  le schéma `callback_data` admin (basé sur l'id SQLite interne), migrer
-  enfin les lectures de solde wallet. Argent réel — à découper en
-  plusieurs sous-sessions, chacune revue séparément.
+- **Étape D (reste à faire)** : trancher l'algorithme de matching
+  (`find_matching_providers` legacy vs score backend différent). Les litiges
+  et les soldes sont faits (voir l'entrée « Argent » ci-dessus).
 
 ## Vérification obligatoire des prestataires (documents + validation admin)
 

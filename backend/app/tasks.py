@@ -2,7 +2,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 
-from backend.app import crud
+from backend.app import crud, ledger
 from backend.app.celery_app import celery_app
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, BotProvider, BotUser
@@ -29,8 +29,9 @@ def check_expired_quotes() -> int:
 def release_auto_confirmed_missions() -> int:
     """Auto-libère l'escrow des missions en `awaiting_confirmation` depuis 24h+.
 
-    Réutilise `crud.release_payment` (même chemin que l'endpoint manuel
-    `/api/missions/{id}/release`) plutôt que de dupliquer la logique.
+    Passe par `ledger.auto_release`, qui revérifie tout sous verrou : une
+    mission passée en litige entre la recherche et la libération n'est pas
+    payée (ses fonds sont gelés).
     """
     db = SessionLocal()
     try:
@@ -38,13 +39,12 @@ def release_auto_confirmed_missions() -> int:
         released = 0
         for stale_mission in stale:
             try:
-                mission = crud.release_payment(db, stale_mission.mission_id)
-            except ValueError:
-                # Garde-fou déjà défendu par crud.release_payment (ex: pas
-                # d'escrow payé) — ne devrait pas arriver pour une mission
-                # trouvée via find_missions_awaiting_confirmation_since, mais
-                # une tâche périodique ne doit jamais s'arrêter sur une ligne.
-                logger.warning("Auto-libération impossible pour la mission %s", stale_mission.mission_id)
+                mission = ledger.auto_release(db, stale_mission.mission_id)
+            except ledger.MoneyError as error:
+                # Litige ouvert, déjà réglée ou pas payée entre-temps : refus
+                # attendu. Une tâche périodique ne s'arrête jamais sur une ligne.
+                db.rollback()
+                logger.warning("Auto-libération refusée pour la mission %s : %s", stale_mission.mission_id, error.code)
                 continue
             released += 1
 

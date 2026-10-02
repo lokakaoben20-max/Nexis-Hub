@@ -6,7 +6,8 @@ matching...) du bot vers le backend plutôt que db.py -- voir la Phase 1-C de
 V5_MIGRATION_PLAN.md.
 
 Compare uniquement les champs qui ont vocation à être identiques dans les deux
-bases (identité, contact, langue, wallet). Les champs dérivés des missions
+bases (identité, contact, langue). Les soldes n'existent plus que dans le
+registre du backend (CONCEPTION_ARGENT.md) : rien à comparer. Les champs dérivés des missions
 (total_missions, success_rate, rating/average_rating) sont volontairement
 exclus de la comparaison : le backend les calcule désormais (Phase 1-A/B),
 db.py ne les a jamais calculés -- une différence attendue, pas une dérive.
@@ -53,7 +54,7 @@ def audit_users(db) -> None:
     print(f"présents seulement dans db.py      : {only_local or 'aucun'}")
     print(f"présents seulement dans le backend : {only_remote or 'aucun'}")
 
-    fields = ["first_name", "phone_number", "language", "wallet_balance_usd", "wallet_balance_cdf"]
+    fields = ["first_name", "phone_number", "language"]
     drifted = 0
     for telegram_id in common:
         local = local_users[telegram_id]
@@ -62,8 +63,6 @@ def audit_users(db) -> None:
             "first_name": remote.first_name,
             "phone_number": remote.phone_number,
             "language": remote.language,
-            "wallet_balance_usd": remote.wallet_balance_usd,
-            "wallet_balance_cdf": remote.wallet_balance_cdf,
         }
         diffs = _diff_fields(local, remote_dict, fields)
         if diffs:
@@ -92,7 +91,7 @@ def audit_providers(db) -> None:
             "tant qu'ils ne sont pas backfillés (voir backfill_providers_to_backend.py)."
         )
 
-    fields = ["full_name", "phone_number", "services", "communes", "status", "is_verified", "is_active", "is_suspended", "wallet_balance_usd", "wallet_balance_cdf"]
+    fields = ["full_name", "phone_number", "services", "communes", "status", "is_verified", "is_active", "is_suspended"]
     drifted = 0
     for telegram_id in common:
         local = dict(local_providers[telegram_id])
@@ -112,8 +111,6 @@ def audit_providers(db) -> None:
             "is_verified": remote.is_verified,
             "is_active": remote.is_active,
             "is_suspended": remote.is_suspended,
-            "wallet_balance_usd": remote.wallet_balance_usd,
-            "wallet_balance_cdf": remote.wallet_balance_cdf,
         }
         diffs = _diff_fields(local, remote_dict, fields)
         if diffs:

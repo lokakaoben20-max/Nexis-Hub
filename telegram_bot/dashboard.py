@@ -40,11 +40,12 @@ from db import (
 from messages import get_message
 from telegram_bot.backend_client import (
     _safe_backend_call,
-    backend_wallet_sync_pending,
     fetch_backend_profile,
+    fetch_wallets,
     get_provider_language,
     get_user_language,
     sync_service_request_to_backend,
+    wallet_balance,
 )
 from telegram_bot.keyboards import SERVICES, _rich_cell, clavier_client, clavier_prestataire, clavier_services_actions
 
@@ -252,18 +253,16 @@ async def recevoir_description_service_manquant(message: Message, state: FSMCont
     )
 
 
-def wallet_balances(backend_entity, local_row) -> tuple:
-    """Soldes (USD, CDF) lus en priorité dans le dict backend (`client` ou
-    `provider` de `/api/profile/{telegram_id}`), repli sur la ligne db.py
-    si le backend ne répond pas ou ne connaît pas ce compte (étape D).
-    Repli aussi tant que des mouvements d'argent attendent d'être rejoués
-    vers le backend (`backend_outbox`) : ses soldes sont alors en retard."""
-    if isinstance(backend_entity, dict) and not backend_wallet_sync_pending():
-        usd = backend_entity.get("wallet_balance_usd")
-        cdf = backend_entity.get("wallet_balance_cdf")
-        if isinstance(usd, (int, float)) and isinstance(cdf, (int, float)):
-            return usd, cdf
-    return local_row["wallet_balance_usd"], local_row["wallet_balance_cdf"]
+async def wallet_text(telegram_id: int, title_key: str, lang: str) -> str:
+    """Écran wallet : soldes lus dans le registre du backend, seule source de
+    vérité. Backend injoignable = « solde indisponible », jamais un chiffre
+    local (il n'y en a plus)."""
+    wallets = await fetch_wallets(telegram_id)
+    usd = wallet_balance(wallets, "USD")
+    cdf = wallet_balance(wallets, "CDF")
+    if usd is None or cdf is None:
+        return get_message("wallet_unavailable", lang)
+    return get_message(title_key, lang, usd=usd, cdf=cdf)
 
 
 @router.callback_query(F.data == "client_missions")
@@ -302,10 +301,8 @@ async def afficher_wallet_client(callback: CallbackQuery):
         return
 
     lang = await get_user_language(callback.from_user.id)
-    backend_profile = await fetch_backend_profile(callback.from_user.id)
-    usd, cdf = wallet_balances((backend_profile or {}).get("client"), user)
     await callback.message.edit_text(
-        get_message("wallet_title", lang, usd=usd, cdf=cdf),
+        await wallet_text(callback.from_user.id, "wallet_title", lang),
         parse_mode="HTML",
         reply_markup=clavier_client(lang),
     )
@@ -346,10 +343,8 @@ async def afficher_wallet_prestataire(callback: CallbackQuery):
         await callback.answer(get_message("provider_not_found", lang), show_alert=True)
         return
 
-    backend_profile = await fetch_backend_profile(callback.from_user.id)
-    usd, cdf = wallet_balances((backend_profile or {}).get("provider"), provider)
     await callback.message.edit_text(
-        get_message("provider_wallet_title", lang, usd=usd, cdf=cdf),
+        await wallet_text(callback.from_user.id, "provider_wallet_title", lang),
         parse_mode="HTML",
         reply_markup=clavier_prestataire(lang),
     )

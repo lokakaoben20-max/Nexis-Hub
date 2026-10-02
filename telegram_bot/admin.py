@@ -12,13 +12,15 @@ global dans `main.py` — corrigé au passage de l'extraction, sinon un
 
 Couvre : tableau de bord admin (stats, prestataires, missions, clients),
 résolution des litiges (rembourser / payer le prestataire / partager à
-l'amiable — voir `db.resolve_dispute_*`), validation des propositions de
+l'amiable — décidée par le registre du backend, voir CONCEPTION_ARGENT.md),
+validation des propositions de
 service, et vérification/suspension des prestataires (V5_MIGRATION_PLAN.md,
 vérification obligatoire).
 
 `is_admin`/`ADMIN_TELEGRAM_ID` sont dupliqués ici plutôt que réimportés depuis
 `main.py`, comme `telegram_bot/registration.py` le fait déjà pour la
 notification admin à l'inscription — même limitation, pas une régression.
+Sans `ADMIN_TELEGRAM_ID`, personne n'est admin (avant, tout le monde l'était).
 """
 
 import html
@@ -43,21 +45,20 @@ from db import (
     get_provider_by_telegram_id,
     get_recent_missions,
     get_service_request_by_id,
-    resolve_dispute_refund_client,
-    resolve_dispute_release_provider,
-    resolve_dispute_split,
     set_provider_suspended,
     set_provider_verified,
     update_provider_status,
 )
 from messages import get_message
 from telegram_bot.backend_client import (
-    BACKEND_UNREACHABLE,
+    BackendUnavailable,
+    MoneyRefused,
     _safe_backend_call,
-    backend_mission_payment_status,
+    apply_backend_mission,
     get_provider_language,
     get_user_language,
-    queue_mission_status,
+    money_failure_text,
+    resolve_dispute,
     sync_provider_status_to_backend,
     sync_provider_suspended_to_backend,
     sync_provider_unsuspended_to_backend,
@@ -79,8 +80,10 @@ router = Router()
 
 
 def is_admin(telegram_id: int) -> bool:
+    # Sans admin configuré, personne n'a accès : ces écrans déplacent de
+    # l'argent (litiges) et valident des prestataires.
     if not ADMIN_TELEGRAM_ID:
-        return True
+        return False
     return str(telegram_id) == ADMIN_TELEGRAM_ID
 
 
@@ -252,32 +255,16 @@ async def admin_disputes(callback: CallbackQuery):
     await callback.answer()
 
 
-# Moins de 200 caractères : limite Telegram des alertes de callback.
-DISPUTE_ALREADY_RELEASED_ADMIN = (
-    "Déjà payé au prestataire (libération auto 24h). Rembourser paierait deux fois : "
-    "choisis « Payer le prestataire » pour aligner."
-)
-DISPUTE_BACKEND_UNREACHABLE_ADMIN = (
-    "Backend injoignable : impossible de vérifier si le prestataire a déjà été payé. "
-    "Réessaie dans quelques minutes."
-)
+async def _resolve(mission_id: int, decision: str, admin_telegram_id: int, percentage: float | None = None):
+    """Décision de litige par le registre du backend.
 
-
-async def _refund_blocked_reason(mission_id: int) -> str | None:
-    """Raison de refuser un remboursement (total ou partiel), ou None.
-
-    Le backend a peut-être déjà payé le prestataire (auto-libération Celery
-    que db.py ne voit pas). S'il ne répond pas, on ne peut pas le savoir :
-    on bloque plutôt que risquer un double versement (choix de Ben)."""
-    mission = get_mission_by_id(mission_id)
-    if mission is None:
-        return None
-    payment_status = await backend_mission_payment_status(mission["client_telegram_id"], mission_id)
-    if payment_status == BACKEND_UNREACHABLE:
-        return DISPUTE_BACKEND_UNREACHABLE_ADMIN
-    if payment_status == "released":
-        return DISPUTE_ALREADY_RELEASED_ADMIN
-    return None
+    Retourne (mission db.py, montants du règlement, None) si elle est
+    enregistrée, sinon (None, None, erreur)."""
+    try:
+        result = await resolve_dispute(mission_id, decision, admin_telegram_id, percentage)
+    except (MoneyRefused, BackendUnavailable) as error:
+        return None, None, error
+    return apply_backend_mission(mission_id, result["mission"]), result["money"]["settlement"], None
 
 
 @router.callback_query(F.data.startswith("admin_dispute_refund_"))
@@ -287,19 +274,11 @@ async def admin_litige_rembourser(callback: CallbackQuery):
         return
 
     mission_id = int(callback.data.replace("admin_dispute_refund_", "", 1))
-    blocked_reason = await _refund_blocked_reason(mission_id)
-    if blocked_reason:
-        await callback.answer(blocked_reason, show_alert=True)
-        return
-    try:
-        mission = resolve_dispute_refund_client(mission_id)
-    except ValueError as error:
-        await callback.answer(str(error), show_alert=True)
+    mission, settlement, error = await _resolve(mission_id, "refund", callback.from_user.id)
+    if error is not None:
+        await callback.answer(money_failure_text(mission_id, error, "fr"), show_alert=True)
         return
 
-    await queue_mission_status(
-        mission_id, "cancelled", payment_status="refunded", refund_amount=mission["total_client"]
-    )
     await callback.message.edit_text(f"💸 Litige NXH-{mission_id:04d} : client remboursé.")
 
     client_lang = await get_user_language(mission["client_telegram_id"])
@@ -325,13 +304,11 @@ async def admin_litige_payer_prestataire(callback: CallbackQuery):
         return
 
     mission_id = int(callback.data.replace("admin_dispute_release_", "", 1))
-    try:
-        mission = resolve_dispute_release_provider(mission_id)
-    except ValueError as error:
-        await callback.answer(str(error), show_alert=True)
+    mission, settlement, error = await _resolve(mission_id, "release", callback.from_user.id)
+    if error is not None:
+        await callback.answer(money_failure_text(mission_id, error, "fr"), show_alert=True)
         return
 
-    await queue_mission_status(mission_id, "completed", payment_status="released")
     await callback.message.edit_text(f"✅ Litige NXH-{mission_id:04d} : prestataire payé.")
 
     client_lang = await get_user_language(mission["client_telegram_id"])
@@ -348,7 +325,7 @@ async def admin_litige_payer_prestataire(callback: CallbackQuery):
                 "dispute_resolved_release_provider",
                 provider_lang,
                 mission_id=mission_id,
-                net=f"{mission['net_provider']:.2f}",
+                net=settlement["provider_amount"],
                 currency=mission["currency"],
             ),
             parse_mode="HTML",
@@ -366,8 +343,9 @@ async def admin_litige_demarrer_partage(callback: CallbackQuery, state: FSMConte
     await state.set_state(AdminDisputeSplit.percentage)
     await state.update_data(dispute_split_mission_id=mission_id)
     await callback.message.answer(
-        f"🤝 Litige NXH-{mission_id:04d} : quel pourcentage du montant escrow va au prestataire ?\n\n"
-        "Envoie un nombre entre 0 et 100 (le reste est remboursé au client). Exemple : 50"
+        f"🤝 Litige NXH-{mission_id:04d} : quel pourcentage du net prestataire lui revient ?\n\n"
+        "Envoie un nombre entre 0 et 100. Le reste du net est remboursé au client ; "
+        "la commission Nexis Hub reste acquise. Exemple : 50"
     )
     await callback.answer()
 
@@ -387,34 +365,21 @@ async def admin_litige_partage_recu(message: Message, state: FSMContext):
         await message.answer("Envoie un nombre entre 0 et 100. Exemple : 50")
         return
 
-    blocked_reason = await _refund_blocked_reason(mission_id)
-    if blocked_reason:
-        await state.clear()
-        await message.answer(blocked_reason)
-        return
-
-    try:
-        mission = resolve_dispute_split(mission_id, percentage)
-    except ValueError as error:
-        await message.answer(str(error))
-        await state.clear()
+    mission, settlement, error = await _resolve(mission_id, "split", message.from_user.id, percentage)
+    if error is not None:
+        # Panne : on garde l'état, l'admin renvoie le même pourcentage.
+        if not isinstance(error, BackendUnavailable):
+            await state.clear()
+        await message.answer(money_failure_text(mission_id, error, "fr"))
         return
     await state.clear()
 
-    client_refund = round(mission["total_client"] - mission["net_provider"], 2)
-    await queue_mission_status(
-        mission_id,
-        "completed",
-        payment_status="released",
-        refund_amount=client_refund if client_refund > 0 else None,
-        # Sans ça, le backend créditerait le prestataire de son net_provider
-        # ORIGINAL (posé au paiement escrow, avant tout litige) au lieu de
-        # sa part réduite après partage — sur-crédit trouvé en revue.
-        net_provider=mission["net_provider"],
-    )
+    provider_share = settlement["provider_amount"]
+    client_refund = settlement["client_amount"]
     await message.answer(
-        f"🤝 Litige NXH-{mission_id:04d} résolu : {mission['net_provider']:.2f} {mission['currency']} au "
-        f"prestataire, {client_refund:.2f} {mission['currency']} remboursés au client."
+        f"🤝 Litige NXH-{mission_id:04d} résolu : {provider_share} {mission['currency']} au "
+        f"prestataire, {client_refund} {mission['currency']} remboursés au client, "
+        f"{settlement['platform_amount']} {mission['currency']} de commission."
     )
 
     client_lang = await get_user_language(mission["client_telegram_id"])
@@ -424,7 +389,7 @@ async def admin_litige_partage_recu(message: Message, state: FSMContext):
             "dispute_resolved_split_client",
             client_lang,
             mission_id=mission_id,
-            refund=f"{client_refund:.2f}",
+            refund=client_refund,
             currency=mission["currency"],
         ),
         parse_mode="HTML",
@@ -437,7 +402,7 @@ async def admin_litige_partage_recu(message: Message, state: FSMContext):
                 "dispute_resolved_split_provider",
                 provider_lang,
                 mission_id=mission_id,
-                net=f"{mission['net_provider']:.2f}",
+                net=provider_share,
                 currency=mission["currency"],
             ),
             parse_mode="HTML",

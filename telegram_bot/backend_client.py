@@ -11,31 +11,19 @@ Double écriture maintenue (backend + `db.py`) pour toutes les écritures de ce 
 maintenant leur ferait lire une donnée périmée. Voir V5_MIGRATION_PLAN.md, Phase 3.
 """
 
-import asyncio
 import json
-import logging
 import os
 
 import httpx
 from dotenv import load_dotenv
 
-from db import (
-    count_backend_outbox,
-    create_user,
-    delete_backend_outbox_entry,
-    enqueue_backend_call,
-    get_backend_outbox,
-    get_mission_by_id,
-    get_provider_by_telegram_id,
-    get_user_by_telegram_id,
-    mark_backend_outbox_failure,
-)
+from db import apply_backend_mission, create_user, get_mission_by_id, get_provider_by_telegram_id, get_user_by_telegram_id
+from messages import MESSAGES, get_message
 
 load_dotenv()
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://127.0.0.1:8000")
 BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
 BACKEND_AUTH_HEADERS = {"X-API-Key": BACKEND_API_KEY}
-logger = logging.getLogger(__name__)
 
 
 async def _safe_backend_call(coro):
@@ -223,152 +211,130 @@ async def sync_service_request_status_to_backend(backend_request_id: int, status
         return response.json()
 
 
-async def sync_mission_status_to_backend(
-    mission_id: int,
-    status: str,
-    payment_status: str | None = None,
-    dispute_reason: str | None = None,
-    refund_amount: float | None = None,
-    net_provider: float | None = None,
-) -> dict:
-    """`refund_amount`/`net_provider` : résolution de litige. Combinables avec
-    `payment_status="released"` pour un partage à l'amiable (le prestataire
-    reçoit `net_provider` — sa part réduite, PAS le net_provider posé au
-    paiement escrow initial — le client `refund_amount`, dans le même appel).
-    Sans `net_provider` explicite, le backend garderait la valeur pleine déjà
-    stockée et sur-créditerait le prestataire — voir backend/app/main.py::
-    update_mission_status.
-    """
-    payload = _mission_status_payload(mission_id, status, payment_status, dispute_reason, refund_amount, net_provider)
-    return await _post_backend(MISSION_STATUS_PATH, payload)
+# --- Argent : le backend décide, seul (voir CONCEPTION_ARGENT.md) -----------
+# Paiement, démarrage, fin, confirmation, litige et résolution sont des
+# demandes au registre du backend. Le bot n'écrit l'état dans db.py qu'après
+# la réponse du backend (`db.apply_backend_mission`), jamais avant. Backend
+# injoignable ou réponse inattendue = `BackendUnavailable` : aucune action
+# d'argent n'a eu lieu, l'utilisateur réessaie.
 
 
-def _mission_status_payload(mission_id, status, payment_status=None, dispute_reason=None, refund_amount=None, net_provider=None) -> dict:
-    payload = {"mission_id": mission_id, "status": status}
-    if payment_status:
-        payload["payment_status"] = payment_status
-    if dispute_reason is not None:
-        payload["dispute_reason"] = dispute_reason
-    if refund_amount is not None:
-        payload["refund_amount"] = refund_amount
-    if net_provider is not None:
-        payload["net_provider"] = net_provider
-    return payload
+class BackendUnavailable(Exception):
+    """Le backend n'a pas répondu, ou pas comme prévu : rien n'a bougé."""
 
 
-async def sync_payment_to_backend(
-    quote_id: int,
-    payment_status: str,
-    mission_id: int | None = None,
-    amounts: dict | None = None,
-    via_wallet: bool = False,
-) -> dict:
-    """`amounts` : le dict retourné par `db.mark_quote_paid`/`mark_quote_paid_with_wallet`
-    (mêmes clés : commission_amount, tola_fee, aggregator_fee, total_client,
-    net_provider, mobile_money_ref, operator, quote). Quand fourni, le backend
-    reflète la transaction et débite le wallet (si `via_wallet`) sans revalider
-    — db.py reste la source de vérité, voir backend/app/main.py::PaymentPayload.
-    """
-    payload = _payment_payload(quote_id, payment_status, mission_id, amounts, via_wallet)
-    return await _post_backend(PAYMENT_PATH, payload)
+class MoneyRefused(Exception):
+    """Refus métier du backend : `code` stable (traduit pour l'utilisateur),
+    `mission` = état courant de la mission côté backend, à recopier."""
+
+    def __init__(self, code: str, mission: dict | None = None, money: dict | None = None):
+        super().__init__(code)
+        self.code = code
+        self.mission = mission
+        self.money = money
 
 
-def _payment_payload(quote_id, payment_status, mission_id=None, amounts=None, via_wallet=False) -> dict:
-    payload = {"quote_id": quote_id, "payment_status": payment_status}
-    if mission_id is not None:
-        payload["mission_id"] = mission_id
-    if amounts is not None:
-        quote = amounts["quote"]
-        payload.update(
-            {
-                "amount": quote["amount"],
-                "currency": quote["currency"],
-                "commission_amount": amounts["commission_amount"],
-                "tola_fee": amounts["tola_fee"],
-                "aggregator_fee": amounts["aggregator_fee"],
-                "total_client": amounts["total_client"],
-                "net_provider": amounts["net_provider"],
-                "mobile_money_ref": amounts["mobile_money_ref"],
-                "operator": amounts["operator"],
-                "via_wallet": via_wallet,
-            }
-        )
-    return payload
-
-
-async def _post_backend(path: str, payload: dict) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}{path}", json=payload)
-        response.raise_for_status()
-        return response.json()
-
-
-# --- File d'attente des appels qui déplacent de l'argent -------------------
-# Paiement escrow, libération, remboursement et statuts de mission passaient
-# par `_safe_backend_call` : backend coupé = appel perdu, wallet backend faux
-# pour toujours. Ils passent maintenant par `backend_outbox` (db.py) : mis en
-# file, puis envoyés dans l'ordre d'arrivée. Un appel qui échoue reste en
-# file et bloque les suivants (un vieux "in_progress" rejoué après un
-# "completed" ferait reculer la mission). Rejouer est sans danger : le
-# backend ne crédite/débite qu'une fois par mission, en se basant sur ses
-# transactions (voir backend/app/main.py::update_mission_status et
-# update_payment).
-MISSION_STATUS_PATH = "/api/bot/missions/status"
-PAYMENT_PATH = "/api/bot/payments"
-
-
-async def flush_backend_outbox() -> bool:
-    """Envoie la file dans l'ordre. True si elle est vide à la fin."""
-    for entry in get_backend_outbox():
-        try:
-            await _post_backend(entry["path"], entry["payload"])
-        except httpx.HTTPStatusError as error:
-            if error.response.status_code < 500:
-                # Refus définitif du backend (409 mission déjà réglée, 422...) :
-                # le rejouer ne changera rien et bloquerait toute la file.
-                logger.warning("Appel backend refusé, retiré de la file : %s %s -> %s", entry["path"], entry["payload"], error)
-                delete_backend_outbox_entry(entry["id"])
-                continue
-            mark_backend_outbox_failure(entry["id"], repr(error))
-            return False
-        except Exception as error:
-            mark_backend_outbox_failure(entry["id"], repr(error))
-            return False
-        delete_backend_outbox_entry(entry["id"])
-    return True
-
-
-async def _queue_backend_call(path: str, payload: dict) -> bool:
-    enqueue_backend_call(path, payload)
+async def _money_call(method: str, path: str, payload: dict | None = None) -> dict:
     try:
-        return await flush_backend_outbox()
+        async with httpx.AsyncClient(timeout=10.0, headers=BACKEND_AUTH_HEADERS) as client:
+            if method == "GET":
+                response = await client.get(f"{BACKEND_BASE_URL}{path}")
+            else:
+                response = await client.post(f"{BACKEND_BASE_URL}{path}", json=payload)
+    except Exception as error:
+        raise BackendUnavailable(repr(error)) from error
+    try:
+        body = response.json()
+    except ValueError as error:
+        raise BackendUnavailable(f"réponse illisible ({response.status_code})") from error
+    if response.status_code in (400, 403, 404, 409):
+        detail = body.get("detail") if isinstance(body, dict) else None
+        if isinstance(detail, dict) and isinstance(detail.get("code"), str):
+            raise MoneyRefused(detail["code"], detail.get("mission"), detail.get("money"))
+    if response.status_code != 200 or not isinstance(body, dict) or not isinstance(body.get("mission"), dict):
+        raise BackendUnavailable(f"réponse inattendue ({response.status_code})")
+    return body
+
+
+async def fund_mission(mission, quote, method: str) -> dict:
+    """Paie la mission en escrow. `mission` et `quote` sont les lignes db.py :
+    la demande porte tout ce dont le backend a besoin."""
+    return await _money_call(
+        "POST",
+        f"/api/bot/missions/{mission['id']}/fund",
+        {
+            "method": method,
+            "client_telegram_id": mission["client_telegram_id"],
+            "provider_telegram_id": quote["provider_telegram_id"],
+            "quote_ref": quote["id"],
+            "amount": quote["amount"],
+            "currency": quote["currency"],
+            "urgent": bool(mission["is_urgent"]),
+            "service": mission["service"],
+            "commune": mission["commune"],
+            "description": mission["description"] or "",
+        },
+    )
+
+
+async def start_mission(mission_id: int, provider_telegram_id: int) -> dict:
+    return await _money_call("POST", f"/api/bot/missions/{mission_id}/start", {"provider_telegram_id": provider_telegram_id})
+
+
+async def finish_mission(mission_id: int, provider_telegram_id: int) -> dict:
+    return await _money_call("POST", f"/api/bot/missions/{mission_id}/finish", {"provider_telegram_id": provider_telegram_id})
+
+
+async def confirm_mission(mission_id: int, client_telegram_id: int) -> dict:
+    return await _money_call("POST", f"/api/bot/missions/{mission_id}/confirm", {"client_telegram_id": client_telegram_id})
+
+
+async def open_dispute(mission_id: int, client_telegram_id: int, reason: str) -> dict:
+    return await _money_call(
+        "POST", f"/api/bot/missions/{mission_id}/dispute", {"client_telegram_id": client_telegram_id, "reason": reason}
+    )
+
+
+async def resolve_dispute(mission_id: int, decision: str, admin_telegram_id: int, provider_percentage: float | None = None) -> dict:
+    return await _money_call(
+        "POST",
+        f"/api/bot/missions/{mission_id}/dispute/resolve",
+        {"decision": decision, "admin_telegram_id": admin_telegram_id, "provider_percentage": provider_percentage},
+    )
+
+
+async def fetch_wallets(telegram_id: int) -> dict | None:
+    """Wallet de la personne (un seul, qu'elle soit cliente, prestataire ou
+    les deux), lu dans le registre. None si le backend ne répond pas : l'écran
+    affiche alors « solde indisponible », jamais un chiffre local."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+            response = await client.get(f"{BACKEND_BASE_URL}/api/bot/wallets/{telegram_id}")
+            response.raise_for_status()
+            body = response.json()
     except Exception:
-        return False
+        return None
+    return body if isinstance(body, dict) else None
 
 
-async def queue_mission_status(mission_id: int, status: str, **kwargs) -> bool:
-    """Comme `sync_mission_status_to_backend`, mais rejoué plus tard si le backend ne répond pas."""
-    return await _queue_backend_call(MISSION_STATUS_PATH, _mission_status_payload(mission_id, status, **kwargs))
+def money_failure_text(mission_id: int, error: Exception, lang: str) -> str:
+    """Message à montrer quand une action d'argent n'a pas abouti. Sur un refus
+    du backend, recopie d'abord l'état réel de la mission dans db.py."""
+    if isinstance(error, MoneyRefused):
+        if isinstance(error.mission, dict):
+            apply_backend_mission(mission_id, error.mission)
+        key = f"money_error_{error.code}"
+        return get_message(key if key in MESSAGES["fr"] else "money_error_generic", lang)
+    return get_message("money_backend_unavailable", lang)
 
 
-async def queue_payment(quote_id: int, payment_status: str, **kwargs) -> bool:
-    """Comme `sync_payment_to_backend`, mais rejoué plus tard si le backend ne répond pas."""
-    return await _queue_backend_call(PAYMENT_PATH, _payment_payload(quote_id, payment_status, **kwargs))
-
-
-def backend_wallet_sync_pending() -> bool:
-    """Des mouvements d'argent attendent d'être envoyés au backend : ses
-    soldes sont en retard sur db.py, ne pas les afficher."""
-    return count_backend_outbox() > 0
-
-
-async def run_backend_outbox_retry_loop(interval_seconds: float = 60.0):
-    while True:
-        try:
-            await flush_backend_outbox()
-        except Exception:
-            logger.exception("Rejeu de la file backend en échec")
-        await asyncio.sleep(interval_seconds)
+def wallet_balance(wallets: dict | None, currency: str) -> float | None:
+    """Solde dans une devise, ou None si inconnu (backend injoignable)."""
+    entity = (wallets or {}).get("wallet")
+    if not isinstance(entity, dict):
+        return None
+    value = entity.get("wallet_balance_usd" if currency == "USD" else "wallet_balance_cdf")
+    return float(value) if isinstance(value, (int, float)) else None
 
 
 async def sync_review_to_backend(mission_id: int, client_telegram_id: int, rating: int, comment: str = "") -> dict:
@@ -425,30 +391,6 @@ async def fetch_backend_provider_ranking(telegram_ids: list[int]) -> list[int] |
         if isinstance(telegram_id, int) and telegram_id not in ranking:
             ranking.append(telegram_id)
     return ranking
-
-
-BACKEND_UNREACHABLE = "unreachable"
-
-
-async def backend_mission_payment_status(client_telegram_id: int, mission_id: int) -> str | None:
-    """`payment_status` de la mission côté backend ; None si le backend répond
-    mais ne connaît pas la mission ; `BACKEND_UNREACHABLE` s'il ne répond pas.
-    Sert à détecter l'auto-libération Celery à 24h (backend/app/tasks.py), qui
-    paie le prestataire dans Postgres sans que db.py le sache."""
-    profile = await fetch_backend_profile(client_telegram_id)
-    if not isinstance(profile, dict):
-        return BACKEND_UNREACHABLE
-    for mission in profile.get("client_missions") or []:
-        if isinstance(mission, dict) and mission.get("mission_id") == mission_id:
-            return mission.get("payment_status")
-    return None
-
-
-async def backend_mission_already_released(client_telegram_id: int, mission_id: int) -> bool:
-    """True seulement si le backend répond et dit que l'escrow est déjà libéré.
-    Backend injoignable -> False : l'ouverture d'un litige ne déplace pas
-    d'argent, la vérification bloquante se fait au règlement admin."""
-    return await backend_mission_payment_status(client_telegram_id, mission_id) == "released"
 
 
 async def load_profile_from_backend(telegram_id: int, fallback_user: dict | None = None) -> dict:

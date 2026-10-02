@@ -1,8 +1,6 @@
 import json
 import sqlite3
-from datetime import datetime, timedelta
 from pathlib import Path
-
 
 
 DB_PATH = Path(__file__).with_name("nexis_hub.db")
@@ -31,8 +29,6 @@ def init_db():
         ensure_column(conn, "users", "commune", "TEXT")
         ensure_column(conn, "users", "preferred_currency", "TEXT DEFAULT 'USD'")
         ensure_column(conn, "users", "is_active", "INTEGER DEFAULT 1")
-        ensure_column(conn, "users", "wallet_balance_usd", "REAL DEFAULT 0.00")
-        ensure_column(conn, "users", "wallet_balance_cdf", "REAL DEFAULT 0.00")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS missions (
@@ -138,14 +134,10 @@ def init_db():
                 visit_fee_enabled INTEGER DEFAULT 0,
                 latitude REAL,
                 longitude REAL,
-                wallet_balance_usd REAL DEFAULT 0.00,
-                wallet_balance_cdf REAL DEFAULT 0.00,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
-        ensure_column(conn, "providers", "wallet_balance_usd", "REAL DEFAULT 0.00")
-        ensure_column(conn, "providers", "wallet_balance_cdf", "REAL DEFAULT 0.00")
         ensure_column(conn, "providers", "is_suspended", "INTEGER DEFAULT 0")
         ensure_column(conn, "providers", "consecutive_ignored", "INTEGER DEFAULT 0")
         ensure_column(conn, "providers", "warnings_count", "INTEGER DEFAULT 0")
@@ -169,30 +161,6 @@ def init_db():
         ensure_column(conn, "providers", "id_document_file_id", "TEXT")
         ensure_column(conn, "providers", "selfie_file_id", "TEXT")
         ensure_column(conn, "providers", "portfolio_file_ids", "TEXT DEFAULT '[]'")
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS transactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                mission_id INTEGER NOT NULL,
-                quote_id INTEGER,
-                type TEXT NOT NULL,
-                amount REAL NOT NULL,
-                currency TEXT NOT NULL,
-                commission_amount REAL DEFAULT 0.00,
-                tola_fee REAL DEFAULT 0.00,
-                net_provider REAL DEFAULT 0.00,
-                status TEXT DEFAULT 'pending',
-                mobile_money_ref TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(mission_id) REFERENCES missions(id),
-                FOREIGN KEY(quote_id) REFERENCES quotes(id)
-            )
-            """
-        )
-        ensure_column(conn, "transactions", "amount_usd_equiv", "REAL DEFAULT 0.00")
-        ensure_column(conn, "transactions", "aggregator_fee", "REAL DEFAULT 0.00")
-        ensure_column(conn, "transactions", "operator", "TEXT")
-        ensure_column(conn, "transactions", "phone_number", "TEXT")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS service_requests (
@@ -259,24 +227,35 @@ def init_db():
             )
             """
         )
-        # File d'attente des appels backend qui déplacent de l'argent (paiement
-        # escrow, libération, remboursement, statut de mission). Un appel qui
-        # échoue (backend coupé) y reste et sera rejoué dans l'ordre : sans ça,
-        # le wallet backend restait faux pour toujours après une panne.
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS backend_outbox (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                path TEXT NOT NULL,
-                payload TEXT NOT NULL,
-                attempts INTEGER DEFAULT 0,
-                last_error TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
+        _drop_legacy_money_storage(conn)
         seed_default_services(conn)
         seed_platform_settings(conn)
+
+
+def _drop_legacy_money_storage(conn):
+    """L'argent vit dans le registre du backend (CONCEPTION_ARGENT.md) :
+    SQLite ne garde plus de soldes ni de file de rejeu.
+
+    Une file `backend_outbox` non vide contient des mouvements d'argent que le
+    backend n'a jamais reçus : les supprimer les perdrait. Le bot refuse alors
+    de démarrer ; il faut d'abord la vider avec l'ancienne version (backend
+    joignable), puis relancer. L'ancienne table `transactions` reste en place,
+    en lecture seule (historique), plus jamais écrite.
+    """
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "backend_outbox" in tables:
+        pending = conn.execute("SELECT COUNT(*) FROM backend_outbox").fetchone()[0]
+        if pending:
+            raise RuntimeError(
+                f"{pending} mouvement(s) d'argent encore en attente dans backend_outbox : "
+                "les envoyer au backend avec la version précédente du bot avant de démarrer celle-ci."
+            )
+        conn.execute("DROP TABLE backend_outbox")
+    for table in ("users", "providers"):
+        columns = {column[1] for column in conn.execute(f"PRAGMA table_info({table})")}
+        for column in ("wallet_balance_usd", "wallet_balance_cdf"):
+            if column in columns:
+                conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
 
 
 def ensure_column(conn, table_name: str, column_name: str, column_type: str):
@@ -892,6 +871,11 @@ def create_quote(
     provider = get_provider_by_telegram_id(provider_telegram_id)
     if provider is None:
         raise ValueError("Prestataire introuvable pour ce devis")
+    mission = get_mission_by_id(mission_id)
+    if mission is not None and mission["client_telegram_id"] == provider_telegram_id:
+        # Un prestataire peut commander comme client, jamais chiffrer sa
+        # propre mission (le backend refuse aussi devis et paiement).
+        raise ValueError("Vous ne pouvez pas faire de devis sur votre propre mission")
 
     with get_connection() as conn:
         cursor = conn.execute(
@@ -977,224 +961,6 @@ def reject_quote(quote_id: int, client_telegram_id: int):
     return quote
 
 
-def calculate_payment_amounts(amount: float, currency: str, urgent: bool = False):
-    # Les frais Tola ont été supprimés (service indisponible en RDC) : le client
-    # ne paie plus que le montant du devis. Les clés tola_fee/aggregator_fee sont
-    # conservées à 0.00 car les colonnes correspondantes existent toujours en base
-    # et gardent l'historique des missions payées avant cette suppression.
-    commission_rate = 0.15 if urgent else 0.10
-    commission_amount = round(amount * commission_rate, 2)
-    total_client = round(amount, 2)
-    net_provider = round(amount - commission_amount, 2)
-    return {
-        "commission_amount": commission_amount,
-        "tola_fee": 0.00,
-        "aggregator_fee": 0.00,
-        "total_client": total_client,
-        "net_provider": net_provider,
-    }
-
-
-def mark_quote_paid(quote_id: int, client_telegram_id: int, operator: str = "simulation"):
-    quote = get_quote_by_id(quote_id)
-    if quote is None:
-        raise ValueError("Devis introuvable")
-    if quote["client_telegram_id"] != client_telegram_id:
-        raise ValueError("Ce devis n'appartient pas à ce client")
-
-    mission = get_mission_by_id(quote["mission_id"])
-    if mission is None:
-        raise ValueError("Mission introuvable")
-
-    amounts = calculate_payment_amounts(
-        amount=quote["amount"],
-        currency=quote["currency"],
-        urgent=bool(mission["is_urgent"]),
-    )
-    mobile_money_ref = f"SIM-{quote_id:04d}"
-
-    with get_connection() as conn:
-        cursor = conn.execute(
-            """
-            INSERT INTO transactions (
-                mission_id, quote_id, type, amount, currency,
-                commission_amount, tola_fee, aggregator_fee, net_provider,
-                status, mobile_money_ref
-            )
-            VALUES (?, ?, 'escrow_in', ?, ?, ?, ?, ?, ?, 'success', ?)
-            """,
-            (
-                quote["mission_id"],
-                quote_id,
-                amounts["total_client"],
-                quote["currency"],
-                amounts["commission_amount"],
-                amounts["tola_fee"],
-                amounts["aggregator_fee"],
-                amounts["net_provider"],
-                mobile_money_ref,
-            ),
-        )
-        conn.execute(
-            """
-            UPDATE missions
-            SET payment_status = 'paid_escrow',
-                commission_amount = ?,
-                tola_fee = ?,
-                aggregator_fee = ?,
-                total_client = ?,
-                net_provider = ?,
-                status = 'confirmed'
-            WHERE id = ?
-            """,
-            (
-                amounts["commission_amount"],
-                amounts["tola_fee"],
-                amounts["aggregator_fee"],
-                amounts["total_client"],
-                amounts["net_provider"],
-                quote["mission_id"],
-            ),
-        )
-
-    return {
-        "transaction_id": cursor.lastrowid,
-        "mobile_money_ref": mobile_money_ref,
-        **amounts,
-        "quote": quote,
-        "operator": operator,
-        "status": "success",
-    }
-
-
-def mark_quote_paid_with_wallet(quote_id: int, client_telegram_id: int, operator: str = "wallet"):
-    quote = get_quote_by_id(quote_id)
-    if quote is None:
-        raise ValueError("Devis introuvable")
-    if quote["client_telegram_id"] != client_telegram_id:
-        raise ValueError("Ce devis n'appartient pas à ce client")
-
-    mission = get_mission_by_id(quote["mission_id"])
-    if mission is None:
-        raise ValueError("Mission introuvable")
-
-    user = get_user_by_telegram_id(mission["client_telegram_id"])
-    if user is None:
-        raise ValueError("Client introuvable")
-
-    user_data = dict(user) if hasattr(user, "keys") and not isinstance(user, dict) else user
-
-    amounts = calculate_payment_amounts(
-        amount=quote["amount"],
-        currency=quote["currency"],
-        urgent=bool(mission["is_urgent"]),
-    )
-    total_client = amounts["total_client"]
-    wallet_balance = user_data["wallet_balance_usd"] if quote["currency"] == "USD" else user_data["wallet_balance_cdf"]
-    if wallet_balance < total_client:
-        raise ValueError("Solde insuffisant sur le wallet")
-
-    with get_connection() as conn:
-        wallet_column = "wallet_balance_usd" if quote["currency"] == "USD" else "wallet_balance_cdf"
-        conn.execute(
-            f"UPDATE users SET {wallet_column} = {wallet_column} - ? WHERE telegram_id = ?",
-            (total_client, mission["client_telegram_id"]),
-        )
-        conn.execute(
-            """
-            INSERT INTO transactions (
-                mission_id, quote_id, type, amount, currency,
-                commission_amount, tola_fee, aggregator_fee, net_provider,
-                status, mobile_money_ref
-            )
-            VALUES (?, ?, 'escrow_in', ?, ?, ?, ?, ?, ?, 'success', ?)
-            """,
-            (
-                quote["mission_id"],
-                quote_id,
-                total_client,
-                quote["currency"],
-                amounts["commission_amount"],
-                amounts["tola_fee"],
-                amounts["aggregator_fee"],
-                amounts["net_provider"],
-                f"WLT-{quote_id:04d}",
-            ),
-        )
-        conn.execute(
-            """
-            UPDATE missions
-            SET payment_status = 'paid_escrow',
-                commission_amount = ?,
-                tola_fee = ?,
-                aggregator_fee = ?,
-                total_client = ?,
-                net_provider = ?,
-                status = 'confirmed'
-            WHERE id = ?
-            """,
-            (
-                amounts["commission_amount"],
-                amounts["tola_fee"],
-                amounts["aggregator_fee"],
-                total_client,
-                amounts["net_provider"],
-                quote["mission_id"],
-            ),
-        )
-
-    return {
-        "transaction_id": None,
-        "mobile_money_ref": f"WLT-{quote_id:04d}",
-        **amounts,
-        "quote": quote,
-        "operator": operator,
-        "status": "success",
-    }
-
-
-def start_mission(mission_id: int, provider_telegram_id: int):
-    mission = get_mission_by_id(mission_id)
-    if mission is None:
-        raise ValueError("Mission introuvable")
-    if mission["provider_telegram_id"] != provider_telegram_id:
-        raise ValueError("Ce prestataire n'est pas associé à cette mission")
-    if mission["payment_status"] != "paid_escrow":
-        raise ValueError("La mission n'est pas encore payée en escrow")
-
-    with get_connection() as conn:
-        conn.execute(
-            "UPDATE missions SET status = 'in_progress' WHERE id = ?",
-            (mission_id,),
-        )
-    return get_mission_by_id(mission_id)
-
-
-def finish_mission(mission_id: int, provider_telegram_id: int):
-    mission = get_mission_by_id(mission_id)
-    if mission is None:
-        raise ValueError("Mission introuvable")
-    if mission["provider_telegram_id"] != provider_telegram_id:
-        raise ValueError("Ce prestataire n'est pas associé à cette mission")
-
-    with get_connection() as conn:
-        conn.execute(
-            "UPDATE missions SET status = 'awaiting_confirmation' WHERE id = ?",
-            (mission_id,),
-        )
-    return get_mission_by_id(mission_id)
-
-
-def add_visit_fee_to_provider(provider_id: int, currency: str, amount: float):
-    """Envoie les frais de déplacement au prestataire."""
-    wallet_column = "wallet_balance_usd" if currency == "USD" else "wallet_balance_cdf"
-    with get_connection() as conn:
-        conn.execute(
-            f"UPDATE providers SET {wallet_column} = {wallet_column} + ? WHERE id = ?",
-            (amount, provider_id),
-        )
-
-
 def update_consecutive_ignored(telegram_id: int):
     """Incrémente le compteur de demandes ignorées."""
     with get_connection() as conn:
@@ -1227,225 +993,43 @@ def reset_consecutive_ignored(telegram_id: int):
         )
 
 
-def _credit_provider_and_complete(conn, mission):
-    """Insère la transaction 'release' et crédite le prestataire — partagé
-    entre release_payment (confirmation client normale) et
-    resolve_dispute_release_provider (résolution admin d'un litige)."""
-    wallet_column = "wallet_balance_usd" if mission["currency"] == "USD" else "wallet_balance_cdf"
-    conn.execute(
-        """
-        INSERT INTO transactions (
-            mission_id, type, amount, currency, net_provider, status
-        )
-        VALUES (?, 'release', ?, ?, ?, 'success')
-        """,
-        (
-            mission["id"],
-            mission["net_provider"],
-            mission["currency"],
-            mission["net_provider"],
-        ),
-    )
-    conn.execute(
-        f"UPDATE providers SET {wallet_column} = {wallet_column} + ? WHERE id = ?",
-        (mission["net_provider"], mission["provider_id"]),
-    )
-    conn.execute(
-        """
-        UPDATE missions
-        SET status = 'completed',
-            payment_status = 'released'
-        WHERE id = ?
-        """,
-        (mission["id"],),
-    )
-
-
-def release_payment(mission_id: int, client_telegram_id: int):
-    mission = get_mission_by_id(mission_id)
-    if mission is None:
-        raise ValueError("Mission introuvable")
-    if mission["client_telegram_id"] != client_telegram_id:
-        raise ValueError("Cette mission n'appartient pas à ce client")
-    if mission["status"] == "disputed":
-        raise ValueError("Mission en litige : la résolution passe par l'admin")
-    if mission["payment_status"] != "paid_escrow":
-        raise ValueError("Aucun paiement escrow à libérer")
-
-    with get_connection() as conn:
-        _credit_provider_and_complete(conn, mission)
-    return get_mission_by_id(mission_id)
-
-
-# Délai avant résolution attendue d'un litige. Correspond à la valeur du
-# paramètre `delay_dispute_resolution` déjà seedé dans platform_settings
-# (jamais lu par aucun code actif — voir balayage db.py/backend) : codé en
-# dur ici plutôt que de brancher toute la table pour ce seul flow.
-DISPUTE_RESOLUTION_DELAY_MINUTES = 2880
-
-
-# États depuis lesquels un litige peut légitimement s'ouvrir : après paiement
-# escrow, avant toute résolution finale. Exclut explicitement 'disputed' (déjà
-# ouvert), 'completed'/'cancelled' (mission déjà réglée — sans cette liste
-# positive, rouvrir un litige sur une mission déjà résolue permettait un
-# double remboursement/double paiement, trouvé par security-reviewer).
-_DISPUTE_ELIGIBLE_STATUSES = {"confirmed", "in_progress", "awaiting_confirmation"}
-
-
-def open_dispute(mission_id: int, client_telegram_id: int, reason: str):
-    mission = get_mission_by_id(mission_id)
-    if mission is None:
-        raise ValueError("Mission introuvable")
-    if mission["client_telegram_id"] != client_telegram_id:
-        raise ValueError("Cette mission n'appartient pas à ce client")
-    if mission["payment_status"] != "paid_escrow" or mission["status"] not in _DISPUTE_ELIGIBLE_STATUSES:
-        raise ValueError("Cette mission ne peut pas être mise en litige dans son état actuel")
-
-    deadline = (datetime.utcnow() + timedelta(minutes=DISPUTE_RESOLUTION_DELAY_MINUTES)).isoformat()
-    with get_connection() as conn:
-        conn.execute(
-            "UPDATE missions SET status = 'disputed', dispute_reason = ?, dispute_deadline = ? WHERE id = ?",
-            (reason, deadline, mission_id),
-        )
-    return get_mission_by_id(mission_id)
-
-
-def resolve_dispute_refund_client(mission_id: int):
-    mission = get_mission_by_id(mission_id)
-    if mission is None:
-        raise ValueError("Mission introuvable")
-    # Double vérification (status ET payment_status) en défense en profondeur :
-    # open_dispute garantit déjà cet invariant, mais un correctif futur qui
-    # l'affaiblirait ne doit pas suffire à permettre un double remboursement.
-    if mission["status"] != "disputed" or mission["payment_status"] != "paid_escrow":
-        raise ValueError("Cette mission n'est pas en litige")
-
-    wallet_column = "wallet_balance_usd" if mission["currency"] == "USD" else "wallet_balance_cdf"
+def apply_backend_mission(mission_id: int, backend_mission: dict):
+    """Recopie dans db.py l'état d'une mission décidé par le backend (seule
+    source de vérité de l'argent) : statut, paiement, montants, litige,
+    prestataire. Appelé après chaque réponse du backend, acceptation comme
+    refus, pour que les écrans et listes admin ne montrent jamais un état
+    périmé. N'écrit aucun solde : il n'y en a plus dans SQLite."""
+    provider_id = None
+    provider_telegram_id = backend_mission.get("provider_telegram_id")
+    if provider_telegram_id is not None:
+        provider = get_provider_by_telegram_id(provider_telegram_id)
+        provider_id = provider["id"] if provider is not None else None
     with get_connection() as conn:
         conn.execute(
             """
-            INSERT INTO transactions (
-                mission_id, type, amount, currency, status
-            )
-            VALUES (?, 'refund', ?, ?, 'success')
+            UPDATE missions
+            SET status = ?,
+                payment_status = COALESCE(?, payment_status),
+                commission_amount = ?,
+                tola_fee = ?,
+                total_client = ?,
+                net_provider = ?,
+                dispute_reason = ?,
+                dispute_deadline = ?,
+                provider_id = COALESCE(?, provider_id)
+            WHERE id = ?
             """,
-            (mission_id, mission["total_client"], mission["currency"]),
-        )
-        conn.execute(
-            f"UPDATE users SET {wallet_column} = {wallet_column} + ? WHERE id = ?",
-            (mission["total_client"], mission["user_id"]),
-        )
-        conn.execute(
-            "UPDATE missions SET status = 'cancelled', payment_status = 'refunded' WHERE id = ?",
-            (mission_id,),
-        )
-    return get_mission_by_id(mission_id)
-
-
-def resolve_dispute_release_provider(mission_id: int):
-    mission = get_mission_by_id(mission_id)
-    if mission is None:
-        raise ValueError("Mission introuvable")
-    if mission["status"] != "disputed" or mission["payment_status"] != "paid_escrow":
-        raise ValueError("Cette mission n'est pas en litige")
-
-    with get_connection() as conn:
-        _credit_provider_and_complete(conn, mission)
-    return get_mission_by_id(mission_id)
-
-
-def resolve_dispute_split(mission_id: int, provider_percentage: float):
-    """Résolution à l'amiable : partage l'escrow entre prestataire et client.
-
-    `provider_percentage` (0-100) du montant total payé (`total_client`) va
-    au prestataire ; le reste est remboursé au client. Dérivé plutôt que
-    calculé indépendamment pour les deux montants, afin qu'ils somment
-    toujours exactement au total escrow (pas de dérive d'arrondi).
-    """
-    mission = get_mission_by_id(mission_id)
-    if mission is None:
-        raise ValueError("Mission introuvable")
-    if mission["status"] != "disputed" or mission["payment_status"] != "paid_escrow":
-        raise ValueError("Cette mission n'est pas en litige")
-    if not (0 <= provider_percentage <= 100):
-        raise ValueError("Le pourcentage doit être entre 0 et 100")
-
-    total = mission["total_client"]
-    provider_share = round(total * provider_percentage / 100, 2)
-    client_share = round(total - provider_share, 2)
-    wallet_column = "wallet_balance_usd" if mission["currency"] == "USD" else "wallet_balance_cdf"
-
-    with get_connection() as conn:
-        if provider_share > 0:
-            conn.execute(
-                """
-                INSERT INTO transactions (
-                    mission_id, type, amount, currency, net_provider, status
-                )
-                VALUES (?, 'release', ?, ?, ?, 'success')
-                """,
-                (mission_id, provider_share, mission["currency"], provider_share),
-            )
-            conn.execute(
-                f"UPDATE providers SET {wallet_column} = {wallet_column} + ? WHERE id = ?",
-                (provider_share, mission["provider_id"]),
-            )
-        if client_share > 0:
-            conn.execute(
-                """
-                INSERT INTO transactions (
-                    mission_id, type, amount, currency, status
-                )
-                VALUES (?, 'refund', ?, ?, 'success')
-                """,
-                (mission_id, client_share, mission["currency"]),
-            )
-            conn.execute(
-                f"UPDATE users SET {wallet_column} = {wallet_column} + ? WHERE id = ?",
-                (client_share, mission["user_id"]),
-            )
-        conn.execute(
-            "UPDATE missions SET status = 'completed', payment_status = 'released', net_provider = ? WHERE id = ?",
-            (provider_share, mission_id),
+            (
+                backend_mission.get("status"),
+                backend_mission.get("payment_status"),
+                backend_mission.get("commission_amount") or 0.0,
+                backend_mission.get("tola_fee") or 0.0,
+                backend_mission.get("total_client") or 0.0,
+                backend_mission.get("net_provider") or 0.0,
+                backend_mission.get("dispute_reason"),
+                backend_mission.get("dispute_deadline"),
+                provider_id,
+                mission_id,
+            ),
         )
     return get_mission_by_id(mission_id)
-
-
-def enqueue_backend_call(path: str, payload: dict) -> int:
-    with get_connection() as conn:
-        cursor = conn.execute(
-            "INSERT INTO backend_outbox (path, payload) VALUES (?, ?)",
-            (path, json.dumps(payload)),
-        )
-        return cursor.lastrowid
-
-
-def get_backend_outbox(limit: int = 100) -> list[dict]:
-    with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT id, path, payload, attempts FROM backend_outbox ORDER BY id LIMIT ?",
-            (limit,),
-        ).fetchall()
-    return [{"id": r[0], "path": r[1], "payload": json.loads(r[2]), "attempts": r[3]} for r in rows]
-
-
-def count_backend_outbox() -> int:
-    with get_connection() as conn:
-        try:
-            return conn.execute("SELECT COUNT(*) FROM backend_outbox").fetchone()[0]
-        except sqlite3.OperationalError:
-            # Table pas encore créée (init_db() pas relancé depuis son ajout) : rien en file.
-            return 0
-
-
-def delete_backend_outbox_entry(entry_id: int):
-    with get_connection() as conn:
-        conn.execute("DELETE FROM backend_outbox WHERE id = ?", (entry_id,))
-
-
-def mark_backend_outbox_failure(entry_id: int, error: str):
-    with get_connection() as conn:
-        conn.execute(
-            "UPDATE backend_outbox SET attempts = attempts + 1, last_error = ? WHERE id = ?",
-            (error[:500], entry_id),
-        )

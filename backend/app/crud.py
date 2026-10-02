@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotTransaction, BotUser
+from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotUser
 
 MODULE_B_SERVICES = {"service_plomberie", "service_electricite", "service_climatisation"}
 BADGE_SCORES = {"partner": 30, "expert": 20, "premium": 10, "verified": 5, "pending": 0}
@@ -263,6 +263,10 @@ def create_quote(
     mission = db.get(BotMission, mission_id)
     if mission is None:
         return None
+    if mission.telegram_id == provider_telegram_id:
+        # Un prestataire peut commander comme client, jamais chiffrer sa
+        # propre mission (le paiement le refuserait aussi : ledger).
+        raise ValueError("provider_is_client")
     quote = BotQuote(
         mission_id=mission_id,
         provider_telegram_id=provider_telegram_id,
@@ -351,190 +355,8 @@ def expire_stale_quotes(db: Session, older_than_hours: int = 24) -> list[BotQuot
     return stale_quotes
 
 
-def calculate_payment_amounts(amount: float, currency: str, urgent: bool = False) -> dict:
-    # Miroir de db.calculate_payment_amounts : frais Tola supprimés (service
-    # indisponible en RDC). Clés conservées à 0.00, les colonnes bot_missions /
-    # bot_transactions existent toujours et gardent l'historique.
-    commission_rate = 0.15 if urgent else 0.10
-    commission_amount = round(amount * commission_rate, 2)
-    total_client = round(amount, 2)
-    net_provider = round(amount - commission_amount, 2)
-    return {
-        "commission_amount": commission_amount,
-        "tola_fee": 0.00,
-        "aggregator_fee": 0.00,
-        "total_client": total_client,
-        "net_provider": net_provider,
-    }
-
-
-def _apply_escrow_payment(db: Session, quote: BotQuote, mission: BotMission, total_client: float, amounts: dict, mobile_money_ref: str, operator: str) -> BotTransaction:
-    transaction = BotTransaction(
-        mission_id=mission.mission_id,
-        quote_id=quote.id,
-        type="escrow_in",
-        amount=total_client,
-        currency=quote.currency,
-        commission_amount=amounts["commission_amount"],
-        tola_fee=amounts["tola_fee"],
-        aggregator_fee=amounts["aggregator_fee"],
-        net_provider=amounts["net_provider"],
-        status="success",
-        mobile_money_ref=mobile_money_ref,
-        operator=operator,
-    )
-    db.add(transaction)
-
-    mission.payment_status = "paid_escrow"
-    mission.commission_amount = amounts["commission_amount"]
-    mission.tola_fee = amounts["tola_fee"]
-    mission.aggregator_fee = amounts["aggregator_fee"]
-    mission.total_client = total_client
-    mission.net_provider = amounts["net_provider"]
-    mission.status = "confirmed"
-    _touch_status(mission)
-
-    db.commit()
-    db.refresh(transaction)
-    return transaction
-
-
-def mark_quote_paid(db: Session, quote_id: int, operator: str = "simulation") -> dict | None:
-    quote = db.get(BotQuote, quote_id)
-    if quote is None:
-        return None
-    mission = db.get(BotMission, quote.mission_id)
-    if mission is None:
-        return None
-
-    amounts = calculate_payment_amounts(amount=quote.amount, currency=quote.currency, urgent=mission.urgent)
-    mobile_money_ref = f"SIM-{quote_id:04d}"
-    transaction = _apply_escrow_payment(db, quote, mission, amounts["total_client"], amounts, mobile_money_ref, operator)
-
-    return {
-        "transaction_id": transaction.id,
-        "mobile_money_ref": mobile_money_ref,
-        "operator": operator,
-        "status": "success",
-        **amounts,
-    }
-
-
-def mark_quote_paid_with_wallet(db: Session, quote_id: int, operator: str = "wallet") -> dict:
-    quote = db.get(BotQuote, quote_id)
-    if quote is None:
-        raise ValueError("Devis introuvable")
-    mission = db.get(BotMission, quote.mission_id)
-    if mission is None:
-        raise ValueError("Mission introuvable")
-    user = db.get(BotUser, mission.telegram_id)
-    if user is None:
-        raise ValueError("Client introuvable")
-
-    amounts = calculate_payment_amounts(amount=quote.amount, currency=quote.currency, urgent=mission.urgent)
-    total_client = amounts["total_client"]
-    wallet_balance = user.wallet_balance_usd if quote.currency == "USD" else user.wallet_balance_cdf
-    if wallet_balance < total_client:
-        raise ValueError("Solde insuffisant sur le wallet")
-
-    if quote.currency == "USD":
-        user.wallet_balance_usd -= total_client
-    else:
-        user.wallet_balance_cdf -= total_client
-
-    mobile_money_ref = f"WLT-{quote_id:04d}"
-    transaction = _apply_escrow_payment(db, quote, mission, total_client, amounts, mobile_money_ref, operator)
-
-    return {
-        "transaction_id": transaction.id,
-        "mobile_money_ref": mobile_money_ref,
-        "operator": operator,
-        "status": "success",
-        **amounts,
-    }
-
-
-def start_mission(db: Session, mission_id: int, provider_telegram_id: int) -> BotMission:
-    mission = db.get(BotMission, mission_id)
-    if mission is None:
-        raise ValueError("Mission introuvable")
-    if mission.provider_telegram_id != provider_telegram_id:
-        raise ValueError("Ce prestataire n'est pas associé à cette mission")
-    if mission.payment_status != "paid_escrow":
-        raise ValueError("La mission n'est pas encore payée en escrow")
-
-    mission.status = "in_progress"
-    _touch_status(mission)
-    db.commit()
-    db.refresh(mission)
-    return mission
-
-
-def finish_mission(db: Session, mission_id: int, provider_telegram_id: int) -> BotMission:
-    mission = db.get(BotMission, mission_id)
-    if mission is None:
-        raise ValueError("Mission introuvable")
-    if mission.provider_telegram_id != provider_telegram_id:
-        raise ValueError("Ce prestataire n'est pas associé à cette mission")
-
-    mission.status = "awaiting_confirmation"
-    _touch_status(mission)
-    db.commit()
-    db.refresh(mission)
-    return mission
-
-
-def release_payment(db: Session, mission_id: int) -> BotMission:
-    mission = db.get(BotMission, mission_id)
-    if mission is None:
-        raise ValueError("Mission introuvable")
-    if mission.payment_status != "paid_escrow":
-        raise ValueError("Aucun paiement escrow à libérer")
-    # payment_status peut être réécrit sans condition (update_payment) : on
-    # vérifie aussi les transactions, comme /api/bot/missions/status. Et une
-    # mission en litige attend la décision admin, jamais une libération auto.
-    if mission.status == "disputed":
-        raise ValueError("Mission en litige : libération réservée à l'admin")
-    already_settled = (
-        db.query(BotTransaction)
-        .filter(BotTransaction.mission_id == mission.mission_id, BotTransaction.type.in_(("release", "refund")))
-        .first()
-        is not None
-    )
-    if already_settled:
-        raise ValueError("Mission déjà réglée")
-
-    transaction = BotTransaction(
-        mission_id=mission.mission_id,
-        quote_id=None,
-        type="release",
-        amount=mission.net_provider,
-        currency=mission.currency,
-        net_provider=mission.net_provider,
-        status="success",
-    )
-    db.add(transaction)
-
-    if mission.provider_telegram_id is not None:
-        provider = db.get(BotProvider, mission.provider_telegram_id)
-        if provider is not None:
-            if mission.currency == "USD":
-                provider.wallet_balance_usd += mission.net_provider
-            else:
-                provider.wallet_balance_cdf += mission.net_provider
-
-    mission.status = "completed"
-    _touch_status(mission)
-    mission.payment_status = "released"
-    db.commit()
-    db.refresh(mission)
-
-    # La mission vient de passer à "completed" : le volume et le taux de succès
-    # du prestataire changent, donc potentiellement son badge.
-    if mission.provider_telegram_id is not None:
-        _recompute_provider_stats(db, mission.provider_telegram_id)
-
-    return mission
+# L'argent (paiement, démarrage, fin, libération, litige) vit dans
+# backend/app/ledger.py, seule source de vérité : voir CONCEPTION_ARGENT.md.
 
 
 # Tiers de badge mérités, du plus exigeant au moins exigeant. Le premier dont

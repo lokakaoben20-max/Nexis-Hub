@@ -421,6 +421,17 @@ function replaceProviderMission(updatedMission) {
   ));
 }
 
+// Codes de refus du registre d'argent (backend), voir CONCEPTION_ARGENT.md.
+const MISSION_ACTION_ERRORS = {
+  backend_unavailable: "Service de paiement momentanément indisponible. Rien n'a changé, réessayez dans un instant.",
+  not_paid: "Cette mission n'est pas encore payée.",
+  invalid_state: "Action impossible à cette étape de la mission.",
+  mission_disputed: "Mission en litige : la décision revient à l'équipe Nexis Hub.",
+  already_settled: "Cette mission est déjà réglée.",
+  not_mission_provider: "Vous n'êtes pas le prestataire de cette mission.",
+  mission_not_found: "Mission introuvable.",
+};
+
 async function updateMissionAction(action, missionId) {
   if (!telegramUser?.id) return;
 
@@ -430,7 +441,8 @@ async function updateMissionAction(action, missionId) {
   });
   const result = await response.json();
   if (!response.ok) {
-    alert(result.detail || "Action impossible");
+    const code = result.detail?.code;
+    alert(MISSION_ACTION_ERRORS[code] || (typeof result.detail === "string" ? result.detail : "Action impossible"));
     return;
   }
   replaceProviderMission(result.mission);

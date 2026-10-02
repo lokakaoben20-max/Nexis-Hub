@@ -1,26 +1,22 @@
 import hmac
 import os
-from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.app import crud
-from backend.app.database import SessionLocal, init_db
-from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotTransaction, BotUser
+from backend.app import crud, ledger
+from backend.app.database import SessionLocal
+from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotUser
 
 load_dotenv()
 BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    init_db()
-    yield
-
-
-app = FastAPI(title="Nexis Hub V5 Backend", lifespan=lifespan)
+# Le schéma est géré uniquement par Alembic (`alembic upgrade head` avant tout
+# démarrage). Plus de `create_all` au démarrage : il créait des tables hors
+# migrations, et la migration suivante échouait sur une table déjà là.
+app = FastAPI(title="Nexis Hub V5 Backend")
 
 
 def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
@@ -72,45 +68,6 @@ class BotProviderPayload(BaseModel):
     portfolio_file_ids: list[str] | None = None
 
 
-class MissionStatusPayload(BaseModel):
-    mission_id: int
-    status: str
-    payment_status: str | None = None
-    dispute_reason: str | None = None
-    # Montant à rembourser au client (résolution de litige). Explicite plutôt
-    # que dérivé de total_client/net_provider côté serveur : un partage à
-    # l'amiable libère net_provider ET rembourse une partie du reste, deux
-    # montants indépendants qu'aucun champ existant ne permet de reconstruire
-    # de façon fiable après coup.
-    refund_amount: float | None = None
-    # Part réduite du prestataire pour un partage à l'amiable (sinon la
-    # branche "releasing" créditerait le net_provider ORIGINAL, posé au
-    # paiement escrow initial, pas la part réellement due après le partage —
-    # bug trouvé par security-reviewer/backend-parity-auditor).
-    net_provider: float | None = None
-
-
-class PaymentPayload(BaseModel):
-    quote_id: int
-    payment_status: str
-    mission_id: int | None = None
-    # Champs optionnels : quand présents (paiement réellement effectué côté
-    # bot), le backend reflète la transaction et débite le wallet client sans
-    # rejouer sa propre validation — db.py reste la source de vérité. Absents,
-    # le comportement retombe sur l'ancien (juste poser payment_status), pour
-    # ne rien casser côté appelants qui n'envoient pas encore ces champs.
-    amount: float | None = None
-    currency: str | None = None
-    commission_amount: float | None = None
-    tola_fee: float = 0.0
-    aggregator_fee: float = 0.0
-    total_client: float | None = None
-    net_provider: float | None = None
-    mobile_money_ref: str | None = None
-    operator: str | None = None
-    via_wallet: bool = False
-
-
 class ProviderServicesPayload(BaseModel):
     services: list[str]
 
@@ -136,12 +93,36 @@ class QuoteCreatePayload(BaseModel):
     message: str = ""
 
 
-class MissionActionPayload(BaseModel):
+class FundPayload(BaseModel):
+    method: str
+    client_telegram_id: int
+    provider_telegram_id: int
+    quote_ref: int
+    amount: float
+    currency: str
+    urgent: bool = False
+    service: str
+    commune: str
+    description: str = ""
+
+
+class ProviderActionPayload(BaseModel):
     provider_telegram_id: int
 
 
-class PaymentOperatorPayload(BaseModel):
-    operator: str = "simulation"
+class ClientActionPayload(BaseModel):
+    client_telegram_id: int
+
+
+class DisputeOpenPayload(BaseModel):
+    client_telegram_id: int
+    reason: str
+
+
+class DisputeResolvePayload(BaseModel):
+    decision: str
+    admin_telegram_id: int
+    provider_percentage: float | None = None
 
 
 class ReviewCreatePayload(BaseModel):
@@ -166,19 +147,25 @@ class ServiceRequestStatusPayload(BaseModel):
     admin_note: str = ""
 
 
-def _user_to_dict(user: BotUser) -> dict:
+def _wallet_fields(db, telegram_id: int) -> dict:
+    # Calculés depuis le registre, seule source de vérité (backend/app/ledger.py).
+    # Un seul wallet par personne, qu'elle soit cliente, prestataire ou les deux.
+    balances = ledger.wallet_balances(db, ledger.TELEGRAM, telegram_id)
+    return {"wallet_balance_usd": float(balances["USD"]), "wallet_balance_cdf": float(balances["CDF"])}
+
+
+def _user_to_dict(user: BotUser, db) -> dict:
     return {
         "telegram_id": user.telegram_id,
         "first_name": user.first_name,
         "phone_number": user.phone_number,
         "language": user.language,
-        "wallet_balance_usd": user.wallet_balance_usd,
-        "wallet_balance_cdf": user.wallet_balance_cdf,
+        **_wallet_fields(db, user.telegram_id),
         "total_missions": user.total_missions,
     }
 
 
-def _provider_to_dict(provider: BotProvider) -> dict:
+def _provider_to_dict(provider: BotProvider, db) -> dict:
     return {
         "telegram_id": provider.telegram_id,
         "full_name": provider.full_name,
@@ -198,8 +185,7 @@ def _provider_to_dict(provider: BotProvider) -> dict:
         "is_active": provider.is_active,
         "is_suspended": provider.is_suspended,
         "consecutive_ignored": provider.consecutive_ignored,
-        "wallet_balance_usd": provider.wallet_balance_usd,
-        "wallet_balance_cdf": provider.wallet_balance_cdf,
+        **_wallet_fields(db, provider.telegram_id),
         "id_document_file_id": provider.id_document_file_id,
         "selfie_file_id": provider.selfie_file_id,
         "portfolio_file_ids": provider.portfolio_file_ids,
@@ -224,6 +210,7 @@ def _mission_to_dict(mission: BotMission) -> dict:
         "total_client": mission.total_client,
         "net_provider": mission.net_provider,
         "dispute_reason": mission.dispute_reason,
+        "dispute_deadline": mission.dispute_deadline.isoformat() if mission.dispute_deadline else None,
     }
 
 
@@ -277,7 +264,7 @@ def health():
 def create_bot_user(payload: BotUserPayload):
     with SessionLocal() as db:
         user = crud.upsert_user(db, payload.telegram_id, payload.first_name, payload.phone_number, payload.language)
-        return {"status": "ok", "user": _user_to_dict(user)}
+        return {"status": "ok", "user": _user_to_dict(user, db)}
 
 
 @router.post("/api/bot/missions")
@@ -311,7 +298,7 @@ def create_bot_provider(payload: BotProviderPayload):
             selfie_file_id=payload.selfie_file_id,
             portfolio_file_ids=payload.portfolio_file_ids,
         )
-        return {"status": "ok", "provider": _provider_to_dict(provider)}
+        return {"status": "ok", "provider": _provider_to_dict(provider, db)}
 
 
 @router.patch("/api/bot/users/{telegram_id}/language")
@@ -320,7 +307,7 @@ def update_user_language(telegram_id: int, payload: LanguagePayload):
         user = crud.update_user_language(db, telegram_id, payload.language)
         if user is None:
             raise HTTPException(status_code=404, detail="user_not_found")
-        return {"status": "ok", "user": _user_to_dict(user)}
+        return {"status": "ok", "user": _user_to_dict(user, db)}
 
 
 @router.patch("/api/bot/users/{telegram_id}/name")
@@ -329,7 +316,7 @@ def update_user_name(telegram_id: int, payload: NamePayload):
         user = crud.update_user_name(db, telegram_id, payload.first_name)
         if user is None:
             raise HTTPException(status_code=404, detail="user_not_found")
-        return {"status": "ok", "user": _user_to_dict(user)}
+        return {"status": "ok", "user": _user_to_dict(user, db)}
 
 
 @router.patch("/api/bot/providers/{telegram_id}/language")
@@ -338,7 +325,7 @@ def update_provider_language(telegram_id: int, payload: LanguagePayload):
         provider = crud.update_provider_language(db, telegram_id, payload.language)
         if provider is None:
             raise HTTPException(status_code=404, detail="provider_not_found")
-        return {"status": "ok", "provider": _provider_to_dict(provider)}
+        return {"status": "ok", "provider": _provider_to_dict(provider, db)}
 
 
 @router.patch("/api/bot/providers/{telegram_id}/services")
@@ -347,7 +334,7 @@ def update_provider_services(telegram_id: int, payload: ProviderServicesPayload)
         provider = crud.update_provider_services(db, telegram_id, payload.services)
         if provider is None:
             raise HTTPException(status_code=404, detail="provider_not_found")
-        return {"status": "ok", "provider": _provider_to_dict(provider)}
+        return {"status": "ok", "provider": _provider_to_dict(provider, db)}
 
 
 @router.patch("/api/bot/providers/{telegram_id}/status")
@@ -356,7 +343,7 @@ def update_provider_status(telegram_id: int, payload: ProviderStatusPayload):
         provider = crud.update_provider_status(db, telegram_id, payload.status)
         if provider is None:
             raise HTTPException(status_code=404, detail="provider_not_found")
-        return {"status": "ok", "provider": _provider_to_dict(provider)}
+        return {"status": "ok", "provider": _provider_to_dict(provider, db)}
 
 
 @router.post("/api/bot/providers/{telegram_id}/verify")
@@ -365,7 +352,7 @@ def verify_provider(telegram_id: int):
         provider = crud.set_provider_verified(db, telegram_id, True)
         if provider is None:
             raise HTTPException(status_code=404, detail="provider_not_found")
-        return {"status": "ok", "provider": _provider_to_dict(provider)}
+        return {"status": "ok", "provider": _provider_to_dict(provider, db)}
 
 
 @router.post("/api/bot/providers/{telegram_id}/suspend")
@@ -374,7 +361,7 @@ def suspend_provider(telegram_id: int):
         provider = crud.set_provider_suspended(db, telegram_id, True)
         if provider is None:
             raise HTTPException(status_code=404, detail="provider_not_found")
-        return {"status": "ok", "provider": _provider_to_dict(provider)}
+        return {"status": "ok", "provider": _provider_to_dict(provider, db)}
 
 
 @router.post("/api/bot/providers/{telegram_id}/unsuspend")
@@ -383,7 +370,7 @@ def unsuspend_provider(telegram_id: int):
         provider = crud.set_provider_suspended(db, telegram_id, False)
         if provider is None:
             raise HTTPException(status_code=404, detail="provider_not_found")
-        return {"status": "ok", "provider": _provider_to_dict(provider)}
+        return {"status": "ok", "provider": _provider_to_dict(provider, db)}
 
 
 @router.post("/api/bot/providers/{telegram_id}/ignored")
@@ -392,7 +379,7 @@ def increment_provider_ignored(telegram_id: int):
         provider = crud.update_consecutive_ignored(db, telegram_id)
         if provider is None:
             raise HTTPException(status_code=404, detail="provider_not_found")
-        return {"status": "ok", "provider": _provider_to_dict(provider)}
+        return {"status": "ok", "provider": _provider_to_dict(provider, db)}
 
 
 @router.post("/api/bot/providers/{telegram_id}/ignored/reset")
@@ -401,14 +388,14 @@ def reset_provider_ignored(telegram_id: int):
         provider = crud.reset_consecutive_ignored(db, telegram_id)
         if provider is None:
             raise HTTPException(status_code=404, detail="provider_not_found")
-        return {"status": "ok", "provider": _provider_to_dict(provider)}
+        return {"status": "ok", "provider": _provider_to_dict(provider, db)}
 
 
 @router.get("/api/bot/providers/matching")
 def matching_providers(service: str, commune: str):
     with SessionLocal() as db:
         providers = crud.find_matching_providers(db, service, commune)
-        return {"status": "ok", "providers": [_provider_to_dict(provider) for provider in providers]}
+        return {"status": "ok", "providers": [_provider_to_dict(provider, db) for provider in providers]}
 
 
 @router.post("/api/bot/providers/rank")
@@ -422,15 +409,18 @@ def rank_providers(payload: ProviderRankPayload):
 @router.post("/api/bot/quotes")
 def create_quote(payload: QuoteCreatePayload):
     with SessionLocal() as db:
-        quote = crud.create_quote(
-            db,
-            mission_id=payload.mission_id,
-            provider_telegram_id=payload.provider_telegram_id,
-            amount=payload.amount,
-            currency=payload.currency,
-            delay_hours=payload.delay_hours,
-            message=payload.message,
-        )
+        try:
+            quote = crud.create_quote(
+                db,
+                mission_id=payload.mission_id,
+                provider_telegram_id=payload.provider_telegram_id,
+                amount=payload.amount,
+                currency=payload.currency,
+                delay_hours=payload.delay_hours,
+                message=payload.message,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
         if quote is None:
             raise HTTPException(status_code=404, detail="mission_not_found")
         return {"status": "ok", "quote": _quote_to_dict(quote)}
@@ -470,226 +460,105 @@ def reject_quote(quote_id: int):
         return {"status": "ok", "quote": _quote_to_dict(quote)}
 
 
-@router.post("/api/bot/quotes/{quote_id}/pay")
-def pay_quote(quote_id: int, payload: PaymentOperatorPayload):
-    with SessionLocal() as db:
-        result = crud.mark_quote_paid(db, quote_id, payload.operator)
-        if result is None:
-            raise HTTPException(status_code=404, detail="quote_not_found")
-        return {"status": "ok", **result}
+def _money_response(db, mission: BotMission) -> dict:
+    return {
+        "status": "ok",
+        "mission": _mission_to_dict(mission),
+        "money": ledger.mission_money_state(db, mission.mission_id),
+    }
 
 
-@router.post("/api/bot/quotes/{quote_id}/pay-wallet")
-def pay_quote_with_wallet(quote_id: int, payload: PaymentOperatorPayload):
+def _money_refusal(db, error: ledger.MoneyError) -> HTTPException:
+    """Refus métier : code stable + état courant de la mission, que le bot
+    recopie pour ne jamais afficher un état périmé."""
+    # Id lu avant l'annulation : une mission créée par cette même demande
+    # disparaît avec elle et l'objet n'est plus lisible ensuite.
+    mission_id = error.mission.mission_id if error.mission is not None else None
+    db.rollback()
+    detail = {"code": error.code}
+    if mission_id is not None:
+        mission = db.get(BotMission, mission_id)
+        if mission is not None:
+            detail["mission"] = _mission_to_dict(mission)
+            detail["money"] = ledger.mission_money_state(db, mission.mission_id)
+    return HTTPException(status_code=error.http_status, detail=detail)
+
+
+def _money_call(operation):
     with SessionLocal() as db:
         try:
-            result = crud.mark_quote_paid_with_wallet(db, quote_id, payload.operator)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"status": "ok", **result}
+            mission = operation(db)
+        except ledger.MoneyError as error:
+            raise _money_refusal(db, error) from error
+        return _money_response(db, mission)
+
+
+@router.post("/api/bot/missions/{mission_id}/fund")
+def fund_mission(mission_id: int, payload: FundPayload):
+    return _money_call(
+        lambda db: ledger.fund_mission(
+            db,
+            mission_id,
+            method=payload.method,
+            client_telegram_id=payload.client_telegram_id,
+            provider_telegram_id=payload.provider_telegram_id,
+            quote_ref=payload.quote_ref,
+            amount=payload.amount,
+            currency=payload.currency,
+            urgent=payload.urgent,
+            service=payload.service,
+            commune=payload.commune,
+            description=payload.description,
+        )
+    )
 
 
 @router.post("/api/bot/missions/{mission_id}/start")
-def start_mission(mission_id: int, payload: MissionActionPayload):
-    with SessionLocal() as db:
-        try:
-            mission = crud.start_mission(db, mission_id, payload.provider_telegram_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"status": "ok", "mission": _mission_to_dict(mission)}
+def start_mission(mission_id: int, payload: ProviderActionPayload):
+    return _money_call(lambda db: ledger.start_mission(db, mission_id, payload.provider_telegram_id))
 
 
 @router.post("/api/bot/missions/{mission_id}/finish")
-def finish_mission(mission_id: int, payload: MissionActionPayload):
+def finish_mission(mission_id: int, payload: ProviderActionPayload):
+    return _money_call(lambda db: ledger.finish_mission(db, mission_id, payload.provider_telegram_id))
+
+
+@router.post("/api/bot/missions/{mission_id}/confirm")
+def confirm_mission(mission_id: int, payload: ClientActionPayload):
+    return _money_call(lambda db: ledger.confirm_completion(db, mission_id, payload.client_telegram_id))
+
+
+@router.post("/api/bot/missions/{mission_id}/dispute")
+def open_dispute(mission_id: int, payload: DisputeOpenPayload):
+    return _money_call(lambda db: ledger.open_dispute(db, mission_id, payload.client_telegram_id, payload.reason))
+
+
+@router.post("/api/bot/missions/{mission_id}/dispute/resolve")
+def resolve_dispute(mission_id: int, payload: DisputeResolvePayload):
+    return _money_call(
+        lambda db: ledger.resolve_dispute(
+            db,
+            mission_id,
+            decision=payload.decision,
+            admin_telegram_id=payload.admin_telegram_id,
+            provider_percentage=payload.provider_percentage,
+        )
+    )
+
+
+@router.get("/api/bot/missions/{mission_id}")
+def get_mission(mission_id: int):
     with SessionLocal() as db:
-        try:
-            mission = crud.finish_mission(db, mission_id, payload.provider_telegram_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"status": "ok", "mission": _mission_to_dict(mission)}
-
-
-@router.post("/api/bot/missions/{mission_id}/release")
-def release_payment(mission_id: int):
-    with SessionLocal() as db:
-        try:
-            mission = crud.release_payment(db, mission_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"status": "ok", "mission": _mission_to_dict(mission)}
-
-
-@router.post("/api/bot/missions/status")
-def update_mission_status(payload: MissionStatusPayload):
-    with SessionLocal() as db:
-        mission = db.get(BotMission, payload.mission_id)
+        mission = db.get(BotMission, mission_id)
         if mission is None:
-            return {"status": "not_found"}
-        # Idempotence basée sur l'existence d'une transaction "release", pas
-        # sur mission.payment_status : ce champ est réécrit sans condition
-        # juste en dessous (compat arrière, cf. update_payment) et pourrait
-        # déjà valoir "released" suite à un appel qui n'a jamais réellement
-        # crédité le prestataire — s'appuyer dessus laisserait une vraie
-        # libération se faire silencieusement ignorer. On vérifie aussi
-        # qu'un paiement escrow a bien été enregistré avant de créditer.
-        already_released = (
-            db.query(BotTransaction)
-            .filter(BotTransaction.mission_id == mission.mission_id, BotTransaction.type == "release")
-            .first()
-            is not None
-        )
-        already_refunded = (
-            db.query(BotTransaction)
-            .filter(BotTransaction.mission_id == mission.mission_id, BotTransaction.type == "refund")
-            .first()
-            is not None
-        )
-        was_paid = (
-            db.query(BotTransaction)
-            .filter(BotTransaction.mission_id == mission.mission_id, BotTransaction.type == "escrow_in")
-            .first()
-            is not None
-        )
-        # Une mission se règle une seule fois : soit le prestataire est payé,
-        # soit le client est remboursé, soit les deux dans le MÊME appel
-        # (partage à l'amiable). Sans ce garde, un remboursement de litige
-        # arrivant après une libération (ex. l'auto-libération Celery à 24h,
-        # que db.py ne voit pas) créditait le client alors que le prestataire
-        # avait déjà été payé : double versement. Refusé avant toute écriture.
-        # Un rejeu d'un appel déjà appliqué (les deux transactions existent)
-        # reste un no-op, pas un conflit.
-        refund_after_release = payload.refund_amount is not None and already_released and not already_refunded
-        release_after_refund = payload.payment_status == "released" and already_refunded and not already_released
-        if refund_after_release or release_after_refund:
-            raise HTTPException(status_code=409, detail="mission_already_settled")
-        releasing = payload.payment_status == "released" and was_paid and not already_released
-        # Indépendant de `releasing` : un partage à l'amiable de litige libère
-        # net_provider ET rembourse une partie au client dans le même appel.
-        refunding = payload.refund_amount is not None and was_paid and not already_refunded
-        mission.status = payload.status
-        if payload.payment_status:
-            mission.payment_status = payload.payment_status
-        if payload.dispute_reason is not None:
-            mission.dispute_reason = payload.dispute_reason
-        if payload.net_provider is not None:
-            # Partage à l'amiable : la part due au prestataire n'est plus le
-            # net_provider posé au paiement escrow initial. Doit être appliqué
-            # AVANT le crédit ci-dessous, qui lit mission.net_provider.
-            mission.net_provider = payload.net_provider
-        if releasing:
-            db.add(
-                BotTransaction(
-                    mission_id=mission.mission_id,
-                    quote_id=None,
-                    type="release",
-                    amount=mission.net_provider,
-                    currency=mission.currency,
-                    net_provider=mission.net_provider,
-                    status="success",
-                )
-            )
-            if mission.provider_telegram_id is not None:
-                provider = db.get(BotProvider, mission.provider_telegram_id)
-                if provider is not None:
-                    if mission.currency == "USD":
-                        provider.wallet_balance_usd += mission.net_provider
-                    else:
-                        provider.wallet_balance_cdf += mission.net_provider
-        if refunding:
-            db.add(
-                BotTransaction(
-                    mission_id=mission.mission_id,
-                    quote_id=None,
-                    type="refund",
-                    amount=payload.refund_amount,
-                    currency=mission.currency,
-                    status="success",
-                )
-            )
-            user = db.get(BotUser, mission.telegram_id)
-            if user is not None:
-                if mission.currency == "USD":
-                    user.wallet_balance_usd += payload.refund_amount
-                else:
-                    user.wallet_balance_cdf += payload.refund_amount
-        db.commit()
-        db.refresh(mission)
-        # crud._SUCCESS_STATUS/_FAILURE_STATUSES comptent completed/disputed/
-        # cancelled dans le calcul de success_rate — recalculer sur ces trois
-        # transitions, pas seulement "releasing", sinon un litige ouvert ou un
-        # remboursement pur laisse le badge/success_rate du prestataire figé
-        # sur une ancienne valeur (trouvaille backend-parity-auditor).
-        if payload.status in ("completed", "disputed", "cancelled") and mission.provider_telegram_id is not None:
-            crud._recompute_provider_stats(db, mission.provider_telegram_id)
-            db.commit()
-        return {"status": "ok", "mission": _mission_to_dict(mission)}
+            raise HTTPException(status_code=404, detail={"code": "mission_not_found"})
+        return _money_response(db, mission)
 
 
-@router.post("/api/bot/payments")
-def update_payment(payload: PaymentPayload):
+@router.get("/api/bot/wallets/{telegram_id}")
+def get_wallets(telegram_id: int):
     with SessionLocal() as db:
-        mission = db.get(BotMission, payload.mission_id) if payload.mission_id is not None else None
-        if mission is not None:
-            # Idempotence basée sur l'existence d'une transaction "escrow_in",
-            # pas sur mission.payment_status : même raison que dans
-            # update_mission_status ci-dessus — payment_status peut déjà
-            # valoir "paid_escrow" suite à un appel sans `amount` (compat
-            # arrière ci-dessous) sans qu'aucune transaction n'ait jamais été
-            # créée, ce qui ferait ignorer silencieusement le vrai paiement.
-            already_paid = (
-                db.query(BotTransaction)
-                .filter(BotTransaction.mission_id == mission.mission_id, BotTransaction.type == "escrow_in")
-                .first()
-                is not None
-            )
-            paying = (
-                payload.payment_status == "paid_escrow"
-                and not already_paid
-                and payload.amount is not None
-            )
-            mission.payment_status = payload.payment_status
-            if paying:
-                total_client = payload.total_client if payload.total_client is not None else payload.amount
-                currency = payload.currency or mission.currency
-                mission.commission_amount = payload.commission_amount or 0.0
-                mission.tola_fee = payload.tola_fee
-                mission.aggregator_fee = payload.aggregator_fee
-                mission.total_client = total_client
-                mission.net_provider = payload.net_provider or 0.0
-                db.add(
-                    BotTransaction(
-                        mission_id=mission.mission_id,
-                        # Pas le quote_id backend (séquence Postgres indépendante
-                        # de l'id local envoyé par le bot) : mission_id suffit à
-                        # tracer cette transaction, mieux vaut None qu'un FK
-                        # pointant vers le mauvais devis.
-                        quote_id=None,
-                        type="escrow_in",
-                        amount=total_client,
-                        currency=currency,
-                        commission_amount=payload.commission_amount or 0.0,
-                        tola_fee=payload.tola_fee,
-                        aggregator_fee=payload.aggregator_fee,
-                        net_provider=payload.net_provider or 0.0,
-                        status="success",
-                        mobile_money_ref=payload.mobile_money_ref,
-                        operator=payload.operator,
-                    )
-                )
-                if payload.via_wallet:
-                    user = db.get(BotUser, mission.telegram_id)
-                    if user is not None:
-                        if currency == "USD":
-                            user.wallet_balance_usd -= total_client
-                        else:
-                            user.wallet_balance_cdf -= total_client
-            db.commit()
-            db.refresh(mission)
-        return {
-            "status": "ok",
-            "payment_status": payload.payment_status,
-            "mission": _mission_to_dict(mission) if mission is not None else None,
-        }
+        return {"status": "ok", "telegram_id": telegram_id, "wallet": _wallet_fields(db, telegram_id)}
 
 
 @router.post("/api/bot/service-requests")
@@ -770,8 +639,8 @@ def profile(telegram_id: int):
 
         return {
             "telegram_id": telegram_id,
-            "client": _user_to_dict(user) if user else None,
-            "provider": _provider_to_dict(provider) if provider else None,
+            "client": _user_to_dict(user, db) if user else None,
+            "provider": _provider_to_dict(provider, db) if provider else None,
             "client_missions": client_missions,
             "provider_missions": provider_missions,
             "service_requests": service_requests,

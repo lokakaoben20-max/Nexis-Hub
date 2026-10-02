@@ -19,4 +19,6 @@ class Base(DeclarativeBase):
 
 
 def init_db() -> None:
+    """Crée toutes les tables d'un coup : réservé aux bases jetables des tests.
+    Une vraie base passe par Alembic (`alembic upgrade head`)."""
     Base.metadata.create_all(bind=engine)

@@ -178,5 +178,19 @@
   "dispute_resolved_release_client": "✅ <b>Litige esili</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nNsima ya kotala, lifuti ekomi epai ya mosali.",
   "dispute_resolved_release_provider": "💸 <b>Litige esili na litomba na yo</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nMbongo ebakisami na wallet na yo : <b>{net} {currency}</b>",
   "dispute_resolved_split_client": "🤝 <b>Litige esili : bakabola yango</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nNsima ya kotala, {refund} {currency} ezongi na wallet na yo.",
-  "dispute_resolved_split_provider": "🤝 <b>Litige esili : bakabola yango</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nMbongo ebakisami na wallet na yo : <b>{net} {currency}</b>"
+  "dispute_resolved_split_provider": "🤝 <b>Litige esili : bakabola yango</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nMbongo ebakisami na wallet na yo : <b>{net} {currency}</b>",
+  "money_backend_unavailable": "⏳ Service ya lifuti ezali kosala te sikoyo. Eloko moko te elongwe to ebongwani. Meká lisusu mwa sima.",
+  "money_error_insufficient_balance": "Mbongo ekoki te na wallet na yo.",
+  "money_error_already_paid": "Mission oyo efutami kala.",
+  "money_error_not_paid": "Mission oyo efutami naino te.",
+  "money_error_invalid_state": "Okoki kosala yango te na eteni oyo ya mission.",
+  "money_error_mission_disputed": "Mission ezali na litige : ekipe ya Nexis Hub nde ekozwa mokano.",
+  "money_error_already_settled": "Mission oyo esilisami kala.",
+  "money_error_not_mission_client": "Mission oyo ezali ya yo te.",
+  "money_error_not_mission_provider": "Ozali prestataire ya mission oyo te.",
+  "money_error_mission_not_found": "Mission emonani te.",
+  "money_error_generic": "Bapekisi likambo oyo.",
+  "wallet_unavailable": "👛 <b>Mbongo ya wallet emonani te</b>\n\nService ya lifuti ezali koyanola te sikoyo. Meká lisusu mwa sima.",
+  "table_value_unavailable": "emonani te",
+  "quote_accept_confirmation_wallet_unknown": "✅ <b>Devis endimami.</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nPrestataire : <b>{prestataire}</b>\nDevis : <b>{devis:.2f} {currency}</b>\nMbongo ya kofuta : <b>{total:.2f} {currency}</b>\n\n👛 Mbongo ya wallet : emonani te sikoyo.\n\nPona lolenge ya kofuta mpo na kobatela mission."
 }

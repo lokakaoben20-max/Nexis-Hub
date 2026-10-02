@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
 import db
+from messages import get_message
 from telegram_bot import backend_client, dashboard
 
 
@@ -355,24 +356,13 @@ def test_afficher_wallet_prestataire_requires_profile(tmp_path, monkeypatch):
     assert callback.answered is not None
 
 
-def _set_local_wallet(table, telegram_id, usd, cdf):
-    with db.get_connection() as conn:
-        conn.execute(
-            f"UPDATE {table} SET wallet_balance_usd = ?, wallet_balance_cdf = ? WHERE telegram_id = ?",
-            (usd, cdf, telegram_id),
-        )
-
-
-def test_afficher_wallet_client_reads_backend_balance_first(tmp_path, monkeypatch):
-    """Étape D (soldes wallet) : le backend fait foi quand il répond."""
+def test_afficher_wallet_client_reads_the_registry(tmp_path, monkeypatch, live_backend):
+    """Le registre du backend est la seule source des soldes."""
     _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
     telegram_id = 3012
     db.create_user(telegram_id, "+243800003012", "Cliente", language="fr")
-    _set_local_wallet("users", telegram_id, 1.0, 100.0)
-    monkeypatch.setattr(dashboard, "fetch_backend_profile", lambda tid: _async_return({
-        "client": {"wallet_balance_usd": 42.5, "wallet_balance_cdf": 7000.0}
-    }))
+    live_backend.credit_wallet(telegram_id, 42.5)
+    live_backend.credit_wallet(telegram_id, 7000.0, currency="CDF")
 
     callback = DummyCallback(telegram_id)
     asyncio.run(dashboard.afficher_wallet_client(callback))
@@ -381,51 +371,42 @@ def test_afficher_wallet_client_reads_backend_balance_first(tmp_path, monkeypatc
     assert "7000.00 CDF" in callback.message.edited_text
 
 
-def test_afficher_wallet_client_falls_back_to_local_balance(tmp_path, monkeypatch):
+def test_afficher_wallet_client_shows_unavailable_when_the_backend_is_down(tmp_path, monkeypatch):
     _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
     telegram_id = 3013
     db.create_user(telegram_id, "+243800003013", "Cliente", language="fr")
-    _set_local_wallet("users", telegram_id, 12.0, 3400.0)
-    # Backend joignable mais compte absent de Postgres : même repli que backend coupé.
-    monkeypatch.setattr(dashboard, "fetch_backend_profile", lambda tid: _async_return({"client": None}))
 
     callback = DummyCallback(telegram_id)
     asyncio.run(dashboard.afficher_wallet_client(callback))
 
-    assert "12.00 USD" in callback.message.edited_text
-    assert "3400.00 CDF" in callback.message.edited_text
+    assert callback.message.edited_text == get_message("wallet_unavailable", "fr")
 
 
-def test_afficher_wallet_prestataire_reads_backend_balance_first(tmp_path, monkeypatch):
+def test_client_and_provider_screens_show_the_same_single_wallet(tmp_path, monkeypatch, live_backend):
     _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
     telegram_id = 3014
+    db.create_user(telegram_id, "+243800003014", "Prestataire", language="fr")
     db.create_provider(telegram_id, "+243800003014", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-    _set_local_wallet("providers", telegram_id, 1.0, 100.0)
-    monkeypatch.setattr(dashboard, "fetch_backend_profile", lambda tid: _async_return({
-        "provider": {"wallet_balance_usd": 88.0, "wallet_balance_cdf": 0.0}
-    }))
+    live_backend.credit_wallet(telegram_id, 88.0)
 
-    callback = DummyCallback(telegram_id)
-    asyncio.run(dashboard.afficher_wallet_prestataire(callback))
+    provider_callback = DummyCallback(telegram_id)
+    asyncio.run(dashboard.afficher_wallet_prestataire(provider_callback))
+    client_callback = DummyCallback(telegram_id)
+    asyncio.run(dashboard.afficher_wallet_client(client_callback))
 
-    assert "88.00 USD" in callback.message.edited_text
-    assert "0.00 CDF" in callback.message.edited_text
+    assert "88.00 USD" in provider_callback.message.edited_text
+    assert "88.00 USD" in client_callback.message.edited_text
 
 
-def test_afficher_wallet_prestataire_falls_back_when_backend_down(tmp_path, monkeypatch):
+def test_afficher_wallet_prestataire_shows_unavailable_when_the_backend_is_down(tmp_path, monkeypatch):
     _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
     telegram_id = 3015
     db.create_provider(telegram_id, "+243800003015", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-    _set_local_wallet("providers", telegram_id, 25.0, 500.0)
 
     callback = DummyCallback(telegram_id)
     asyncio.run(dashboard.afficher_wallet_prestataire(callback))
 
-    assert "25.00 USD" in callback.message.edited_text
-    assert "500.00 CDF" in callback.message.edited_text
+    assert callback.message.edited_text == get_message("wallet_unavailable", "fr")
 
 
 # --- historique / aide ------------------------------------------------------
@@ -451,8 +432,11 @@ def test_afficher_historique_client_filters_terminal_statuses_only(tmp_path, mon
     })
     quote_id = db.create_quote(mission_id, provider_id, 50.0, "USD", 2, "")
     db.accept_quote(quote_id, client_id)
-    db.mark_quote_paid(quote_id, client_id, operator="mobile_money_simulation")
-    db.release_payment(mission_id, client_id)
+    # État recopié du backend après une libération (seul le backend règle).
+    db.apply_backend_mission(mission_id, {
+        "status": "completed", "payment_status": "released", "provider_telegram_id": provider_id,
+        "commission_amount": 5.0, "total_client": 50.0, "net_provider": 45.0,
+    })
 
     callback = DummyCallback(client_id)
     asyncio.run(dashboard.afficher_historique_client(callback))

@@ -483,13 +483,16 @@ def build_quote_accept_rich_message(
     devis: float,
     total: float,
     currency: str,
-    wallet_balance: float,
+    wallet_balance: float | None,
 ) -> InputRichMessage:
     rows = [
         (get_message("table_row_provider", lang), prestataire),
         (get_message("table_row_quote", lang), f"{devis:.2f} {currency}"),
         (get_message("table_row_total", lang), f"{total:.2f} {currency}"),
-        (get_message("table_row_wallet", lang), f"{wallet_balance:.2f} {currency}"),
+        (
+            get_message("table_row_wallet", lang),
+            f"{wallet_balance:.2f} {currency}" if wallet_balance is not None else get_message("table_value_unavailable", lang),
+        ),
     ]
     table = InputRichBlockTable(
         cells=[
