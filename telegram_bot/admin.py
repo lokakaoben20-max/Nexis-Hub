@@ -51,8 +51,9 @@ from db import (
 )
 from messages import get_message
 from telegram_bot.backend_client import (
+    BACKEND_UNREACHABLE,
     _safe_backend_call,
-    backend_mission_already_released,
+    backend_mission_payment_status,
     get_provider_language,
     get_user_language,
     sync_mission_status_to_backend,
@@ -255,15 +256,27 @@ DISPUTE_ALREADY_RELEASED_ADMIN = (
     "Déjà payé au prestataire (libération auto 24h). Rembourser paierait deux fois : "
     "choisis « Payer le prestataire » pour aligner."
 )
+DISPUTE_BACKEND_UNREACHABLE_ADMIN = (
+    "Backend injoignable : impossible de vérifier si le prestataire a déjà été payé. "
+    "Réessaie dans quelques minutes."
+)
 
 
-async def _dispute_already_released(mission_id: int) -> bool:
-    """Le backend a-t-il déjà payé le prestataire (auto-libération Celery que
-    db.py ne voit pas) ? Vérifié avant tout remboursement, total ou partiel."""
+async def _refund_blocked_reason(mission_id: int) -> str | None:
+    """Raison de refuser un remboursement (total ou partiel), ou None.
+
+    Le backend a peut-être déjà payé le prestataire (auto-libération Celery
+    que db.py ne voit pas). S'il ne répond pas, on ne peut pas le savoir :
+    on bloque plutôt que risquer un double versement (choix de Ben)."""
     mission = get_mission_by_id(mission_id)
     if mission is None:
-        return False
-    return await backend_mission_already_released(mission["client_telegram_id"], mission_id)
+        return None
+    payment_status = await backend_mission_payment_status(mission["client_telegram_id"], mission_id)
+    if payment_status == BACKEND_UNREACHABLE:
+        return DISPUTE_BACKEND_UNREACHABLE_ADMIN
+    if payment_status == "released":
+        return DISPUTE_ALREADY_RELEASED_ADMIN
+    return None
 
 
 @router.callback_query(F.data.startswith("admin_dispute_refund_"))
@@ -273,8 +286,9 @@ async def admin_litige_rembourser(callback: CallbackQuery):
         return
 
     mission_id = int(callback.data.replace("admin_dispute_refund_", "", 1))
-    if await _dispute_already_released(mission_id):
-        await callback.answer(DISPUTE_ALREADY_RELEASED_ADMIN, show_alert=True)
+    blocked_reason = await _refund_blocked_reason(mission_id)
+    if blocked_reason:
+        await callback.answer(blocked_reason, show_alert=True)
         return
     try:
         mission = resolve_dispute_refund_client(mission_id)
@@ -374,9 +388,10 @@ async def admin_litige_partage_recu(message: Message, state: FSMContext):
         await message.answer("Envoie un nombre entre 0 et 100. Exemple : 50")
         return
 
-    if await _dispute_already_released(mission_id):
+    blocked_reason = await _refund_blocked_reason(mission_id)
+    if blocked_reason:
         await state.clear()
-        await message.answer(DISPUTE_ALREADY_RELEASED_ADMIN)
+        await message.answer(blocked_reason)
         return
 
     try:

@@ -381,9 +381,10 @@ trancher, pas un swap technique). Détail complet dans `AGENTS.md`.
   (`backend_client.backend_mission_already_released`). Si oui : litige
   refusé au client (et db.py aligné via `release_payment`), remboursement et
   partage refusés à l'admin ("payer le prestataire" reste permis, il aligne
-  db.py). **Risque résiduel** (`security-reviewer`) : si le backend ne répond
-  pas au moment du clic admin, le garde laisse passer comme avant. Bloquer
-  dans ce cas est une décision produit à prendre avec Ben.
+  db.py). **Décision de Ben** : si le backend ne répond pas au moment du
+  clic admin, remboursement et partage sont refusés ("réessaie dans quelques
+  minutes") plutôt que risquer un double versement. L'ouverture d'un litige
+  par le client reste permise backend coupé (elle ne déplace pas d'argent).
 - **Étape D (à faire, la plus risquée)** : porter la logique de décision
   de litige vers le backend, trancher l'algorithme de matching
   (`find_matching_providers` legacy vs score backend différent), refaire

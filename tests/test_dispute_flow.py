@@ -136,7 +136,9 @@ def _init_db(tmp_path):
 def _use_dummy_backend(monkeypatch):
     DummyAsyncClient.last_request = None
     monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
-    monkeypatch.setattr(backend_client, "fetch_backend_profile", lambda telegram_id: _async_return(None))
+    # Backend joignable mais sans la mission : le règlement admin est permis.
+    # (None = backend injoignable, qui bloque remboursement et partage.)
+    monkeypatch.setattr(backend_client, "fetch_backend_profile", lambda telegram_id: _async_return({"client_missions": []}))
 
 
 async def _async_return(value):
@@ -558,3 +560,26 @@ def test_admin_refund_still_works_when_backend_holds_escrow(tmp_path, monkeypatc
 
     assert db.get_mission_by_id(mission_id)["payment_status"] == "refunded"
     assert db.get_user_by_telegram_id(100)["wallet_balance_usd"] == 100.0
+
+
+def test_admin_refund_and_split_blocked_when_backend_unreachable(tmp_path, monkeypatch):
+    """Choix de Ben : sans réponse du backend, on ne sait pas si le prestataire
+    a déjà été payé, donc pas de remboursement ni de partage."""
+    mission_id = _setup_paid_mission(tmp_path, monkeypatch, amount=100.0)
+    db.open_dispute(mission_id, 100, "Motif")
+    monkeypatch.setattr(backend_client, "fetch_backend_profile", lambda tid: _async_return(None))
+    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+
+    callback = DummyCallback(telegram_id=1, data=f"admin_dispute_refund_{mission_id}", bot=DummyBot())
+    asyncio.run(admin.admin_litige_rembourser(callback))
+    assert callback.answered == admin.DISPUTE_BACKEND_UNREACHABLE_ADMIN
+    assert len(admin.DISPUTE_BACKEND_UNREACHABLE_ADMIN) <= 200, "limite Telegram des alertes"
+
+    state = DummyState(data={"dispute_split_mission_id": mission_id})
+    message = DummyMessage(telegram_id=1, text="50", bot=DummyBot())
+    asyncio.run(admin.admin_litige_partage_recu(message, state))
+    assert message.answers == [admin.DISPUTE_BACKEND_UNREACHABLE_ADMIN]
+
+    assert db.get_mission_by_id(mission_id)["status"] == "disputed"
+    assert db.get_user_by_telegram_id(100)["wallet_balance_usd"] == 0.0
+    assert db.get_provider_by_telegram_id(200)["wallet_balance_usd"] == 0.0

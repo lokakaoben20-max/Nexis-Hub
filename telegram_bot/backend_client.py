@@ -313,18 +313,28 @@ async def fetch_backend_profile(telegram_id: int) -> dict | None:
         return None
 
 
-async def backend_mission_already_released(client_telegram_id: int, mission_id: int) -> bool:
-    """True seulement si le backend répond et dit que l'escrow de cette mission
-    est déjà libéré au prestataire. Cas visé : l'auto-libération Celery à 24h
-    (backend/app/tasks.py), qui crédite Postgres sans que db.py le sache. Backend
-    injoignable ou mission inconnue -> False : on garde le comportement d'avant,
-    et le garde 409 du backend protège toujours Postgres."""
+BACKEND_UNREACHABLE = "unreachable"
+
+
+async def backend_mission_payment_status(client_telegram_id: int, mission_id: int) -> str | None:
+    """`payment_status` de la mission côté backend ; None si le backend répond
+    mais ne connaît pas la mission ; `BACKEND_UNREACHABLE` s'il ne répond pas.
+    Sert à détecter l'auto-libération Celery à 24h (backend/app/tasks.py), qui
+    paie le prestataire dans Postgres sans que db.py le sache."""
     profile = await fetch_backend_profile(client_telegram_id)
-    missions = (profile or {}).get("client_missions") if isinstance(profile, dict) else None
-    for mission in missions or []:
+    if not isinstance(profile, dict):
+        return BACKEND_UNREACHABLE
+    for mission in profile.get("client_missions") or []:
         if isinstance(mission, dict) and mission.get("mission_id") == mission_id:
-            return mission.get("payment_status") == "released"
-    return False
+            return mission.get("payment_status")
+    return None
+
+
+async def backend_mission_already_released(client_telegram_id: int, mission_id: int) -> bool:
+    """True seulement si le backend répond et dit que l'escrow est déjà libéré.
+    Backend injoignable -> False : l'ouverture d'un litige ne déplace pas
+    d'argent, la vérification bloquante se fait au règlement admin."""
+    return await backend_mission_payment_status(client_telegram_id, mission_id) == "released"
 
 
 async def load_profile_from_backend(telegram_id: int, fallback_user: dict | None = None) -> dict:
