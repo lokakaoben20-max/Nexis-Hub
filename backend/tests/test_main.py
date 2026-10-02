@@ -1031,3 +1031,75 @@ def test_verify_unknown_provider_returns_404(tmp_path, monkeypatch):
     with _authed_client(backend_main) as test_client:
         response = test_client.post("/api/bot/providers/999999/verify")
         assert response.status_code == 404
+
+
+def test_generic_mission_status_refuses_refund_after_release(tmp_path, monkeypatch):
+    """Double versement : mission déjà libérée au prestataire (ex. auto-libération
+    Celery à 24h), puis remboursement de litige décidé côté bot. Le backend doit
+    refuser sans rien écrire, au lieu de rembourser aussi le client."""
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
+        assert test_client.post("/api/bot/missions/1001/release").status_code == 200
+
+        response = test_client.post(
+            "/api/bot/missions/status",
+            json={"mission_id": 1001, "status": "cancelled", "payment_status": "refunded", "refund_amount": 100.0},
+        )
+
+        assert response.status_code == 409
+        assert test_client.get("/api/profile/42").json()["client"]["wallet_balance_usd"] == 0.0
+        provider_profile = test_client.get("/api/profile/7").json()
+        assert provider_profile["provider"]["wallet_balance_usd"] == 90.0
+        mission = provider_profile["provider_missions"][0]
+        assert mission["status"] == "completed"
+        assert mission["payment_status"] == "released"
+
+
+def test_generic_mission_status_refuses_release_after_refund(tmp_path, monkeypatch):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
+        refund = test_client.post(
+            "/api/bot/missions/status",
+            json={"mission_id": 1001, "status": "cancelled", "payment_status": "refunded", "refund_amount": 100.0},
+        )
+        assert refund.status_code == 200
+
+        response = test_client.post(
+            "/api/bot/missions/status",
+            json={"mission_id": 1001, "status": "completed", "payment_status": "released"},
+        )
+
+        assert response.status_code == 409
+        assert test_client.get("/api/profile/7").json()["provider"]["wallet_balance_usd"] == 0.0
+
+
+def test_release_endpoint_refuses_disputed_or_already_refunded_mission(tmp_path, monkeypatch):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
+        test_client.post("/api/bot/missions/status", json={"mission_id": 1001, "status": "disputed", "dispute_reason": "x"})
+
+        assert test_client.post("/api/bot/missions/1001/release").status_code == 400
+
+        test_client.post(
+            "/api/bot/missions/status",
+            json={"mission_id": 1001, "status": "cancelled", "payment_status": "refunded", "refund_amount": 100.0},
+        )
+        # Rejeu de paid_escrow après remboursement : payment_status redevient
+        # "paid_escrow", mais la transaction refund doit bloquer la libération.
+        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
+        test_client.post("/api/bot/missions/status", json={"mission_id": 1001, "status": "awaiting_confirmation"})
+
+        assert test_client.post("/api/bot/missions/1001/release").status_code == 400
+        assert test_client.get("/api/profile/7").json()["provider"]["wallet_balance_usd"] == 0.0

@@ -475,6 +475,19 @@ def release_payment(db: Session, mission_id: int) -> BotMission:
         raise ValueError("Mission introuvable")
     if mission.payment_status != "paid_escrow":
         raise ValueError("Aucun paiement escrow à libérer")
+    # payment_status peut être réécrit sans condition (update_payment) : on
+    # vérifie aussi les transactions, comme /api/bot/missions/status. Et une
+    # mission en litige attend la décision admin, jamais une libération auto.
+    if mission.status == "disputed":
+        raise ValueError("Mission en litige : libération réservée à l'admin")
+    already_settled = (
+        db.query(BotTransaction)
+        .filter(BotTransaction.mission_id == mission.mission_id, BotTransaction.type.in_(("release", "refund")))
+        .first()
+        is not None
+    )
+    if already_settled:
+        raise ValueError("Mission déjà réglée")
 
     transaction = BotTransaction(
         mission_id=mission.mission_id,

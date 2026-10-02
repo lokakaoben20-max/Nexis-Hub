@@ -365,6 +365,24 @@ trancher, pas un swap technique). Détail complet dans `AGENTS.md`.
   `backend_request_id` NULL en local, risque de doublon si on recopie
   naïvement toutes les lignes sans id backend). `audit_backend_parity.py`
   ne compare pas encore ce flow.
+- **Étape D, soldes wallet (codée, mise de côté 2026-10-02)** : lecture
+  backend-first des écrans wallet client/prestataire, sur la branche
+  `claude/project-thread-een159` (commit `c83e373`), pas fusionnée. Raison
+  (`backend-parity-auditor`) : chaque miroir wallet passe par
+  `_safe_backend_call` sans rejeu, donc après une panne backend l'écran
+  afficherait un solde que le paiement wallet (db.py) refuse. À fusionner
+  quand `audit_backend_parity.py` est propre sur les vraies bases.
+- **Double versement backend corrigé (2026-10-02)** : `/api/bot/missions/status`
+  refuse (409, avant écriture) un remboursement après une libération et
+  l'inverse ; `crud.release_payment` refuse une mission en litige ou déjà
+  réglée. **Reste ouvert, côté bot** (`security-reviewer`) : l'auto-libération
+  Celery à 24h crédite le prestataire dans Postgres sans que db.py le sache.
+  La mission reste `awaiting_confirmation` en local, le client peut encore
+  ouvrir un litige, et un "rembourser" admin crédite le client en SQLite (le
+  409 backend est avalé). Le double versement est donc bloqué côté Postgres
+  mais toujours possible côté db.py. À traiter avec la sous-étape litiges :
+  le bot doit vérifier l'état backend avant de décider, ou Celery doit
+  prévenir le bot.
 - **Étape D (à faire, la plus risquée)** : porter la logique de décision
   de litige vers le backend, trancher l'algorithme de matching
   (`find_matching_providers` legacy vs score backend différent), refaire

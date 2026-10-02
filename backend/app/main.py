@@ -538,6 +538,18 @@ def update_mission_status(payload: MissionStatusPayload):
             .first()
             is not None
         )
+        # Une mission se règle une seule fois : soit le prestataire est payé,
+        # soit le client est remboursé, soit les deux dans le MÊME appel
+        # (partage à l'amiable). Sans ce garde, un remboursement de litige
+        # arrivant après une libération (ex. l'auto-libération Celery à 24h,
+        # que db.py ne voit pas) créditait le client alors que le prestataire
+        # avait déjà été payé : double versement. Refusé avant toute écriture.
+        # Un rejeu d'un appel déjà appliqué (les deux transactions existent)
+        # reste un no-op, pas un conflit.
+        refund_after_release = payload.refund_amount is not None and already_released and not already_refunded
+        release_after_refund = payload.payment_status == "released" and already_refunded and not already_released
+        if refund_after_release or release_after_refund:
+            raise HTTPException(status_code=409, detail="mission_already_settled")
         releasing = payload.payment_status == "released" and was_paid and not already_released
         # Indépendant de `releasing` : un partage à l'amiable de litige libère
         # net_provider ET rembourse une partie au client dans le même appel.
