@@ -372,6 +372,11 @@ trancher, pas un swap technique). Détail complet dans `AGENTS.md`.
   (8 680 USD dans db.py, 0 dans Postgres : trois libérations simulées
   antérieures au backend, et `backfill_providers_to_backend.py` ne copie pas
   le wallet). Écart laissé volontairement comme cas de test de l'audit.
+  Pour le résorber : `backfill_wallets_to_backend.py` (simulation par
+  défaut, `--apply` pour écrire ; écrase le solde backend par celui de
+  db.py, refuse tant que `backend_outbox` n'est pas vide). À relire avant
+  `--apply` en prod : une auto-libération Celery, inconnue de db.py, serait
+  effacée.
 - **Rejeu des miroirs argent (2026-10-02)** : la raison de la mise de côté
   ci-dessus (miroir perdu après une panne backend, écran affichant un solde
   que le paiement db.py refuse) est traitée. Paiement escrow, libération,

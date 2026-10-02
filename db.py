@@ -1431,7 +1431,11 @@ def get_backend_outbox(limit: int = 100) -> list[dict]:
 
 def count_backend_outbox() -> int:
     with get_connection() as conn:
-        return conn.execute("SELECT COUNT(*) FROM backend_outbox").fetchone()[0]
+        try:
+            return conn.execute("SELECT COUNT(*) FROM backend_outbox").fetchone()[0]
+        except sqlite3.OperationalError:
+            # Table pas encore créée (init_db() pas relancé depuis son ajout) : rien en file.
+            return 0
 
 
 def delete_backend_outbox_entry(entry_id: int):
