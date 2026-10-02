@@ -1,8 +1,11 @@
 # Architecture du canal WhatsApp client — Nexis Hub
 
 2 octobre 2026. Validé par Ben (toutes les questions ouvertes tranchées le
-même jour, voir la dernière section). Version de travail éditable :
-https://claude.ai/code/artifact/289f536c-f696-490f-a85a-b41a86f6a2c7
+même jour, voir la dernière section), complété le même soir après la relecture
+de Codex (liaison contestée, envoi incertain, conservation des données,
+exploitation). **Ce fichier est la référence** ; la première version de
+travail (https://claude.ai/code/artifact/289f536c-f696-490f-a85a-b41a86f6a2c7)
+ne contient pas ces compléments.
 
 ## Objet et décisions déjà prises
 
@@ -31,7 +34,16 @@ Aucun code WhatsApp n'existe, et le backend est entièrement construit autour de
 | Le paiement mobile money est simulé | `telegram_bot/payment.py:142` (`operator="mobile_money_simulation"`) |
 | Le mot « WhatsApp » n'apparaît que pour demander le numéro de téléphone à l'inscription Telegram | `translations/fr.json:155`, `telegram_bot/keyboards.py:184` |
 
-En plus, `db.py` (SQLite) porte encore une partie de la vérité métier, et le chantier « backend seule source de vérité de l'argent » est en cours (branche `feature/argent-backend`). Le canal WhatsApp ne peut pas s'appuyer sur `db.py` : il ne parle qu'au backend.
+En plus, `db.py` (SQLite) porte encore une partie de la vérité métier. Le canal WhatsApp ne peut pas s'appuyer sur `db.py` : il ne parle qu'au backend.
+
+**Mise à jour du 2 octobre au soir.** Le chantier « backend seule source de vérité de l'argent » (branche `feature/argent-backend`, commit `0002b7e`, pas encore fusionnée) a déjà posé la base d'identité (`CONCEPTION_ARGENT.md`, section « Comptes Nexis ») :
+
+- tables `accounts` et `channel_identities` ; un compte par `telegram_id` connu, avec son identité `telegram` (commit `298ce9e`) ;
+- registre en partie double qui ne connaît que le compte, jamais un identifiant de canal ; un seul wallet par personne (soldes client et prestataire additionnés à la migration) ;
+- missions payées liées à `client_account_id` et `provider_account_id` ;
+- refus d'un prestataire sur sa propre mission (`provider_is_client`).
+
+Restent pour le chantier d'identité WhatsApp : rôles et numéro vérifié du compte, passage des autres tables (missions, devis, avis) à `account_id`, liaison entre canaux, notifications.
 
 ## Principes non négociables
 
@@ -77,11 +89,24 @@ Missions, devis, transactions, avis et litiges référencent `account_id` au lie
 
 ### Routage des notifications
 
-Le backend écrit chaque notification dans une table `notifications` dans la même transaction que l'événement métier (paiement reçu, mission libérée, litige ouvert). Une tâche Celery envoie ensuite chaque ligne sur le canal préféré du destinataire et enregistre le résultat.
+Le backend écrit chaque notification dans une table `notifications` dans la même transaction que l'événement métier (paiement reçu, mission libérée, litige ouvert). Une tâche Celery envoie ensuite chaque ligne sur le canal préféré du destinataire et enregistre le résultat. L'envoi direct actuel (`backend/app/notify.py:14`) est remplacé par cette table pour les deux canaux.
 
-- Une notification n'est jamais perdue : si l'envoi échoue, la ligne reste à renvoyer, avec un nombre d'essais et une erreur enregistrée.
-- Une notification n'est jamais envoyée deux fois : chaque ligne a un état (`pending`, `sent`, `failed`) et un identifiant de message du fournisseur.
-- L'envoi direct actuel (`backend/app/notify.py:14`) est remplacé par cette table pour les deux canaux.
+**Ce qui est garanti, et ce qui ne l'est pas.**
+
+- Une notification n'est jamais perdue en silence : tant qu'elle n'est pas confirmée, elle reste à traiter, avec un nombre d'essais et la dernière erreur.
+- Le backend ne crée qu'une seule notification par événement (contrainte d'unicité sur l'événement et le destinataire) : un événement rejoué ne produit pas une deuxième notification.
+- **Le « zéro doublon » à l'arrivée n'est pas garanti**, et le document ne le promet pas. Si la requête d'envoi part et que la réponse de Meta (ou de Telegram) se perd, le backend ne peut pas savoir si le message a été accepté. Aucune des deux API n'offre de clé d'idempotence à l'envoi.
+- **Aucune notification ne porte d'action d'argent.** L'argent est décidé par le backend avant la notification ; un message reçu deux fois, ou pas reçu, ne change aucun solde. Le client retrouve toujours l'état exact par le menu « Mes missions » ou « Mon solde ».
+
+**États d'une notification :** `pending` (à envoyer), `sending` (requête partie), `sent` (accepté par le fournisseur, identifiant de message enregistré), `uncertain` (requête partie sans réponse : délai dépassé ou connexion coupée), `failed` (refus explicite du fournisseur, par exemple modèle refusé ou numéro invalide).
+
+**Règle pour l'état `uncertain` :**
+
+1. WhatsApp : chaque envoi porte l'identifiant de la notification dans `biz_opaque_callback_data`, que Meta renvoie dans ses webhooks de statut ([référence Meta](https://developers.facebook.com/documentation/business-messaging/whatsapp/webhooks/reference/messages/status)). Si un statut `sent`, `delivered` ou `read` arrive avec cet identifiant, la notification passe à `sent` sans renvoi.
+2. Sans statut au bout de 15 minutes, une seule nouvelle tentative. Un doublon reste possible dans ce cas rare, et il est sans conséquence (point précédent).
+3. Telegram n'a pas d'équivalent : une seule nouvelle tentative après 15 minutes.
+4. Après 3 échecs ou une seconde incertitude, la notification passe à `failed` et apparaît dans la surveillance (section Exploitation). Le client verra l'état à jour à son prochain message.
+5. Les textes de notification sont écrits pour supporter une répétition : ils nomment la mission et l'état (« Paiement reçu pour la mission NXH-1234 »), jamais une instruction à exécuter.
 
 ### Composants
 
@@ -146,9 +171,39 @@ Deux canaux ne sont reliés à un même compte que si la personne prouve qu'elle
 2. **Numéro WhatsApp déjà porté par un compte client Telegram** : pas de liaison automatique. Le client choisit « Lier mon compte Telegram ». Le backend envoie un code à 6 chiffres sur Telegram ; le client le tape sur WhatsApp. La liaison ajoute l'identité `whatsapp` au compte existant. Le wallet ne bouge pas, il appartient déjà au compte.
 3. **Code** : stocké sous forme de hachage, valable 10 minutes, usage unique, 5 essais au plus puis blocage d'une heure. Jamais écrit dans les journaux.
 4. **Le numéro Telegram était tapé, donc non prouvé** : le titulaire WhatsApp, lui, est prouvé. La liaison passe quand même par le code Telegram. Sans code, le backend crée un compte WhatsApp séparé et signale le conflit à l'admin, sans toucher à aucun wallet.
-5. **Deux comptes portant chacun un solde** : jamais fusionnés automatiquement. Une fusion d'argent est une opération admin explicite, tracée dans le grand livre, hors de ce chantier.
+5. **Deux comptes portant chacun un solde** : jamais fusionnés automatiquement. Le regroupement est une opération du registre, décrite dans les cas difficiles ci-dessous.
 6. **Chaque liaison et déliaison** est inscrite dans un journal d'audit (qui, quand, quel canal, résultat).
-7. **Changement de numéro WhatsApp** : nouveau `wa_id`, donc nouvelle identité. Le rattachement au compte existant passe par le code Telegram, ou par l'admin après vérification si le client n'a pas Telegram.
+7. **Changement de numéro, perte d'accès, conflit** : voir les cas difficiles ci-dessous.
+
+### Cas difficiles : liaison impossible, contestée ou en conflit
+
+Principe : aucune base de données n'est jamais modifiée à la main, et aucun wallet n'est fusionné hors du registre. Chaque cas ci-dessous passe par une opération du backend, tracée dans le journal d'audit, testée comme le reste.
+
+À Kinshasa, les opérateurs réattribuent les numéros inactifs. **Un numéro prouvé aujourd'hui ne prouve donc pas qu'on est la personne qui l'avait hier.** C'est pourquoi le numéro seul ne suffit jamais à rattacher un compte qui a déjà un historique ou un solde.
+
+| Cas | Règle |
+| --- | --- |
+| **Plus d'accès à Telegram** (téléphone perdu, compte supprimé) et la personne veut retrouver son compte depuis WhatsApp | Pas de code possible. Procédure de récupération admin (ci-dessous). En attendant, la personne peut utiliser WhatsApp avec un nouveau compte sans solde |
+| **Numéro changé** (nouvelle carte SIM) | Nouveau `wa_id`, donc nouvelle identité. Rattachement par code envoyé sur l'autre canal encore actif. Si aucun canal n'est actif : procédure de récupération admin. L'ancienne identité WhatsApp est désactivée au rattachement de la nouvelle |
+| **Numéro WhatsApp déjà prouvé sur un autre compte, sans liaison possible** (numéro réattribué, ou personne qui ne peut pas recevoir le code) | Le backend crée un nouveau compte pour le titulaire actuel du numéro. Le numéro de l'ancien compte passe à « à revérifier » ; l'ancien compte garde son wallet et son historique. Alerte admin. Aucun argent ne bouge |
+| **Deux comptes avec solde appartenant à la même personne** (par exemple un compte Telegram ancien et un compte WhatsApp créé ensuite) | Opération de regroupement (ci-dessous). Jamais de fusion automatique |
+| **Liaison contestée** (la personne dit ne pas avoir lié son compte) | Pendant 30 jours après une liaison, l'autre canal du compte peut la contester par un bouton. L'identité ajoutée est suspendue aussitôt (plus aucune action, ni lecture du solde), l'admin tranche avec le journal d'audit |
+
+**Procédure de récupération admin.**
+
+1. La personne écrit depuis le canal qu'elle contrôle et demande la récupération.
+2. Le backend ouvre une demande et pose des questions sur l'historique du compte : montant et date d'une mission payée, commune, nom d'un prestataire. Les réponses sont comparées par le backend, jamais montrées à l'admin à l'avance.
+3. L'admin valide ou refuse dans le bot admin. Une validation rattache la nouvelle identité au compte.
+4. Délai de sécurité de 72 heures après une récupération : le wallet ne peut être débité depuis la nouvelle identité (paiement par wallet, futur retrait), et chaque canal encore joignable du compte est prévenu et peut contester.
+5. Tout est inscrit dans le journal d'audit : demande, réponses (correctes ou non), décision, admin, dates.
+
+**Opération de regroupement de deux comptes.**
+
+1. La personne prouve qu'elle contrôle les deux comptes : un code sur un canal de chacun des deux.
+2. Conditions : aucune mission en escrow, en cours ou en litige sur le compte qui sera fermé.
+3. Le backend déplace le solde par **une seule opération du registre** (wallet du compte fermé vers wallet du compte conservé), idempotente, comme toute opération d'argent.
+4. Les identités de canal passent au compte conservé ; le compte fermé ne peut plus rien faire, mais son historique reste lisible.
+5. Validation par l'admin, journal d'audit, notification sur tous les canaux des deux comptes.
 
 ### Refus prestataire
 
@@ -180,21 +235,92 @@ Le code appelle une API HTTPS et reçoit des webhooks dans tous les cas. Isoler 
 
 Le développement et les tests peuvent commencer avec le numéro de test fourni par Meta, sans attendre la vérification.
 
+## Conservation des données WhatsApp
+
+Nexis ne garde d'un message WhatsApp que ce dont une mission ou un litige a besoin, et rien de lisible dans les journaux.
+
+| Donnée | Où | Durée | Remarque |
+| --- | --- | --- | --- |
+| `wa_id` (le numéro) | `channel_identities` | Durée de vie du compte | Supprimé à la clôture du compte ; le registre ne garde que `account_id` |
+| Corps brut des webhooks | Nulle part | Jamais stocké | Le service extrait les champs utiles puis jette le reste |
+| Identifiant de message reçu, pour la déduplication | Redis | 7 jours | Seul l'identifiant, sans contenu |
+| État de conversation (étape en cours) | Redis | 24 heures sans activité | Aucune donnée d'argent ; perdu, le client recommence l'étape |
+| Description de mission, commune, localisation | Mission (backend) | Comme les missions Telegram aujourd'hui | Même règle quel que soit le canal |
+| Motif et texte de litige | Litige (backend) | Comme les litiges Telegram aujourd'hui | Même règle quel que soit le canal |
+| Photos, vocaux, documents envoyés par le client | Non acceptés dans cette version | Non stockés | Le bot répond qu'il ne les traite pas ; les accepter demandera une règle de stockage propre |
+| Codes de liaison | Backend, haché | Effacés à l'usage ou à l'expiration (10 minutes) | Jamais en clair |
+| Journal d'audit (liaisons, récupérations, regroupements) | Backend | Au moins aussi longtemps que les opérations d'argent du compte | Durée légale à confirmer (question ouverte) |
+
+**Jamais dans les journaux applicatifs :** numéro en clair (masqué, par exemple `+243•••••12`), texte des messages, localisation, codes de liaison, jeton d'accès Meta, secret d'application, signature des webhooks. Les journaux portent l'identifiant de notification ou de mission, l'état et le code d'erreur.
+
+**Suppression à la demande du client :** possible si le solde est nul et qu'aucune mission n'est ouverte. Les identités de canal et le numéro sont effacés ; le registre garde les opérations passées sous `account_id`, sans donnée personnelle.
+
+Meta conserve aussi des messages de son côté selon ses propres conditions. La politique de confidentialité de Nexis doit le mentionner avant l'ouverture.
+
+## Exploitation du canal
+
+Un bot qui marche sur le numéro de test peut être indisponible pour les vrais clients si personne n'exploite le canal. Ces points sont des prérequis de l'étape 8, pas des détails.
+
+**Responsable.** Ben est aujourd'hui le seul exploitant : propriétaire du compte Meta Business, destinataire des alertes, admin des récupérations. Toute personne ajoutée plus tard reçoit un accès nominatif, jamais un jeton partagé.
+
+**Hébergement.** Le webhook WhatsApp tourne sur le même hébergement public HTTPS stable que le backend. C'est le bloquant « pas d'hébergement » déjà relevé dans le bilan avant lancement (`point-lancement/avant-lancement-2026-10-02.md`) : tant qu'il n'est pas levé, WhatsApp n'ouvre pas. Sauvegarde de la base Postgres testée avant l'ouverture (même bilan).
+
+**Secrets Meta.**
+
+| Secret | Usage | Règle |
+| --- | --- | --- |
+| Jeton d'accès d'un utilisateur système Meta | Envoyer les messages | Gestionnaire de secrets de l'hébergement, jamais dans le dépôt ni dans `.env` commité ; renouvellement documenté |
+| Secret d'application | Vérifier la signature des webhooks | Même règle ; un secret différent entre test et production |
+| Jeton de vérification du webhook | Validation initiale de l'URL par Meta | Même règle |
+| Identifiant du numéro et du compte WhatsApp Business | Adresser l'API | Configuration, pas un secret, séparée par environnement |
+
+**Surveillance et alertes**, envoyées à Ben par le bot admin Telegram :
+
+- rejets de signature de webhook (un pic signale une attaque ou un secret mal configuré) ;
+- taux d'échec d'envoi, notifications `failed` ou `uncertain` en attente ;
+- webhooks Meta de changement de qualité du numéro, de restriction du compte, de modèle en pause ou refusé ;
+- webhook WhatsApp injoignable (contrôle de santé externe).
+
+**Incidents.**
+
+| Incident | Effet | Réponse |
+| --- | --- | --- |
+| Numéro restreint ou suspendu par Meta | Plus aucun message WhatsApp | Les notifications des clients liés à Telegram partent sur Telegram. Pour les clients WhatsApp seuls, elles restent en attente et partent au retour du numéro. L'argent n'est pas touché. Recours auprès du support Meta Business |
+| Modèle refusé ou mis en pause | Notifications hors fenêtre de 24 h bloquées pour ce modèle | Elles restent en attente avec la raison ; alerte ; texte corrigé et resoumis. Dans la fenêtre de 24 h, le message libre continue |
+| Hébergement en panne | Webhooks non reçus, rien n'est envoyé | Meta renvoie ses webhooks pendant un temps ; la déduplication évite les doubles actions au retour. Aucune action d'argent sans backend (principe 3) |
+| Secret compromis | Risque de faux webhooks ou d'envois au nom de Nexis | Révocation et remplacement immédiats, procédure écrite et testée avant l'ouverture |
+
+Le manuel d'exploitation (ces procédures, pas à pas) est écrit et relu à l'étape 8, avant l'ouverture.
+
 ## Découpage en étapes
 
 Le canal WhatsApp vient après le chantier argent, et le compte Nexis doit être conçu avec lui pour ne pas migrer l'argent deux fois. Chaque étape est une session à part, relue (`security-reviewer`, `backend-parity-auditor`), testée, puis poussée sur une branche dédiée. Rien n'arrive sur `feature/v5-migration` dans un état intermédiaire.
 
 | Étape | Contenu | Dépend de | Livré quand |
 | --- | --- | --- | --- |
-| 0. Accord avec le chantier argent | Le grand livre et les wallets sont rattachés à `account_id` dès leur conception | Chantier argent (`feature/argent-backend`) | Le document du chantier argent l'indique, validé par Ben |
-| 1. Compte Nexis | Tables `accounts` et `channel_identities`, migration Alembic, reprise de chaque `telegram_id` existant, missions et transactions basculées sur `account_id`, bot Telegram et Mini App adaptés | Étape 0 | Audit : mêmes missions, mêmes montants au centime avant et après, sur les vraies bases |
-| 2. Notifications fiables | Table `notifications` écrite dans la transaction métier, expéditeur Celery, Telegram migré dessus | Étape 1 | Plus aucun envoi direct ; tests d'échec réseau et de double envoi |
+| 0. Accord avec le chantier argent | Le grand livre et les wallets sont rattachés à `account_id` dès leur conception | Chantier argent (`feature/argent-backend`) | **Fait** dans `CONCEPTION_ARGENT.md` et le code (`298ce9e`) ; reste la fusion, décidée par Ben avec le rapport de migration ci-dessous |
+| 1. Compte Nexis complet | Sur la base posée par le chantier argent : rôles et numéro vérifié du compte, missions, devis, avis et demandes de service sur `account_id`, bot Telegram et Mini App adaptés, bouton « Partager mon numéro » obligatoire | Étape 0 fusionnée | Critères de réussite de la migration ci-dessous, sur une copie des vraies bases puis sur les vraies bases |
+| 2. Notifications fiables | Table `notifications` écrite dans la transaction métier, expéditeur Celery, Telegram migré dessus | Étape 1 | Plus aucun envoi direct ; tests d'échec réseau, de réponse perdue (`uncertain`) et de rejeu d'événement |
 | 3. Rôles dans le backend | Refus des actions prestataire depuis WhatsApp, refus du devis sur sa propre mission, clé de service par canal | Étape 1 | Tests de refus pour chaque endpoint prestataire |
 | 4. Service WhatsApp, socle | `whatsapp_bot/` : webhook, signature, déduplication, état Redis, inscription, menu, refus prestataire | Étapes 2 et 3 | Fonctionne sur le numéro de test Meta |
-| 5. Parcours client | Mission, devis, paiement, suivi, notation, litige | Étape 4 et chantier argent terminé | Mêmes résultats que Telegram sur les mêmes scénarios |
-| 6. Liaison des comptes | Code à usage unique, règles de conflit, journal d'audit | Étape 5 | Tests d'attaque (code faux, expiré, réutilisé, numéro tapé) |
+| 5. Parcours client | Mission, devis, paiement, suivi, notation, litige | Étape 4 et chantier argent terminé | Mêmes résultats que Telegram sur les mêmes scénarios ; parcours essayés sur le numéro de test Meta par quelques personnes, en français et en lingala |
+| 6. Liaison des comptes | Code à usage unique, cas difficiles (récupération admin, numéro réattribué, contestation, regroupement par le registre), journal d'audit | Étape 5 | Tests d'attaque (code faux, expiré, réutilisé, numéro tapé, numéro réattribué, récupération avec mauvaises réponses) |
 | 7. Modèles et envoi WhatsApp | Modèles utilité validés par Meta, choix message libre ou modèle selon la fenêtre de 24 h | Étapes 2 et 5, modèles approuvés | Chaque notification arrive, dans ou hors fenêtre |
-| 8. Mise en service | Hébergement HTTPS, compte Meta vérifié, paiement réel (Phase 6), essai réel avec quelques clients | Tout ce qui précède | Ben valide l'ouverture |
+| 8. Mise en service | Hébergement HTTPS, sauvegarde testée, secrets Meta en place, surveillance et alertes, manuel d'exploitation, compte Meta vérifié, paiement réel (Phase 6), politique de confidentialité, essai réel avec quelques clients | Tout ce qui précède | Ben valide l'ouverture |
+
+### Critères de réussite de la migration vers `account_id`
+
+Valables pour la migration du chantier argent (étape 0) comme pour celle de l'étape 1. Un rapport avant/après est produit par script sur une copie des vraies bases, relu par Ben, puis refait sur les vraies bases après une sauvegarde. Le moindre écart arrête la fusion.
+
+| Contrôle | Attendu |
+| --- | --- |
+| Comptes | Un compte par `telegram_id` distinct connu (clients et prestataires confondus), une identité `telegram` chacun, aucun doublon |
+| Soldes | Pour chaque personne : nouveau wallet = ancien solde client + ancien solde prestataire, au centime, en USD et en CDF séparément ; même égalité sur les totaux |
+| Escrows | Chaque mission en escrow avant la migration a son opération de paiement, au même montant et dans la même devise |
+| Missions | Même nombre avant et après ; chaque mission rattachée au bon compte client et, s'il y en a un, au bon compte prestataire ; aucune mission orpheline |
+| Transactions | Même nombre de lignes d'historique ; aucune transaction orpheline |
+| Registre | Somme de chaque opération nulle ; solde de chaque wallet = somme de ses mouvements |
+| Rejeu | La migration relancée ne change rien |
 
 Les étapes 1 à 3 améliorent aussi Telegram (notifications fiables, rôles contrôlés par le backend). Elles ont de la valeur même avant l'arrivée de WhatsApp.
 
@@ -210,7 +336,11 @@ Le risque principal est la migration de l'identité (étape 1), parce qu'elle to
 | Prestataire qui se paie lui-même via sa propre mission | Élevée | Le backend refuse tout devis d'un prestataire sur une mission dont il est le client |
 | Message WhatsApp reçu deux fois, donc action répétée | Élevée | Déduplication par identifiant de message et clé d'idempotence transmise au backend |
 | Webhook falsifié | Élevée | Signature Meta vérifiée en temps constant, rejet sinon |
-| Notification de paiement ou de litige jamais reçue | Moyenne | Table `notifications` avec nouvel essai ; modèle utilité hors fenêtre de 24 h |
+| Notification de paiement ou de litige jamais reçue | Moyenne | Table `notifications` avec nouvel essai ; modèle utilité hors fenêtre de 24 h ; état toujours visible dans le menu |
+| Notification reçue deux fois après une réponse perdue | Faible | État `uncertain` réglé par le webhook de statut Meta ; un seul renvoi ; texte sans effet s'il est répété ; aucune action d'argent dans une notification |
+| Numéro réattribué par l'opérateur à une autre personne | Élevée | Le numéro seul ne rattache jamais un compte existant ; nouveau compte pour le nouveau titulaire, ancien numéro à revérifier |
+| Numéro WhatsApp suspendu, modèle refusé, hébergement en panne | Moyenne | Section Exploitation : alertes, repli sur Telegram pour les clients liés, procédures écrites |
+| Données personnelles exposées dans les journaux | Moyenne | Section Conservation : rien de lisible dans les journaux, numéros masqués |
 | Modèle refusé par Meta | Moyenne | Textes purement transactionnels, soumis tôt, dans les trois langues |
 | Compte Meta Business non vérifié ou numéro bloqué | Moyenne | Démarches lancées dès la validation de ce document ; développement sur le numéro de test |
 | Coût des modèles hors fenêtre | Faible | Seulement des modèles utilité, uniquement pour les événements d'argent et de mission ; coût suivi par mois |
@@ -228,8 +358,10 @@ Chaque étape a ses tests dans la suite existante (`pytest -q`), et l'étape 1 a
 | Backend coupé | Aucune action d'argent, message d'indisponibilité au client, rien rejoué plus tard à sa place |
 | Sécurité webhook | Signature absente, fausse ou d'un autre corps : rejet |
 | Rôles | Toute action prestataire depuis une identité `whatsapp` : refusée par le backend ; devis sur sa propre mission : refusé |
-| Liaison | Bon code ; code faux, expiré, réutilisé ; 6e essai bloqué ; numéro tapé non prouvé ; deux comptes avec solde non fusionnés |
-| Notifications | Envoi réussi, échec puis nouvel essai, jamais deux envois ; message libre dans la fenêtre, modèle hors fenêtre |
+| Liaison | Bon code ; code faux, expiré, réutilisé ; 6e essai bloqué ; numéro tapé non prouvé ; numéro réattribué ; deux comptes avec solde non fusionnés sans regroupement ; contestation qui suspend l'identité |
+| Récupération et regroupement | Récupération : bonnes et mauvaises réponses, délai de 72 h respecté, débit refusé pendant le délai. Regroupement : refusé si mission ouverte, un seul mouvement du registre, rejeu sans effet, somme des deux soldes conservée au centime |
+| Journaux | Aucun numéro en clair, aucun texte de message, aucun code ni secret dans les journaux produits par les tests |
+| Notifications | Envoi réussi ; échec puis nouvel essai ; réponse perdue puis statut Meta reçu (pas de renvoi) ; réponse perdue sans statut (un seul renvoi) ; un événement rejoué ne crée pas de seconde notification ; message libre dans la fenêtre, modèle hors fenêtre |
 | Textes | Parité des clés fr / ln / en (`i18n-reviewer`) ; libellés de boutons de 20 caractères au plus |
 | Bout en bout | Sur le numéro de test Meta, puis un essai réel avec quelques clients avant l'ouverture |
 
@@ -244,3 +376,7 @@ Toutes les questions ont été tranchées par Ben le 2 octobre 2026.
 | Fournisseur | Cloud API Meta en direct |
 | Numéro sur Telegram | Le bouton « Partager mon numéro » est obligatoire pour les nouveaux comptes ; le numéro tapé n'est plus accepté |
 | Saisie de la mission sur WhatsApp | Conversation pas à pas : listes, texte, localisation. Pas de formulaires WhatsApp Flows |
+
+### Question restée ouverte
+
+- [ ] **Durée légale de conservation** des opérations d'argent et du journal d'audit en RDC : à confirmer avec un conseil juridique avant l'ouverture. D'ici là, rien n'est supprimé de ces deux journaux.
