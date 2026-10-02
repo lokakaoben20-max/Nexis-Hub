@@ -595,6 +595,17 @@ def update_provider_services(telegram_id: int, services: list[str]):
     return get_provider_by_telegram_id(telegram_id)
 
 
+# Seuls statuts qu'un prestataire peut se donner lui-même (bot ou Mini App).
+# Hors de là ("pending_verification", "rejected"), seul l'admin le fait sortir :
+# sinon un prestataire non validé se remettait "available" et entrait dans le
+# matching, qui ne filtre que sur ce statut.
+PROVIDER_SELF_STATUSES = {"available", "offline"}
+
+
+def provider_can_change_own_status(provider) -> bool:
+    return provider is not None and provider["status"] in PROVIDER_SELF_STATUSES
+
+
 def update_provider_status(telegram_id: int, status: str):
     with get_connection() as conn:
         conn.execute(

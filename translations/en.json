@@ -73,6 +73,7 @@
   "toast_request_cancelled": "Request cancelled",
   "toast_registration_complete": "Registration complete",
   "toast_status_updated": "Status updated",
+  "provider_status_locked": "Your profile is awaiting validation by Nexis: you can't change your availability yet.",
   "toast_services_saved": "Services saved",
   "toast_mission_accepted": "Mission accepted",
   "toast_mission_skipped": "Mission skipped",

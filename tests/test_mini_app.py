@@ -229,6 +229,7 @@ def test_status_update_rejects_unknown_value(client):
 
 def test_status_can_be_set_to_offline(client):
     _register(client)
+    db.update_provider_status(CLIENT_ID, "available")  # validé par l'admin
     response = client.post(
         f"/api/provider/{CLIENT_ID}/status",
         json={"status": "offline"},
@@ -236,6 +237,25 @@ def test_status_can_be_set_to_offline(client):
     )
     assert response.status_code == 200
     assert response.json()["provider"]["status"] == "offline"
+
+
+def test_unvalidated_provider_cannot_make_itself_available(client):
+    """Inscrit via la Mini App : pending_verification jusqu'à validation admin.
+    Se remettre "available" (ou "offline" puis "available") l'aurait fait
+    entrer dans le matching sans vérification."""
+    _register(client)
+    for status in ("available", "offline"):
+        response = client.post(f"/api/provider/{CLIENT_ID}/status", json={"status": status}, headers=_auth())
+        assert response.status_code == 403
+    assert db.get_provider_by_telegram_id(CLIENT_ID)["status"] == "pending_verification"
+
+
+def test_rejected_provider_cannot_make_itself_available(client):
+    _register(client)
+    db.update_provider_status(CLIENT_ID, "rejected")
+    response = client.post(f"/api/provider/{CLIENT_ID}/status", json={"status": "available"}, headers=_auth())
+    assert response.status_code == 403
+    assert db.get_provider_by_telegram_id(CLIENT_ID)["status"] == "rejected"
 
 
 # ── Demande de service manquant ─────────────────────────────────

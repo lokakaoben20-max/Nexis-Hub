@@ -21,6 +21,7 @@ from db import (
     get_provider_service_requests,
     get_user_by_telegram_id,
     get_user_missions,
+    provider_can_change_own_status,
     finish_mission,
     start_mission,
     update_provider_services,
@@ -307,6 +308,8 @@ def save_provider_status(
         raise HTTPException(status_code=404, detail="Prestataire introuvable")
     if payload.status not in {"available", "offline"}:
         raise HTTPException(status_code=400, detail="Statut invalide")
+    if not provider_can_change_own_status(provider):
+        raise HTTPException(status_code=403, detail="Profil en attente de validation par Nexis")
 
     updated_provider = row_to_dict(update_provider_status(telegram_id, payload.status))
     updated_provider["services"] = load_json_list(updated_provider.get("services"))

@@ -27,6 +27,7 @@ from db import (
     create_provider,
     get_provider_by_telegram_id,
     get_user_by_telegram_id,
+    provider_can_change_own_status,
     reset_consecutive_ignored,
     update_provider_language,
     update_provider_services,
@@ -514,6 +515,10 @@ async def disponibilite_prestataire(callback: CallbackQuery):
 @router.callback_query(F.data.in_(["provider_status_available", "provider_status_offline"]))
 async def changer_disponibilite(callback: CallbackQuery):
     status = "available" if callback.data == "provider_status_available" else "offline"
+    if not provider_can_change_own_status(get_provider_by_telegram_id(callback.from_user.id)):
+        provider_lang = await get_provider_language(callback.from_user.id)
+        await callback.answer(get_message("provider_status_locked", provider_lang), show_alert=True)
+        return
     update_provider_status(callback.from_user.id, status)
     await _safe_backend_call(sync_provider_status_to_backend(callback.from_user.id, status))
     if status == "available":

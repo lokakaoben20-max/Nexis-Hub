@@ -393,10 +393,14 @@ trancher, pas un swap technique). Détail complet dans `AGENTS.md`.
   disponibilité). Inconnus du backend : après les classés. Backend coupé :
   ordre local comme avant. Avant, db.py ne calculant jamais note, missions ni
   taux de succès, les 3 premiers inscrits recevaient toutes les alertes.
-  **Trouvé en revue, préexistant, non corrigé** (`backend-parity-auditor`) :
-  un prestataire non vérifié ou refusé peut se remettre `available` lui-même
-  (Mini App `save_provider_status`, bot `changer_disponibilite`), et le
-  matching ne filtre pas `is_verified` : il peut alors être alerté.
+  **Trou préexistant corrigé le même jour** (trouvé par
+  `backend-parity-auditor`) : un prestataire non vérifié ou refusé pouvait se
+  remettre `available` lui-même (Mini App `save_provider_status`, bot
+  `changer_disponibilite`) et entrer dans le matching. Désormais seuls
+  `available`/`offline` peuvent être changés par le prestataire
+  (`db.provider_can_change_own_status`). Pas de filtre `is_verified` dans le
+  matching : les prestataires inscrits avant la vérification obligatoire ont
+  `is_verified=0` et en disparaîtraient.
 - **Étape D (à faire, la plus risquée)** : porter la logique de décision
   de litige vers le backend, trancher l'algorithme de matching
   (`find_matching_providers` legacy vs score backend différent), refaire

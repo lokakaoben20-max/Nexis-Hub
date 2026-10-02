@@ -182,6 +182,22 @@ def test_changer_disponibilite_writes_backend_and_local(monkeypatch, tmp_path):
     assert DummyAsyncClient.last_request["json"] == {"status": "offline"}
 
 
+def test_changer_disponibilite_refused_while_awaiting_validation(monkeypatch, tmp_path):
+    _init_db(tmp_path)
+    db.create_provider(504, "+243800000504", "Dan Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+    db.update_provider_status(504, "pending_verification")
+    _use_dummy_backend(monkeypatch)
+    DummyAsyncClient.last_request = None
+
+    callback = DummyCallback(telegram_id=504, data="provider_status_available")
+    asyncio.run(registration.changer_disponibilite(callback))
+
+    assert db.get_provider_by_telegram_id(504)["status"] == "pending_verification"
+    assert DummyAsyncClient.last_request is None, "rien envoyé au backend"
+    assert "validation" in callback.answered
+    assert db.find_matching_providers("service_plomberie", "Gombe") == []
+
+
 def test_changer_disponibilite_survives_backend_outage(monkeypatch, tmp_path):
     """L'écriture locale ne doit jamais dépendre du succès de l'appel backend."""
     _init_db(tmp_path)
