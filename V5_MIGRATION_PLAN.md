@@ -398,9 +398,9 @@ trancher, pas un swap technique). Détail complet dans `AGENTS.md`.
   numéro de mission, identique des deux côtés. Les boutons des services
   proposés gardent l'id db.py, volontairement : db.py reste la référence de
   ce flow tant que la Mini App n'écrit pas au backend (voir étape C).
-- **Étape D (reste à faire)** : trancher l'algorithme de matching
-  (`find_matching_providers` legacy vs score backend différent). Les litiges
-  et les soldes sont faits (voir l'entrée « Argent » ci-dessus).
+- **Étape D : terminée.** Matching tranché (« mélange », df8897b), boutons
+  admin sur le telegram_id (5ff6f18), litiges et soldes par le registre du
+  backend (entrée « Argent » ci-dessus).
 
 ## Vérification obligatoire des prestataires (documents + validation admin)
 
