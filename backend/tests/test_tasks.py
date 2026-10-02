@@ -79,9 +79,28 @@ def test_expire_stale_quotes_expires_only_quotes_older_than_24h(monkeypatch, tmp
         assert quotes_by_mission[2] == "pending"
 
 
+def _paid_and_finished_mission(db, ledger, crud, mission_id, provider_id=7, client_id=1):
+    crud.create_mission(db, client_id, mission_id, "service_menage", "Gombe")
+    ledger.fund_mission(
+        db,
+        mission_id,
+        method="mobile_money",
+        client_telegram_id=client_id,
+        provider_telegram_id=provider_id,
+        quote_ref=mission_id,
+        amount=10.0,
+        currency="USD",
+        urgent=False,
+        service="service_menage",
+        commune="Gombe",
+    )
+    ledger.start_mission(db, mission_id, provider_id)
+    ledger.finish_mission(db, mission_id, provider_id)
+
+
 def test_release_auto_confirmed_missions_only_after_24h(monkeypatch, tmp_path):
     database_module, tasks_module = _reload_backend_with_db(monkeypatch, tmp_path)
-    from backend.app import crud
+    from backend.app import crud, ledger
     from backend.app import models
 
     sent = []
@@ -92,22 +111,11 @@ def test_release_auto_confirmed_missions_only_after_24h(monkeypatch, tmp_path):
         db.add(models.BotProvider(telegram_id=7, full_name="Prestataire Test"))
         db.commit()
 
-        mission_old = crud.create_mission(db, 1, 1, "service_menage", "Gombe")
-        quote_old = crud.create_quote(db, 1, 7, amount=10.0, currency="USD", delay_hours=2)
-        crud.accept_quote(db, quote_old.id)
-        crud.mark_quote_paid(db, quote_old.id)
-        crud.start_mission(db, 1, 7)
-        crud.finish_mission(db, 1, 7)
+        _paid_and_finished_mission(db, ledger, crud, 1)
         db.get(models.BotMission, 1).status_changed_at = datetime.utcnow() - timedelta(hours=25)
 
-        mission_recent = crud.create_mission(db, 1, 2, "service_menage", "Gombe")
-        quote_recent = crud.create_quote(db, 2, 7, amount=10.0, currency="USD", delay_hours=2)
-        crud.accept_quote(db, quote_recent.id)
-        crud.mark_quote_paid(db, quote_recent.id)
-        crud.start_mission(db, 2, 7)
-        crud.finish_mission(db, 2, 7)
+        _paid_and_finished_mission(db, ledger, crud, 2)
         # status_changed_at reste "maintenant" pour la mission 2
-
         db.commit()
 
     released = tasks_module.release_auto_confirmed_missions()
@@ -116,11 +124,34 @@ def test_release_auto_confirmed_missions_only_after_24h(monkeypatch, tmp_path):
     with database_module.SessionLocal() as db:
         assert db.get(models.BotMission, 1).status == "completed"
         assert db.get(models.BotMission, 2).status == "awaiting_confirmation"
-        provider = db.get(models.BotProvider, 7)
-        assert provider.wallet_balance_usd > 0
+        assert ledger.balance(db, ledger.PROVIDER, 7, "USD") == ledger.to_money("9.00")
 
     # Une notification au client et une au prestataire, pour la seule mission libérée.
     assert len(sent) == 2
+
+
+def test_auto_release_never_pays_a_disputed_mission(monkeypatch, tmp_path):
+    database_module, tasks_module = _reload_backend_with_db(monkeypatch, tmp_path)
+    from backend.app import crud, ledger
+    from backend.app import models
+
+    monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: None)
+
+    with database_module.SessionLocal() as db:
+        db.add(models.BotUser(telegram_id=1))
+        db.add(models.BotProvider(telegram_id=7, full_name="Prestataire Test"))
+        db.commit()
+        _paid_and_finished_mission(db, ledger, crud, 1)
+        ledger.open_dispute(db, 1, 1, "Travail bâclé")
+        db.get(models.BotMission, 1).status_changed_at = datetime.utcnow() - timedelta(hours=72)
+        db.commit()
+
+    assert tasks_module.release_auto_confirmed_missions() == 0
+
+    with database_module.SessionLocal() as db:
+        assert db.get(models.BotMission, 1).status == "disputed"
+        assert ledger.balance(db, ledger.PROVIDER, 7, "USD") == ledger.to_money(0)
+        assert ledger.balance(db, ledger.ESCROW, 1, "USD") == ledger.to_money("10.00")
 
 
 def test_send_provider_reminders_does_not_duplicate_within_same_tier(monkeypatch, tmp_path):

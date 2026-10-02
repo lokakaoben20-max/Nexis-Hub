@@ -25,7 +25,35 @@ def _reload_backend_with_db(monkeypatch, tmp_path, name="test_backend.db"):
     database_module = importlib.reload(importlib.import_module("backend.app.database"))
     importlib.reload(importlib.import_module("backend.app.models"))
     backend_main = importlib.reload(importlib.import_module("backend.app.main"))
+    # Base jetable : tables créées d'un coup (une vraie base passe par Alembic).
+    database_module.init_db()
     return backend_main, database_module
+
+
+def _fund(test_client, mission_id=1001, quote_id=1, amount=100.0, currency="USD", method="mobile_money", urgent=False, client=42, provider=7):
+    return test_client.post(
+        f"/api/bot/missions/{mission_id}/fund",
+        json={
+            "method": method,
+            "client_telegram_id": client,
+            "provider_telegram_id": provider,
+            "quote_ref": quote_id,
+            "amount": amount,
+            "currency": currency,
+            "urgent": urgent,
+            "service": "service_peinture",
+            "commune": "Gombe",
+            "description": "Peindre le salon",
+        },
+    )
+
+
+def _credit_client_wallet(database_module, telegram_id, amount, currency="USD"):
+    from backend.app import ledger
+
+    with database_module.SessionLocal() as db:
+        ledger.record_opening_balance(db, ledger.CLIENT, telegram_id, currency, amount)
+        db.commit()
 
 
 def _authed_client(backend_main):
@@ -102,18 +130,9 @@ def test_mission_lifecycle_round_trip(tmp_path, monkeypatch):
         # encore sans devis").
         assert create_response.json()["mission"]["status"] == "pending"
 
-        status_response = test_client.post(
-            "/api/bot/missions/status",
-            json={"mission_id": 1001, "status": "confirmed"},
-        )
-        assert status_response.status_code == 200
-        assert status_response.json()["mission"]["status"] == "confirmed"
-
-        payment_response = test_client.post(
-            "/api/bot/payments",
-            json={"quote_id": 1, "mission_id": 1001, "payment_status": "paid_escrow"},
-        )
+        payment_response = _fund(test_client, mission_id=1001)
         assert payment_response.status_code == 200
+        assert payment_response.json()["mission"]["status"] == "confirmed"
         assert payment_response.json()["mission"]["payment_status"] == "paid_escrow"
 
         profile_response = test_client.get("/api/profile/42")
@@ -261,7 +280,8 @@ def test_accepting_a_quote_rejects_the_others_and_confirms_mission(tmp_path, mon
         rejected = test_client.get("/api/profile/42")
         assert rejected.status_code == 200
 
-        mission = test_client.post("/api/bot/missions/status", json={"mission_id": 1001, "status": "confirmed"}).json()["mission"]
+        mission = test_client.get("/api/bot/missions/1001").json()["mission"]
+        assert mission["status"] == "confirmed"
         assert mission["provider_telegram_id"] == 7
 
         second_quote_after = test_client.post(f"/api/bot/quotes/{second_quote['id']}/reject")
@@ -269,32 +289,26 @@ def test_accepting_a_quote_rejects_the_others_and_confirms_mission(tmp_path, mon
 
 
 def test_payment_amounts_use_urgent_commission_rate():
-    from backend.app.crud import calculate_payment_amounts
+    from decimal import Decimal
 
-    normal = calculate_payment_amounts(100.0, "USD", urgent=False)
-    assert normal["commission_amount"] == 10.0
-    assert normal["tola_fee"] == 0.00
-    assert normal["total_client"] == 100.00
-    assert normal["net_provider"] == 90.0
+    from backend.app.ledger import payment_amounts
 
-    urgent = calculate_payment_amounts(100.0, "USD", urgent=True)
-    assert urgent["commission_amount"] == 15.0
-    assert urgent["net_provider"] == 85.0
+    normal = payment_amounts(100.0, urgent=False)
+    assert normal == {"total": Decimal("100.00"), "commission": Decimal("10.00"), "net": Decimal("90.00")}
+
+    urgent = payment_amounts(100.0, urgent=True)
+    assert urgent["commission"] == Decimal("15.00")
+    assert urgent["net"] == Decimal("85.00")
 
 
 def test_client_pays_exactly_the_quote_amount_in_both_currencies():
     """Frais Tola supprimés : le total client == le montant du devis, USD comme CDF."""
-    from backend.app.crud import calculate_payment_amounts
+    from decimal import Decimal
 
-    usd = calculate_payment_amounts(100.0, "USD", urgent=False)
-    cdf = calculate_payment_amounts(250000.0, "CDF", urgent=False)
+    from backend.app.ledger import payment_amounts
 
-    assert usd["total_client"] == 100.0
-    assert cdf["total_client"] == 250000.0
-    assert usd["tola_fee"] == 0.0
-    assert cdf["tola_fee"] == 0.0
-    assert usd["aggregator_fee"] == 0.0
-    assert cdf["aggregator_fee"] == 0.0
+    assert payment_amounts(100.0, urgent=False)["total"] == Decimal("100.00")
+    assert payment_amounts(250000.0, urgent=False)["total"] == Decimal("250000.00")
 
 
 def test_mission_cannot_start_before_escrow_payment(tmp_path, monkeypatch):
@@ -305,8 +319,9 @@ def test_mission_cannot_start_before_escrow_payment(tmp_path, monkeypatch):
         test_client.post(f"/api/bot/quotes/{quote_id}/accept")
 
         response = test_client.post("/api/bot/missions/1001/start", json={"provider_telegram_id": 7})
-        assert response.status_code == 400
-        assert "escrow" in response.json()["detail"]
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "not_paid"
+        assert response.json()["detail"]["mission"]["status"] == "confirmed"
 
 
 def test_full_escrow_and_release_flow(tmp_path, monkeypatch):
@@ -316,9 +331,10 @@ def test_full_escrow_and_release_flow(tmp_path, monkeypatch):
         quote_id = _setup_mission_with_quote(test_client, amount=100.0)
         test_client.post(f"/api/bot/quotes/{quote_id}/accept")
 
-        pay_response = test_client.post(f"/api/bot/quotes/{quote_id}/pay", json={"operator": "simulation"})
+        pay_response = _fund(test_client, quote_id=quote_id)
         assert pay_response.status_code == 200
-        assert pay_response.json()["mobile_money_ref"] == f"SIM-{quote_id:04d}"
+        assert pay_response.json()["money"]["funding"]["reference"] == f"SIM-{quote_id:04d}"
+        assert pay_response.json()["money"]["funding"]["net"] == "90.00"
 
         start_response = test_client.post("/api/bot/missions/1001/start", json={"provider_telegram_id": 7})
         assert start_response.status_code == 200
@@ -328,7 +344,7 @@ def test_full_escrow_and_release_flow(tmp_path, monkeypatch):
         assert finish_response.status_code == 200
         assert finish_response.json()["mission"]["status"] == "awaiting_confirmation"
 
-        release_response = test_client.post("/api/bot/missions/1001/release")
+        release_response = test_client.post("/api/bot/missions/1001/confirm", json={"client_telegram_id": 42})
         assert release_response.status_code == 200
         released = release_response.json()["mission"]
         assert released["status"] == "completed"
@@ -336,6 +352,7 @@ def test_full_escrow_and_release_flow(tmp_path, monkeypatch):
 
         provider_profile = test_client.get("/api/profile/7").json()
         assert provider_profile["provider"]["wallet_balance_usd"] == 90.0
+        assert test_client.get("/api/bot/wallets/7").json()["provider"]["wallet_balance_usd"] == 90.0
 
 
 def test_wallet_payment_fails_when_balance_insufficient(tmp_path, monkeypatch):
@@ -345,9 +362,10 @@ def test_wallet_payment_fails_when_balance_insufficient(tmp_path, monkeypatch):
         quote_id = _setup_mission_with_quote(test_client, amount=100.0)
         test_client.post(f"/api/bot/quotes/{quote_id}/accept")
 
-        response = test_client.post(f"/api/bot/quotes/{quote_id}/pay-wallet", json={"operator": "wallet"})
-        assert response.status_code == 400
-        assert "insuffisant" in response.json()["detail"]
+        response = _fund(test_client, quote_id=quote_id, method="wallet")
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "insufficient_balance"
+        assert response.json()["detail"]["mission"]["payment_status"] is None
 
 
 def test_wallet_payment_succeeds_and_debits_balance(tmp_path, monkeypatch):
@@ -356,20 +374,71 @@ def test_wallet_payment_succeeds_and_debits_balance(tmp_path, monkeypatch):
     with _authed_client(backend_main) as test_client:
         quote_id = _setup_mission_with_quote(test_client, amount=100.0)
         test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+        _credit_client_wallet(database_module, 42, 200.0)
 
-        with database_module.SessionLocal() as db:
-            from backend.app.models import BotUser
-
-            user = db.get(BotUser, 42)
-            user.wallet_balance_usd = 200.0
-            db.commit()
-
-        response = test_client.post(f"/api/bot/quotes/{quote_id}/pay-wallet", json={"operator": "wallet"})
+        response = _fund(test_client, quote_id=quote_id, method="wallet")
         assert response.status_code == 200
-        assert response.json()["mobile_money_ref"] == f"WLT-{quote_id:04d}"
+        assert response.json()["money"]["funding"]["reference"] == f"WLT-{quote_id:04d}"
 
         profile = test_client.get("/api/profile/42").json()
         assert profile["client"]["wallet_balance_usd"] == 100.0  # 200 - 100 (devis seul, plus de frais Tola)
+
+
+def test_money_endpoints_return_a_stable_code_and_the_current_mission_on_refusal(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        _fund(test_client, quote_id=quote_id)
+
+        second = _fund(test_client, quote_id=quote_id + 1, amount=50.0)
+        assert second.status_code == 409
+        assert second.json()["detail"]["code"] == "already_paid"
+        assert second.json()["detail"]["money"]["funding"]["total"] == "100.00"
+
+        intruder = test_client.post("/api/bot/missions/1001/confirm", json={"client_telegram_id": 999})
+        assert intruder.status_code == 403
+        assert intruder.json()["detail"]["code"] == "not_mission_client"
+
+        missing = test_client.post("/api/bot/missions/4242/confirm", json={"client_telegram_id": 42})
+        assert missing.status_code == 404
+        assert missing.json()["detail"] == {"code": "mission_not_found"}
+
+
+def test_dispute_freezes_funds_and_admin_split_pays_both_parties(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        _fund(test_client, quote_id=quote_id)
+
+        dispute = test_client.post("/api/bot/missions/1001/dispute", json={"client_telegram_id": 42, "reason": "Travail non fait"})
+        assert dispute.status_code == 200
+        assert dispute.json()["mission"]["status"] == "disputed"
+        assert dispute.json()["mission"]["dispute_deadline"] is not None
+
+        frozen = test_client.post("/api/bot/missions/1001/confirm", json={"client_telegram_id": 42})
+        assert frozen.status_code == 409
+        assert frozen.json()["detail"]["code"] == "mission_disputed"
+
+        resolved = test_client.post(
+            "/api/bot/missions/1001/dispute/resolve",
+            json={"decision": "split", "provider_percentage": 50, "admin_telegram_id": 1},
+        )
+        assert resolved.status_code == 200
+        assert resolved.json()["mission"]["payment_status"] == "split"
+        assert resolved.json()["money"]["settlement"]["provider_amount"] == "45.00"
+        assert resolved.json()["money"]["settlement"]["client_amount"] == "45.00"
+        assert resolved.json()["money"]["settlement"]["platform_amount"] == "10.00"
+        assert test_client.get("/api/bot/wallets/7").json()["provider"]["wallet_balance_usd"] == 45.0
+        assert test_client.get("/api/bot/wallets/42").json()["client"]["wallet_balance_usd"] == 45.0
+
+        again = test_client.post(
+            "/api/bot/missions/1001/dispute/resolve",
+            json={"decision": "refund", "admin_telegram_id": 1},
+        )
+        assert again.status_code == 409
+        assert again.json()["detail"]["code"] == "already_settled"
 
 
 def test_profile_provider_missions_are_filtered_by_provider_not_client(tmp_path, monkeypatch):
@@ -391,332 +460,6 @@ def test_profile_provider_missions_are_filtered_by_provider_not_client(tmp_path,
         assert provider_profile["provider_missions"][0]["mission_id"] == 1001
         assert provider_profile["provider_missions"][0]["client_name"] == "Client"
         assert provider_profile["client_missions"] == [], "7 n'est pas client de la mission 1001"
-
-
-def _paid_escrow_payload(mission_id=1001, quote_id=501, amount=100.0, currency="USD", via_wallet=False):
-    """Mêmes clés que `telegram_bot.backend_client.sync_payment_to_backend` quand
-    `amounts` est fourni — reproduit ce que le bot envoie réellement après un
-    paiement local (db.py) réussi, pour tester le miroir sans revalidation."""
-    return {
-        "quote_id": quote_id,
-        "mission_id": mission_id,
-        "payment_status": "paid_escrow",
-        "amount": amount,
-        "currency": currency,
-        "commission_amount": 10.0,
-        "tola_fee": 0.0,
-        "aggregator_fee": 0.0,
-        "total_client": amount,
-        "net_provider": amount - 10.0,
-        "mobile_money_ref": f"SIM-{quote_id:04d}",
-        "operator": "mobile_money_simulation",
-        "via_wallet": via_wallet,
-    }
-
-
-def test_generic_payment_endpoint_mirrors_transaction_without_revalidating(tmp_path, monkeypatch):
-    """Le miroir (option B, cf. discussion) ne revalide rien (pas de re-check
-    de solde wallet côté backend) : il enregistre juste ce que db.py a déjà
-    validé localement."""
-    from backend.app.models import BotTransaction
-
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
-
-    with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
-
-        response = test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
-        assert response.status_code == 200
-        mission = response.json()["mission"]
-        assert mission["payment_status"] == "paid_escrow"
-        assert mission["net_provider"] == 90.0
-        assert mission["commission_amount"] == 10.0
-
-    with database_module.SessionLocal() as db:
-        transactions = db.query(BotTransaction).filter(BotTransaction.mission_id == 1001).all()
-        assert len(transactions) == 1
-        assert transactions[0].type == "escrow_in"
-        assert transactions[0].amount == 100.0
-        assert transactions[0].net_provider == 90.0
-        assert transactions[0].mobile_money_ref == f"SIM-{quote_id:04d}"
-
-
-def test_generic_payment_endpoint_debits_wallet_when_via_wallet(tmp_path, monkeypatch):
-    from backend.app.models import BotUser
-
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
-
-    with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
-
-        with database_module.SessionLocal() as db:
-            db.get(BotUser, 42).wallet_balance_usd = 200.0
-            db.commit()
-
-        response = test_client.post(
-            "/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id, via_wallet=True)
-        )
-        assert response.status_code == 200
-
-    with database_module.SessionLocal() as db:
-        user = db.get(BotUser, 42)
-        assert user.wallet_balance_usd == 100.0, "200 - 100 (le devis), débité sans revalider le solde côté backend"
-
-
-def test_generic_payment_endpoint_is_idempotent_on_replay(tmp_path, monkeypatch):
-    """Un retry best-effort (sync_payment_to_backend rejoué) ne doit pas créer
-    une deuxième transaction ni débiter le wallet deux fois."""
-    from backend.app.models import BotTransaction, BotUser
-
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
-
-    with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
-
-        with database_module.SessionLocal() as db:
-            db.get(BotUser, 42).wallet_balance_usd = 200.0
-            db.commit()
-
-        payload = _paid_escrow_payload(quote_id=quote_id, via_wallet=True)
-        first = test_client.post("/api/bot/payments", json=payload)
-        second = test_client.post("/api/bot/payments", json=payload)
-        assert first.status_code == 200
-        assert second.status_code == 200
-
-    with database_module.SessionLocal() as db:
-        transactions = db.query(BotTransaction).filter(BotTransaction.mission_id == 1001).all()
-        assert len(transactions) == 1, "le deuxième appel ne doit pas créer une deuxième transaction"
-        user = db.get(BotUser, 42)
-        assert user.wallet_balance_usd == 100.0, "le deuxième appel ne doit pas débiter le wallet une deuxième fois"
-
-
-def test_generic_mission_status_release_credits_provider_wallet_and_stats(tmp_path, monkeypatch):
-    """Reproduit ce que sync_mission_status_to_backend(mission_id, 'completed',
-    payment_status='released') doit maintenant déclencher côté backend, sans
-    passer par l'endpoint spécifique /missions/{id}/release."""
-    from backend.app.models import BotTransaction
-
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
-
-    with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
-        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
-
-        response = test_client.post(
-            "/api/bot/missions/status",
-            json={"mission_id": 1001, "status": "completed", "payment_status": "released"},
-        )
-        assert response.status_code == 200
-        mission = response.json()["mission"]
-        assert mission["status"] == "completed"
-        assert mission["payment_status"] == "released"
-
-        provider_profile = test_client.get("/api/profile/7").json()
-        assert provider_profile["provider"]["wallet_balance_usd"] == 90.0
-        assert provider_profile["provider"]["total_missions"] == 1, "_recompute_provider_stats doit tourner comme dans crud.release_payment"
-
-    with database_module.SessionLocal() as db:
-        release_transactions = (
-            db.query(BotTransaction).filter(BotTransaction.mission_id == 1001, BotTransaction.type == "release").all()
-        )
-        assert len(release_transactions) == 1
-        assert release_transactions[0].net_provider == 90.0
-
-
-def test_generic_mission_status_release_is_idempotent_on_replay(tmp_path, monkeypatch):
-    from backend.app.models import BotTransaction
-
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
-
-    with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
-        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
-
-        payload = {"mission_id": 1001, "status": "completed", "payment_status": "released"}
-        test_client.post("/api/bot/missions/status", json=payload)
-        test_client.post("/api/bot/missions/status", json=payload)
-
-        provider_profile = test_client.get("/api/profile/7").json()
-        assert provider_profile["provider"]["wallet_balance_usd"] == 90.0, "pas crédité deux fois"
-
-    with database_module.SessionLocal() as db:
-        release_transactions = (
-            db.query(BotTransaction).filter(BotTransaction.mission_id == 1001, BotTransaction.type == "release").all()
-        )
-        assert len(release_transactions) == 1
-
-
-def test_generic_mission_status_refund_amount_credits_client_wallet(tmp_path, monkeypatch):
-    """Résolution de litige (remboursement pur) : payment_status="refunded" +
-    refund_amount, sans "released" -> seul le client est crédité."""
-    from backend.app.models import BotTransaction
-
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
-
-    with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
-        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
-
-        response = test_client.post(
-            "/api/bot/missions/status",
-            json={"mission_id": 1001, "status": "cancelled", "payment_status": "refunded", "refund_amount": 100.0},
-        )
-        assert response.status_code == 200
-
-        client_profile = test_client.get("/api/profile/42").json()
-        assert client_profile["client"]["wallet_balance_usd"] == 100.0
-        provider_profile = test_client.get("/api/profile/7").json()
-        assert provider_profile["provider"]["wallet_balance_usd"] == 0.0, "le prestataire ne doit rien recevoir"
-
-    with database_module.SessionLocal() as db:
-        refunds = db.query(BotTransaction).filter(BotTransaction.mission_id == 1001, BotTransaction.type == "refund").all()
-        assert len(refunds) == 1
-        assert refunds[0].amount == 100.0
-
-
-def test_generic_mission_status_split_credits_both_provider_and_client_in_one_call(tmp_path, monkeypatch):
-    """Partage à l'amiable : reproduit le VRAI chemin d'appel du bot —
-    net_provider (part réduite) et refund_amount arrivent tous les deux dans
-    l'appel /api/bot/missions/status de résolution, PAS dans le paiement
-    escrow initial (qui reste le net_provider plein, 90, comme toujours).
-    Régression : sans le champ `net_provider` explicite dans ce payload, le
-    backend créditait le prestataire du net_provider ORIGINAL (90) en plus de
-    sa part (60) au lieu de seulement sa part — sur-crédit trouvé en revue."""
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
-
-    with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
-        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))  # net_provider plein = 90
-
-        response = test_client.post(
-            "/api/bot/missions/status",
-            json={
-                "mission_id": 1001,
-                "status": "completed",
-                "payment_status": "released",
-                "refund_amount": 30.0,
-                "net_provider": 60.0,
-            },
-        )
-        assert response.status_code == 200
-
-        provider_profile = test_client.get("/api/profile/7").json()
-        assert provider_profile["provider"]["wallet_balance_usd"] == 60.0, (
-            "doit recevoir sa part réduite (60), pas le net_provider original (90) ni 90+30"
-        )
-        client_profile = test_client.get("/api/profile/42").json()
-        assert client_profile["client"]["wallet_balance_usd"] == 30.0
-        # 60 (part prestataire) + 30 (part remboursée) = 90 (net_provider plein,
-        # 100 - 10 de commission) : la commission plateforme n'est reversée à
-        # personne, mais rien n'a été créé ni perdu au-delà d'elle.
-        assert provider_profile["provider"]["wallet_balance_usd"] + client_profile["client"]["wallet_balance_usd"] == 90.0
-
-
-def test_generic_mission_status_refund_is_idempotent_on_replay(tmp_path, monkeypatch):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
-
-    with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
-        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
-
-        payload = {"mission_id": 1001, "status": "cancelled", "payment_status": "refunded", "refund_amount": 100.0}
-        test_client.post("/api/bot/missions/status", json=payload)
-        test_client.post("/api/bot/missions/status", json=payload)
-
-        client_profile = test_client.get("/api/profile/42").json()
-        assert client_profile["client"]["wallet_balance_usd"] == 100.0, "pas crédité deux fois"
-
-
-def test_generic_payment_endpoint_still_records_transaction_after_a_bare_status_call(tmp_path, monkeypatch):
-    """Régression : security-reviewer a signalé que l'ancien garde
-    (`mission.payment_status != "paid_escrow"`) pouvait être empoisonné par
-    un appel sans `amount` (compat arrière) qui pose payment_status sans
-    créer de transaction — un vrai paiement arrivant ensuite se retrouvait
-    silencieusement ignoré alors que payment_status affichait déjà
-    "paid_escrow" comme si tout s'était bien passé. Le garde doit se baser
-    sur l'existence réelle d'une transaction, pas sur ce champ."""
-    from backend.app.models import BotTransaction
-
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
-
-    with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
-
-        # Appel "bare" : pose payment_status sans jamais créer de transaction.
-        bare_response = test_client.post(
-            "/api/bot/payments", json={"quote_id": quote_id, "mission_id": 1001, "payment_status": "paid_escrow"}
-        )
-        assert bare_response.json()["mission"]["payment_status"] == "paid_escrow"
-
-        # Le vrai paiement arrive ensuite : doit quand même créer la transaction.
-        real_response = test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
-        assert real_response.status_code == 200
-        assert real_response.json()["mission"]["net_provider"] == 90.0
-
-    with database_module.SessionLocal() as db:
-        transactions = db.query(BotTransaction).filter(BotTransaction.mission_id == 1001).all()
-        assert len(transactions) == 1, "le vrai paiement ne doit pas être ignoré à cause de l'appel bare précédent"
-        assert transactions[0].net_provider == 90.0
-
-
-def test_generic_mission_status_release_requires_a_prior_payment_transaction(tmp_path, monkeypatch):
-    """Le garde de libération se base maintenant sur l'existence d'une
-    transaction escrow_in (pas sur payment_status, poisonnable de la même
-    façon) : sans paiement réel enregistré, une libération ne doit rien
-    créditer."""
-    from backend.app.models import BotProvider, BotTransaction
-
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
-
-    with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
-
-        # payment_status posé à "paid_escrow" sans jamais créer de transaction (appel bare).
-        test_client.post(
-            "/api/bot/payments", json={"quote_id": quote_id, "mission_id": 1001, "payment_status": "paid_escrow"}
-        )
-
-        response = test_client.post(
-            "/api/bot/missions/status",
-            json={"mission_id": 1001, "status": "completed", "payment_status": "released"},
-        )
-        assert response.status_code == 200
-
-    with database_module.SessionLocal() as db:
-        assert db.query(BotTransaction).filter(BotTransaction.mission_id == 1001, BotTransaction.type == "release").count() == 0
-        assert db.get(BotProvider, 7).wallet_balance_usd == 0.0, "pas de paiement réel enregistré -> pas de crédit"
-
-
-def test_generic_payment_endpoint_without_amount_only_sets_status(tmp_path, monkeypatch):
-    """Compat arrière : un appelant qui n'envoie pas `amount` (ancien format)
-    ne doit ni planter, ni créer de transaction — juste poser payment_status,
-    comme avant cette évolution."""
-    from backend.app.models import BotTransaction
-
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
-
-    with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
-
-        response = test_client.post(
-            "/api/bot/payments", json={"quote_id": quote_id, "mission_id": 1001, "payment_status": "paid_escrow"}
-        )
-        assert response.status_code == 200
-        assert response.json()["mission"]["payment_status"] == "paid_escrow"
-
-    with database_module.SessionLocal() as db:
-        assert db.query(BotTransaction).filter(BotTransaction.mission_id == 1001).count() == 0
 
 
 def test_consecutive_ignored_auto_pauses_provider_after_three(tmp_path, monkeypatch):
@@ -757,10 +500,10 @@ def test_update_user_language(tmp_path, monkeypatch):
 def _complete_mission_flow(test_client, mission_id=1001, amount=100.0, currency="USD", provider_telegram_id=7):
     quote_id = _setup_mission_with_quote(test_client, mission_id=mission_id, amount=amount, currency=currency)
     test_client.post(f"/api/bot/quotes/{quote_id}/accept")
-    test_client.post(f"/api/bot/quotes/{quote_id}/pay", json={"operator": "simulation"})
+    assert _fund(test_client, mission_id=mission_id, quote_id=quote_id, amount=amount, currency=currency, provider=provider_telegram_id).status_code == 200
     test_client.post(f"/api/bot/missions/{mission_id}/start", json={"provider_telegram_id": provider_telegram_id})
     test_client.post(f"/api/bot/missions/{mission_id}/finish", json={"provider_telegram_id": provider_telegram_id})
-    release_response = test_client.post(f"/api/bot/missions/{mission_id}/release")
+    release_response = test_client.post(f"/api/bot/missions/{mission_id}/confirm", json={"client_telegram_id": 42})
     assert release_response.status_code == 200
     return quote_id
 
@@ -1031,78 +774,6 @@ def test_verify_unknown_provider_returns_404(tmp_path, monkeypatch):
     with _authed_client(backend_main) as test_client:
         response = test_client.post("/api/bot/providers/999999/verify")
         assert response.status_code == 404
-
-
-def test_generic_mission_status_refuses_refund_after_release(tmp_path, monkeypatch):
-    """Double versement : mission déjà libérée au prestataire (ex. auto-libération
-    Celery à 24h), puis remboursement de litige décidé côté bot. Le backend doit
-    refuser sans rien écrire, au lieu de rembourser aussi le client."""
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
-
-    with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
-        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
-        assert test_client.post("/api/bot/missions/1001/release").status_code == 200
-
-        response = test_client.post(
-            "/api/bot/missions/status",
-            json={"mission_id": 1001, "status": "cancelled", "payment_status": "refunded", "refund_amount": 100.0},
-        )
-
-        assert response.status_code == 409
-        assert test_client.get("/api/profile/42").json()["client"]["wallet_balance_usd"] == 0.0
-        provider_profile = test_client.get("/api/profile/7").json()
-        assert provider_profile["provider"]["wallet_balance_usd"] == 90.0
-        mission = provider_profile["provider_missions"][0]
-        assert mission["status"] == "completed"
-        assert mission["payment_status"] == "released"
-
-
-def test_generic_mission_status_refuses_release_after_refund(tmp_path, monkeypatch):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
-
-    with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
-        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
-        refund = test_client.post(
-            "/api/bot/missions/status",
-            json={"mission_id": 1001, "status": "cancelled", "payment_status": "refunded", "refund_amount": 100.0},
-        )
-        assert refund.status_code == 200
-
-        response = test_client.post(
-            "/api/bot/missions/status",
-            json={"mission_id": 1001, "status": "completed", "payment_status": "released"},
-        )
-
-        assert response.status_code == 409
-        assert test_client.get("/api/profile/7").json()["provider"]["wallet_balance_usd"] == 0.0
-
-
-def test_release_endpoint_refuses_disputed_or_already_refunded_mission(tmp_path, monkeypatch):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
-
-    with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
-        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
-        test_client.post("/api/bot/missions/status", json={"mission_id": 1001, "status": "disputed", "dispute_reason": "x"})
-
-        assert test_client.post("/api/bot/missions/1001/release").status_code == 400
-
-        test_client.post(
-            "/api/bot/missions/status",
-            json={"mission_id": 1001, "status": "cancelled", "payment_status": "refunded", "refund_amount": 100.0},
-        )
-        # Rejeu de paid_escrow après remboursement : payment_status redevient
-        # "paid_escrow", mais la transaction refund doit bloquer la libération.
-        test_client.post("/api/bot/payments", json=_paid_escrow_payload(quote_id=quote_id))
-        test_client.post("/api/bot/missions/status", json={"mission_id": 1001, "status": "awaiting_confirmation"})
-
-        assert test_client.post("/api/bot/missions/1001/release").status_code == 400
-        assert test_client.get("/api/profile/7").json()["provider"]["wallet_balance_usd"] == 0.0
 
 
 def test_rank_providers_orders_given_ids_by_score_without_availability_filter(tmp_path, monkeypatch):
