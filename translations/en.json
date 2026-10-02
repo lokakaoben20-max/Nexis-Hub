@@ -176,5 +176,19 @@
   "dispute_resolved_release_client": "✅ <b>Dispute resolved</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\n\nAfter review, the payment was released to the provider.",
   "dispute_resolved_release_provider": "💸 <b>Dispute resolved in your favor</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\nAmount added to your wallet: <b>{net} {currency}</b>",
   "dispute_resolved_split_client": "🤝 <b>Dispute resolved: split</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\n\nAfter review, {refund} {currency} was refunded to your wallet.",
-  "dispute_resolved_split_provider": "🤝 <b>Dispute resolved: split</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\nAmount added to your wallet: <b>{net} {currency}</b>"
+  "dispute_resolved_split_provider": "🤝 <b>Dispute resolved: split</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\nAmount added to your wallet: <b>{net} {currency}</b>",
+  "money_backend_unavailable": "⏳ Payment service temporarily unavailable. Nothing was charged or changed. Please try again shortly.",
+  "money_error_insufficient_balance": "Insufficient wallet balance.",
+  "money_error_already_paid": "This mission is already paid.",
+  "money_error_not_paid": "This mission is not paid yet.",
+  "money_error_invalid_state": "This action is not possible at this stage of the mission.",
+  "money_error_mission_disputed": "Mission under dispute: the Nexis Hub team will decide.",
+  "money_error_already_settled": "This mission is already settled.",
+  "money_error_not_mission_client": "This mission does not belong to you.",
+  "money_error_not_mission_provider": "You are not the provider of this mission.",
+  "money_error_mission_not_found": "Mission not found.",
+  "money_error_generic": "Action refused.",
+  "wallet_unavailable": "👛 <b>Balance unavailable</b>\n\nThe payment service is not responding right now. Please try again shortly.",
+  "table_value_unavailable": "unavailable",
+  "quote_accept_confirmation_wallet_unknown": "✅ <b>Quote accepted.</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\nProvider: <b>{prestataire}</b>\nQuote: <b>{devis:.2f} {currency}</b>\nTotal to pay: <b>{total:.2f} {currency}</b>\n\n👛 Wallet balance: unavailable right now.\n\nChoose a payment method to secure the mission."
 }

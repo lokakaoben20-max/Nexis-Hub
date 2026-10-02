@@ -52,7 +52,8 @@ def _credit_client_wallet(database_module, telegram_id, amount, currency="USD"):
     from backend.app import ledger
 
     with database_module.SessionLocal() as db:
-        ledger.record_opening_balance(db, ledger.CLIENT, telegram_id, currency, amount)
+        account_id = ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
+        ledger.record_opening_balance(db, ledger.CLIENT, account_id, currency, amount)
         db.commit()
 
 

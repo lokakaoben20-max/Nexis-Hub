@@ -70,6 +70,11 @@ class BotMission(Base):
     # Id du devis accepté côté bot (db.py), reçu avec la demande de paiement :
     # trace d'audit, les devis backend ont leur propre séquence.
     accepted_quote_ref: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Comptes Nexis (indépendants du canal) du client et du prestataire, fixés
+    # au paiement : le règlement crédite ces comptes, quel que soit le canal
+    # (Telegram aujourd'hui, WhatsApp ou l'app demain).
+    client_account_id: Mapped[int | None] = mapped_column(ForeignKey("nexis_accounts.id"), nullable=True)
+    provider_account_id: Mapped[int | None] = mapped_column(ForeignKey("nexis_accounts.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     # Mise à jour à chaque changement de `status` (voir crud._touch_status) — sert
     # à mesurer "en attente de confirmation depuis quand" (auto-libération) et
@@ -139,6 +144,32 @@ class BotServiceRequest(Base):
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class NexisAccount(Base):
+    """Une personne pour Nexis Hub, indépendamment du canal. Ses wallets
+    (client, prestataire) dans le registre sont rattachés à cet identifiant,
+    jamais à un identifiant Telegram ou WhatsApp."""
+
+    __tablename__ = "nexis_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ChannelIdentity(Base):
+    """Rattache un identifiant de canal (`telegram` + telegram_id, plus tard
+    `whatsapp` + numéro) à un compte Nexis. Un même canal + identifiant ne
+    désigne qu'un seul compte."""
+
+    __tablename__ = "channel_identities"
+    __table_args__ = (UniqueConstraint("channel", "external_id", name="uq_channel_identities_channel_external_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("nexis_accounts.id"), index=True)
+    channel: Mapped[str] = mapped_column(String(20))
+    external_id: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class MoneyOperation(Base):
     """Une opération d'argent (paiement, libération, remboursement, partage,
     solde d'ouverture). Écrite uniquement par backend/app/ledger.py.
@@ -163,7 +194,9 @@ class MoneyOperation(Base):
 
 class LedgerEntry(Base):
     """Un mouvement d'un compte. La somme des mouvements d'une opération vaut
-    toujours 0 ; le solde d'un compte est la somme de ses mouvements."""
+    toujours 0 ; le solde d'un compte est la somme de ses mouvements.
+    `account_id` : id `nexis_accounts` pour `client`/`provider`, id de mission
+    pour `escrow`, vide pour `platform`/`external`."""
 
     __tablename__ = "ledger_entries"
 

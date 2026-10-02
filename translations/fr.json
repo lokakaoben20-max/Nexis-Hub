@@ -184,5 +184,19 @@
   "dispute_resolved_release_client": "✅ <b>Litige résolu</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nAprès examen, le paiement a été libéré au prestataire.",
   "dispute_resolved_release_provider": "💸 <b>Litige résolu en votre faveur</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nMontant ajouté à votre wallet : <b>{net} {currency}</b>",
   "dispute_resolved_split_client": "🤝 <b>Litige résolu : partage</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nAprès examen, {refund} {currency} vous ont été remboursés sur votre wallet.",
-  "dispute_resolved_split_provider": "🤝 <b>Litige résolu : partage</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nMontant ajouté à votre wallet : <b>{net} {currency}</b>"
+  "dispute_resolved_split_provider": "🤝 <b>Litige résolu : partage</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nMontant ajouté à votre wallet : <b>{net} {currency}</b>",
+  "money_backend_unavailable": "⏳ Service de paiement momentanément indisponible. Rien n'a été débité ni modifié. Réessayez dans un instant.",
+  "money_error_insufficient_balance": "Solde insuffisant sur votre wallet.",
+  "money_error_already_paid": "Cette mission est déjà payée.",
+  "money_error_not_paid": "Cette mission n'est pas encore payée.",
+  "money_error_invalid_state": "Action impossible à cette étape de la mission.",
+  "money_error_mission_disputed": "Mission en litige : la décision revient à l'équipe Nexis Hub.",
+  "money_error_already_settled": "Cette mission est déjà réglée.",
+  "money_error_not_mission_client": "Cette mission ne vous appartient pas.",
+  "money_error_not_mission_provider": "Vous n'êtes pas le prestataire de cette mission.",
+  "money_error_mission_not_found": "Mission introuvable.",
+  "money_error_generic": "Action refusée.",
+  "wallet_unavailable": "👛 <b>Solde indisponible</b>\n\nLe service de paiement ne répond pas pour le moment. Réessayez dans un instant.",
+  "table_value_unavailable": "indisponible",
+  "quote_accept_confirmation_wallet_unknown": "✅ <b>Devis accepté.</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nPrestataire : <b>{prestataire}</b>\nDevis : <b>{devis:.2f} {currency}</b>\nTotal à payer : <b>{total:.2f} {currency}</b>\n\n👛 Solde wallet : indisponible pour le moment.\n\nChoisissez un mode de paiement pour sécuriser la mission."
 }

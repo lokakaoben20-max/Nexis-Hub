@@ -1,6 +1,8 @@
 """registre d'argent : money_operations + ledger_entries, soldes repris
 
 Le backend devient la seule source de vérité de l'argent (CONCEPTION_ARGENT.md) :
+- crée les comptes Nexis (indépendants du canal) et rattache chaque
+  telegram_id connu à son compte ;
 - crée les tables du registre et les colonnes de litige des missions ;
 - reprend chaque solde wallet existant en « solde d'ouverture » ;
 - enregistre le paiement de chaque mission encore en escrow, pour que sa
@@ -63,8 +65,43 @@ def _insert_operation(bind, *, kind, currency, movements, mission_id=None, phase
         )
 
 
+def _account_for_telegram(bind, accounts: dict, telegram_id):
+    if telegram_id is None:
+        return None
+    if telegram_id not in accounts:
+        now = datetime.utcnow()
+        account_id = bind.execute(
+            sa.text("INSERT INTO nexis_accounts (created_at) VALUES (:created_at) RETURNING id"), {"created_at": now}
+        ).scalar_one()
+        bind.execute(
+            sa.text(
+                "INSERT INTO channel_identities (account_id, channel, external_id, created_at) "
+                "VALUES (:account_id, 'telegram', :external_id, :created_at)"
+            ),
+            {"account_id": account_id, "external_id": str(telegram_id), "created_at": now},
+        )
+        accounts[telegram_id] = account_id
+    return accounts[telegram_id]
+
+
 def upgrade() -> None:
     """Upgrade schema."""
+    op.create_table('nexis_accounts',
+        sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column('created_at', sa.DateTime(), nullable=False),
+        sa.PrimaryKeyConstraint('id'),
+    )
+    op.create_table('channel_identities',
+        sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column('account_id', sa.Integer(), nullable=False),
+        sa.Column('channel', sa.String(length=20), nullable=False),
+        sa.Column('external_id', sa.String(length=64), nullable=False),
+        sa.Column('created_at', sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(['account_id'], ['nexis_accounts.id'], ),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint('channel', 'external_id', name='uq_channel_identities_channel_external_id'),
+    )
+    op.create_index(op.f('ix_channel_identities_account_id'), 'channel_identities', ['account_id'], unique=False)
     op.create_table('money_operations',
         sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
         sa.Column('kind', sa.String(length=30), nullable=False),
@@ -96,11 +133,18 @@ def upgrade() -> None:
     op.add_column('bot_missions', sa.Column('dispute_opened_at', sa.DateTime(), nullable=True))
     op.add_column('bot_missions', sa.Column('dispute_deadline', sa.DateTime(), nullable=True))
     op.add_column('bot_missions', sa.Column('accepted_quote_ref', sa.Integer(), nullable=True))
+    op.add_column('bot_missions', sa.Column('client_account_id', sa.Integer(), sa.ForeignKey('nexis_accounts.id'), nullable=True))
+    op.add_column('bot_missions', sa.Column('provider_account_id', sa.Integer(), sa.ForeignKey('nexis_accounts.id'), nullable=True))
 
     bind = op.get_bind()
+    accounts = {}
+    for table, _ in WALLET_TABLES:
+        for (telegram_id,) in bind.execute(sa.text(f"SELECT telegram_id FROM {table} ORDER BY telegram_id")).fetchall():
+            _account_for_telegram(bind, accounts, telegram_id)
     for table, account_type in WALLET_TABLES:
         rows = bind.execute(sa.text(f"SELECT telegram_id, wallet_balance_usd, wallet_balance_cdf FROM {table}")).fetchall()
         for telegram_id, usd, cdf in rows:
+            account_id = accounts[telegram_id]
             for currency, value in (("USD", usd), ("CDF", cdf)):
                 amount = _money(value)
                 if amount == 0:
@@ -109,19 +153,27 @@ def upgrade() -> None:
                     bind,
                     kind="opening_balance",
                     currency=currency,
-                    details={"account_type": account_type, "telegram_id": telegram_id},
-                    movements=[("external", None, -amount), (account_type, telegram_id, amount)],
+                    details={"account_type": account_type, "account_id": account_id},
+                    movements=[("external", None, -amount), (account_type, account_id, amount)],
                 )
 
     open_escrows = bind.execute(
         sa.text(
-            "SELECT mission_id, currency, total_client, commission_amount, net_provider, provider_telegram_id, urgent "
+            "SELECT mission_id, currency, total_client, commission_amount, net_provider, provider_telegram_id, urgent, telegram_id "
             "FROM bot_missions WHERE payment_status = 'paid_escrow' "
             "AND (status IS NULL OR status NOT IN ('completed', 'cancelled'))"
         )
     ).fetchall()
-    for mission_id, currency, total, commission, net, provider_telegram_id, urgent in open_escrows:
+    for mission_id, currency, total, commission, net, provider_telegram_id, urgent, client_telegram_id in open_escrows:
         total, commission, net = _money(total), _money(commission), _money(net)
+        bind.execute(
+            sa.text("UPDATE bot_missions SET client_account_id = :client, provider_account_id = :provider WHERE mission_id = :mission_id"),
+            {
+                "client": _account_for_telegram(bind, accounts, client_telegram_id),
+                "provider": _account_for_telegram(bind, accounts, provider_telegram_id),
+                "mission_id": mission_id,
+            },
+        )
         _insert_operation(
             bind,
             kind="fund_legacy",
@@ -156,12 +208,16 @@ def downgrade() -> None:
             bind.execute(
                 sa.text(
                     f"UPDATE {table} SET {column} = COALESCE(("
-                    "SELECT SUM(amount) FROM ledger_entries "
-                    f"WHERE account_type = :account_type AND account_id = {table}.telegram_id AND currency = :currency"
+                    "SELECT SUM(ledger_entries.amount) FROM ledger_entries "
+                    "JOIN channel_identities ON channel_identities.account_id = ledger_entries.account_id "
+                    "WHERE ledger_entries.account_type = :account_type AND ledger_entries.currency = :currency "
+                    f"AND channel_identities.channel = 'telegram' AND channel_identities.external_id = CAST({table}.telegram_id AS VARCHAR)"
                     "), 0)"
                 ),
                 {"account_type": account_type, "currency": currency},
             )
+    op.drop_column('bot_missions', 'provider_account_id')
+    op.drop_column('bot_missions', 'client_account_id')
     op.drop_column('bot_missions', 'accepted_quote_ref')
     op.drop_column('bot_missions', 'dispute_deadline')
     op.drop_column('bot_missions', 'dispute_opened_at')
@@ -171,3 +227,6 @@ def downgrade() -> None:
     op.drop_table('ledger_entries')
     op.drop_index(op.f('ix_money_operations_mission_id'), table_name='money_operations')
     op.drop_table('money_operations')
+    op.drop_index(op.f('ix_channel_identities_account_id'), table_name='channel_identities')
+    op.drop_table('channel_identities')
+    op.drop_table('nexis_accounts')

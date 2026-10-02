@@ -69,7 +69,19 @@ def disputed(db, mission_id=1, **kwargs):
 
 
 def bal(db, account_type, account_id, currency="USD"):
+    """Pour un client ou un prestataire, `account_id` est le telegram_id : on
+    passe par son compte Nexis, comme le reste du système."""
+    if account_type in (ledger.CLIENT, ledger.PROVIDER):
+        account_id = ledger.account_id_for(db, ledger.TELEGRAM, account_id)
+        if account_id is None:
+            return money(0)
     return ledger.balance(db, account_type, account_id, currency)
+
+
+def open_wallet(db, telegram_id, amount, currency="USD"):
+    account_id = ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
+    ledger.record_opening_balance(db, ledger.CLIENT, account_id, currency, amount)
+    db.commit()
 
 
 def assert_books_balanced(db):
@@ -149,8 +161,7 @@ def test_a_different_second_payment_is_refused(db):
 
 
 def test_wallet_payment_is_refused_when_the_balance_is_short_and_writes_nothing(db):
-    ledger.record_opening_balance(db, ledger.CLIENT, CLIENT_ID, "USD", 99.99)
-    db.commit()
+    open_wallet(db, CLIENT_ID, 99.99)
 
     refused("insufficient_balance", lambda: fund(db, mission_id=3, method="wallet"))
     db.rollback()
@@ -161,8 +172,7 @@ def test_wallet_payment_is_refused_when_the_balance_is_short_and_writes_nothing(
 
 
 def test_wallet_payment_debits_the_client_wallet(db):
-    ledger.record_opening_balance(db, ledger.CLIENT, CLIENT_ID, "USD", 250)
-    db.commit()
+    open_wallet(db, CLIENT_ID, 250)
 
     fund(db, method="wallet")
 
@@ -173,8 +183,7 @@ def test_wallet_payment_debits_the_client_wallet(db):
 
 
 def test_currencies_are_separate_wallets(db):
-    ledger.record_opening_balance(db, ledger.CLIENT, CLIENT_ID, "USD", 1000)
-    db.commit()
+    open_wallet(db, CLIENT_ID, 1000)
 
     refused("insufficient_balance", lambda: fund(db, method="wallet", amount=20000, currency="CDF"))
 
@@ -409,3 +418,19 @@ def test_wallet_refund_can_pay_a_later_mission(db):
     assert bal(db, ledger.CLIENT, CLIENT_ID) == money(0)
     assert bal(db, ledger.ESCROW, 2) == money(100)
     assert_books_balanced(db)
+
+
+def test_wallets_belong_to_a_channel_neutral_nexis_account(db):
+    """Le registre ne connaît que des comptes Nexis : un futur canal (WhatsApp)
+    rattaché au même compte voit le même wallet, sans rien migrer."""
+    disputed(db)
+    ledger.resolve_dispute(db, 1, decision="refund", admin_telegram_id=1)
+
+    account_id = ledger.account_id_for(db, ledger.TELEGRAM, CLIENT_ID)
+    db.add(ledger.ChannelIdentity(account_id=account_id, channel="whatsapp", external_id="+243810000000"))
+    db.commit()
+
+    assert ledger.wallet_balances(db, ledger.CLIENT, "whatsapp", "+243810000000")["USD"] == money(100)
+    entries = db.query(LedgerEntry).filter(LedgerEntry.account_type == ledger.CLIENT).all()
+    assert {entry.account_id for entry in entries} == {account_id}
+    assert db.get(BotMission, 1).client_account_id == account_id

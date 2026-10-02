@@ -149,7 +149,7 @@ class ServiceRequestStatusPayload(BaseModel):
 
 def _wallet_fields(db, account_type: str, telegram_id: int) -> dict:
     # Calculés depuis le registre, seule source de vérité (backend/app/ledger.py).
-    balances = ledger.wallet_balances(db, account_type, telegram_id)
+    balances = ledger.wallet_balances(db, account_type, ledger.TELEGRAM, telegram_id)
     return {"wallet_balance_usd": float(balances["USD"]), "wallet_balance_cdf": float(balances["CDF"])}
 
 

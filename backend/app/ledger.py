@@ -26,7 +26,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app.models import BotMission, BotUser, LedgerEntry, MoneyOperation
+from backend.app.models import BotMission, BotUser, ChannelIdentity, LedgerEntry, MoneyOperation, NexisAccount
 
 CENT = Decimal("0.01")
 ZERO = Decimal("0.00")
@@ -52,6 +52,9 @@ DISPUTE_DECISIONS = {"refund", "release", "split"}
 # et avant tout règlement.
 FUNDABLE_STATUSES = {None, "pending", "quoted", "confirmed"}
 DISPUTABLE_STATUSES = {"confirmed", "in_progress", "awaiting_confirmation"}
+
+# Canaux par lesquels une personne s'identifie (voir `account_id_for`).
+TELEGRAM = "telegram"
 
 # Comptes du registre.
 EXTERNAL = "external"
@@ -114,8 +117,40 @@ def balance(db: Session, account_type: str, account_id: int | None, currency: st
     return to_money(total)
 
 
-def wallet_balances(db: Session, account_type: str, telegram_id: int) -> dict[str, Decimal]:
-    return {currency: balance(db, account_type, telegram_id, currency) for currency in CURRENCIES}
+def account_id_for(db: Session, channel: str, external_id, create: bool = False) -> int | None:
+    """Compte Nexis d'un identifiant de canal ; créé à la demande. Le registre
+    ne connaît que ces comptes, jamais un identifiant Telegram ou WhatsApp."""
+    external_id = str(external_id)
+    identity = (
+        db.query(ChannelIdentity)
+        .filter(ChannelIdentity.channel == channel, ChannelIdentity.external_id == external_id)
+        .one_or_none()
+    )
+    if identity is not None:
+        return identity.account_id
+    if not create:
+        return None
+    try:
+        with db.begin_nested():
+            account = NexisAccount()
+            db.add(account)
+            db.flush()
+            db.add(ChannelIdentity(account_id=account.id, channel=channel, external_id=external_id))
+            db.flush()
+        return account.id
+    except IntegrityError:
+        # Créé au même instant par une autre requête : on prend le sien.
+        account_id = account_id_for(db, channel, external_id)
+        if account_id is None:
+            raise
+        return account_id
+
+
+def wallet_balances(db: Session, account_type: str, channel: str, external_id) -> dict[str, Decimal]:
+    account_id = account_id_for(db, channel, external_id)
+    if account_id is None:
+        return {currency: ZERO for currency in CURRENCIES}
+    return {currency: balance(db, account_type, account_id, currency) for currency in CURRENCIES}
 
 
 def mission_operation(db: Session, mission_id: int, phase: str) -> MoneyOperation | None:
@@ -155,6 +190,8 @@ def _record(
     details: dict | None = None,
 ) -> MoneyOperation:
     movements = [(account_type, account_id, amount) for account_type, account_id, amount in movements if amount != ZERO]
+    if any(account_id is None for account_type, account_id, _ in movements if account_type in (CLIENT, PROVIDER, ESCROW)):
+        raise RuntimeError(f"Opération {kind} : compte sans identifiant : {movements}")
     if sum((amount for _, _, amount in movements), ZERO) != ZERO:
         # Invariant de partie double : ne peut arriver que par bug de ce module.
         raise RuntimeError(f"Opération {kind} déséquilibrée : {movements}")
@@ -263,20 +300,26 @@ def fund_mission(
 
     mission = db.get(BotMission, mission_id, with_for_update=True)
     if mission is None:
-        mission = BotMission(
-            mission_id=mission_id,
-            telegram_id=client_telegram_id,
-            service=service,
-            commune=commune,
-            currency=currency,
-            description=description,
-            urgent=bool(urgent),
-            status="pending",
-        )
-        db.add(mission)
-        client = db.get(BotUser, client_telegram_id)
-        if client is not None:
-            client.total_missions += 1
+        try:
+            with db.begin_nested():
+                db.add(
+                    BotMission(
+                        mission_id=mission_id,
+                        telegram_id=client_telegram_id,
+                        service=service,
+                        commune=commune,
+                        currency=currency,
+                        description=description,
+                        urgent=bool(urgent),
+                        status="pending",
+                    )
+                )
+                client = db.get(BotUser, client_telegram_id)
+                if client is not None:
+                    client.total_missions += 1
+        except IntegrityError:
+            pass  # créée au même instant par une autre requête
+        mission = db.get(BotMission, mission_id, with_for_update=True)
     if mission.telegram_id != client_telegram_id:
         raise MoneyError("not_mission_client", 403, mission)
 
@@ -288,13 +331,15 @@ def fund_mission(
     if mission.status not in FUNDABLE_STATUSES or mission.payment_status not in (None, "unpaid"):
         raise MoneyError("invalid_state", mission=mission)
 
+    client_account_id = account_id_for(db, TELEGRAM, client_telegram_id, create=True)
+    provider_account_id = account_id_for(db, TELEGRAM, provider_telegram_id, create=True)
     if method == "wallet":
-        # Verrou sur le client : deux paiements wallet simultanés du même
-        # client ne peuvent pas lire le même solde puis le débiter deux fois.
-        db.get(BotUser, client_telegram_id, with_for_update=True)
-        if balance(db, CLIENT, client_telegram_id, currency) < amounts["total"]:
+        # Verrou sur le compte du client : deux paiements wallet simultanés ne
+        # peuvent pas lire le même solde puis le débiter deux fois.
+        db.get(NexisAccount, client_account_id, with_for_update=True)
+        if balance(db, CLIENT, client_account_id, currency) < amounts["total"]:
             raise MoneyError("insufficient_balance", mission=mission)
-        source = (CLIENT, client_telegram_id)
+        source = (CLIENT, client_account_id)
     else:
         source = (EXTERNAL, None)
 
@@ -311,6 +356,8 @@ def fund_mission(
             movements=[(*source, -amounts["total"]), (ESCROW, mission_id, amounts["total"])],
         )
         mission.provider_telegram_id = provider_telegram_id
+        mission.client_account_id = client_account_id
+        mission.provider_account_id = provider_account_id
         mission.currency = currency
         mission.urgent = bool(urgent)
         mission.accepted_quote_ref = quote_ref
@@ -377,7 +424,7 @@ def _release_details(amounts: dict[str, Decimal]) -> dict:
 def _release_movements(mission: BotMission, amounts: dict[str, Decimal]) -> list:
     return [
         (ESCROW, mission.mission_id, -amounts["total"]),
-        (PROVIDER, mission.provider_telegram_id, amounts["net"]),
+        (PROVIDER, mission.provider_account_id, amounts["net"]),
         (PLATFORM, None, amounts["commission"]),
     ]
 
@@ -537,7 +584,7 @@ def resolve_dispute(
 
     if decision == "refund":
         provider_amount, client_amount, platform_amount = ZERO, amounts["total"], ZERO
-        movements = [(ESCROW, mission_id, -amounts["total"]), (CLIENT, mission.telegram_id, amounts["total"])]
+        movements = [(ESCROW, mission_id, -amounts["total"]), (CLIENT, mission.client_account_id, amounts["total"])]
         payment_status, status = "refunded", "cancelled"
     elif decision == "release":
         provider_amount, client_amount, platform_amount = amounts["net"], ZERO, amounts["commission"]
@@ -549,8 +596,8 @@ def resolve_dispute(
         platform_amount = amounts["commission"]
         movements = [
             (ESCROW, mission_id, -amounts["total"]),
-            (PROVIDER, mission.provider_telegram_id, provider_amount),
-            (CLIENT, mission.telegram_id, client_amount),
+            (PROVIDER, mission.provider_account_id, provider_amount),
+            (CLIENT, mission.client_account_id, client_amount),
             (PLATFORM, None, platform_amount),
         ]
         payment_status, status = "split", "completed"
@@ -596,9 +643,9 @@ def _after_settlement(db: Session, mission_id: int) -> BotMission:
 # --- Soldes d'ouverture (migration) ----------------------------------------------
 
 
-def record_opening_balance(db: Session, account_type: str, telegram_id: int, currency: str, amount) -> MoneyOperation | None:
-    """Reprise d'un solde existant avant le registre. Ne valide pas : appelé
-    par la migration, dans sa propre transaction."""
+def record_opening_balance(db: Session, account_type: str, account_id: int, currency: str, amount) -> MoneyOperation | None:
+    """Reprise d'un solde existant avant le registre (`account_id` : compte
+    Nexis). Ne valide pas : l'appelant gère sa transaction."""
     amount = to_money(amount)
     if amount == ZERO:
         return None
@@ -606,6 +653,6 @@ def record_opening_balance(db: Session, account_type: str, telegram_id: int, cur
         db,
         kind="opening_balance",
         currency=currency,
-        details={"account_type": account_type, "telegram_id": telegram_id},
-        movements=[(EXTERNAL, None, -amount), (account_type, telegram_id, amount)],
+        details={"account_type": account_type, "account_id": account_id},
+        movements=[(EXTERNAL, None, -amount), (account_type, account_id, amount)],
     )
