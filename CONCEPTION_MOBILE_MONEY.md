@@ -1,8 +1,9 @@
 # Conception : paiements et retraits Mobile Money réels
 
-Rédigée le 2026-10-03, à la demande de Ben, pendant que les agrégateurs
-(FlexPaie, MaxiCash, SerdiPay, KibaWallet) répondent. Indépendante de
-l'agrégateur choisi : seul un module d'adaptation lui sera propre.
+Rédigée le 2026-10-03 à la demande de Ben, complétée le même jour avec ses
+décisions (section « Décisions de Ben »). Agrégateur retenu : FlexPaie
+(FlexPay). Le cœur reste indépendant de l'agrégateur : seul un module
+d'adaptation lui est propre.
 S'appuie sur le registre d'argent (`CONCEPTION_ARGENT.md`), qui reste la
 seule source de vérité.
 
@@ -72,6 +73,19 @@ Filets de sécurité :
 5. Échec définitif : `payout_pending` → wallet, retrait `failed`, le
    prestataire est prévenu. L'argent revient, toujours.
 
+**Validation (décision de Ben)** : au lancement, chaque retrait attend la
+validation de l'admin dans le bot avant d'être envoyé à l'agrégateur (statut
+`awaiting_approval`, montant déjà bloqué). Plus tard, sous un plafond réglé
+dans le backend, les retraits partent automatiquement. Cette règle vit dans
+notre backend : l'agrégateur ne fait qu'exécuter un versement déjà autorisé.
+Un refus de l'admin rend le montant au wallet.
+
+**Argent d'un remboursement** : l'argent qu'un client a reçu par
+remboursement (litige) reste utilisable pour payer d'autres missions, mais
+n'est retirable vers le Mobile Money qu'après vérification de l'admin. Le
+registre trace l'origine de chaque crédit, donc la part « remboursement »
+d'un wallet est connue sans calcul approximatif.
+
 Un retrait ne puise que dans le wallet : l'argent d'une mission en escrow ou
 en litige n'y est jamais. Le compte `payout_pending` et un nouveau compte
 `fees` (frais d'agrégateur) s'ajoutent aux comptes du registre.
@@ -79,9 +93,19 @@ en litige n'y est jamais. Le compte `payout_pending` et un nouveau compte
 ## Frais d'agrégateur
 
 Les frais facturés par l'agrégateur sont enregistrés comme une opération à
-part (platform → fees pour ce que la plateforme paie, ou wallet → fees pour
-ce que le prestataire paie au retrait), au montant indiqué par l'agrégateur.
-Le registre reste exact au centime face aux relevés.
+part, au montant indiqué par l'agrégateur, pour que le registre reste exact
+au centime face aux relevés :
+
+- **Encaissement** : à la charge de Nexis Hub (platform → fees), prélevés
+  sur sa commission ; le client paie le prix du devis. Qui paie est un
+  **réglage du backend** (payeur et taux attendu), pas une valeur codée en
+  dur : Ben peut le changer plus tard sans toucher au registre. Le montant
+  enregistré reste celui annoncé par l'agrégateur ; un écart avec le taux
+  attendu est signalé au rapprochement.
+- **Retrait** : à la charge du prestataire (wallet → fees), au prix coûtant
+  de l'agrégateur, déduit du montant versé ; montant minimum de retrait. Les
+  deux valeurs sont des réglages du backend, fixés avec les tarifs PayOut
+  de FlexPaie.
 
 ## Rapprochement
 
@@ -123,28 +147,76 @@ et le bac à sable de l'agrégateur sert aux essais de bout en bout.
 - Admin : intentions en anomalie (montant différent, paiement en trop),
   retraits échoués, rapport de rapprochement du jour.
 
-## Décisions à prendre par Ben
+## Décisions de Ben (2026-10-03)
 
-1. **Agrégateur** : après comparaison des réponses (frais, versements
-   sortants, délais, qualité de l'API).
-2. **Frais d'encaissement** : absorbés par la plateforme sur sa commission
-   (le client paie le prix du devis, comme aujourd'hui), ou ajoutés au prix
-   payé par le client.
-3. **Frais de retrait** : payés par le prestataire (déduits du retrait) ou par
-   la plateforme ; montant minimum de retrait.
-4. **Validation des retraits** : automatique, ou validée par l'admin au-dessus
-   d'un montant (recommandé au lancement).
-5. **Wallet client** : un client peut-il retirer vers son Mobile Money l'argent
-   d'un remboursement, ou ce solde sert-il seulement à payer d'autres
-   missions ?
+1. **Agrégateur : FlexPaie (FlexPay).**
+2. **Frais d'encaissement** : à la charge de Nexis Hub, sur sa commission,
+   « on verra ensuite » : réglage du backend, modifiable sans migration.
+3. **Frais de retrait** : au prix coûtant, à la charge du prestataire, avec
+   un minimum de retrait ; montants fixés avec les tarifs reçus.
+4. **Retraits** : validés par l'admin au début, puis automatiques sous un
+   plafond.
+5. **Remboursement d'un client** : non retirable sans vérification de
+   l'admin.
 
-## Livraison
+## Ce que FlexPaie a répondu, et ce qui manque
 
-Un seul chantier, sur une branche dédiée, livré complet une fois
-l'agrégateur choisi et son bac à sable ouvert : tables et migration
-(intentions, retraits, comptes `payout_pending` et `fees`), module
-d'adaptation, webhook et interrogation de secours, parcours bot et admin,
-rapprochement, puis essais dans le bac à sable. Tests obligatoires :
-signature falsifiée, webhook rejoué, montant différent, confirmation en
-retard, double confirmation, agrégateur injoignable, retrait concurrent,
-échec de versement et retour de l'argent.
+Répondu : 100 USD d'installation, 2,5 % par encaissement ; encaissements
+(PayIn) et versements (PayOut) par API, webhooks, consultation du statut,
+bac à sable. La documentation n'est fournie qu'après le KYC, qui demande une
+société enregistrée en RDC.
+
+À obtenir **par écrit** avant tout branchement réel :
+
+- **signature des webhooks** (comment vérifier qu'une confirmation vient
+  bien de FlexPaie) : bloquant, sans elle on ne peut pas croire un webhook ;
+- frais des versements (PayOut) et leurs plafonds ;
+- remboursement par API (sinon le remboursement reste un crédit wallet,
+  comme aujourd'hui) ;
+- confirmation que nous gardons nous-mêmes l'argent en séquestre (escrow
+  dans notre registre), FlexPaie ne faisant qu'encaisser et verser.
+
+**Rien n'est branché en réel avant que le KYC soit validé et que la
+signature des webhooks soit confirmée par écrit.**
+
+## Découpage du code
+
+Un seul chantier, sur une branche dédiée, livré complet. Les étapes 1 à 4
+ne dépendent pas de la documentation FlexPaie et peuvent commencer dès
+maintenant ; l'étape 5 attend le KYC et la réponse sur la signature.
+
+1. **Registre et tables** : intentions de paiement, retraits, comptes
+   `payout_pending` et `fees`, origine des crédits (remboursement), réglages
+   (payeur et taux des frais, frais et minimum de retrait, plafond
+   d'automatisation). Migration Alembic avec retour arrière.
+2. **Encaissement indépendant de l'agrégateur** : création d'intention (une
+   seule ouverte par mission), traitement d'une confirmation, interrogation
+   de secours, expiration, montant différent, paiement en retard ou en
+   double. La voie « paiement simulé au clic » disparaît en production.
+3. **Retraits** : demande et blocage, validation ou refus admin, versement,
+   échec et retour au wallet, minimum, frais, plafond, argent de
+   remboursement.
+4. **Bot et admin** : choix de l'opérateur, écran d'attente, bouton
+   « Retirer », écrans admin (retraits à valider, anomalies, rapprochement).
+   Textes en fr, ln, en.
+5. **Module FlexPaie** : appels PayIn et PayOut, vérification de signature,
+   lecture du statut et du relevé ; essais de bout en bout dans le bac à
+   sable FlexPaie.
+6. **Rapprochement quotidien** et revue de sécurité dédiée (déjà prévue
+   pour la phase 6), puis mise en ligne.
+
+Tests obligatoires : signature falsifiée, webhook rejoué, montant ou devise
+différents, confirmation en retard, double confirmation, agrégateur
+injoignable, deux retraits simultanés, retrait refusé par l'admin, échec de
+versement et retour de l'argent, minimum et plafond, argent de remboursement
+non retirable sans validation, aucune écriture si une étape échoue.
+
+## Risques
+
+| Risque | Gravité | Parade |
+| --- | --- | --- |
+| Faux webhook qui « paie » une mission | Critique | Signature vérifiée, statut toujours reconsulté chez FlexPaie ; pas de branchement réel sans signature confirmée |
+| Argent reçu mais mission non payée (webhook perdu) | Élevée | Interrogation de secours, rapprochement quotidien |
+| Double versement d'un retrait | Critique | Montant bloqué avant l'envoi, référence unique, retour au wallet seulement sur échec définitif confirmé |
+| Frais réels différents des frais attendus | Moyenne | Montant de l'agrégateur enregistré tel quel, écart signalé au rapprochement |
+| Documentation FlexPaie différente de nos hypothèses | Moyenne | Tout ce qui est propre à FlexPaie est isolé dans son module (étape 5) |
