@@ -198,5 +198,16 @@
   "money_error_generic": "Action refusée.",
   "wallet_unavailable": "👛 <b>Solde indisponible</b>\n\nLe service de paiement ne répond pas pour le moment. Réessayez dans un instant.",
   "table_value_unavailable": "indisponible",
-  "quote_accept_confirmation_wallet_unknown": "✅ <b>Devis accepté.</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nPrestataire : <b>{prestataire}</b>\nDevis : <b>{devis:.2f} {currency}</b>\nTotal à payer : <b>{total:.2f} {currency}</b>\n\n👛 Solde wallet : indisponible pour le moment.\n\nChoisissez un mode de paiement pour sécuriser la mission."
+  "quote_accept_confirmation_wallet_unknown": "✅ <b>Devis accepté.</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nPrestataire : <b>{prestataire}</b>\nDevis : <b>{devis:.2f} {currency}</b>\nTotal à payer : <b>{total:.2f} {currency}</b>\n\n👛 Solde wallet : indisponible pour le moment.\n\nChoisissez un mode de paiement pour sécuriser la mission.",
+  "legal_prompt_conditions_generales": "📜 <b>Bienvenue sur Nexis Hub. Avant de commencer :</b>\n\n• Nexis Hub vous met en relation avec des prestataires vérifiés. Le prestataire réalise le travail ; Nexis Hub garde votre paiement bloqué jusqu'à ce que vous confirmiez la fin de la mission.\n• Si vous ne confirmez pas et ne signalez aucun problème dans les 24 heures après que le prestataire a indiqué la fin, le paiement lui est versé.\n• Un paiement fait hors de Nexis Hub n'est pas protégé.\n\nEn appuyant sur « J'accepte », vous acceptez les Conditions générales et confirmez avoir 18 ans ou plus.",
+  "legal_prompt_donnees_transferts": "🔒 <b>Vos données</b>\n\nPour fonctionner, Nexis Hub utilise votre nom, votre numéro et vos demandes. Vos messages passent par Telegram, dont les serveurs sont situés hors de la RDC. Ces pays n'offrent pas forcément la même protection qu'en RDC. Vous pouvez demander l'effacement de votre compte à tout moment.\n\nAcceptez-vous ces traitements et ces transferts ?",
+  "legal_prompt_conditions_prestataires": "🧰 <b>Pour devenir prestataire Nexis Hub :</b>\n\n• Vous travaillez de façon indépendante et restez responsable de vos impôts et de vos obligations.\n• Nexis Hub retient une commission de 10 % (15 % si la demande est urgente) sur chaque devis payé.\n• Votre pièce d'identité et votre selfie servent uniquement à vérifier votre identité ; ils sont vus par l'équipe Nexis Hub et ne sont jamais montrés aux clients.\n• Tout paiement doit passer par Nexis Hub.\n\nEn appuyant sur « J'accepte », vous acceptez les Conditions des prestataires.",
+  "legal_button_read": "📖 Lire les conditions",
+  "legal_button_accept": "✅ J'accepte",
+  "legal_button_refuse": "❌ Refuser",
+  "legal_all_accepted": "✅ <b>Merci, c'est enregistré.</b>\n\nChoisissez votre espace pour continuer.",
+  "legal_refused": "Sans cet accord, nous ne pouvons pas vous fournir le service. Vous pouvez revenir quand vous voulez : tapez /start.",
+  "legal_version_changed": "ℹ️ Le texte vient d'être mis à jour. Voici la nouvelle version.",
+  "legal_backend_unavailable": "⚠️ Service momentanément indisponible. Réessayez dans un instant.",
+  "money_error_terms_not_accepted": "Vous devez d'abord accepter les conditions en vigueur. Tapez /start pour les lire."
 }

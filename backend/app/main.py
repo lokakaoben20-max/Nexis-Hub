@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.app import crud, ledger
+from backend.app import crud, ledger, legal
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotUser
 
@@ -145,6 +145,15 @@ class ServiceRequestPayload(BaseModel):
 class ServiceRequestStatusPayload(BaseModel):
     status: str
     admin_note: str = ""
+
+
+class LegalDecisionPayload(BaseModel):
+    channel: str
+    external_id: str = Field(min_length=1, max_length=64)
+    document_key: str
+    version: str = Field(min_length=1, max_length=50)
+    decision: str
+    language: str | None = Field(default=None, max_length=5)
 
 
 def _wallet_fields(db, telegram_id: int) -> dict:
@@ -493,24 +502,34 @@ def _money_call(operation):
         return _money_response(db, mission)
 
 
+def _fund_after_terms_check(db, mission_id: int, payload: FundPayload) -> BotMission:
+    """Le client doit avoir accepté les conditions en vigueur avant de payer
+    (CONCEPTION_ACCEPTATIONS.md, règle 6). Une mission déjà payée n'est pas
+    revérifiée : le rejeu d'un paiement enregistré renvoie toujours son
+    résultat, même si une nouvelle version est entrée en vigueur depuis."""
+    if ledger.mission_operation(db, mission_id, ledger.FUNDING) is None:
+        account_id = ledger.account_id_for(db, ledger.TELEGRAM, payload.client_telegram_id)
+        if legal.missing_for_account(db, account_id, legal.CLIENT):
+            raise ledger.MoneyError("terms_not_accepted", mission=db.get(BotMission, mission_id))
+    return ledger.fund_mission(
+        db,
+        mission_id,
+        method=payload.method,
+        client_telegram_id=payload.client_telegram_id,
+        provider_telegram_id=payload.provider_telegram_id,
+        quote_ref=payload.quote_ref,
+        amount=payload.amount,
+        currency=payload.currency,
+        urgent=payload.urgent,
+        service=payload.service,
+        commune=payload.commune,
+        description=payload.description,
+    )
+
+
 @router.post("/api/bot/missions/{mission_id}/fund")
 def fund_mission(mission_id: int, payload: FundPayload):
-    return _money_call(
-        lambda db: ledger.fund_mission(
-            db,
-            mission_id,
-            method=payload.method,
-            client_telegram_id=payload.client_telegram_id,
-            provider_telegram_id=payload.provider_telegram_id,
-            quote_ref=payload.quote_ref,
-            amount=payload.amount,
-            currency=payload.currency,
-            urgent=payload.urgent,
-            service=payload.service,
-            commune=payload.commune,
-            description=payload.description,
-        )
-    )
+    return _money_call(lambda db: _fund_after_terms_check(db, mission_id, payload))
 
 
 @router.post("/api/bot/missions/{mission_id}/start")
@@ -559,6 +578,43 @@ def get_mission(mission_id: int):
 def get_wallets(telegram_id: int):
     with SessionLocal() as db:
         return {"status": "ok", "telegram_id": telegram_id, "wallet": _wallet_fields(db, telegram_id)}
+
+
+# Acceptation des conditions (CONCEPTION_ACCEPTATIONS.md). Indépendant du
+# canal : le bot WhatsApp passera par les mêmes routes.
+@router.get("/api/bot/legal/status")
+def legal_status(channel: str, external_id: str, role: str):
+    with SessionLocal() as db:
+        try:
+            return {"status": "ok", **legal.status(db, channel, external_id, role)}
+        except legal.LegalError as error:
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+
+
+@router.post("/api/bot/legal/decisions")
+def record_legal_decision(payload: LegalDecisionPayload):
+    with SessionLocal() as db:
+        try:
+            row = legal.record_decision(
+                db,
+                payload.channel,
+                payload.external_id,
+                payload.document_key,
+                payload.version,
+                payload.decision,
+                payload.language,
+            )
+            db.commit()
+        except legal.LegalError as error:
+            db.rollback()
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+        return {
+            "status": "ok",
+            "document_key": payload.document_key,
+            "version": payload.version,
+            "decision": row.decision,
+            "decided_at": row.decided_at.isoformat(),
+        }
 
 
 @router.post("/api/bot/service-requests")

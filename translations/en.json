@@ -190,5 +190,16 @@
   "money_error_generic": "Action refused.",
   "wallet_unavailable": "👛 <b>Balance unavailable</b>\n\nThe payment service is not responding right now. Please try again shortly.",
   "table_value_unavailable": "unavailable",
-  "quote_accept_confirmation_wallet_unknown": "✅ <b>Quote accepted.</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\nProvider: <b>{prestataire}</b>\nQuote: <b>{devis:.2f} {currency}</b>\nTotal to pay: <b>{total:.2f} {currency}</b>\n\n👛 Wallet balance: unavailable right now.\n\nChoose a payment method to secure the mission."
+  "quote_accept_confirmation_wallet_unknown": "✅ <b>Quote accepted.</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\nProvider: <b>{prestataire}</b>\nQuote: <b>{devis:.2f} {currency}</b>\nTotal to pay: <b>{total:.2f} {currency}</b>\n\n👛 Wallet balance: unavailable right now.\n\nChoose a payment method to secure the mission.",
+  "legal_prompt_conditions_generales": "📜 <b>Welcome to Nexis Hub. Before you start:</b>\n\n• Nexis Hub connects you with verified service providers. The provider does the work; Nexis Hub keeps your payment locked until you confirm the job is finished.\n• If you neither confirm nor report a problem within 24 hours after the provider marks the job as finished, the payment is released to them.\n• A payment made outside Nexis Hub is not protected.\n\nBy tapping “I accept”, you accept the Terms of Use and confirm you are 18 or older.",
+  "legal_prompt_donnees_transferts": "🔒 <b>Your data</b>\n\nTo work, Nexis Hub uses your name, your number and your requests. Your messages go through Telegram, whose servers are outside the DRC. Those countries may not offer the same protection as the DRC. You can ask us to delete your account at any time.\n\nDo you accept this processing and these transfers?",
+  "legal_prompt_conditions_prestataires": "🧰 <b>To become a Nexis Hub provider:</b>\n\n• You work independently and remain responsible for your taxes and obligations.\n• Nexis Hub keeps a 10% commission (15% for urgent requests) on each paid quote.\n• Your ID document and selfie are used only to verify your identity; the Nexis Hub team sees them and they are never shown to clients.\n• Every payment must go through Nexis Hub.\n\nBy tapping “I accept”, you accept the Provider Terms.",
+  "legal_button_read": "📖 Read the terms",
+  "legal_button_accept": "✅ I accept",
+  "legal_button_refuse": "❌ Decline",
+  "legal_all_accepted": "✅ <b>Thank you, it is recorded.</b>\n\nChoose your space to continue.",
+  "legal_refused": "Without this consent we cannot provide the service. You can come back any time: type /start.",
+  "legal_version_changed": "ℹ️ The text has just been updated. Here is the new version.",
+  "legal_backend_unavailable": "⚠️ Service temporarily unavailable. Please try again in a moment.",
+  "money_error_terms_not_accepted": "You must first accept the current terms. Type /start to read them."
 }

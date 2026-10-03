@@ -2,7 +2,7 @@ from datetime import datetime
 
 from decimal import Decimal
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.database import Base
@@ -216,3 +216,38 @@ class LedgerEntry(Base):
     currency: Mapped[str] = mapped_column(String(3))
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class LegalDocumentVersion(Base):
+    """Une version publiée d'un document juridique (conditions, consentement).
+    Jamais modifiée : un texte corrigé est une nouvelle version. Écrite
+    uniquement par backend/app/legal.py (voir CONCEPTION_ACCEPTATIONS.md)."""
+
+    __tablename__ = "legal_document_versions"
+    __table_args__ = (UniqueConstraint("document_key", "version", name="uq_legal_document_versions_key_version"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    document_key: Mapped[str] = mapped_column(String(50), index=True)
+    version: Mapped[str] = mapped_column(String(50))
+    url: Mapped[str] = mapped_column(String(500))
+    # Empreinte SHA-256 du texte exact publié : prouve ce qui a été accepté.
+    text_sha256: Mapped[str] = mapped_column(String(64))
+    effective_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class LegalAcceptance(Base):
+    """Le choix (acceptation ou refus) d'un compte Nexis sur une version.
+    Table en ajout seul : la décision la plus récente fait foi, rien n'est
+    modifié ni supprimé, même à la clôture du compte."""
+
+    __tablename__ = "legal_acceptances"
+    __table_args__ = (CheckConstraint("decision IN ('accepted', 'refused')", name="ck_legal_acceptances_decision"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("legal_document_versions.id"), index=True)
+    decision: Mapped[str] = mapped_column(String(10))
+    channel: Mapped[str] = mapped_column(String(20))
+    language: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    decided_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

@@ -192,5 +192,16 @@
   "money_error_generic": "Likambo oyo endimami te.",
   "wallet_unavailable": "👛 <b>Mbongo eza ya kokoka te</b>\n\nService ya lifuti ezali koyanola te sikoyo. Meká lisusu mwa sima.",
   "table_value_unavailable": "Ezali te",
-  "quote_accept_confirmation_wallet_unknown": "✅ <b>Devis endimami.</b>\n\nMosala : <b>NXH-{mission_id:04d}</b>\nMosali : <b>{prestataire}</b>\nDevis : <b>{devis:.2f} {currency}</b>\nMbongo ya kofuta : <b>{total:.2f} {currency}</b>\n\n👛 Mbongo ya wallet : eza naino te.\n\nPona lolenge ya kofuta mpo na kobatela mosala."
+  "quote_accept_confirmation_wallet_unknown": "✅ <b>Devis endimami.</b>\n\nMosala : <b>NXH-{mission_id:04d}</b>\nMosali : <b>{prestataire}</b>\nDevis : <b>{devis:.2f} {currency}</b>\nMbongo ya kofuta : <b>{total:.2f} {currency}</b>\n\n👛 Mbongo ya wallet : eza naino te.\n\nPona lolenge ya kofuta mpo na kobatela mosala.",
+  "legal_prompt_conditions_generales": "📜 <b>Boyei malamu na Nexis Hub. Liboso ya kobanda :</b>\n\n• Nexis Hub ekokutanisa yo na basali oyo bayebani. Mosali nde akosala mosala ; Nexis Hub ekobatela lifuti na yo kino okondima que mission esili.\n• Soki ondimi te mpe olobi problème te na kati ya ngonga 24 nsima ya mosali kolakisa que asilisi, lifuti ekokende epai na ye.\n• Lifuti oyo esalemi libanda ya Nexis Hub ezali na libateli te.\n\nNa kofina « Nandimi », ondimi Mibeko ya kosalela Nexis Hub mpe olobi que ozali na mbula 18 to koleka.",
+  "legal_prompt_donnees_transferts": "🔒 <b>Ba informations na yo</b>\n\nMpo na kosala, Nexis Hub esalelaka kombo na yo, numéro na yo mpe ba demandes na yo. Ba messages na yo eleki na Telegram, oyo ba serveurs na yango ezali libanda ya RDC. Mikili wana ekoki kozala na libateli moko te lokola na RDC. Okoki kosenga ete tolongola compte na yo ntango nyonso.\n\nOndimi kosalela ba informations na yo boye mpe kotinda yango libanda ?",
+  "legal_prompt_conditions_prestataires": "🧰 <b>Mpo na kokoma mosali ya Nexis Hub :</b>\n\n• Osalaka mosala na yo moko mpe ozali mokumbi ya ba mpako mpe ba obligations na yo.\n• Nexis Hub ezwaka commission ya 10 % (15 % soki demande ezali urgente) na devis moko na moko oyo efutami.\n• Carte d'identité mpe selfie na yo esalelamaka kaka mpo na koyeba soki ozali yo ; ekipe ya Nexis Hub nde emonaka yango, ba clients bamonaka yango te.\n• Lifuti nyonso esengeli koleka na Nexis Hub.\n\nNa kofina « Nandimi », ondimi Mibeko ya basali.",
+  "legal_button_read": "📖 Tanga mibeko",
+  "legal_button_accept": "✅ Nandimi",
+  "legal_button_refuse": "❌ Naboyi",
+  "legal_all_accepted": "✅ <b>Matondi, ekomami.</b>\n\nPona esika na yo mpo na kokoba.",
+  "legal_refused": "Soki ondimi te, tokoki kopesa yo service te. Okoki kozonga ntango nyonso : koma /start.",
+  "legal_version_changed": "ℹ️ Mokanda ebongwani sikoyo. Tala version ya sika.",
+  "legal_backend_unavailable": "⚠️ Service ezali kosala te mpo na mwa ntango. Meká lisusu nsima mwa ntango.",
+  "money_error_terms_not_accepted": "Osengeli liboso kondima mibeko oyo ezali kosala. Koma /start mpo na kotanga yango."
 }

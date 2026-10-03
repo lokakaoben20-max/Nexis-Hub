@@ -464,6 +464,40 @@ ici.
    aussi, même si la Mini App ne collecte pas encore les documents elle-même (chantier
    séparé, non lancé).
 
+## Acceptation des conditions (version, date, canal)
+
+**Motif** : les documents légaux (conditions générales, paiement et wallet,
+données et transferts, conditions prestataires) sont rédigés et attendent la
+relecture d'un juriste à Kinshasa. Pour les opposer à quelqu'un, il faut
+prouver qui a accepté quelle version, quand et par quel canal.
+
+**Décision (skill `nouvelle-fonctionnalite`)** : fonctionnalité entièrement
+neuve, construite **backend-first, sans réplique dans `db.py`** (précédent B).
+L'acceptation appartient au compte Nexis (`account_id`), pas au telegram_id :
+relier WhatsApp au compte ne demande pas de réaccepter. Détail dans
+`CONCEPTION_ACCEPTATIONS.md` ; code dans `backend/app/legal.py`, tables
+`legal_document_versions` et `legal_acceptances` (historique jamais modifié,
+la décision la plus récente compte), migration `f1a2b3c4d5e6`.
+
+**Règles retenues** :
+- tant qu'aucune version n'est publiée (`python -m backend.publish_legal_version`),
+  rien n'est exigé : le code peut partir avant les textes définitifs ;
+- seule la version en vigueur peut être acceptée ; une nouvelle version doit
+  être réacceptée ;
+- le paiement d'une mission (`POST .../fund`) est refusé
+  (`terms_not_accepted`) tant que le client n'a pas accepté les documents
+  client en vigueur ; le rejeu d'un paiement déjà enregistré n'est pas bloqué ;
+- côté bot, un filtre (`telegram_bot/legal_gate.py`) passe devant chaque
+  message et bouton. `/start`, le choix de langue, les boutons d'acceptation
+  et l'admin passent. **Backend injoignable = action bloquée** : on ne peut
+  pas savoir si une acceptation manque.
+
+**Pas encore couvert** : Mini App (elle n'écrit pas encore au backend) et
+WhatsApp (Phase 4) devront appeler les mêmes routes `/api/bot/legal/...`.
+
+**À faire avant fusion** : rebaser la migration `f1a2b3c4d5e6` sur
+`e6f7a8b9c0d1` (session identité sur le PC, pas encore sur GitHub).
+
 ## Phase 4 — Canal WhatsApp
 
 **Objectif** : ajouter `whatsapp_bot/` comme second canal, une fois que le

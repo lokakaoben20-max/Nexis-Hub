@@ -448,3 +448,58 @@ async def persist_client_registration(telegram_id: int, first_name: str | None =
         )
     )
     return {"local": local_user, "backend": backend_result}
+
+
+# Acceptation des conditions (CONCEPTION_ACCEPTATIONS.md) : le backend est la
+# seule source de vérité. Backend injoignable = `BackendUnavailable`, et le bot
+# n'exécute pas l'action demandée.
+
+
+class LegalRefused(Exception):
+    """Refus métier du backend sur une décision (version périmée, inconnue…)."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+async def fetch_legal_status(telegram_id: int, role: str) -> dict:
+    params = {"channel": "telegram", "external_id": str(telegram_id), "role": role}
+    try:
+        async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+            response = await client.get(f"{BACKEND_BASE_URL}/api/bot/legal/status", params=params)
+        body = response.json()
+    except Exception as error:
+        raise BackendUnavailable(repr(error)) from error
+    if (
+        response.status_code != 200
+        or not isinstance(body, dict)
+        or not isinstance(body.get("complete"), bool)
+        or not isinstance(body.get("missing"), list)
+    ):
+        raise BackendUnavailable(f"réponse inattendue ({response.status_code})")
+    return body
+
+
+async def record_legal_decision(telegram_id: int, document_key: str, version: str, decision: str, language: str) -> dict:
+    payload = {
+        "channel": "telegram",
+        "external_id": str(telegram_id),
+        "document_key": document_key,
+        "version": version,
+        "decision": decision,
+        "language": language,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+            response = await client.post(f"{BACKEND_BASE_URL}/api/bot/legal/decisions", json=payload)
+        body = response.json()
+    except Exception as error:
+        raise BackendUnavailable(repr(error)) from error
+    if response.status_code in (404, 409, 422):
+        detail = body.get("detail") if isinstance(body, dict) else None
+        if isinstance(detail, dict) and isinstance(detail.get("code"), str):
+            raise LegalRefused(detail["code"])
+    if response.status_code != 200 or not isinstance(body, dict) or body.get("decision") != decision:
+        raise BackendUnavailable(f"réponse inattendue ({response.status_code})")
+    return body

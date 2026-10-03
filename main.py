@@ -19,6 +19,7 @@ from db import init_db
 # ces modules (aucun pour l'instant).
 from telegram_bot import admin
 from telegram_bot import dashboard
+from telegram_bot import legal_gate
 from telegram_bot import mission as mission_flow
 from telegram_bot import payment
 from telegram_bot import registration
@@ -37,6 +38,11 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 # Flows extraits (Phase 3) : routers séparés plutôt que des handlers directement
 # sur `dp`. Voir telegram_bot/registration.py et telegram_bot/mission.py.
+# Acceptation des conditions (CONCEPTION_ACCEPTATIONS.md) : le filtre passe
+# devant tous les handlers, ses propres boutons sont traités par legal_gate.
+dp.message.outer_middleware(legal_gate.LegalGateMiddleware())
+dp.callback_query.outer_middleware(legal_gate.LegalGateMiddleware())
+dp.include_router(legal_gate.router)
 dp.include_router(registration.router)
 dp.include_router(mission_flow.router)
 dp.include_router(payment.router)
