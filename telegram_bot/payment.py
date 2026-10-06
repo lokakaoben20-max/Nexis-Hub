@@ -193,7 +193,14 @@ async def _show_mobile_money_status(callback: CallbackQuery, result: dict, lang:
     elif intent["status"] == "overpaid":
         text = get_message("payment_overpaid_client", lang, mission_id=mission_id, amount=intent["amount"], currency=intent["currency"])
         markup = clavier_client(lang)
-    else:  # failed, expired, mismatch : rien n'a été payé
+    elif intent["status"] == "mismatch":  # argent reçu, montant différent : l'admin tranche
+        text = get_message("payment_mismatch_client", lang, mission_id=mission_id)
+        markup = clavier_client(lang)
+    elif intent["status"] in ("mismatch_credited", "mismatch_paid"):
+        key = "payment_mismatch_credited_client" if intent["status"] == "mismatch_credited" else "payment_mismatch_paid_client"
+        text = get_message(key, lang, mission_id=mission_id, amount=intent["received_amount"], currency=intent["received_currency"])
+        markup = clavier_client(lang)
+    else:  # failed, expired : rien n'a été payé
         text = get_message("payment_mobile_failed_client", lang, mission_id=mission_id)
         markup = clavier_client(lang)
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=markup)

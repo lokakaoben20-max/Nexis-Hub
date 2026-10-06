@@ -2,7 +2,7 @@ import hmac
 import os
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from backend.app import crud, ledger, mobile_money, payment_gateway
@@ -123,6 +123,11 @@ class PayoutPayload(BaseModel):
 class PayoutDecisionPayload(BaseModel):
     admin_telegram_id: int
     reason: str = ""
+
+
+class MismatchDecisionPayload(BaseModel):
+    admin_telegram_id: int
+    decision: str
 
 
 class ProviderActionPayload(BaseModel):
@@ -546,6 +551,8 @@ def _intent_to_dict(intent: PaymentIntent) -> dict:
         "currency": intent.currency,
         "gateway_reference": intent.gateway_reference,
         "failure_reason": intent.failure_reason,
+        "received_amount": str(intent.received_amount) if intent.received_amount is not None else None,
+        "received_currency": intent.received_currency,
     }
 
 
@@ -648,6 +655,42 @@ def approve_payout(payout_id: int, payload: PayoutDecisionPayload):
 def reject_payout(payout_id: int, payload: PayoutDecisionPayload):
     _require_admin(payload.admin_telegram_id)
     return _payout_call(lambda db: mobile_money.reject_payout(db, payout_id, payload.admin_telegram_id, payload.reason))
+
+
+@router.get("/api/bot/payment-intents/mismatches")
+def list_payment_mismatches(admin_telegram_id: int, limit: int = 20):
+    # Téléphone et identifiant du client : réservé à l'admin.
+    _require_admin(admin_telegram_id)
+    with SessionLocal() as db:
+        intents = mobile_money.list_mismatches(db, limit)
+        return {
+            "status": "ok",
+            "intents": [
+                {**_intent_to_dict(intent), "phone": intent.phone, "client_telegram_id": intent.funding_request["client_telegram_id"]}
+                for intent in intents
+            ],
+        }
+
+
+def _notify_mismatch_resolved(intent_id: int) -> None:
+    from backend.app.tasks import notify_mismatch_resolved
+
+    with SessionLocal() as db:
+        notify_mismatch_resolved(db, db.get(PaymentIntent, intent_id))
+
+
+@router.post("/api/bot/payment-intents/{intent_id}/resolve-mismatch")
+def resolve_payment_mismatch(intent_id: int, payload: MismatchDecisionPayload, background_tasks: BackgroundTasks):
+    _require_admin(payload.admin_telegram_id)
+    with SessionLocal() as db:
+        try:
+            intent, resolved_now = mobile_money.resolve_mismatch(db, intent_id, payload.admin_telegram_id, payload.decision)
+        except ledger.MoneyError as error:
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+        if resolved_now:
+            # Après la réponse : l'admin voit le résultat sans attendre Telegram.
+            background_tasks.add_task(_notify_mismatch_resolved, intent.id)
+        return _intent_response(db, intent)
 
 
 @app.post("/api/payments/webhook/{gateway_name}")

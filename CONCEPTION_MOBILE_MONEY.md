@@ -214,11 +214,21 @@ d'un remboursement sans validation, reproduit sur Postgres) ; le backend
 revérifie que la décision vient de `ADMIN_TELEGRAM_ID` (retraits, litiges),
 qui doit donc être réglé aussi pour le backend.
 
+**Montant reçu différent : outil admin fait (2026-10-06).** Le client est
+prévenu que son argent n'est pas perdu ; l'admin voit chaque cas dans
+`/admin` → « Montants différents » et choisit : créditer le wallet du client,
+ou payer la mission depuis ce crédit (même devise et reçu suffisant, surplus
+au wallet). Le montant et la référence sont relus chez l'agrégateur au moment
+de décider (injoignable, non confirmé ou sans référence : rien ne bouge),
+tout s'écrit en une transaction, un double clic ne crédite jamais deux fois,
+et ce crédit ne se retire qu'après vérification admin
+(`mobile_money.resolve_mismatch`, opération `mismatch_credit`). Le
+rapprochement vérifie chaque décision et signale tout crédit sans décision
+enregistrée.
+
 Reste pour l'étape 6 : comparer le relevé de l'agrégateur (avec l'étape 5) ;
-un outil admin pour régler une intention à montant différent (l'argent est
-chez l'agrégateur, hors registre, tant que l'admin n'a pas tranché) ; verser
-seulement vers un numéro vérifié (preuve du numéro au backend, étape 1 du
-chantier WhatsApp) ; la revue de sécurité finale avant mise en ligne.
+verser seulement vers un numéro vérifié (preuve du numéro au backend, étape 1
+du chantier WhatsApp) ; la revue de sécurité finale avant mise en ligne.
 
 1. **Registre et tables** : intentions de paiement, retraits, comptes
    `payout_pending` et `fees`, origine des crédits (remboursement), réglages

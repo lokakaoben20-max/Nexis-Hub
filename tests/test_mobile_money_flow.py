@@ -2,6 +2,7 @@
 paiement par intention confirmée par l'agrégateur, retrait validé par l'admin."""
 
 import asyncio
+from decimal import Decimal
 
 from backend.app import mobile_money
 from backend.app.payment_gateway import PENDING, SUCCEEDED, GatewayResult
@@ -14,6 +15,7 @@ from tests.test_dispute_flow import (
     DummyBot,
     DummyCallback,
     DummyMessage,
+    DummyMessageObject,
     DummyState,
     _async_return,
     _paid_mission,
@@ -173,3 +175,103 @@ def test_only_the_admin_sees_and_decides_withdrawals(tmp_path, monkeypatch, live
 
     assert callback.answered == "Accès admin refusé."
     assert live_backend.balance(PROVIDER_ID) == 40.0
+
+
+class ReceivedGateway(mobile_money.get_gateway().__class__):
+    """Agrégateur simulé qui a encaissé un autre montant que la demande."""
+
+    received = "105.00"
+
+    def collection_status(self, intent):
+        return GatewayResult(SUCCEEDED, f"DIFF-{intent.id}", Decimal(ReceivedGateway.received), intent.currency, 0)
+
+
+class CardsMessage(DummyMessageObject):
+    """Garde chaque carte envoyée par l'écran admin, avec ses boutons."""
+
+    def __init__(self):
+        super().__init__()
+        self.answers = []
+
+    async def answer(self, text, parse_mode=None, reply_markup=None):
+        self.answers.append((text, reply_markup))
+
+
+def _admin_cards():
+    listing = DummyCallback(ADMIN_ID, data="admin_mismatches")
+    listing.message = CardsMessage()
+    asyncio.run(admin.admin_montants_differents(listing))
+    return listing.message.answers
+
+
+def _mismatched_payment(tmp_path, monkeypatch, live_backend, received):
+    ReceivedGateway.received = received
+    monkeypatch.setattr(mobile_money, "get_gateway", lambda: ReceivedGateway())
+    mission_id, quote_id = _accepted_quote(tmp_path, monkeypatch)
+    callback = DummyCallback(CLIENT_ID, data=f"pay_mm_{quote_id}_mpesa")
+    asyncio.run(payment.paiement_mobile_money_operateur(callback))
+    return mission_id, callback
+
+
+def test_a_different_amount_tells_the_client_the_money_is_safe_and_alerts_the_admin(tmp_path, monkeypatch, live_backend):
+    mission_id, callback = _mismatched_payment(tmp_path, monkeypatch, live_backend, "99.00")
+
+    assert callback.message.edited_text == get_message("payment_mismatch_client", "fr", mission_id=mission_id)
+    assert live_backend.mission(mission_id).payment_status is None
+
+
+def test_the_admin_pays_the_mission_from_a_larger_amount_received(tmp_path, monkeypatch, live_backend):
+    mission_id, _ = _mismatched_payment(tmp_path, monkeypatch, live_backend, "105.00")
+
+    card, markup = _admin_cards()[0]
+    assert "Demandé : 100.00 USD" in card and "Reçu : 105.00 USD" in card
+    buttons = [row[0].callback_data for row in markup.inline_keyboard]
+    assert buttons == ["admin_mismatch_pay_1", "admin_mismatch_wallet_1"]
+
+    live_backend.sent.clear()
+    decision = DummyCallback(ADMIN_ID, data="admin_mismatch_pay_1")
+    asyncio.run(admin.admin_regler_montant_different(decision))
+
+    assert "mission payée" in decision.message.edited_text
+    assert live_backend.mission(mission_id).payment_status == "paid_escrow"
+    assert db.get_mission_by_id(mission_id)["payment_status"] == "paid_escrow"
+    assert live_backend.balance(CLIENT_ID) == 5.0
+    assert {chat_id for chat_id, _ in live_backend.sent} == {CLIENT_ID, PROVIDER_ID}
+
+    live_backend.sent.clear()  # double clic : rien de plus, personne n'est re-prévenu
+    asyncio.run(admin.admin_regler_montant_different(DummyCallback(ADMIN_ID, data="admin_mismatch_pay_1")))
+    assert live_backend.balance(CLIENT_ID) == 5.0
+    assert live_backend.sent == []
+
+
+def test_a_smaller_amount_can_only_go_to_the_client_wallet(tmp_path, monkeypatch, live_backend):
+    mission_id, _ = _mismatched_payment(tmp_path, monkeypatch, live_backend, "99.00")
+
+    assert [row[0].callback_data for row in _admin_cards()[0][1].inline_keyboard] == ["admin_mismatch_wallet_1"]
+
+    forced = DummyCallback(ADMIN_ID, data="admin_mismatch_pay_1")
+    asyncio.run(admin.admin_regler_montant_different(forced))
+    assert forced.answered == admin.MISMATCH_REFUSALS["received_amount_too_low"]
+
+    asyncio.run(admin.admin_regler_montant_different(DummyCallback(ADMIN_ID, data="admin_mismatch_wallet_1")))
+    assert live_backend.balance(CLIENT_ID) == 99.0
+    assert live_backend.mission(mission_id).payment_status is None
+
+
+def test_only_the_admin_settles_a_different_amount(tmp_path, monkeypatch, live_backend):
+    _mismatched_payment(tmp_path, monkeypatch, live_backend, "105.00")
+
+    for handler, data in ((admin.admin_montants_differents, "admin_mismatches"), (admin.admin_regler_montant_different, "admin_mismatch_pay_1")):
+        intruder = DummyCallback(CLIENT_ID, data=data)
+        asyncio.run(handler(intruder))
+        assert intruder.answered == "Accès admin refusé."
+
+    # Le backend revérifie : un bot mal configuré ne suffit pas.
+    monkeypatch.setenv("ADMIN_TELEGRAM_ID", "123456")
+    refused = DummyCallback(ADMIN_ID, data="admin_mismatch_pay_1")
+    asyncio.run(admin.admin_regler_montant_different(refused))
+    assert refused.answered == admin.MISMATCH_REFUSALS["not_admin"]
+    assert live_backend.balance(CLIENT_ID) == 0.0
+    listing = DummyCallback(ADMIN_ID, data="admin_mismatches")
+    asyncio.run(admin.admin_montants_differents(listing))
+    assert listing.answered == admin.MISMATCH_REFUSALS["not_admin"]  # téléphones des clients

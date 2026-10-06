@@ -247,7 +247,7 @@ async def _money_call(method: str, path: str, payload: dict | None = None) -> di
         body = response.json()
     except ValueError as error:
         raise BackendUnavailable(f"réponse illisible ({response.status_code})") from error
-    if response.status_code in (400, 403, 404, 409):
+    if response.status_code in (400, 403, 404, 409, 503):
         detail = body.get("detail") if isinstance(body, dict) else None
         if isinstance(detail, dict) and isinstance(detail.get("code"), str):
             raise MoneyRefused(detail["code"], detail.get("mission"), detail.get("money"))
@@ -314,8 +314,9 @@ async def refresh_payment_intent(intent_id: int) -> dict:
     return await _money_call("POST", f"/api/bot/payment-intents/{intent_id}/refresh")
 
 
-async def _payout_call(method: str, path: str, payload: dict | None = None) -> dict:
-    """Comme `_money_call`, pour les retraits (réponse `payout`/`payouts`)."""
+async def _payout_call(method: str, path: str, payload: dict | None = None, keys=("payout", "payouts")) -> dict:
+    """Comme `_money_call`, pour les réponses sans mission : retraits
+    (`payout`/`payouts`), liste des montants différents (`intents`)."""
     try:
         async with httpx.AsyncClient(timeout=10.0, headers=BACKEND_AUTH_HEADERS) as client:
             if method == "GET":
@@ -325,11 +326,11 @@ async def _payout_call(method: str, path: str, payload: dict | None = None) -> d
         body = response.json()
     except Exception as error:
         raise BackendUnavailable(repr(error)) from error
-    if response.status_code in (400, 403, 404, 409):
+    if response.status_code in (400, 403, 404, 409, 503):
         detail = body.get("detail") if isinstance(body, dict) else None
         if isinstance(detail, dict) and isinstance(detail.get("code"), str):
             raise MoneyRefused(detail["code"])
-    if response.status_code != 200 or not isinstance(body, dict) or not ("payout" in body or "payouts" in body):
+    if response.status_code != 200 or not isinstance(body, dict) or not any(key in body for key in keys):
         raise BackendUnavailable(f"réponse inattendue ({response.status_code})")
     return body
 
@@ -347,6 +348,19 @@ async def decide_payout(payout_id: int, approve: bool, admin_telegram_id: int, r
     action = "approve" if approve else "reject"
     payload = {"admin_telegram_id": admin_telegram_id, "reason": reason}
     return (await _payout_call("POST", f"/api/bot/payouts/{payout_id}/{action}", payload))["payout"]
+
+
+async def list_payment_mismatches(admin_telegram_id: int) -> list[dict]:
+    path = f"/api/bot/payment-intents/mismatches?admin_telegram_id={admin_telegram_id}"
+    return (await _payout_call("GET", path, keys=("intents",)))["intents"]
+
+
+async def resolve_payment_mismatch(intent_id: int, decision: str, admin_telegram_id: int) -> dict:
+    return await _money_call(
+        "POST",
+        f"/api/bot/payment-intents/{intent_id}/resolve-mismatch",
+        {"decision": decision, "admin_telegram_id": admin_telegram_id},
+    )
 
 
 async def start_mission(mission_id: int, provider_telegram_id: int) -> dict:

@@ -195,6 +195,8 @@ def _apply_collection_result(db: Session, intent: PaymentIntent, result) -> Paym
     if to_money(result.amount) != to_money(intent.amount) or result.currency != intent.currency:
         # Jamais de paiement de mission sur un montant différent : l'admin tranche.
         intent.status, intent.failure_reason, intent.updated_at = "mismatch", f"reçu {result.amount} {result.currency}", now
+        intent.received_amount = to_money(result.amount) if result.amount is not None else None
+        intent.received_currency = (result.currency or "")[:3] or None
         db.commit()
         return intent
 
@@ -225,6 +227,107 @@ def _apply_collection_result(db: Session, intent: PaymentIntent, result) -> Paym
         intent.status, intent.failure_reason, intent.updated_at = "overpaid", error.code, now
         db.commit()
     return db.get(PaymentIntent, intent_id)
+
+
+# --- Montant reçu différent : décision de l'admin ----------------------------------
+
+# Décision -> statut final de l'intention.
+MISMATCH_DECISIONS = {"credit_wallet": "mismatch_credited", "pay_mission": "mismatch_paid"}
+
+
+def list_mismatches(db: Session, limit: int = 20) -> list[PaymentIntent]:
+    return (
+        db.query(PaymentIntent)
+        .filter(PaymentIntent.status == "mismatch")
+        .order_by(PaymentIntent.id)
+        .limit(min(limit, 50))
+        .all()
+    )
+
+
+def resolve_mismatch(db: Session, intent_id: int, admin_telegram_id: int, decision: str) -> tuple[PaymentIntent, bool]:
+    """L'agrégateur a encaissé un montant différent de la demande : l'argent
+    est chez lui, hors registre. L'admin décide, en une transaction :
+
+    - `credit_wallet` : le montant reçu va au wallet du client ;
+    - `pay_mission` : même crédit, puis la mission est payée depuis ce wallet
+      au montant du devis (seulement dans la même devise et si le reçu suffit) ;
+      le surplus reste au wallet.
+
+    Le montant reçu est toujours relu chez l'agrégateur au moment de décider,
+    jamais repris d'une ancienne réponse ; agrégateur injoignable ou paiement
+    non confirmé = rien ne bouge. Rejouer la même décision ne crédite jamais
+    deux fois (intention verrouillée, statut final).
+
+    Renvoie l'intention et si cet appel a réglé le paiement (False pour un
+    rejeu : le client n'est prévenu qu'une fois)."""
+    try:
+        return _resolve_mismatch(db, intent_id, admin_telegram_id, decision)
+    except Exception:
+        # Tout refus ou panne annule l'ensemble et libère le verrou.
+        db.rollback()
+        raise
+
+
+def _resolve_mismatch(db: Session, intent_id: int, admin_telegram_id: int, decision: str) -> tuple[PaymentIntent, bool]:
+    if decision not in MISMATCH_DECISIONS:
+        raise MoneyError("invalid_decision", 400)
+    intent = db.get(PaymentIntent, intent_id, with_for_update=True)
+    if intent is None:
+        raise MoneyError("intent_not_found", 404)
+    if intent.status in MISMATCH_DECISIONS.values():
+        if intent.status == MISMATCH_DECISIONS[decision]:
+            db.commit()  # rien écrit : libère le verrou
+            return intent, False
+        raise MoneyError("already_resolved")
+    if intent.status != "mismatch":
+        raise MoneyError("invalid_state")
+
+    try:
+        result = get_gateway().collection_status(intent)
+    except GatewayUnavailable:
+        raise MoneyError("gateway_unavailable", 503)
+    if result.status != SUCCEEDED:
+        raise MoneyError("gateway_not_confirmed")
+    if result.amount is None or result.currency not in ledger.CURRENCIES or to_money(result.amount) <= ZERO:
+        # Montant ou devise que le registre ne sait pas porter : à régler
+        # avec l'agrégateur, jamais deviné ici.
+        raise MoneyError("invalid_received_amount")
+    if intent.gateway_reference and result.reference and result.reference != intent.gateway_reference:
+        raise MoneyError("reference_mismatch")
+    if not (intent.gateway_reference or result.reference):
+        # Sans référence, l'argent entrerait au registre sans lien avec
+        # l'agrégateur : ni rapprochement, ni preuve. À voir avec lui.
+        raise MoneyError("missing_reference")
+
+    received, currency = to_money(result.amount), result.currency
+    intent.gateway_reference = reference = intent.gateway_reference or result.reference
+    now = _utcnow()
+    if decision == "pay_mission" and (currency != intent.currency or received < to_money(intent.amount)):
+        raise MoneyError("received_amount_too_low")
+
+    intent.received_amount, intent.received_currency = received, currency
+    intent.resolved_by_telegram_id, intent.resolved_at, intent.updated_at = admin_telegram_id, now, now
+    intent.status = MISMATCH_DECISIONS[decision]
+    ledger.record_mismatch_credit(
+        db, account_id=intent.account_id, currency=currency, amount=received, reference=reference,
+        mission_id=intent.mission_id, admin_telegram_id=admin_telegram_id,
+    )
+    ledger.record_collection_fee(db, mission_id=intent.mission_id, currency=currency, fee=result.fee or ZERO, reference=reference)
+    if decision == "credit_wallet":
+        db.commit()
+        return db.get(PaymentIntent, intent_id), True
+
+    # Le solde du wallet est relu par `fund_mission` : écritures envoyées
+    # d'abord, validées ensemble avec le paiement (ou annulées avec lui).
+    db.flush()
+    ledger.fund_mission(db, intent.mission_id, method="wallet", reference=reference, **dict(intent.funding_request))
+    intent = db.get(PaymentIntent, intent_id)
+    if intent.status != "mismatch_paid":
+        # `fund_mission` n'a rien validé (rejeu concurrent impossible sous le
+        # verrou de l'intention) : on ne laisse jamais un état à moitié écrit.
+        raise RuntimeError(f"Intention {intent_id} : paiement de la mission non validé")
+    return intent, True
 
 
 # --- Retraits ---------------------------------------------------------------------

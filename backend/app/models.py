@@ -266,6 +266,12 @@ class PaymentIntent(Base):
     funding_request: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(20), default="created", index=True)
     failure_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Montant reçu par l'agrégateur quand il diffère de la demande (statut
+    # `mismatch`), puis décision de l'admin (`mobile_money.resolve_mismatch`).
+    received_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    received_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    resolved_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

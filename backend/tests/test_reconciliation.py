@@ -39,7 +39,7 @@ class FakeGateway:
     def collection_status(self, intent):
         status = {"succeeded": SUCCEEDED, "pending": PENDING, "failed": FAILED}[self.collection]
         amount = Decimal(self.amount) if self.amount is not None else intent.amount
-        fee = (Decimal(intent.amount) * Decimal("0.025")).quantize(Decimal("0.01"))
+        fee = (Decimal(amount) * Decimal("0.025")).quantize(Decimal("0.01"))  # sur l'argent encaissé
         return GatewayResult(status, f"FAKE-{intent.id}", amount, intent.currency, fee)
 
     def request_payout(self, payout):

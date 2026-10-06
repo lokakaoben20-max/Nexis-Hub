@@ -727,11 +727,32 @@ def record_overpayment(db: Session, *, account_id: int, currency: str, amount, r
     )
 
 
+def record_mismatch_credit(
+    db: Session, *, account_id: int, currency: str, amount, reference: str | None, mission_id: int, admin_telegram_id: int
+) -> None:
+    """Argent reçu avec un montant différent de la demande, porté au wallet du
+    client sur décision de l'admin (`mobile_money.resolve_mismatch`). Comme
+    un trop-perçu, il ne se retire qu'après vérification admin."""
+    amount = to_money(amount)
+    if amount <= ZERO:
+        raise MoneyError("invalid_amount", 400)
+    _record(
+        db,
+        kind="mismatch_credit",
+        currency=currency,
+        reference=reference,
+        actor_telegram_id=admin_telegram_id,
+        details={"mission_id": mission_id},
+        movements=[(EXTERNAL, None, -amount), (WALLET, account_id, amount)],
+    )
+
+
 def withdrawable_without_review(db: Session, account_id: int, currency: str) -> Decimal:
     """Part du wallet retirable sans vérification admin : le solde moins tout
     ce que le compte a reçu en remboursement, partage de litige (part client)
-    ou trop-perçu (décision de Ben : ces fonds se retirent après vérification)."""
-    client_credit_kinds = ("refund", "split", "overpayment")
+    trop-perçu ou paiement à montant différent (décision de Ben : ces fonds se
+    retirent après vérification)."""
+    client_credit_kinds = ("refund", "split", "overpayment", "mismatch_credit")
     reviewed = (
         db.query(func.coalesce(func.sum(LedgerEntry.amount), 0))
         .join(MoneyOperation, MoneyOperation.id == LedgerEntry.operation_id)

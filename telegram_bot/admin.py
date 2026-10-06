@@ -59,7 +59,9 @@ from telegram_bot.backend_client import (
     get_user_language,
     money_failure_text,
     decide_payout,
+    list_payment_mismatches,
     list_payouts_awaiting_approval,
+    resolve_payment_mismatch,
     resolve_dispute,
     sync_provider_status_to_backend,
     sync_provider_suspended_to_backend,
@@ -71,6 +73,7 @@ from telegram_bot.keyboards import (
     SERVICES,
     clavier_admin_dispute,
     clavier_admin_menu,
+    clavier_admin_mismatch,
     clavier_admin_payout,
     clavier_admin_provider,
     clavier_admin_service_request,
@@ -465,6 +468,89 @@ async def admin_decider_retrait(callback: CallbackQuery):
     lang = await get_provider_language(requester) if get_provider_by_telegram_id(requester) else await get_user_language(requester)
     await callback.bot.send_message(requester, payout_status_text(payout, lang), parse_mode="HTML")
     await callback.answer("Retrait validé" if approve else "Retrait refusé")
+
+
+MISMATCH_REFUSALS = {
+    "gateway_not_confirmed": "L'agrégateur ne confirme plus ce paiement : rien n'a bougé. À vérifier avec lui.",
+    "invalid_received_amount": "Montant ou devise reçus illisibles pour le registre : à régler avec l'agrégateur, rien n'a bougé.",
+    "reference_mismatch": "La référence de l'agrégateur a changé : rien n'a bougé. À vérifier avec lui.",
+    "missing_reference": "L'agrégateur ne donne aucune référence pour ce paiement : rien n'a bougé. À vérifier avec lui.",
+    "gateway_unavailable": "L'agrégateur ne répond pas : rien n'a bougé. Réessayez plus tard.",
+    "received_amount_too_low": "Montant reçu insuffisant (ou autre devise) pour payer la mission : créditez le wallet du client.",
+    "already_paid": "La mission est déjà payée : créditez le wallet du client.",
+    "invalid_state": "La mission ne peut plus être payée : créditez le wallet du client.",
+    "already_resolved": "Ce paiement a déjà été réglé autrement.",
+    "not_admin": "Le backend ne reconnaît pas cet admin (ADMIN_TELEGRAM_ID).",
+}
+
+
+def _received_text(intent: dict) -> str:
+    if intent.get("received_amount") is not None:
+        return f"{intent['received_amount']} {intent['received_currency']}"
+    return intent.get("failure_reason") or "inconnu"
+
+
+def _can_pay_mission(intent: dict) -> bool:
+    try:
+        return intent.get("received_currency") == intent["currency"] and float(intent["received_amount"]) >= float(intent["amount"])
+    except (TypeError, ValueError):
+        return False
+
+
+@router.callback_query(F.data == "admin_mismatches")
+async def admin_montants_differents(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Accès admin refusé.", show_alert=True)
+        return
+    try:
+        intents = await list_payment_mismatches(callback.from_user.id)
+    except MoneyRefused as error:
+        await callback.answer(MISMATCH_REFUSALS.get(error.code, money_failure_text(0, error, "fr")), show_alert=True)
+        return
+    except BackendUnavailable as error:
+        await callback.answer(money_failure_text(0, error, "fr"), show_alert=True)
+        return
+    if not intents:
+        await callback.message.edit_text("✅ Aucun paiement à montant différent.", reply_markup=clavier_admin_menu())
+        await callback.answer()
+        return
+    await callback.message.edit_text("⚖️ <b>Paiements à montant différent</b>", parse_mode="HTML", reply_markup=clavier_admin_menu())
+    for intent in intents:
+        await callback.message.answer(
+            html.escape(
+                f"Paiement #{intent['id']} | mission NXH-{intent['mission_id']:04d} | client {intent['client_telegram_id']}\n"
+                f"Demandé : {intent['amount']} {intent['currency']}\n"
+                f"Reçu : {_received_text(intent)}\n"
+                f"Depuis {intent['phone']} ({intent['operator']}), réf. {intent['gateway_reference'] or '—'}\n"
+                "Le montant est relu chez l'agrégateur au moment de votre choix."
+            ),
+            reply_markup=clavier_admin_mismatch(intent["id"], _can_pay_mission(intent)),
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_mismatch_pay_") | F.data.startswith("admin_mismatch_wallet_"))
+async def admin_regler_montant_different(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Accès admin refusé.", show_alert=True)
+        return
+    decision = "pay_mission" if callback.data.startswith("admin_mismatch_pay_") else "credit_wallet"
+    intent_id = int(callback.data.rsplit("_", 1)[1])
+    try:
+        result = await resolve_payment_mismatch(intent_id, decision, callback.from_user.id)
+    except MoneyRefused as error:
+        await callback.answer(MISMATCH_REFUSALS.get(error.code, money_failure_text(0, error, "fr")), show_alert=True)
+        return
+    except BackendUnavailable as error:
+        await callback.answer(money_failure_text(0, error, "fr"), show_alert=True)
+        return
+    intent = result["intent"]
+    apply_backend_mission(intent["mission_id"], result["mission"])
+    outcome = "mission payée, surplus au wallet" if intent["status"] == "mismatch_paid" else "crédité au wallet du client"
+    await callback.message.edit_text(
+        html.escape(f"Paiement #{intent_id} : {_received_text(intent)} {outcome}. Le client a été prévenu.")
+    )
+    await callback.answer("Réglé")
 
 
 @router.callback_query(F.data == "admin_service_requests")
