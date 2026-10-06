@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from backend.app import ledger
 from backend.app.ledger import CENT, ZERO, MoneyError, to_money
-from backend.app.models import PaymentIntent, Payout
+from backend.app.models import NexisAccount, PaymentIntent, Payout
 from backend.app.payment_gateway import FAILED, PENDING, SUCCEEDED, GatewayUnavailable, get_gateway
 
 OPERATORS = {"mpesa", "airtel", "orange"}
@@ -132,6 +132,32 @@ def _open_intent(db: Session, mission_id: int) -> PaymentIntent | None:
     )
 
 
+# Une intention « created » plus vieille que ce délai n'a jamais reçu la réponse
+# de l'agrégateur (backend arrêté entre son enregistrement et l'appel). Le délai
+# laisse finir une demande encore en cours.
+STALLED_CREATED_AFTER = timedelta(minutes=2)
+LATE_CONFIRMATION_WINDOW = timedelta(hours=24)
+
+
+def intents_to_refresh(db: Session, now: datetime) -> list[int]:
+    """Intentions à relire chez l'agrégateur par la vérification de secours :
+    en attente ; restées « created » (sinon elles bloquaient la mission, une
+    seule intention ouverte, et un paiement reçu entre-temps n'arrivait jamais
+    au registre) ; expirées depuis moins de 24 h, car un paiement confirmé en
+    retard n'est jamais ignoré."""
+    rows = (
+        db.query(PaymentIntent.id)
+        .filter(
+            (PaymentIntent.status == "pending")
+            | ((PaymentIntent.status == "created") & (PaymentIntent.created_at < now - STALLED_CREATED_AFTER))
+            | ((PaymentIntent.status == "expired") & (PaymentIntent.expires_at > now - LATE_CONFIRMATION_WINDOW))
+        )
+        .order_by(PaymentIntent.id)
+        .all()
+    )
+    return [intent_id for (intent_id,) in rows]
+
+
 def refresh_intent(db: Session, intent_id: int) -> PaymentIntent:
     """Relit le statut auprès de l'agrégateur (webhook reçu, ou vérification
     de secours) et en tire les conséquences."""
@@ -223,6 +249,10 @@ def request_payout(db: Session, *, telegram_id: int, amount, currency: str, phon
     if account_id is None:
         raise MoneyError("insufficient_balance")
 
+    # Verrou sur le compte AVANT de décider s'il faut l'admin : sinon deux
+    # retraits simultanés lisent la même part « sans vérification » et
+    # sortent ensemble l'argent d'un remboursement sans validation.
+    db.get(NexisAccount, account_id, with_for_update=True)
     review = None
     if amount > ledger.withdrawable_without_review(db, account_id, currency):
         review = "refund_funds"

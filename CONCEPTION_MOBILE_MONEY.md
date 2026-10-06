@@ -197,6 +197,29 @@ tarifs), `PAYOUT_AUTO_LIMIT_USD|CDF` (0 par défaut : tout retrait passe par
 l'admin). La tâche Celery `check_pending_mobile_money` (toutes les 2 min) fait
 la vérification de secours. Reste : étapes 5 et 6.
 
+**Étape 6, partie sans agrégateur (2026-10-06) : faite.**
+`backend/app/reconciliation.py` vérifie chaque jour à 6 h UTC (tâche
+`send_daily_reconciliation`, rapport Telegram à l'admin même sans écart) :
+partie double de chaque opération, aucun solde négatif, escrow de chaque
+mission et statut recopié sur la mission, argent bloqué et opérations de
+chaque retrait, intentions confirmées ou payées en trop présentes au
+registre, montants différents en attente de l'admin, intentions et retraits
+bloqués, frais d'encaissement par rapport au taux attendu, paiements Mobile
+Money sans intention. Lecture seule, aucune correction automatique. Revue
+de sécurité du même jour, corrigé : une intention restée « created » (backend
+arrêté pendant l'appel à l'agrégateur) est maintenant relue par la
+vérification de secours ; le compte est verrouillé avant de décider si un
+retrait demande l'admin (deux retraits simultanés pouvaient sortir l'argent
+d'un remboursement sans validation, reproduit sur Postgres) ; le backend
+revérifie que la décision vient de `ADMIN_TELEGRAM_ID` (retraits, litiges),
+qui doit donc être réglé aussi pour le backend.
+
+Reste pour l'étape 6 : comparer le relevé de l'agrégateur (avec l'étape 5) ;
+un outil admin pour régler une intention à montant différent (l'argent est
+chez l'agrégateur, hors registre, tant que l'admin n'a pas tranché) ; verser
+seulement vers un numéro vérifié (preuve du numéro au backend, étape 1 du
+chantier WhatsApp) ; la revue de sécurité finale avant mise en ligne.
+
 1. **Registre et tables** : intentions de paiement, retraits, comptes
    `payout_pending` et `fees`, origine des crédits (remboursement), réglages
    (payeur et taux des frais, frais et minimum de retrait, plafond

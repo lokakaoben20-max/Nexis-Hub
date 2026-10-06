@@ -628,13 +628,25 @@ def list_payouts(status: str = "awaiting_approval", limit: int = 20):
         return {"status": "ok", "payouts": [_payout_to_dict(payout) for payout in payouts]}
 
 
+def _require_admin(admin_telegram_id: int) -> None:
+    """Décisions d'argent réservées à l'admin configuré. Le bot le vérifie
+    déjà ; le backend le revérifie pour qu'une erreur côté bot ne suffise
+    jamais à valider un retrait ou trancher un litige. Sans ADMIN_TELEGRAM_ID,
+    personne n'est admin (même règle que le bot)."""
+    configured = os.getenv("ADMIN_TELEGRAM_ID", "").strip()
+    if not configured or not hmac.compare_digest(configured, str(admin_telegram_id)):
+        raise HTTPException(status_code=403, detail={"code": "not_admin"})
+
+
 @router.post("/api/bot/payouts/{payout_id}/approve")
 def approve_payout(payout_id: int, payload: PayoutDecisionPayload):
+    _require_admin(payload.admin_telegram_id)
     return _payout_call(lambda db: mobile_money.approve_payout(db, payout_id, payload.admin_telegram_id))
 
 
 @router.post("/api/bot/payouts/{payout_id}/reject")
 def reject_payout(payout_id: int, payload: PayoutDecisionPayload):
+    _require_admin(payload.admin_telegram_id)
     return _payout_call(lambda db: mobile_money.reject_payout(db, payout_id, payload.admin_telegram_id, payload.reason))
 
 
@@ -686,6 +698,7 @@ def open_dispute(mission_id: int, payload: DisputeOpenPayload):
 
 @router.post("/api/bot/missions/{mission_id}/dispute/resolve")
 def resolve_dispute(mission_id: int, payload: DisputeResolvePayload):
+    _require_admin(payload.admin_telegram_id)
     return _money_call(
         lambda db: ledger.resolve_dispute(
             db,
