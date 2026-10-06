@@ -60,11 +60,14 @@ rien.
 1. **Rotation de `BACKEND_API_KEY`.** Un secret unique, jamais renouvelé,
    compromis une fois = compromis pour toujours. Prévoir un mécanisme de
    rotation avant un vrai déploiement.
-2. **Cloisonner davantage les endpoints d'argent** (`/pay`, `/pay-wallet`,
-   `/release`) — la clé API protège l'accès, mais tout appelant qui la connaît
-   peut aujourd'hui tout faire ; pas de granularité par action.
+2. **Cloisonner davantage les endpoints d'argent** (`/api/bot/missions/{id}/fund`,
+   `/confirm`, `/dispute/resolve`…) — la clé API protège l'accès, mais tout
+   appelant qui la connaît peut aujourd'hui tout faire ; pas de granularité
+   par action. Les règles d'argent elles-mêmes (propriétaire, état, montant,
+   double paiement) sont vérifiées par le registre (`backend/app/ledger.py`).
 3. **Limiter le débit** sur les routes exposées.
-4. **Journaliser** les opérations d'argent (qui, quand, combien).
+4. **Journaliser** l'accès aux opérations d'argent (le registre trace déjà
+   qui, quand et combien dans `money_operations`).
 
 ## Secrets
 
@@ -81,10 +84,11 @@ rien.
 
 ## L'argent n'est pas réel (pour l'instant)
 
-Le flux d'escrow est **simulé** : `operator="mobile_money_simulation"`, les
-soldes wallet sont des nombres en base, aucun opérateur de paiement n'est
-branché. Ne jamais laisser entendre le contraire dans un message, un commit ou
-une réponse à l'utilisateur.
+Le registre d'argent est réel (`backend/app/ledger.py`) mais l'encaissement
+Mobile Money est encore **simulé** (référence `SIM-…`) : aucun agrégateur
+n'est branché. Ne jamais laisser entendre le contraire dans un message, un
+commit ou une réponse à l'utilisateur.
 
-L'intégration réelle (CinetPay / FlexPay) est la Phase 6 du plan de migration et
-demandera une revue de sécurité dédiée — voir `V5_MIGRATION_PLAN.md`.
+L'intégration réelle (FlexPaie, choisie par Ben) est décrite dans
+`CONCEPTION_MOBILE_MONEY.md` : aucun branchement réel avant le KYC validé et
+la signature des webhooks confirmée par écrit, puis revue de sécurité dédiée.

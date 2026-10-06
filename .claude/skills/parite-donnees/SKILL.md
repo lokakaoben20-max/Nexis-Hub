@@ -9,7 +9,13 @@ Ce projet est à mi-chemin d'une migration. Deux pièges structurels en découle
 et ils ne se voient **ni à l'exécution ni à la relecture** : le code marche, il
 donne juste des résultats différents selon le chemin emprunté.
 
-## Piège 1 — 20 fonctions métier existent en double
+**L'argent n'est plus concerné** : paiement, démarrage et fin de mission,
+confirmation, litige, soldes vivent uniquement dans le registre du backend
+(`backend/app/ledger.py`, voir `CONCEPTION_ARGENT.md`). `db.py` ne fait que
+recopier l'état renvoyé (`apply_backend_mission`). Ne jamais y remettre de
+montant, de solde ou de règle d'argent.
+
+## Piège 1 — des fonctions métier existent en double
 
 La même logique vit dans `db.py` (SQLite legacy) **et** `backend/app/crud.py`
 (Postgres). Modifier l'une sans l'autre crée une divergence : le bot calcule un
@@ -18,11 +24,9 @@ montant, le backend en enregistre un autre.
 Fonctions concernées (vérifier la jumelle avant de committer) :
 
 ```
-accept_quote, calculate_payment_amounts, create_mission, create_quote,
-find_matching_providers, finish_mission, mark_quote_paid,
-mark_quote_paid_with_wallet, reject_quote, release_payment,
-reset_consecutive_ignored, set_provider_suspended, set_provider_verified,
-start_mission, update_consecutive_ignored, update_provider_language,
+accept_quote, create_mission, create_quote, find_matching_providers,
+reject_quote, reset_consecutive_ignored, set_provider_suspended,
+set_provider_verified, update_consecutive_ignored, update_provider_language,
 update_provider_services, update_provider_status, update_user_language,
 update_user_name
 ```
@@ -91,9 +95,8 @@ objet de remplacement. Côté appelant, utiliser `payload.get("client") or {}` �
 
 ## Si la modification touche à l'argent
 
-Montants, commissions, frais, soldes wallet, escrow : la logique de paiement est
-**simulée**, aucun argent réel ne circule (`operator="mobile_money_simulation"`).
-Ne pas laisser croire l'inverse. Toute modification de montant doit être
-répercutée dans les deux `calculate_payment_amounts` **et** dans les tests qui
-figent les valeurs attendues (`tests/test_mission_flow.py`,
-`backend/tests/test_main.py`).
+Elle se fait dans `backend/app/ledger.py` et nulle part ailleurs : une seule
+source de vérité, une transaction par opération, idempotence garantie par la
+base, tests dans `backend/tests/test_ledger.py` et, côté bot, contre le vrai
+registre (fixture `live_backend` de `tests/conftest.py`). Voir
+`CONCEPTION_ARGENT.md` et, pour les paiements réels, `CONCEPTION_MOBILE_MONEY.md`.
