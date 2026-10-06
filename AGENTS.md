@@ -487,3 +487,27 @@ Ce qui a été fait pour finaliser le transfert :
 - Toute évolution du backend V5 doit rester cohérente avec la vision définie dans `nexis-hub-v5`
   (schéma de données, terminologie des statuts) même si l'implémentation reste incrémentale ici.
 - Les tests sont un bon garde-fou avant toute modification majeure.
+
+## Reprise identité multicanal / WhatsApp (2026-10-03)
+
+La référence complète est maintenant versionnée dans
+[`docs/ARCHITECTURE_WHATSAPP.md`](docs/ARCHITECTURE_WHATSAPP.md). Elle reprend
+le document approuvé et complété sur `origin/claude/project-thread-ojlicd`
+(commits `f64f322`, `fd8402a`) ; ne pas repartir de l'ancien lien d'artefact,
+qui ne contient pas les précisions sur les comptes contestés, les notifications
+incertaines, la conservation et l'exploitation.
+
+Le travail reprend sur `feature/v5-migration` après la fusion du registre
+financier (`aa15372`). Les comptes Nexis et les wallets uniques existent déjà.
+La migration `e6f7a8b9c0d1_account_identity_metadata.py` et les changements
+associés ajoutent les rôles, la langue commune et les champs réservés au numéro
+vérifié. Les numéros historiques ne sont pas considérés vérifiés : l'ancien
+parcours ne conserve pas la preuve de provenance. Les écritures de profil
+Telegram synchronisent désormais le rôle et la langue sur le compte Nexis.
+
+**État : rôles, langue commune et numéro vérifié faits et testés** (migration
+aller-retour sur Postgres, `backend/tests/test_account_identity.py`). Il reste
+à migrer les références des missions, devis, avis, demandes de service et API
+vers `account_id` sans modifier les montants du registre. Le flux de liaison téléphone / canaux, les notifications multicanal
+et le service WhatsApp lui-même restent ultérieurs. Ne pas commencer le bot
+WhatsApp avant que ces prérequis soient validés.

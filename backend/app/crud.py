@@ -3,7 +3,8 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotUser
+from backend.app import ledger
+from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotUser, NexisAccount
 
 MODULE_B_SERVICES = {"service_plomberie", "service_electricite", "service_climatisation"}
 BADGE_SCORES = {"partner": 30, "expert": 20, "premium": 10, "verified": 5, "pending": 0}
@@ -29,6 +30,21 @@ def _touch_status(mission: BotMission) -> None:
     mission.status_changed_at = datetime.utcnow()
 
 
+def _sync_account_role(db: Session, telegram_id: int, role: str, language: str) -> NexisAccount:
+    """Synchronise le rôle et la langue commune du compte à chaque écriture
+    de profil Telegram. Les profils restent des vues métier historiques ;
+    l'identité canonique réside dans `accounts` + `channel_identities`."""
+    account_id = ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
+    account = db.get(NexisAccount, account_id, with_for_update=True)
+    if account is None:  # défense contre une identité orpheline en base
+        raise RuntimeError(f"Compte Nexis introuvable pour l'identité Telegram {telegram_id}")
+    roles = set(account.roles or [])
+    roles.add(role)
+    account.roles = sorted(roles)
+    account.language = language
+    return account
+
+
 def upsert_user(db: Session, telegram_id: int, first_name: str | None, phone_number: str | None, language: str = "fr") -> BotUser:
     user = db.get(BotUser, telegram_id)
     if user is None:
@@ -37,6 +53,7 @@ def upsert_user(db: Session, telegram_id: int, first_name: str | None, phone_num
     user.first_name = first_name or "Client"
     user.phone_number = phone_number
     user.language = language
+    _sync_account_role(db, telegram_id, "client", language)
     db.commit()
     db.refresh(user)
     return user
@@ -65,6 +82,7 @@ def upsert_provider(
     provider.communes = communes
     provider.language = language
     provider.module = _compute_module(services)
+    _sync_account_role(db, telegram_id, "provider", language)
     # None = pas fourni sur cet appel (ex. mise à jour de profil) : ne pas écraser
     # des documents déjà soumis avec du vide.
     if id_document_file_id is not None:
@@ -85,6 +103,7 @@ def update_user_language(db: Session, telegram_id: int, language: str) -> BotUse
     if user is None:
         return None
     user.language = language
+    _sync_account_role(db, telegram_id, "client", language)
     db.commit()
     db.refresh(user)
     return user
@@ -105,6 +124,7 @@ def update_provider_language(db: Session, telegram_id: int, language: str) -> Bo
     if provider is None:
         return None
     provider.language = language
+    _sync_account_role(db, telegram_id, "provider", language)
     db.commit()
     db.refresh(provider)
     return provider

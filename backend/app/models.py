@@ -2,7 +2,7 @@ from datetime import datetime
 
 from decimal import Decimal
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.database import Base
@@ -150,11 +150,27 @@ class NexisAccount(Base):
     ou les deux, avec un seul wallet dans le registre, rattaché à cet
     identifiant et jamais à un identifiant Telegram ou WhatsApp. Les autres
     attributs du compte (rôles, numéro vérifié, langue) arrivent avec le
-    chantier d'identité WhatsApp."""
+    chantier d'identité multicanal."""
 
     __tablename__ = "accounts"
+    __table_args__ = (
+        Index(
+            "uq_accounts_verified_phone_e164",
+            "phone_e164",
+            unique=True,
+            postgresql_where=text("phone_verified_at IS NOT NULL"),
+            sqlite_where=text("phone_verified_at IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    roles: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # Les numéros saisis avant la vérification multicanal restent sur les
+    # profils legacy. Seul un numéro dont la preuve a été vérifiée remplit
+    # ces colonnes et participe à l'unicité.
+    phone_e164: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    language: Mapped[str] = mapped_column(String(5), default="fr")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

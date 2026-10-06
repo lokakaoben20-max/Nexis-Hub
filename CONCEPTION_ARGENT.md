@@ -1,6 +1,7 @@
 # Conception : l'argent de Nexis Hub, backend V5 seule source de vérité
 
-Branche : `feature/argent-backend`. Décidé par Ben le 2026-10-02. Remplace
+Décidée par Ben le 2026-10-02, initialement sur `feature/argent-backend`,
+puis fusionnée dans `feature/v5-migration` (`aa15372`). Remplace
 `PLAN_LITIGES_BACKEND.md` et la file de rejeu `backend_outbox`, qui étaient
 des étapes transitoires.
 
@@ -26,7 +27,8 @@ clients pourront passer par WhatsApp ou Telegram, les prestataires
 uniquement par Telegram, la Mini App ou la future application.
 
 - `accounts` : une personne pour Nexis Hub. Elle peut être cliente,
-  prestataire ou les deux, avec **un seul wallet**.
+  prestataire ou les deux, avec **un seul wallet**, une langue partagée et
+  les rôles `client` / `provider` synchronisés depuis ses profils.
 - `channel_identities` : une porte d'entrée vers un compte (`telegram` +
   telegram_id aujourd'hui, `whatsapp` + wa_id demain). Unique sur (canal,
   identifiant) et un seul canal de chaque type par compte.
@@ -38,9 +40,19 @@ uniquement par Telegram, la Mini App ou la future application.
   comptes, quel que soit le canal.
 - Un prestataire peut commander comme client, jamais sur sa propre mission :
   le backend refuse le devis et le paiement (`provider_is_client`).
-- Les autres attributs du compte (rôles, numéro vérifié, langue), la liaison
-  entre canaux et le passage des missions à `account_id` relèvent du chantier
-  d'identité WhatsApp ; ils étendent ces tables sans toucher au registre.
+- `phone_e164` et `phone_verified_at` ne sont remplis qu'après une preuve de
+  possession du numéro. Les numéros historiques restent dans les profils
+  Telegram : leur provenance (contact partagé ou texte libre) n'est pas
+  enregistrée et ils ne peuvent donc pas servir à relier des comptes.
+- La migration actuelle ajoute les attributs du compte ci-dessus et les
+  initialise depuis les profils. Les numéros existants ne sont pas importés
+  comme vérifiés ; si un compte a deux profils, la langue client devient la
+  langue commune initiale. Les changements de langue suivants sont propagés
+  au compte depuis les parcours Telegram.
+- Le passage des missions, devis, avis, demandes de service et des API à des
+  références `account_id` reste à réaliser avant l'ouverture de WhatsApp ;
+  cette migration doit conserver les identifiants Telegram comme identités
+  de canal et garder les montants du registre inchangés.
 
 ## Registre (ledger) en partie double
 
@@ -156,6 +168,12 @@ de solde sont supprimées. `bot_transactions` est conservée en lecture seule
 (historique), plus jamais écrite. Côté SQLite, colonnes de solde et table
 `backend_outbox` supprimées au démarrage du bot.
 
+Migration d'identité multicanal (`e6f7a8b9c0d1`) : ajoute les rôles,
+la langue et les champs de numéro vérifié au compte. Les rôles et la langue
+sont repris des profils Telegram ; aucun numéro historique n'est déclaré
+vérifié faute de preuve de provenance. Une contrainte unique ne s'applique
+qu'aux numéros dont la vérification est enregistrée.
+
 ## Hors périmètre, prévu pour la suite
 
 - Paiement Mobile Money réel (phase 6) : l'agrégateur confirmera le paiement
@@ -175,5 +193,8 @@ de solde sont supprimées. `bot_transactions` est conservée en lecture seule
   wallet pendant un autre débit, rejeu identique.
 - Sécurité : mauvais client, mauvais prestataire, litige après règlement,
   libération auto d'une mission en litige, admin non configuré.
+- Identité de compte : rôles cumulés quand une personne a les deux profils,
+  langue client initiale puis synchronisation de langue, numéros historiques
+  jamais marqués vérifiés, unicité des seuls numéros vérifiés.
 - Bot : chaque bouton en succès, en refus et backend injoignable.
 - Migration : soldes d'ouverture et escrows en cours retrouvés à l'identique.
