@@ -58,6 +58,8 @@ from telegram_bot.backend_client import (
     get_provider_language,
     get_user_language,
     money_failure_text,
+    decide_payout,
+    list_payouts_awaiting_approval,
     resolve_dispute,
     sync_provider_status_to_backend,
     sync_provider_suspended_to_backend,
@@ -69,6 +71,7 @@ from telegram_bot.keyboards import (
     SERVICES,
     clavier_admin_dispute,
     clavier_admin_menu,
+    clavier_admin_payout,
     clavier_admin_provider,
     clavier_admin_service_request,
 )
@@ -407,6 +410,61 @@ async def admin_litige_partage_recu(message: Message, state: FSMContext):
             ),
             parse_mode="HTML",
         )
+
+
+REVIEW_REASONS = {
+    "above_auto_limit": "au-dessus du plafond automatique",
+    "refund_funds": "contient de l'argent de remboursement",
+}
+
+
+@router.callback_query(F.data == "admin_payouts")
+async def admin_payouts(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Accès admin refusé.", show_alert=True)
+        return
+    try:
+        payouts = await list_payouts_awaiting_approval()
+    except (MoneyRefused, BackendUnavailable) as error:
+        await callback.answer(money_failure_text(0, error, "fr"), show_alert=True)
+        return
+    if not payouts:
+        await callback.message.edit_text("✅ Aucun retrait à valider.", reply_markup=clavier_admin_menu())
+        await callback.answer()
+        return
+    await callback.message.edit_text("💸 <b>Retraits à valider</b>", parse_mode="HTML", reply_markup=clavier_admin_menu())
+    for payout in payouts:
+        await callback.message.answer(
+            html.escape(
+                f"Retrait #{payout['id']} | demandé par {payout['requested_by_telegram_id']}\n"
+                f"{payout['amount']} {payout['currency']} (frais {payout['fee']}, versé {payout['net']})\n"
+                f"Vers {payout['phone']} ({payout['operator']})\n"
+                f"À vérifier : {REVIEW_REASONS.get(payout['needs_review_reason'], payout['needs_review_reason'] or '—')}"
+            ),
+            reply_markup=clavier_admin_payout(payout["id"]),
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_payout_ok_") | F.data.startswith("admin_payout_no_"))
+async def admin_decider_retrait(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("Accès admin refusé.", show_alert=True)
+        return
+    approve = callback.data.startswith("admin_payout_ok_")
+    payout_id = int(callback.data.rsplit("_", 1)[1])
+    try:
+        payout = await decide_payout(payout_id, approve, callback.from_user.id)
+    except (MoneyRefused, BackendUnavailable) as error:
+        await callback.answer(money_failure_text(0, error, "fr"), show_alert=True)
+        return
+    await callback.message.edit_text(f"Retrait #{payout_id} : {payout['status']}.")
+    from telegram_bot.dashboard import payout_status_text
+
+    requester = payout["requested_by_telegram_id"]
+    lang = await get_provider_language(requester) if get_provider_by_telegram_id(requester) else await get_user_language(requester)
+    await callback.bot.send_message(requester, payout_status_text(payout, lang), parse_mode="HTML")
+    await callback.answer("Retrait validé" if approve else "Retrait refusé")
 
 
 @router.callback_query(F.data == "admin_service_requests")

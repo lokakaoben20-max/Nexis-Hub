@@ -586,11 +586,15 @@ def create_payment_intent(mission_id: int, payload: PaymentIntentPayload):
 @router.post("/api/bot/payment-intents/{intent_id}/refresh")
 def refresh_payment_intent(intent_id: int):
     with SessionLocal() as db:
+        from backend.app.tasks import refresh_and_notify_intent
+
         try:
-            intent = mobile_money.refresh_intent(db, intent_id)
+            # Même chemin que le webhook et la vérification de secours : celui
+            # qui fait changer le statut prévient client et prestataire.
+            refresh_and_notify_intent(db, intent_id)
         except ledger.MoneyError as error:
             raise _money_refusal(db, error) from error
-        return _intent_response(db, intent)
+        return _intent_response(db, db.get(PaymentIntent, intent_id))
 
 
 def _payout_call(operation):

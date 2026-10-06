@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from backend.app import ledger
 from backend.app.ledger import CENT, ZERO, MoneyError, to_money
-from backend.app.models import BotMission, PaymentIntent, Payout
+from backend.app.models import PaymentIntent, Payout
 from backend.app.payment_gateway import FAILED, PENDING, SUCCEEDED, GatewayUnavailable, get_gateway
 
 OPERATORS = {"mpesa", "airtel", "orange"}
@@ -74,28 +74,19 @@ def create_intent(db: Session, mission_id: int, *, phone: str, operator: str, fu
     if funding_request["provider_telegram_id"] == client_telegram_id:
         raise MoneyError("provider_is_client")
 
-    mission = db.get(BotMission, mission_id)
-    if mission is not None and mission.telegram_id != client_telegram_id:
+    # La mission doit exister pour l'intention (clé étrangère) : même création
+    # que le paiement, sans argent. Verrouillée jusqu'à la fin de la demande.
+    mission = ledger.ensure_mission(
+        db, mission_id, client_telegram_id=client_telegram_id, service=funding_request["service"],
+        commune=funding_request["commune"], currency=currency, description=funding_request.get("description", ""),
+        urgent=funding_request["urgent"],
+    )
+    if mission.telegram_id != client_telegram_id:
         raise MoneyError("not_mission_client", 403, mission)
     if ledger.mission_operation(db, mission_id, ledger.FUNDING) is not None:
         raise MoneyError("already_paid", mission=mission)
-    if mission is not None and (mission.status not in ledger.FUNDABLE_STATUSES or mission.payment_status not in (None, "unpaid")):
+    if mission.status not in ledger.FUNDABLE_STATUSES or mission.payment_status not in (None, "unpaid"):
         raise MoneyError("invalid_state", mission=mission)
-    if mission is None:
-        # La mission doit exister pour l'intention (clé étrangère) : même
-        # création que le paiement, sans argent.
-        db.add(
-            BotMission(
-                mission_id=mission_id,
-                telegram_id=client_telegram_id,
-                service=funding_request["service"],
-                commune=funding_request["commune"],
-                currency=currency,
-                description=funding_request.get("description", ""),
-                urgent=bool(funding_request["urgent"]),
-                status="pending",
-            )
-        )
 
     existing = _open_intent(db, mission_id)
     if existing is not None:

@@ -437,6 +437,51 @@ def clavier_paiement(quote_id: int):
     return builder.as_markup()
 
 
+OPERATOR_LABELS = {"mpesa": "M-Pesa", "airtel": "Airtel Money", "orange": "Orange Money"}
+
+
+def clavier_operateurs(prefix: str, detected: str | None, lang: str = "fr"):
+    """Choix de l'opérateur Mobile Money ; celui déduit du numéro est en tête."""
+    builder = InlineKeyboardBuilder()
+    for operator in sorted(OPERATOR_LABELS, key=lambda op: op != detected):
+        mark = "✅ " if operator == detected else ""
+        builder.button(text=f"{mark}{OPERATOR_LABELS[operator]}", callback_data=f"{prefix}_{operator}")
+    builder.button(text=button_label("back", lang), callback_data="profil_client")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_wallet(back_callback: str, lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=get_message("button_withdraw", lang), callback_data="wallet_withdraw")
+    builder.button(text=button_label("back", lang), callback_data=back_callback)
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_devises_retrait(lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="USD", callback_data="wd_cur_USD")
+    builder.button(text="CDF", callback_data="wd_cur_CDF")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def clavier_admin_payout(payout_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Valider et envoyer", callback_data=f"admin_payout_ok_{payout_id}")
+    builder.button(text="❌ Refuser", callback_data=f"admin_payout_no_{payout_id}")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def clavier_verifier_paiement(intent_id: int, lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=get_message("button_check_payment", lang), callback_data=f"check_mm_{intent_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def clavier_mission_prestataire(mission_id: int, action: str, lang: str = "fr"):
     builder = InlineKeyboardBuilder()
     if action == "start":
@@ -533,6 +578,7 @@ def clavier_admin_menu():
     builder.button(text="👥 Clients", callback_data="admin_clients")
     builder.button(text="⚠️ Litiges", callback_data="admin_disputes")
     builder.button(text="➕ Services proposés", callback_data="admin_service_requests")
+    builder.button(text="💸 Retraits", callback_data="admin_payouts")
     builder.adjust(2)
     return builder.as_markup()
 

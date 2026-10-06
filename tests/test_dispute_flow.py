@@ -44,9 +44,11 @@ class DummyBot:
 class DummyMessageObject:
     def __init__(self):
         self.edited_text = None
+        self.edited_markup = None
 
     async def edit_text(self, text, parse_mode=None, reply_markup=None):
         self.edited_text = text
+        self.edited_markup = reply_markup
 
     async def answer(self, text, parse_mode=None, reply_markup=None):
         self.edited_text = text
@@ -126,8 +128,8 @@ def _paid_mission(tmp_path, monkeypatch, amount=100.0):
     })
     quote_id = db.create_quote(mission_id, PROVIDER_ID, amount, "USD", 4, "")
     db.accept_quote(quote_id, CLIENT_ID)
-    callback = DummyCallback(CLIENT_ID, data=f"pay_mobile_{quote_id}")
-    asyncio.run(payment.paiement_mobile_money(callback))
+    callback = DummyCallback(CLIENT_ID, data=f"pay_mm_{quote_id}_mpesa")
+    asyncio.run(payment.paiement_mobile_money_operateur(callback))
     assert db.get_mission_by_id(mission_id)["payment_status"] == "paid_escrow", callback.answered
     return mission_id
 

@@ -208,11 +208,11 @@ def test_mobile_money_payment_lifecycle_to_release_and_rating(tmp_path, monkeypa
     provider_bot = DummyBot()
 
     # Paiement mobile money : décidé par le registre, recopié dans db.py.
-    pay_callback = DummyCallback(telegram_id=100, data=f"pay_mobile_{quote_id}", bot=client_bot)
-    asyncio.run(payment.paiement_mobile_money(pay_callback))
+    pay_callback = DummyCallback(telegram_id=100, data=f"pay_mm_{quote_id}_mpesa", bot=client_bot)
+    asyncio.run(payment.paiement_mobile_money_operateur(pay_callback))
     assert live_backend.mission(mission_id).payment_status == "paid_escrow"
     assert db.get_mission_by_id(mission_id)["payment_status"] == "paid_escrow"
-    assert f"SIM-{quote_id:04d}" in pay_callback.message.edited_text
+    assert "SIM-PAY-" in pay_callback.message.edited_text
     assert client_bot.messages[0].chat_id == 200
 
     # Démarrage puis fin de mission par le prestataire.
@@ -270,8 +270,8 @@ def test_payment_is_refused_while_the_backend_is_down_and_nothing_changes(tmp_pa
     mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch)
     monkeypatch.setattr(payment.backend_client.httpx, "AsyncClient", _OfflineClient)
 
-    callback = DummyCallback(telegram_id=100, data=f"pay_mobile_{quote_id}", bot=DummyBot())
-    asyncio.run(payment.paiement_mobile_money(callback))
+    callback = DummyCallback(telegram_id=100, data=f"pay_mm_{quote_id}_mpesa", bot=DummyBot())
+    asyncio.run(payment.paiement_mobile_money_operateur(callback))
 
     assert callback.answered == get_message("money_backend_unavailable", "fr")
     assert db.get_mission_by_id(mission_id)["payment_status"] == "unpaid"
@@ -383,7 +383,7 @@ def test_paiement_wallet_rejects_a_caller_who_is_not_the_client(tmp_path, monkey
 
 
 def _paid_and_finished(mission_id, quote_id):
-    asyncio.run(payment.paiement_mobile_money(DummyCallback(telegram_id=100, data=f"pay_mobile_{quote_id}", bot=DummyBot())))
+    asyncio.run(payment.paiement_mobile_money_operateur(DummyCallback(telegram_id=100, data=f"pay_mm_{quote_id}_mpesa", bot=DummyBot())))
     asyncio.run(payment.prestataire_demarre_mission(DummyCallback(telegram_id=200, data=f"mission_start_{mission_id}", bot=DummyBot())))
     asyncio.run(payment.prestataire_termine_mission(DummyCallback(telegram_id=200, data=f"mission_finish_{mission_id}", bot=DummyBot())))
 
@@ -406,7 +406,7 @@ def test_client_confirme_mission_terminee_rejects_a_caller_who_is_not_the_client
 
 def test_only_the_mission_provider_can_start_it(tmp_path, monkeypatch, live_backend):
     mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch, live=True)
-    asyncio.run(payment.paiement_mobile_money(DummyCallback(telegram_id=100, data=f"pay_mobile_{quote_id}", bot=DummyBot())))
+    asyncio.run(payment.paiement_mobile_money_operateur(DummyCallback(telegram_id=100, data=f"pay_mm_{quote_id}_mpesa", bot=DummyBot())))
 
     callback = DummyCallback(telegram_id=999, data=f"mission_start_{mission_id}", bot=DummyBot())
     asyncio.run(payment.prestataire_demarre_mission(callback))

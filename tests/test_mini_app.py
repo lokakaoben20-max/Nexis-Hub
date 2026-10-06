@@ -307,7 +307,7 @@ def _paid_mission_for_provider(provider_id: int = CLIENT_ID) -> int:
     })
     quote_id = db.create_quote(mission_id, provider_id, 30.0, "USD", 2, "")
     db.accept_quote(quote_id, OTHER_ID)
-    result = asyncio.run(backend_client.fund_mission(db.get_mission_by_id(mission_id), db.get_quote_by_id(quote_id), "mobile_money"))
+    result = asyncio.run(backend_client.create_payment_intent(db.get_mission_by_id(mission_id), db.get_quote_by_id(quote_id), "+243810000000", "mpesa"))
     db.apply_backend_mission(mission_id, result["mission"])
     return mission_id
 

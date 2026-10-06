@@ -82,8 +82,8 @@ def test_fund_request_carries_everything_the_backend_needs(live_backend):
     }
     quote = {"id": 9, "provider_telegram_id": 7, "amount": 100.0, "currency": "USD"}
 
-    result = asyncio.run(backend_client.fund_mission(mission, quote, "mobile_money"))
+    result = asyncio.run(backend_client.create_payment_intent(mission, quote, "+243810000000", "mpesa"))
 
     assert result["mission"]["payment_status"] == "paid_escrow"
     assert result["money"]["funding"]["commission"] == "15.00"  # urgente : 15 %
-    assert result["money"]["funding"]["reference"] == "SIM-0009"
+    assert result["money"]["funding"]["reference"] == "SIM-PAY-000001"

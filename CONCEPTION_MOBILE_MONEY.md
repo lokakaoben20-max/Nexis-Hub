@@ -182,8 +182,20 @@ signature des webhooks soit confirmée par écrit.**
 ## Découpage du code
 
 Un seul chantier, sur une branche dédiée, livré complet. Les étapes 1 à 4
-ne dépendent pas de la documentation FlexPaie et peuvent commencer dès
-maintenant ; l'étape 5 attend le KYC et la réponse sur la signature.
+ne dépendent pas de la documentation FlexPaie ; l'étape 5 attend le KYC et la
+réponse sur la signature.
+
+**État (2026-10-06, branche `feature/mobile-money`) : étapes 1 à 4 faites et
+testées** avec l'agrégateur simulé (`backend/app/payment_gateway.py`, refusé
+en production) : `backend/app/mobile_money.py`, migration `f7a8b9c0d1e2`,
+écrans bot et admin, tests `backend/tests/test_mobile_money.py` et
+`tests/test_mobile_money_flow.py`, concurrence vérifiée sur Postgres. Réglages
+par variables d'environnement : `PAYMENT_GATEWAY`, `APP_ENV`,
+`COLLECTION_FEE_RATE`, `PAYOUT_FEE_RATE`, `PAYOUT_FEE_FIXED_USD|CDF`,
+`PAYOUT_MINIMUM_USD|CDF` (5 USD / 10 000 CDF par défaut, à fixer avec les
+tarifs), `PAYOUT_AUTO_LIMIT_USD|CDF` (0 par défaut : tout retrait passe par
+l'admin). La tâche Celery `check_pending_mobile_money` (toutes les 2 min) fait
+la vérification de secours. Reste : étapes 5 et 6.
 
 1. **Registre et tables** : intentions de paiement, retraits, comptes
    `payout_pending` et `fees`, origine des crédits (remboursement), réglages

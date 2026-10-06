@@ -257,24 +257,96 @@ async def _money_call(method: str, path: str, payload: dict | None = None) -> di
 
 
 async def fund_mission(mission, quote, method: str) -> dict:
-    """Paie la mission en escrow. `mission` et `quote` sont les lignes db.py :
-    la demande porte tout ce dont le backend a besoin."""
+    """Paie la mission en escrow par le wallet (seul paiement direct possible).
+    `mission` et `quote` sont les lignes db.py : la demande porte tout ce dont
+    le backend a besoin."""
+    return await _money_call("POST", f"/api/bot/missions/{mission['id']}/fund", _funding_payload(mission, quote, method))
+
+
+def _funding_payload(mission, quote, method: str) -> dict:
+    return {
+        "method": method,
+        "client_telegram_id": mission["client_telegram_id"],
+        "provider_telegram_id": quote["provider_telegram_id"],
+        "quote_ref": quote["id"],
+        "amount": quote["amount"],
+        "currency": quote["currency"],
+        "urgent": bool(mission["is_urgent"]),
+        "service": mission["service"],
+        "commune": mission["commune"],
+        "description": mission["description"] or "",
+    }
+
+
+# --- Mobile Money réel (CONCEPTION_MOBILE_MONEY.md) --------------------------
+# Un paiement Mobile Money n'existe que confirmé par l'agrégateur : le bot
+# ouvre une intention de paiement et en affiche le statut, rien de plus.
+
+OPERATORS = ("mpesa", "airtel", "orange")
+# Préfixes des opérateurs en RDC (après +243).
+_OPERATOR_PREFIXES = {"81": "mpesa", "82": "mpesa", "83": "mpesa", "97": "airtel", "98": "airtel", "99": "airtel",
+                      "80": "orange", "84": "orange", "85": "orange", "89": "orange"}
+
+
+def normalize_phone(raw) -> str | None:
+    """Numéro RDC au format +243XXXXXXXXX, ou None s'il n'en est pas un."""
+    digits = "".join(ch for ch in str(raw or "") if ch.isdigit())
+    if digits.startswith("243"):
+        digits = digits[3:]
+    elif digits.startswith("0"):
+        digits = digits[1:]
+    return f"+243{digits}" if len(digits) == 9 else None
+
+
+def detect_operator(phone: str | None) -> str | None:
+    return _OPERATOR_PREFIXES.get(phone[4:6]) if phone else None
+
+
+async def create_payment_intent(mission, quote, phone: str, operator: str) -> dict:
     return await _money_call(
         "POST",
-        f"/api/bot/missions/{mission['id']}/fund",
-        {
-            "method": method,
-            "client_telegram_id": mission["client_telegram_id"],
-            "provider_telegram_id": quote["provider_telegram_id"],
-            "quote_ref": quote["id"],
-            "amount": quote["amount"],
-            "currency": quote["currency"],
-            "urgent": bool(mission["is_urgent"]),
-            "service": mission["service"],
-            "commune": mission["commune"],
-            "description": mission["description"] or "",
-        },
+        f"/api/bot/missions/{mission['id']}/payment-intents",
+        {**_funding_payload(mission, quote, "mobile_money"), "phone": phone, "operator": operator},
     )
+
+
+async def refresh_payment_intent(intent_id: int) -> dict:
+    return await _money_call("POST", f"/api/bot/payment-intents/{intent_id}/refresh")
+
+
+async def _payout_call(method: str, path: str, payload: dict | None = None) -> dict:
+    """Comme `_money_call`, pour les retraits (réponse `payout`/`payouts`)."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0, headers=BACKEND_AUTH_HEADERS) as client:
+            if method == "GET":
+                response = await client.get(f"{BACKEND_BASE_URL}{path}")
+            else:
+                response = await client.post(f"{BACKEND_BASE_URL}{path}", json=payload)
+        body = response.json()
+    except Exception as error:
+        raise BackendUnavailable(repr(error)) from error
+    if response.status_code in (400, 403, 404, 409):
+        detail = body.get("detail") if isinstance(body, dict) else None
+        if isinstance(detail, dict) and isinstance(detail.get("code"), str):
+            raise MoneyRefused(detail["code"])
+    if response.status_code != 200 or not isinstance(body, dict) or not ("payout" in body or "payouts" in body):
+        raise BackendUnavailable(f"réponse inattendue ({response.status_code})")
+    return body
+
+
+async def request_payout(telegram_id: int, amount: float, currency: str, phone: str, operator: str) -> dict:
+    payload = {"telegram_id": telegram_id, "amount": amount, "currency": currency, "phone": phone, "operator": operator}
+    return (await _payout_call("POST", "/api/bot/payouts", payload))["payout"]
+
+
+async def list_payouts_awaiting_approval() -> list[dict]:
+    return (await _payout_call("GET", "/api/bot/payouts?status=awaiting_approval"))["payouts"]
+
+
+async def decide_payout(payout_id: int, approve: bool, admin_telegram_id: int, reason: str = "") -> dict:
+    action = "approve" if approve else "reject"
+    payload = {"admin_telegram_id": admin_telegram_id, "reason": reason}
+    return (await _payout_call("POST", f"/api/bot/payouts/{payout_id}/{action}", payload))["payout"]
 
 
 async def start_mission(mission_id: int, provider_telegram_id: int) -> dict:

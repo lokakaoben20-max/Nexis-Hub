@@ -37,19 +37,38 @@ from db import (
     get_user_missions,
     set_service_request_backend_id,
 )
-from messages import get_message
+from messages import MESSAGES, get_message
 from telegram_bot.backend_client import (
+    BackendUnavailable,
+    MoneyRefused,
     _safe_backend_call,
+    detect_operator,
     fetch_backend_profile,
     fetch_wallets,
     get_provider_language,
     get_user_language,
+    normalize_phone,
+    request_payout,
     sync_service_request_to_backend,
     wallet_balance,
 )
-from telegram_bot.keyboards import SERVICES, _rich_cell, clavier_client, clavier_prestataire, clavier_services_actions
+from telegram_bot.keyboards import (
+    SERVICES,
+    _rich_cell,
+    clavier_client,
+    clavier_devises_retrait,
+    clavier_operateurs,
+    clavier_prestataire,
+    clavier_services_actions,
+    clavier_wallet,
+)
 
 router = Router()
+
+
+class WithdrawFlow(StatesGroup):
+    amount = State()
+    operator = State()
 
 
 class ProviderServiceRequest(StatesGroup):
@@ -304,7 +323,7 @@ async def afficher_wallet_client(callback: CallbackQuery):
     await callback.message.edit_text(
         await wallet_text(callback.from_user.id, "wallet_title", lang),
         parse_mode="HTML",
-        reply_markup=clavier_client(lang),
+        reply_markup=clavier_wallet("profil_client", lang),
     )
     await callback.answer()
 
@@ -346,7 +365,7 @@ async def afficher_wallet_prestataire(callback: CallbackQuery):
     await callback.message.edit_text(
         await wallet_text(callback.from_user.id, "provider_wallet_title", lang),
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(lang),
+        reply_markup=clavier_wallet("profil_prestataire", lang),
     )
     await callback.answer()
 
@@ -449,4 +468,106 @@ async def afficher_aide_client(callback: CallbackQuery):
             parse_mode="HTML",
             reply_markup=clavier_client(lang),
         )
+    await callback.answer()
+
+
+# --- Retrait vers Mobile Money (CONCEPTION_MOBILE_MONEY.md) ------------------------
+# Le backend bloque le montant, puis l'envoie quand l'admin l'a validé (ou
+# tout de suite sous le plafond d'automatisation). Le numéro est celui du
+# profil : prestataire s'il en a un, sinon client.
+
+
+async def _withdraw_language(telegram_id: int) -> str:
+    if get_provider_by_telegram_id(telegram_id) is not None:
+        return await get_provider_language(telegram_id)
+    return await get_user_language(telegram_id)
+
+
+def _profile_phone(telegram_id: int):
+    profile = get_provider_by_telegram_id(telegram_id) or get_user_by_telegram_id(telegram_id)
+    return normalize_phone(profile["phone_number"] if profile else None)
+
+
+def payout_status_text(payout: dict, lang: str) -> str:
+    keys = {
+        "awaiting_approval": "payout_awaiting_approval",
+        "processing": "payout_processing",
+        "succeeded": "payout_succeeded",
+    }
+    return get_message(
+        keys.get(payout["status"], "payout_returned"), lang,
+        amount=payout["net"], gross=payout["amount"], currency=payout["currency"],
+    )
+
+
+@router.callback_query(F.data == "wallet_withdraw")
+async def retrait_choisir_devise(callback: CallbackQuery, state: FSMContext):
+    lang = await _withdraw_language(callback.from_user.id)
+    await state.clear()
+    await callback.message.edit_text(get_message("withdraw_choose_currency", lang), parse_mode="HTML", reply_markup=clavier_devises_retrait(lang))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("wd_cur_"))
+async def retrait_demander_montant(callback: CallbackQuery, state: FSMContext):
+    currency = callback.data.removeprefix("wd_cur_")
+    lang = await _withdraw_language(callback.from_user.id)
+    balance = wallet_balance(await fetch_wallets(callback.from_user.id), currency)
+    if balance is None:
+        await callback.answer(get_message("money_backend_unavailable", lang), show_alert=True)
+        return
+    await state.set_state(WithdrawFlow.amount)
+    await state.update_data(withdraw_currency=currency)
+    await callback.message.edit_text(
+        get_message("withdraw_ask_amount", lang, currency=currency, balance=f"{balance:.2f}"), parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(WithdrawFlow.amount)
+async def retrait_montant_recu(message: Message, state: FSMContext):
+    lang = await _withdraw_language(message.from_user.id)
+    try:
+        amount = round(float((message.text or "").strip().replace(",", ".")), 2)
+    except ValueError:
+        amount = 0
+    if amount <= 0:
+        await message.answer(get_message("withdraw_invalid_amount", lang), parse_mode="HTML")
+        return
+    phone = _profile_phone(message.from_user.id)
+    if phone is None:
+        await state.clear()
+        await message.answer(get_message("money_error_invalid_phone", lang), parse_mode="HTML")
+        return
+    data = await state.get_data()
+    await state.update_data(withdraw_amount=amount, withdraw_phone=phone)
+    await state.set_state(WithdrawFlow.operator)
+    await message.answer(
+        get_message("withdraw_choose_operator", lang, amount=f"{amount:.2f}", currency=data["withdraw_currency"], phone=phone),
+        parse_mode="HTML",
+        reply_markup=clavier_operateurs("wd_op", detect_operator(phone), lang),
+    )
+
+
+@router.callback_query(WithdrawFlow.operator, F.data.startswith("wd_op_"))
+async def retrait_operateur_recu(callback: CallbackQuery, state: FSMContext):
+    lang = await _withdraw_language(callback.from_user.id)
+    data = await state.get_data()
+    try:
+        payout = await request_payout(
+            callback.from_user.id, data["withdraw_amount"], data["withdraw_currency"], data["withdraw_phone"],
+            callback.data.removeprefix("wd_op_"),
+        )
+    except BackendUnavailable:
+        # On garde la saisie : la personne réessaie le même bouton.
+        await callback.answer(get_message("money_backend_unavailable", lang), show_alert=True)
+        return
+    except MoneyRefused as error:
+        await state.clear()
+        key = f"money_error_{error.code}"
+        await callback.message.edit_text(get_message(key if key in MESSAGES["fr"] else "money_error_generic", lang), parse_mode="HTML")
+        await callback.answer()
+        return
+    await state.clear()
+    await callback.message.edit_text(payout_status_text(payout, lang), parse_mode="HTML")
     await callback.answer()

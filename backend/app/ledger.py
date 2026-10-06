@@ -232,6 +232,37 @@ def _lock_mission(db: Session, mission_id: int) -> BotMission:
     return mission
 
 
+def ensure_mission(
+    db: Session, mission_id: int, *, client_telegram_id: int, service: str, commune: str, currency: str, description: str, urgent: bool
+) -> BotMission:
+    """Mission verrouillée, créée si le backend ne l'a jamais reçue (le bot
+    crée missions et devis dans db.py). Création dans un point de reprise :
+    deux requêtes simultanées ne la créent qu'une fois."""
+    mission = db.get(BotMission, mission_id, with_for_update=True)
+    if mission is not None:
+        return mission
+    try:
+        with db.begin_nested():
+            db.add(
+                BotMission(
+                    mission_id=mission_id,
+                    telegram_id=client_telegram_id,
+                    service=service,
+                    commune=commune,
+                    currency=currency,
+                    description=description,
+                    urgent=bool(urgent),
+                    status="pending",
+                )
+            )
+            client = db.get(BotUser, client_telegram_id)
+            if client is not None:
+                client.total_missions += 1
+    except IntegrityError:
+        pass  # créée au même instant par une autre requête
+    return db.get(BotMission, mission_id, with_for_update=True)
+
+
 def _funded_amounts(db: Session, mission: BotMission) -> dict[str, Decimal]:
     """Montants tels qu'enregistrés au paiement : la seule référence pour
     libérer, rembourser ou partager (jamais les colonnes float de la mission)."""
@@ -310,28 +341,10 @@ def fund_mission(
         # référence d'agrégateur) n'est jamais pris pour un rejeu du premier.
         return operation.kind == kind and operation.details == details and operation.reference == reference
 
-    mission = db.get(BotMission, mission_id, with_for_update=True)
-    if mission is None:
-        try:
-            with db.begin_nested():
-                db.add(
-                    BotMission(
-                        mission_id=mission_id,
-                        telegram_id=client_telegram_id,
-                        service=service,
-                        commune=commune,
-                        currency=currency,
-                        description=description,
-                        urgent=bool(urgent),
-                        status="pending",
-                    )
-                )
-                client = db.get(BotUser, client_telegram_id)
-                if client is not None:
-                    client.total_missions += 1
-        except IntegrityError:
-            pass  # créée au même instant par une autre requête
-        mission = db.get(BotMission, mission_id, with_for_update=True)
+    mission = ensure_mission(
+        db, mission_id, client_telegram_id=client_telegram_id, service=service, commune=commune,
+        currency=currency, description=description, urgent=urgent,
+    )
     if mission.telegram_id != client_telegram_id:
         raise MoneyError("not_mission_client", 403, mission)
 

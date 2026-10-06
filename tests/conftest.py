@@ -55,6 +55,8 @@ class LiveBackend:
 
     def __init__(self, database_module):
         self.database = database_module
+        # Notifications que le backend enverrait lui-même par Telegram.
+        self.sent = []
 
     def balance(self, telegram_id: int, currency: str = "USD") -> float:
         from backend.app import ledger
@@ -115,4 +117,7 @@ def live_backend(tmp_path, monkeypatch):
 
     monkeypatch.setattr(httpx, "AsyncClient", _LiveAsyncClient)
     monkeypatch.setattr(backend_client, "BACKEND_AUTH_HEADERS", {"X-API-Key": TEST_BACKEND_API_KEY})
-    return LiveBackend(database_module)
+    live = LiveBackend(database_module)
+    tasks_module = importlib.import_module("backend.app.tasks")
+    monkeypatch.setattr(tasks_module, "send_telegram_message", lambda chat_id, text, reply_markup=None: live.sent.append((chat_id, text)))
+    return live

@@ -29,6 +29,7 @@ from db import (
     get_mission_by_id,
     get_provider_by_telegram_id,
     get_quote_by_id,
+    get_user_by_telegram_id,
     reject_quote,
 )
 from messages import get_message
@@ -37,11 +38,13 @@ from telegram_bot.backend_client import (
     BackendUnavailable,
     MoneyRefused,
     _safe_backend_call,
+    detect_operator,
     fetch_backend_profile,
     fetch_wallets,
     get_provider_language,
     get_user_language,
     money_failure_text,
+    normalize_phone,
     sync_quote_accept_to_backend,
     sync_quote_reject_to_backend,
     sync_review_to_backend,
@@ -55,8 +58,10 @@ from telegram_bot.keyboards import (
     clavier_mission_prestataire,
     clavier_notation,
     clavier_notation_commentaire,
+    clavier_operateurs,
     clavier_paiement,
     clavier_prestataire,
+    clavier_verifier_paiement,
 )
 
 router = Router()
@@ -130,9 +135,8 @@ async def client_accepte_devis(callback: CallbackQuery):
     await callback.answer(get_message("toast_quote_accepted", client_lang))
 
 
-async def _pay(callback: CallbackQuery, quote_id: int, method: str):
-    """Paiement en escrow par le registre du backend. Retourne
-    (mission db.py, quote, funding) ou None si refusé (l'alerte est faite)."""
+async def _payable_quote(callback: CallbackQuery, quote_id: int):
+    """Devis que ce client peut payer, ou None (l'alerte est faite)."""
     lang = await get_user_language(callback.from_user.id)
     quote = get_quote_by_id(quote_id)
     if quote is None or quote["client_telegram_id"] != callback.from_user.id:
@@ -143,14 +147,7 @@ async def _pay(callback: CallbackQuery, quote_id: int, method: str):
         # remplacé ne doit pas payer un autre montant ou un autre prestataire).
         await callback.answer(get_message("money_error_invalid_state", lang), show_alert=True)
         return None
-    mission = get_mission_by_id(quote["mission_id"])
-    try:
-        result = await backend_client.fund_mission(mission, quote, method)
-    except (MoneyRefused, BackendUnavailable) as error:
-        await callback.answer(money_failure_text(quote["mission_id"], error, lang), show_alert=True)
-        return None
-    mission = apply_backend_mission(quote["mission_id"], result["mission"])
-    return mission, quote, result["money"]["funding"]
+    return quote
 
 
 async def _notify_provider_paid(callback: CallbackQuery, quote, funding: dict, message_key: str):
@@ -171,27 +168,99 @@ async def _notify_provider_paid(callback: CallbackQuery, quote, funding: dict, m
     )
 
 
+def _client_phone(telegram_id: int):
+    user = get_user_by_telegram_id(telegram_id)
+    return normalize_phone(user["phone_number"] if user else None)
+
+
+async def _show_mobile_money_status(callback: CallbackQuery, result: dict, lang: str, notify_provider):
+    """Écran selon le statut de l'intention. `notify_provider` : prévenir le
+    prestataire si le paiement vient d'être confirmé par cet appel (sinon le
+    backend s'en charge)."""
+    intent = result["intent"]
+    mission_id = intent["mission_id"]
+    apply_backend_mission(mission_id, result["mission"])
+    if intent["status"] == "succeeded":
+        funding = result["money"]["funding"]
+        text = get_message(
+            "payment_mobile_confirmed_client", lang,
+            mission_id=mission_id, ref=funding["reference"], total=float(funding["total"]), currency=intent["currency"],
+        )
+        markup = clavier_client(lang)
+    elif intent["status"] in ("created", "pending"):
+        text = get_message("payment_mobile_pending_client", lang, total=float(intent["amount"]), currency=intent["currency"])
+        markup = clavier_verifier_paiement(intent["id"], lang)
+    elif intent["status"] == "overpaid":
+        text = get_message("payment_overpaid_client", lang, mission_id=mission_id, amount=intent["amount"], currency=intent["currency"])
+        markup = clavier_client(lang)
+    else:  # failed, expired, mismatch : rien n'a été payé
+        text = get_message("payment_mobile_failed_client", lang, mission_id=mission_id)
+        markup = clavier_client(lang)
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+    if intent["status"] == "succeeded" and notify_provider is not None:
+        await notify_provider(result["money"]["funding"])
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("pay_mobile_"))
 async def paiement_mobile_money(callback: CallbackQuery):
-    paid = await _pay(callback, int(callback.data.replace("pay_mobile_", "", 1)), "mobile_money")
-    if paid is None:
+    """Choix de l'opérateur ; le numéro est celui du profil du client."""
+    quote = await _payable_quote(callback, int(callback.data.replace("pay_mobile_", "", 1)))
+    if quote is None:
         return
-    _, quote, funding = paid
-    client_lang = await get_user_language(callback.from_user.id)
+    lang = await get_user_language(callback.from_user.id)
+    phone = _client_phone(callback.from_user.id)
+    if phone is None:
+        await callback.answer(get_message("money_error_invalid_phone", lang), show_alert=True)
+        return
     await callback.message.edit_text(
-        get_message(
-            "payment_mobile_confirmed_client",
-            client_lang,
-            mission_id=quote["mission_id"],
-            ref=funding["reference"],
-            total=float(funding["total"]),
-            currency=quote["currency"],
-        ),
+        get_message("choose_operator", lang, total=float(quote["amount"]), currency=quote["currency"], phone=phone),
         parse_mode="HTML",
-        reply_markup=clavier_client(client_lang),
+        reply_markup=clavier_operateurs(f"pay_mm_{quote['id']}", detect_operator(phone), lang),
     )
-    await _notify_provider_paid(callback, quote, funding, "payment_confirmed_provider_notify")
-    await callback.answer(get_message("toast_payment_confirmed", client_lang))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("pay_mm_"))
+async def paiement_mobile_money_operateur(callback: CallbackQuery):
+    """Ouvre l'intention de paiement : l'agrégateur envoie la demande sur le
+    téléphone du client. Seule sa confirmation paie la mission."""
+    quote_part, _, operator = callback.data.removeprefix("pay_mm_").rpartition("_")
+    quote = await _payable_quote(callback, int(quote_part))
+    if quote is None:
+        return
+    lang = await get_user_language(callback.from_user.id)
+    phone = _client_phone(callback.from_user.id)
+    if phone is None:
+        await callback.answer(get_message("money_error_invalid_phone", lang), show_alert=True)
+        return
+    try:
+        result = await backend_client.create_payment_intent(get_mission_by_id(quote["mission_id"]), quote, phone, operator)
+    except (MoneyRefused, BackendUnavailable) as error:
+        await callback.answer(money_failure_text(quote["mission_id"], error, lang), show_alert=True)
+        return
+
+    async def notify_provider(funding):
+        await _notify_provider_paid(callback, quote, funding, "payment_confirmed_provider_notify")
+
+    await _show_mobile_money_status(callback, result, lang, notify_provider)
+
+
+@router.callback_query(F.data.startswith("check_mm_"))
+async def verifier_paiement_mobile_money(callback: CallbackQuery):
+    """Relit le statut chez l'agrégateur. Si le paiement vient d'être confirmé,
+    c'est le backend qui prévient client et prestataire (un seul envoi)."""
+    intent_id = int(callback.data.removeprefix("check_mm_"))
+    lang = await get_user_language(callback.from_user.id)
+    try:
+        result = await backend_client.refresh_payment_intent(intent_id)
+    except (MoneyRefused, BackendUnavailable) as error:
+        await callback.answer(money_failure_text(0, error, lang), show_alert=True)
+        return
+    if result["mission"]["telegram_id"] != callback.from_user.id:
+        await callback.answer(get_message("money_error_not_mission_client", lang), show_alert=True)
+        return
+    await _show_mobile_money_status(callback, result, lang, None)
 
 
 @router.callback_query(F.data.startswith("mission_start_"))
@@ -421,10 +490,17 @@ async def litige_motif_recu(message: Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("pay_wallet_"))
 async def paiement_wallet(callback: CallbackQuery):
-    paid = await _pay(callback, int(callback.data.replace("pay_wallet_", "", 1)), "wallet")
-    if paid is None:
+    quote = await _payable_quote(callback, int(callback.data.replace("pay_wallet_", "", 1)))
+    if quote is None:
         return
-    _, quote, funding = paid
+    lang = await get_user_language(callback.from_user.id)
+    try:
+        result = await backend_client.fund_mission(get_mission_by_id(quote["mission_id"]), quote, "wallet")
+    except (MoneyRefused, BackendUnavailable) as error:
+        await callback.answer(money_failure_text(quote["mission_id"], error, lang), show_alert=True)
+        return
+    apply_backend_mission(quote["mission_id"], result["mission"])
+    funding = result["money"]["funding"]
     client_lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
         get_message(
