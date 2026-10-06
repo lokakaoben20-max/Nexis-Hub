@@ -83,6 +83,7 @@ def reconcile(db: Session, now: datetime | None = None) -> Report:
     _check_payouts(db, report, now)
     _check_intents(db, report, now)
     _check_mobile_money_fundings(db, report)
+    _check_mismatch_credits(db, report)
     report.counts = {
         "operations": db.query(func.count(MoneyOperation.id)).scalar(),
         "intents": db.query(func.count(PaymentIntent.id)).scalar(),
@@ -187,22 +188,36 @@ def _check_intents(db: Session, report: Report, now: datetime) -> None:
         elif intent.status == "overpaid":
             if kinds.count("overpayment") != 1:
                 report.add("intent_not_in_ledger", f"{label} payée en trop, mais {kinds.count('overpayment')} crédit(s) au wallet au registre")
+        elif intent.status in ("mismatch_credited", "mismatch_paid"):
+            credits = [operation for operation in operations if operation.kind == "mismatch_credit"]
+            credited = sum((entry.amount for entry in db.query(LedgerEntry).filter(
+                LedgerEntry.operation_id.in_([operation.id for operation in credits]), LedgerEntry.account_type == ledger.WALLET
+            )), ZERO)
+            if len(credits) != 1 or intent.received_amount is None or to_money(credited) != to_money(intent.received_amount):
+                report.add("intent_not_in_ledger", f"{label} réglée par l'admin, mais le crédit au wallet au registre ne correspond pas au montant reçu")
+            if intent.status == "mismatch_paid":
+                funding = ledger.mission_operation(db, intent.mission_id, FUNDING)
+                if funding is None or funding.kind != "fund_wallet" or funding.reference != intent.gateway_reference:
+                    report.add("intent_not_in_ledger", f"{label} : l'admin a fait payer la mission, mais son paiement au registre ne lui correspond pas")
         elif intent.status == "mismatch":
             # Argent reçu par l'agrégateur, hors registre, jusqu'à la décision de l'admin.
             report.add("intent_amount_mismatch", f"{label} : montant reçu différent ({intent.failure_reason}), décision de l'admin requise")
         elif intent.status == "created" and intent.created_at < now - STUCK_INTENT_AFTER:
             report.add("intent_stuck", f"{label} jamais transmise ou jamais relue chez l'agrégateur depuis {intent.created_at:%Y-%m-%d %H:%M}")
 
-        if intent.status in ("succeeded", "overpaid"):
+        if intent.status in ("succeeded", "overpaid", "mismatch_credited", "mismatch_paid"):
             fees = [operation for operation in operations if operation.kind == "collection_fee"]
             if len(fees) > 1:
                 report.add("duplicate_fee", f"{label} : {len(fees)} frais d'encaissement enregistrés")
             fee = sum((-entry.amount for entry in db.query(LedgerEntry).filter(
                 LedgerEntry.operation_id.in_([operation.id for operation in fees]), LedgerEntry.account_type == ledger.PLATFORM
             )), ZERO)
-            expected_fee = to_money(Decimal(intent.amount) * rate)
+            # Frais calculés sur l'argent réellement encaissé.
+            collected = intent.received_amount if intent.status.startswith("mismatch_") and intent.received_amount is not None else intent.amount
+            currency = intent.received_currency if intent.status.startswith("mismatch_") and intent.received_currency else intent.currency
+            expected_fee = to_money(Decimal(collected) * rate)
             if abs(to_money(fee) - expected_fee) > Decimal("0.01"):
-                report.add("fee_deviation", f"{label} : frais {to_money(fee)} {intent.currency}, attendus {expected_fee} au taux {rate}")
+                report.add("fee_deviation", f"{label} : frais {to_money(fee)} {currency}, attendus {expected_fee} au taux {rate}")
 
 
 def _check_mobile_money_fundings(db: Session, report: Report) -> None:
@@ -214,6 +229,26 @@ def _check_mobile_money_fundings(db: Session, report: Report) -> None:
         if operation.reference in confirmed or LEGACY_SIMULATED_REFERENCE.match(operation.reference or ""):
             continue
         report.add("funding_without_intent", f"paiement {operation.reference} de la mission NXH-{operation.mission_id:04d} sans intention confirmée")
+
+
+def _check_mismatch_credits(db: Session, report: Report) -> None:
+    """Tout crédit « montant différent » vient d'une décision de l'admin
+    enregistrée sur l'intention, sur le compte et dans la devise de celle-ci.
+    Sinon (crédit sans décision, intention restée « mismatch »), l'admin
+    risquerait de créditer une seconde fois."""
+    resolved = {
+        intent.gateway_reference: intent
+        for intent in db.query(PaymentIntent).filter(PaymentIntent.status.in_(("mismatch_credited", "mismatch_paid")))
+        if intent.gateway_reference
+    }
+    for operation in db.query(MoneyOperation).filter(MoneyOperation.kind == "mismatch_credit"):
+        intent = resolved.get(operation.reference)
+        if intent is None:
+            report.add("mismatch_credit_without_decision", f"crédit {operation.reference} (opération {operation.id}) sans décision de l'admin enregistrée sur une intention")
+            continue
+        entries = db.query(LedgerEntry).filter(LedgerEntry.operation_id == operation.id, LedgerEntry.account_type == WALLET).all()
+        if any(entry.account_id != intent.account_id or entry.currency != intent.received_currency for entry in entries):
+            report.add("mismatch_credit_mismatch", f"crédit {operation.reference} : compte ou devise différents de l'intention {intent.id}")
 
 
 def format_admin_report(report: Report, limit: int = 20) -> str:
