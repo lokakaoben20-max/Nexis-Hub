@@ -102,49 +102,44 @@ class ClientSettings(StatesGroup):
     name = State()
 
 
-@router.callback_query(F.data == "lang_fr")
-async def langue_fr(callback: CallbackQuery, state: FSMContext):
-    await state.update_data(language="fr")
-    update_user_language(callback.from_user.id, "fr")
-    update_provider_language(callback.from_user.id, "fr")
-    await _safe_backend_call(sync_user_language_to_backend(callback.from_user.id, "fr"))
-    await _safe_backend_call(sync_provider_language_to_backend(callback.from_user.id, "fr"))
+async def _choisir_langue(callback: CallbackQuery, state: FSMContext, lang: str, intro: str):
+    """Choix de langue à l'écran d'accueil.
+
+    La langue est gardée dans l'étape en cours, puis envoyée avec l'inscription
+    (persist_client_registration / sync_provider_to_backend). Les profils déjà
+    existants sont mis à jour tout de suite, localement et au backend ; on
+    n'envoie rien au backend pour un profil qui n'existe pas encore (avant, ces
+    appels partaient quand même et revenaient en 404).
+    """
+    telegram_id = callback.from_user.id
+    await state.update_data(language=lang)
+    if get_user_by_telegram_id(telegram_id) is not None:
+        update_user_language(telegram_id, lang)
+        await _safe_backend_call(sync_user_language_to_backend(telegram_id, lang))
+    if get_provider_by_telegram_id(telegram_id) is not None:
+        update_provider_language(telegram_id, lang)
+        await _safe_backend_call(sync_provider_language_to_backend(telegram_id, lang))
     await callback.message.edit_text(
-        f"🇫🇷 Vous avez choisi le <b>Français</b>.\n\n{get_message('choose_profile', 'fr')}",
+        intro,
         parse_mode="HTML",
-        reply_markup=clavier_profil("fr"),
+        reply_markup=clavier_profil(lang),
     )
     await callback.answer()
+
+
+@router.callback_query(F.data == "lang_fr")
+async def langue_fr(callback: CallbackQuery, state: FSMContext):
+    await _choisir_langue(callback, state, "fr", f"🇫🇷 Vous avez choisi le <b>Français</b>.\n\n{get_message('choose_profile', 'fr')}")
 
 
 @router.callback_query(F.data == "lang_ln")
 async def langue_ln(callback: CallbackQuery, state: FSMContext):
-    await state.update_data(language="ln")
-    update_user_language(callback.from_user.id, "ln")
-    update_provider_language(callback.from_user.id, "ln")
-    await _safe_backend_call(sync_user_language_to_backend(callback.from_user.id, "ln"))
-    await _safe_backend_call(sync_provider_language_to_backend(callback.from_user.id, "ln"))
-    await callback.message.edit_text(
-        f"🇨🇩 Oponi <b>Lingala</b>.\n\n{get_message('choose_profile', 'ln')}",
-        parse_mode="HTML",
-        reply_markup=clavier_profil("ln"),
-    )
-    await callback.answer()
+    await _choisir_langue(callback, state, "ln", f"🇨🇩 Oponi <b>Lingala</b>.\n\n{get_message('choose_profile', 'ln')}")
 
 
 @router.callback_query(F.data == "lang_en")
 async def langue_en(callback: CallbackQuery, state: FSMContext):
-    await state.update_data(language="en")
-    update_user_language(callback.from_user.id, "en")
-    update_provider_language(callback.from_user.id, "en")
-    await _safe_backend_call(sync_user_language_to_backend(callback.from_user.id, "en"))
-    await _safe_backend_call(sync_provider_language_to_backend(callback.from_user.id, "en"))
-    await callback.message.edit_text(
-        f"🇬🇧 You chose <b>English</b>.\n\n{get_message('choose_profile', 'en')}",
-        parse_mode="HTML",
-        reply_markup=clavier_profil("en"),
-    )
-    await callback.answer()
+    await _choisir_langue(callback, state, "en", f"🇬🇧 You chose <b>English</b>.\n\n{get_message('choose_profile', 'en')}")
 
 
 @router.callback_query(F.data == "profil_client")
@@ -172,12 +167,29 @@ async def profil_client(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+async def _numero_partage(message: Message, lang: str) -> str | None:
+    """Numéro de téléphone prouvé par Telegram, ou None après avoir réexpliqué.
+
+    Seul le bouton « Partager mon numéro » est accepté (décision de Ben,
+    docs/ARCHITECTURE_WHATSAPP.md) : Telegram envoie alors le numéro vérifié du
+    compte. Un numéro tapé à la main, ou la fiche contact de quelqu'un d'autre
+    (trombone > Contact), ne prouve rien et est refusé.
+    """
+    contact = message.contact
+    if contact is None:
+        await message.answer(get_message("phone_required", lang), reply_markup=clavier_contact(lang))
+        return None
+    if contact.user_id != message.from_user.id:
+        await message.answer(get_message("phone_contact_not_own", lang), reply_markup=clavier_contact(lang))
+        return None
+    return contact.phone_number
+
+
 @router.message(ClientRegistration.phone)
 async def enregistrer_client(message: Message, state: FSMContext):
-    phone_number = message.contact.phone_number if message.contact else (message.text or "").strip()
     lang = await get_state_language(state)
-    if not phone_number:
-        await message.answer(get_message("phone_required", lang))
+    phone_number = await _numero_partage(message, lang)
+    if phone_number is None:
         return
 
     data = await state.get_data()
@@ -254,10 +266,9 @@ async def profil_prestataire(callback: CallbackQuery, state: FSMContext):
 
 @router.message(ProviderRegistration.phone)
 async def enregistrer_tel_prestataire(message: Message, state: FSMContext):
-    phone_number = message.contact.phone_number if message.contact else (message.text or "").strip()
     lang = await get_state_language(state)
-    if not phone_number:
-        await message.answer(get_message("phone_required", lang))
+    phone_number = await _numero_partage(message, lang)
+    if phone_number is None:
         return
 
     await state.update_data(provider_phone=phone_number)
@@ -272,7 +283,7 @@ async def enregistrer_tel_prestataire(message: Message, state: FSMContext):
 async def enregistrer_nom_prestataire(message: Message, state: FSMContext):
     full_name = (message.text or "").strip()
     if len(full_name) < 2:
-        await message.answer("Veuillez envoyer un nom complet valide.")
+        await message.answer(get_message("provider_full_name_invalid", await get_state_language(state)))
         return
 
     await state.update_data(provider_full_name=full_name, provider_services=[])
@@ -471,21 +482,24 @@ async def _notifier_admin_nouveau_prestataire(callback: CallbackQuery, provider,
         return
     try:
         admin_id = int(ADMIN_TELEGRAM_ID)
-        summary = (
-            f"🆕 <b>Nouveau prestataire en attente de validation</b>\n\n"
-            f"Nom : <b>{html.escape(provider['full_name'])}</b>\n"
-            f"Téléphone : <b>{html.escape(provider['phone_number'] or '')}</b>\n"
-            f"Services : {html.escape(', '.join(json.loads(provider['services'] or '[]')))}\n"
-            f"Communes : {html.escape(', '.join(json.loads(provider['communes'] or '[]')))}"
+        # Langue de l'admin, pas celle du prestataire : c'est l'admin qui lit.
+        admin_lang = await get_user_language(admin_id)
+        summary = get_message(
+            "admin_new_provider_summary",
+            admin_lang,
+            nom=html.escape(provider["full_name"]),
+            telephone=html.escape(provider["phone_number"] or ""),
+            services=html.escape(", ".join(json.loads(provider["services"] or "[]"))),
+            communes=html.escape(", ".join(json.loads(provider["communes"] or "[]"))),
         )
         await callback.bot.send_message(admin_id, summary, parse_mode="HTML")
-        await callback.bot.send_photo(admin_id, id_document_file_id, caption="Pièce d'identité")
-        await callback.bot.send_photo(admin_id, selfie_file_id, caption="Selfie")
+        await callback.bot.send_photo(admin_id, id_document_file_id, caption=get_message("admin_new_provider_id_caption", admin_lang))
+        await callback.bot.send_photo(admin_id, selfie_file_id, caption=get_message("admin_new_provider_selfie_caption", admin_lang))
         for photo_file_id in portfolio_file_ids:
-            await callback.bot.send_photo(admin_id, photo_file_id, caption="Portfolio")
+            await callback.bot.send_photo(admin_id, photo_file_id, caption=get_message("admin_new_provider_portfolio_caption", admin_lang))
         await callback.bot.send_message(
             admin_id,
-            "Approuver ce prestataire ?",
+            get_message("admin_new_provider_approve_prompt", admin_lang),
             reply_markup=clavier_admin_new_provider(provider["telegram_id"]),
         )
     except Exception:
