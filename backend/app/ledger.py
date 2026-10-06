@@ -26,7 +26,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app.models import BotMission, BotUser, ChannelIdentity, LedgerEntry, MoneyOperation, NexisAccount
+from backend.app.models import BotMission, BotUser, ChannelIdentity, LedgerEntry, MoneyOperation, NexisAccount, Payout
 
 CENT = Decimal("0.01")
 ZERO = Decimal("0.00")
@@ -61,6 +61,8 @@ TELEGRAM = "telegram"
 EXTERNAL = "external"
 WALLET = "wallet"
 ESCROW = "escrow"
+PAYOUT_PENDING = "payout_pending"  # identifiant : id du retrait
+FEES = "fees"  # frais facturés par l'agrégateur
 PLATFORM = "platform"
 
 
@@ -190,7 +192,7 @@ def _record(
     details: dict | None = None,
 ) -> MoneyOperation:
     movements = [(account_type, account_id, amount) for account_type, account_id, amount in movements if amount != ZERO]
-    if any(account_id is None for account_type, account_id, _ in movements if account_type in (WALLET, ESCROW)):
+    if any(account_id is None for account_type, account_id, _ in movements if account_type in (WALLET, ESCROW, PAYOUT_PENDING)):
         raise RuntimeError(f"Opération {kind} : compte sans identifiant : {movements}")
     if sum((amount for _, _, amount in movements), ZERO) != ZERO:
         # Invariant de partie double : ne peut arriver que par bug de ce module.
@@ -274,8 +276,14 @@ def fund_mission(
     service: str,
     commune: str,
     description: str = "",
+    reference: str | None = None,
+    also=None,
 ) -> BotMission:
-    """Paie une mission en escrow. La demande porte tout ce qu'il faut (le
+    """Paie une mission en escrow.
+
+    `reference` : référence de l'agrégateur (paiement Mobile Money réel) ;
+    `also(mission)` : écritures à valider dans la même transaction (statut de
+    l'intention de paiement, frais d'agrégateur). La demande porte tout ce qu'il faut (le
     bot crée missions et devis dans db.py) : si la mission n'existe pas encore
     côté backend, elle est créée ici, sans dépendre d'une recopie antérieure."""
     if method not in PAYMENT_METHODS:
@@ -295,8 +303,12 @@ def fund_mission(
         "net": str(amounts["net"]),
     }
 
+    reference = reference or f"{reference_prefix}-{quote_ref:04d}"
+
     def matches(operation: MoneyOperation) -> bool:
-        return operation.kind == kind and operation.details == details
+        # Même référence exigée : un second paiement Mobile Money réel (autre
+        # référence d'agrégateur) n'est jamais pris pour un rejeu du premier.
+        return operation.kind == kind and operation.details == details and operation.reference == reference
 
     mission = db.get(BotMission, mission_id, with_for_update=True)
     if mission is None:
@@ -355,10 +367,12 @@ def fund_mission(
             mission_id=mission_id,
             phase=FUNDING,
             actor_telegram_id=client_telegram_id,
-            reference=f"{reference_prefix}-{quote_ref:04d}",
+            reference=reference,
             details=details,
             movements=[(*source, -amounts["total"]), (ESCROW, mission_id, amounts["total"])],
         )
+        if also is not None:
+            also(mission)
         mission.provider_telegram_id = provider_telegram_id
         mission.client_account_id = client_account_id
         mission.provider_account_id = provider_account_id
@@ -659,4 +673,107 @@ def record_opening_balance(db: Session, account_id: int, currency: str, amount) 
         currency=currency,
         details={"account_id": account_id},
         movements=[(EXTERNAL, None, -amount), (WALLET, account_id, amount)],
+    )
+
+
+# --- Mobile Money réel : frais, trop-perçu, retraits ----------------------------
+# Appelés par backend/app/mobile_money.py, dans sa transaction : ces fonctions
+# écrivent sans valider (CONCEPTION_MOBILE_MONEY.md).
+
+
+def record_collection_fee(db: Session, *, mission_id: int, currency: str, fee, reference: str | None) -> None:
+    """Frais d'encaissement de l'agrégateur, à la charge de Nexis Hub (décision
+    de Ben) : prélevés sur le compte de la plateforme."""
+    fee = to_money(fee)
+    if fee < ZERO:
+        raise MoneyError("invalid_amount", 400)
+    if fee == ZERO:
+        return
+    _record(
+        db,
+        kind="collection_fee",
+        currency=currency,
+        reference=reference,
+        details={"mission_id": mission_id},
+        movements=[(PLATFORM, None, -fee), (FEES, None, fee)],
+    )
+
+
+def record_overpayment(db: Session, *, account_id: int, currency: str, amount, reference: str | None, mission_id: int) -> None:
+    """Argent reçu pour une mission déjà payée (confirmation en retard ou en
+    double) : jamais perdu, crédité au wallet du client, retirable seulement
+    après vérification admin."""
+    amount = to_money(amount)
+    _record(
+        db,
+        kind="overpayment",
+        currency=currency,
+        reference=reference,
+        details={"mission_id": mission_id},
+        movements=[(EXTERNAL, None, -amount), (WALLET, account_id, amount)],
+    )
+
+
+def withdrawable_without_review(db: Session, account_id: int, currency: str) -> Decimal:
+    """Part du wallet retirable sans vérification admin : le solde moins tout
+    ce que le compte a reçu en remboursement, partage de litige (part client)
+    ou trop-perçu (décision de Ben : ces fonds se retirent après vérification)."""
+    client_credit_kinds = ("refund", "split", "overpayment")
+    reviewed = (
+        db.query(func.coalesce(func.sum(LedgerEntry.amount), 0))
+        .join(MoneyOperation, MoneyOperation.id == LedgerEntry.operation_id)
+        .outerjoin(BotMission, BotMission.mission_id == MoneyOperation.mission_id)
+        .filter(
+            LedgerEntry.account_type == WALLET,
+            LedgerEntry.account_id == account_id,
+            LedgerEntry.currency == currency,
+            LedgerEntry.amount > 0,
+            MoneyOperation.kind.in_(client_credit_kinds),
+            # Dans un partage, seule la part du client est concernée.
+            (MoneyOperation.kind != "split") | (BotMission.client_account_id == account_id),
+        )
+        .scalar()
+    )
+    return max(ZERO, balance(db, WALLET, account_id, currency) - to_money(reviewed))
+
+
+def hold_payout(db: Session, payout: Payout) -> None:
+    """Bloque le montant d'un retrait : wallet → payout_pending. Verrouille le
+    compte pour que deux retraits simultanés ne dépassent jamais le solde."""
+    db.get(NexisAccount, payout.account_id, with_for_update=True)
+    if balance(db, WALLET, payout.account_id, payout.currency) < payout.amount:
+        raise MoneyError("insufficient_balance")
+    _record(
+        db,
+        kind="payout_hold",
+        currency=payout.currency,
+        details={"payout_id": payout.id},
+        movements=[(WALLET, payout.account_id, -to_money(payout.amount)), (PAYOUT_PENDING, payout.id, to_money(payout.amount))],
+    )
+
+
+def complete_payout(db: Session, payout: Payout, reference: str | None) -> None:
+    """Versement confirmé par l'agrégateur : l'argent sort, frais à la charge
+    du prestataire (décision de Ben)."""
+    amount, fee = to_money(payout.amount), to_money(payout.fee)
+    _record(
+        db,
+        kind="payout",
+        currency=payout.currency,
+        reference=reference,
+        details={"payout_id": payout.id},
+        movements=[(PAYOUT_PENDING, payout.id, -amount), (EXTERNAL, None, amount - fee), (FEES, None, fee)],
+    )
+
+
+def release_payout(db: Session, payout: Payout, kind: str) -> None:
+    """Retrait refusé (`payout_rejected`) ou échoué (`payout_failed`) :
+    l'argent bloqué revient au wallet, toujours."""
+    amount = to_money(payout.amount)
+    _record(
+        db,
+        kind=kind,
+        currency=payout.currency,
+        details={"payout_id": payout.id},
+        movements=[(PAYOUT_PENDING, payout.id, -amount), (WALLET, payout.account_id, amount)],
     )

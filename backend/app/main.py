@@ -2,12 +2,12 @@ import hmac
 import os
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from backend.app import crud, ledger
+from backend.app import crud, ledger, mobile_money, payment_gateway
 from backend.app.database import SessionLocal
-from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotUser
+from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotUser, PaymentIntent, Payout
 
 load_dotenv()
 BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
@@ -104,6 +104,25 @@ class FundPayload(BaseModel):
     service: str
     commune: str
     description: str = ""
+
+
+class PaymentIntentPayload(FundPayload):
+    method: str = "mobile_money"
+    phone: str
+    operator: str
+
+
+class PayoutPayload(BaseModel):
+    telegram_id: int
+    amount: float
+    currency: str
+    phone: str
+    operator: str
+
+
+class PayoutDecisionPayload(BaseModel):
+    admin_telegram_id: int
+    reason: str = ""
 
 
 class ProviderActionPayload(BaseModel):
@@ -495,6 +514,10 @@ def _money_call(operation):
 
 @router.post("/api/bot/missions/{mission_id}/fund")
 def fund_mission(mission_id: int, payload: FundPayload):
+    # Seul le wallet paie directement : un paiement Mobile Money n'existe que
+    # confirmé par l'agrégateur (/payment-intents, CONCEPTION_MOBILE_MONEY.md).
+    if payload.method != "wallet":
+        raise HTTPException(status_code=400, detail={"code": "use_payment_intent"})
     return _money_call(
         lambda db: ledger.fund_mission(
             db,
@@ -511,6 +534,130 @@ def fund_mission(mission_id: int, payload: FundPayload):
             description=payload.description,
         )
     )
+
+
+def _intent_to_dict(intent: PaymentIntent) -> dict:
+    return {
+        "id": intent.id,
+        "mission_id": intent.mission_id,
+        "status": intent.status,
+        "operator": intent.operator,
+        "amount": str(intent.amount),
+        "currency": intent.currency,
+        "gateway_reference": intent.gateway_reference,
+        "failure_reason": intent.failure_reason,
+    }
+
+
+def _payout_to_dict(payout: Payout) -> dict:
+    return {
+        "id": payout.id,
+        "status": payout.status,
+        "requested_by_telegram_id": payout.requested_by_telegram_id,
+        "amount": str(payout.amount),
+        "fee": str(payout.fee),
+        "net": str(payout.amount - payout.fee),
+        "currency": payout.currency,
+        "operator": payout.operator,
+        "phone": payout.phone,
+        "needs_review_reason": payout.needs_review_reason,
+        "failure_reason": payout.failure_reason,
+    }
+
+
+def _intent_response(db, intent: PaymentIntent) -> dict:
+    mission = db.get(BotMission, intent.mission_id)
+    return {**_money_response(db, mission), "intent": _intent_to_dict(intent)}
+
+
+@router.post("/api/bot/missions/{mission_id}/payment-intents")
+def create_payment_intent(mission_id: int, payload: PaymentIntentPayload):
+    funding_request = payload.model_dump(exclude={"method", "phone", "operator"})
+    with SessionLocal() as db:
+        try:
+            intent = mobile_money.create_intent(
+                db, mission_id, phone=payload.phone, operator=payload.operator, funding_request=funding_request
+            )
+        except ledger.MoneyError as error:
+            raise _money_refusal(db, error) from error
+        return _intent_response(db, intent)
+
+
+@router.post("/api/bot/payment-intents/{intent_id}/refresh")
+def refresh_payment_intent(intent_id: int):
+    with SessionLocal() as db:
+        try:
+            intent = mobile_money.refresh_intent(db, intent_id)
+        except ledger.MoneyError as error:
+            raise _money_refusal(db, error) from error
+        return _intent_response(db, intent)
+
+
+def _payout_call(operation):
+    with SessionLocal() as db:
+        try:
+            payout = operation(db)
+        except ledger.MoneyError as error:
+            db.rollback()
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+        return {"status": "ok", "payout": _payout_to_dict(payout)}
+
+
+@router.post("/api/bot/payouts")
+def request_payout(payload: PayoutPayload):
+    return _payout_call(
+        lambda db: mobile_money.request_payout(
+            db,
+            telegram_id=payload.telegram_id,
+            amount=payload.amount,
+            currency=payload.currency,
+            phone=payload.phone,
+            operator=payload.operator,
+        )
+    )
+
+
+@router.get("/api/bot/payouts")
+def list_payouts(status: str = "awaiting_approval", limit: int = 20):
+    with SessionLocal() as db:
+        payouts = db.query(Payout).filter(Payout.status == status).order_by(Payout.id).limit(min(limit, 50)).all()
+        return {"status": "ok", "payouts": [_payout_to_dict(payout) for payout in payouts]}
+
+
+@router.post("/api/bot/payouts/{payout_id}/approve")
+def approve_payout(payout_id: int, payload: PayoutDecisionPayload):
+    return _payout_call(lambda db: mobile_money.approve_payout(db, payout_id, payload.admin_telegram_id))
+
+
+@router.post("/api/bot/payouts/{payout_id}/reject")
+def reject_payout(payout_id: int, payload: PayoutDecisionPayload):
+    return _payout_call(lambda db: mobile_money.reject_payout(db, payout_id, payload.admin_telegram_id, payload.reason))
+
+
+@app.post("/api/payments/webhook/{gateway_name}")
+async def payment_webhook(gateway_name: str, request: Request):
+    """Confirmation de l'agrégateur. Hors clé API (c'est l'agrégateur qui
+    appelle) : signature vérifiée, puis statut toujours relu chez lui avant de
+    bouger quoi que ce soit (`refresh_intent` / `refresh_payout`)."""
+    gateway = payment_gateway.get_gateway()
+    if gateway_name != gateway.name:
+        raise HTTPException(status_code=404, detail={"code": "unknown_gateway"})
+    try:
+        reference = gateway.verify_webhook(request.headers, await request.body())
+    except payment_gateway.InvalidWebhook as error:
+        raise HTTPException(status_code=401, detail={"code": "invalid_signature"}) from error
+    from backend.app.tasks import refresh_and_notify_intent, refresh_and_notify_payout
+
+    with SessionLocal() as db:
+        intent = db.query(PaymentIntent).filter_by(gateway=gateway.name, gateway_reference=reference).one_or_none()
+        payout = db.query(Payout).filter_by(gateway=gateway.name, gateway_reference=reference).one_or_none()
+        if intent is not None:
+            refresh_and_notify_intent(db, intent.id)
+        elif payout is not None:
+            refresh_and_notify_payout(db, payout.id)
+        else:
+            return {"status": "ignored"}
+    return {"status": "ok"}
 
 
 @router.post("/api/bot/missions/{mission_id}/start")

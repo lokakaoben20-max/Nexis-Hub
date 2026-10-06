@@ -31,9 +31,14 @@ def _reload_backend_with_db(monkeypatch, tmp_path, name="test_backend.db"):
 
 
 def _fund(test_client, mission_id=1001, quote_id=1, amount=100.0, currency="USD", method="mobile_money", urgent=False, client=42, provider=7):
+    # Mobile Money : par une intention de paiement, confirmée ici tout de suite
+    # par l'agrégateur simulé ; wallet : paiement direct.
+    path = "fund" if method == "wallet" else "payment-intents"
+    extra = {} if method == "wallet" else {"phone": "+243810000000", "operator": "mpesa"}
     return test_client.post(
-        f"/api/bot/missions/{mission_id}/fund",
+        f"/api/bot/missions/{mission_id}/{path}",
         json={
+            **extra,
             "method": method,
             "client_telegram_id": client,
             "provider_telegram_id": provider,
@@ -334,7 +339,8 @@ def test_full_escrow_and_release_flow(tmp_path, monkeypatch):
 
         pay_response = _fund(test_client, quote_id=quote_id)
         assert pay_response.status_code == 200
-        assert pay_response.json()["money"]["funding"]["reference"] == f"SIM-{quote_id:04d}"
+        assert pay_response.json()["intent"]["status"] == "succeeded"
+        assert pay_response.json()["money"]["funding"]["reference"] == "SIM-PAY-000001"
         assert pay_response.json()["money"]["funding"]["net"] == "90.00"
 
         start_response = test_client.post("/api/bot/missions/1001/start", json={"provider_telegram_id": 7})
@@ -830,3 +836,46 @@ def test_backend_refuses_a_quote_from_the_mission_client(tmp_path, monkeypatch):
 
         assert response.status_code == 409
         assert response.json()["detail"] == {"code": "provider_is_client"}
+
+
+def test_mobile_money_cannot_be_declared_paid_by_the_bot(tmp_path, monkeypatch):
+    """Seul l'agrégateur confirme un paiement Mobile Money : /fund le refuse."""
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        response = test_client.post(
+            "/api/bot/missions/1/fund",
+            json={"method": "mobile_money", "client_telegram_id": 42, "provider_telegram_id": 7, "quote_ref": 1,
+                  "amount": 10.0, "currency": "USD", "service": "s", "commune": "Gombe"},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == {"code": "use_payment_intent"}
+
+
+def test_payout_endpoints_hold_then_pay_after_admin_approval(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        _complete_mission_flow(test_client)  # le prestataire 7 gagne 90 USD
+        payout = {"telegram_id": 7, "amount": 50.0, "currency": "USD", "phone": "+243970000000", "operator": "airtel"}
+
+        requested = test_client.post("/api/bot/payouts", json=payout).json()["payout"]
+        assert requested["status"] == "awaiting_approval"
+        assert test_client.get("/api/bot/wallets/7").json()["wallet"]["wallet_balance_usd"] == 40.0
+        assert [p["id"] for p in test_client.get("/api/bot/payouts").json()["payouts"]] == [requested["id"]]
+
+        approved = test_client.post(f"/api/bot/payouts/{requested['id']}/approve", json={"admin_telegram_id": 1})
+        assert approved.json()["payout"]["status"] == "succeeded"
+
+        too_much = test_client.post("/api/bot/payouts", json={**payout, "amount": 100.0})
+        assert too_much.status_code == 409
+        assert too_much.json()["detail"] == {"code": "insufficient_balance"}
+
+
+def test_webhook_without_a_valid_signature_is_refused(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        response = test_client.post("/api/payments/webhook/simulation", content=b'{"reference": "SIM-PAY-000001"}')
+        assert response.status_code == 401
+        assert test_client.post("/api/payments/webhook/flexpay", content=b"{}").status_code == 404

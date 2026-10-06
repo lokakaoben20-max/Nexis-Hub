@@ -35,6 +35,10 @@ celery_app.conf.beat_schedule = {
         "task": "backend.app.tasks.release_auto_confirmed_missions",
         "schedule": crontab(minute=0),
     },
+    "check-pending-mobile-money": {
+        "task": "backend.app.tasks.check_pending_mobile_money",
+        "schedule": crontab(minute="*/2"),
+    },
     "send-daily-analytics": {
         "task": "backend.app.tasks.send_daily_analytics",
         "schedule": crontab(hour=8, minute=0),

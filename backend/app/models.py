@@ -232,3 +232,68 @@ class LedgerEntry(Base):
     currency: Mapped[str] = mapped_column(String(3))
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PaymentIntent(Base):
+    """Demande de paiement Mobile Money d'une mission (CONCEPTION_MOBILE_MONEY.md).
+
+    N'est pas de l'argent : seul l'agrégateur, en confirmant, fait payer la
+    mission dans le registre. Une seule intention ouverte (`created` ou
+    `pending`) par mission, garanti par l'index partiel ci-dessous."""
+
+    __tablename__ = "payment_intents"
+    __table_args__ = (
+        Index(
+            "uq_payment_intents_open_per_mission",
+            "mission_id",
+            unique=True,
+            postgresql_where=text("status IN ('created', 'pending')"),
+            sqlite_where=text("status IN ('created', 'pending')"),
+        ),
+        UniqueConstraint("gateway", "gateway_reference", name="uq_payment_intents_gateway_reference"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mission_id: Mapped[int] = mapped_column(ForeignKey("bot_missions.mission_id"), index=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    gateway: Mapped[str] = mapped_column(String(30))
+    gateway_reference: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    operator: Mapped[str] = mapped_column(String(20))
+    phone: Mapped[str] = mapped_column(String(32))
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    currency: Mapped[str] = mapped_column(String(3))
+    # Tout ce que `ledger.fund_mission` doit recevoir quand l'argent arrive.
+    funding_request: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(20), default="created", index=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Payout(Base):
+    """Retrait d'un wallet vers le Mobile Money (CONCEPTION_MOBILE_MONEY.md).
+
+    Le montant est bloqué dans le registre (compte `payout_pending`) dès la
+    demande ; il n'en sort que vers l'extérieur (versement confirmé) ou vers
+    le wallet (refus ou échec)."""
+
+    __tablename__ = "payouts"
+    __table_args__ = (UniqueConstraint("gateway", "gateway_reference", name="uq_payouts_gateway_reference"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    requested_by_telegram_id: Mapped[int] = mapped_column(BigInteger)
+    gateway: Mapped[str] = mapped_column(String(30))
+    gateway_reference: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    operator: Mapped[str] = mapped_column(String(20))
+    phone: Mapped[str] = mapped_column(String(32))
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    fee: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    currency: Mapped[str] = mapped_column(String(3))
+    status: Mapped[str] = mapped_column(String(20), default="awaiting_approval", index=True)
+    needs_review_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    decided_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -11,7 +11,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 logger = logging.getLogger(__name__)
 
 
-def send_telegram_message(telegram_id: int, text: str) -> None:
+def send_telegram_message(telegram_id: int, text: str, reply_markup: dict | None = None) -> None:
     """Envoie un message Telegram depuis un worker Celery.
 
     Un worker Celery est un process séparé, sans boucle asyncio/aiogram comme
@@ -28,7 +28,7 @@ def send_telegram_message(telegram_id: int, text: str) -> None:
     try:
         response = httpx.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={"chat_id": telegram_id, "text": text, "parse_mode": "HTML"},
+            json={"chat_id": telegram_id, "text": text, "parse_mode": "HTML", **({"reply_markup": reply_markup} if reply_markup else {})},
             timeout=5.0,
         )
         response.raise_for_status()
