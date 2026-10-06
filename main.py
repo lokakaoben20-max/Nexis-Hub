@@ -4,7 +4,6 @@ import os
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import CallbackQuery, Message, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from dotenv import load_dotenv
@@ -18,11 +17,13 @@ from db import init_db
 # main.py que le bootstrap (démarrage, /start, /app) et le code partagé entre
 # ces modules (aucun pour l'instant).
 from telegram_bot import admin
+from telegram_bot import fallback
 from telegram_bot import dashboard
 from telegram_bot import mission as mission_flow
 from telegram_bot import payment
 from telegram_bot import registration
 from telegram_bot.backend_client import get_user_language
+from telegram_bot.fsm_storage import build_fsm_storage, ensure_fsm_storage_ready
 from telegram_bot.keyboards import MINI_APP_URL, button_label, clavier_langue
 from telegram_bot.webhook_server import run_webhook
 
@@ -34,7 +35,9 @@ if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN manquant dans le fichier .env")
 
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
+# Étapes en cours gardées dans Redis : elles survivent à un redémarrage du bot
+# (voir telegram_bot/fsm_storage.py).
+dp = Dispatcher(storage=build_fsm_storage())
 # Flows extraits (Phase 3) : routers séparés plutôt que des handlers directement
 # sur `dp`. Voir telegram_bot/registration.py et telegram_bot/mission.py.
 dp.include_router(registration.router)
@@ -42,6 +45,8 @@ dp.include_router(mission_flow.router)
 dp.include_router(payment.router)
 dp.include_router(admin.router)
 dp.include_router(dashboard.router)
+# Toujours en dernier : ne reçoit que ce qu'aucun autre handler n'a pris.
+dp.include_router(fallback.router)
 
 
 _original_edit_text = Message.edit_text
@@ -105,6 +110,7 @@ async def fonctionnalite_a_venir(callback: CallbackQuery):
 
 async def main():
     init_db()
+    await ensure_fsm_storage_ready(dp.storage)
     mode = os.getenv("BOT_RUN_MODE", "polling").strip().lower()
     if mode == "webhook":
         await run_webhook(bot, dp)

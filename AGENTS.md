@@ -91,7 +91,7 @@ Ce couplage disparaîtra le jour où la Mini App passera par le backend V5 au li
 | Mini App | 8001 | `.venv\Scripts\python.exe -m uvicorn mini_app.app:app --reload --host 127.0.0.1 --port 8001` |
 | Bot Telegram (polling, défaut) | — | `.venv\Scripts\python.exe main.py` |
 | Bot Telegram (webhook, optionnel) | 8002 | `BOT_RUN_MODE=webhook` dans `.env` + `.venv\Scripts\python.exe main.py` |
-| Redis (broker Celery) | 6379 | `docker compose up -d redis` |
+| Redis (étapes en cours du bot + broker Celery) | 6379 | `docker compose up -d redis` |
 | Worker Celery | — | `.venv\Scripts\python.exe -m celery -A backend.app.celery_app worker --loglevel=info --pool=solo` |
 | Beat Celery (planificateur) | — | `.venv\Scripts\python.exe -m celery -A backend.app.celery_app beat --loglevel=info` |
 
@@ -176,6 +176,11 @@ Le schéma Postgres est géré uniquement par Alembic : lancer
 tables au démarrage).
 
 ### Lancer le bot
+
+Le bot garde les étapes en cours (inscription, mission, devis, notation) dans
+Redis (`telegram_bot/fsm_storage.py`, variable `REDIS_URL`, défaut
+`redis://localhost:6379/0`) pour qu'un redémarrage ne les efface pas. Il refuse
+de démarrer si Redis ne répond pas : lancer `docker compose up -d` avant.
 
 ```bash
 c:/Users/Ben L/OneDrive/Desktop/Startup_Nexis_Hub/nexis_hub_bot/.venv/Scripts/python.exe main.py
