@@ -2,7 +2,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 
-from backend.app import crud, ledger, mobile_money
+from backend.app import crud, ledger, mobile_money, reconciliation
 from backend.app.celery_app import celery_app
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, BotProvider, BotUser, NexisAccount, PaymentIntent, Payout
@@ -249,25 +249,32 @@ def notify_payout(db, payout: Payout) -> None:
 
 @celery_app.task(name="backend.app.tasks.check_pending_mobile_money")
 def check_pending_mobile_money() -> int:
-    """Vérification de secours : relit chez l'agrégateur les paiements et
-    retraits en attente (webhook perdu, retard). Les intentions expirées sont
-    relues 24 h de plus : un paiement confirmé en retard n'est jamais ignoré."""
+    """Vérification de secours : relit chez l'agrégateur les paiements
+    (`mobile_money.intents_to_refresh`) et retraits en attente (webhook perdu,
+    retard)."""
     db = SessionLocal()
     try:
-        now = mobile_money._utcnow()
-        intents = (
-            db.query(PaymentIntent.id)
-            .filter(
-                (PaymentIntent.status == "pending")
-                | ((PaymentIntent.status == "expired") & (PaymentIntent.expires_at > now - timedelta(hours=24)))
-            )
-            .all()
-        )
-        payouts = db.query(Payout.id).filter(Payout.status == "processing").all()
-        for (intent_id,) in intents:
+        intent_ids = mobile_money.intents_to_refresh(db, mobile_money._utcnow())
+        payout_ids = [payout_id for (payout_id,) in db.query(Payout.id).filter(Payout.status == "processing")]
+        for intent_id in intent_ids:
             refresh_and_notify_intent(db, intent_id)
-        for (payout_id,) in payouts:
+        for payout_id in payout_ids:
             refresh_and_notify_payout(db, payout_id)
-        return len(intents) + len(payouts)
+        return len(intent_ids) + len(payout_ids)
+    finally:
+        db.close()
+
+
+@celery_app.task(name="backend.app.tasks.send_daily_reconciliation")
+def send_daily_reconciliation() -> bool:
+    """Rapprochement interne quotidien (backend/app/reconciliation.py), envoyé
+    à l'admin même sans écart : un rapport qui n'arrive pas se remarque."""
+    db = SessionLocal()
+    try:
+        report = reconciliation.reconcile(db)
+        if not report.ok:
+            logger.warning("Rapprochement : %d écart(s) : %s", len(report.anomalies), report.anomalies)
+        _alert_admin(reconciliation.format_admin_report(report))
+        return report.ok
     finally:
         db.close()
