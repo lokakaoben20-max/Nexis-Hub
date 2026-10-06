@@ -180,11 +180,13 @@ def button_label(key: str, lang: str = "fr") -> str:
 
 
 def clavier_contact(lang: str = "fr"):
+    # « Partager mon numéro » : Telegram envoie le numéro vérifié du compte, pas
+    # forcément le numéro WhatsApp — le libellé ne doit pas promettre l'inverse.
     text = {
-        "fr": "📱 Partager mon numéro WhatsApp",
-        "ln": "📱 Kotinda numéro WhatsApp",
-        "en": "📱 Share my WhatsApp number",
-    }.get(lang, "📱 Partager mon numéro WhatsApp")
+        "fr": "📱 Partager mon numéro",
+        "ln": "📱 Kotinda numéro na ngai",
+        "en": "📱 Share my number",
+    }.get(lang, "📱 Partager mon numéro")
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=text, request_contact=True)],
