@@ -170,7 +170,12 @@ def _wallet_fields(db, telegram_id: int) -> dict:
     # Calculés depuis le registre, seule source de vérité (backend/app/ledger.py).
     # Un seul wallet par personne, qu'elle soit cliente, prestataire ou les deux.
     balances = ledger.wallet_balances(db, ledger.TELEGRAM, telegram_id)
-    return {"wallet_balance_usd": float(balances["USD"]), "wallet_balance_cdf": float(balances["CDF"])}
+    account_id = ledger.account_id_for(db, ledger.TELEGRAM, telegram_id)
+    return {
+        "account_id": account_id,
+        "wallet_balance_usd": float(balances["USD"]),
+        "wallet_balance_cdf": float(balances["CDF"]),
+    }
 
 
 def _user_to_dict(user: BotUser, db) -> dict:
@@ -216,6 +221,8 @@ def _mission_to_dict(mission: BotMission) -> dict:
         "mission_id": mission.mission_id,
         "telegram_id": mission.telegram_id,
         "provider_telegram_id": mission.provider_telegram_id,
+        "client_account_id": mission.client_account_id,
+        "provider_account_id": mission.provider_account_id,
         "service": mission.service,
         "commune": mission.commune,
         "currency": mission.currency,
@@ -238,6 +245,7 @@ def _quote_to_dict(quote: BotQuote) -> dict:
         "id": quote.id,
         "mission_id": quote.mission_id,
         "provider_telegram_id": quote.provider_telegram_id,
+        "provider_account_id": quote.provider_account_id,
         "amount": quote.amount,
         "currency": quote.currency,
         "delay_hours": quote.delay_hours,
@@ -252,6 +260,8 @@ def _review_to_dict(review: BotReview) -> dict:
         "mission_id": review.mission_id,
         "client_telegram_id": review.client_telegram_id,
         "provider_telegram_id": review.provider_telegram_id,
+        "client_account_id": review.client_account_id,
+        "provider_account_id": review.provider_account_id,
         "rating": review.rating,
         "comment": review.comment,
         "created_at": review.created_at.isoformat() if review.created_at else None,
@@ -262,6 +272,7 @@ def _service_request_to_dict(req: BotServiceRequest, provider: BotProvider | Non
     data = {
         "id": req.id,
         "provider_telegram_id": req.provider_telegram_id,
+        "provider_account_id": req.provider_account_id,
         "service_name": req.service_name,
         "description": req.description,
         "status": req.status,

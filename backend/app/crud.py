@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from backend.app import ledger
@@ -43,6 +43,11 @@ def _sync_account_role(db: Session, telegram_id: int, role: str, language: str) 
     account.roles = sorted(roles)
     account.language = language
     return account
+
+
+def _account_id_for_telegram(db: Session, telegram_id: int) -> int:
+    """Compte canonique d'une identité Telegram vérifiée par le canal."""
+    return ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
 
 
 def upsert_user(db: Session, telegram_id: int, first_name: str | None, phone_number: str | None, language: str = "fr") -> BotUser:
@@ -255,6 +260,7 @@ def create_mission(
     mission = BotMission(
         mission_id=mission_id,
         telegram_id=telegram_id,
+        client_account_id=_account_id_for_telegram(db, telegram_id),
         service=service,
         commune=commune,
         currency=currency,
@@ -283,13 +289,16 @@ def create_quote(
     mission = db.get(BotMission, mission_id)
     if mission is None:
         return None
-    if mission.telegram_id == provider_telegram_id:
+    provider_account_id = _account_id_for_telegram(db, provider_telegram_id)
+    client_account_id = mission.client_account_id or _account_id_for_telegram(db, mission.telegram_id)
+    if client_account_id == provider_account_id:
         # Un prestataire peut commander comme client, jamais chiffrer sa
         # propre mission (le paiement le refuserait aussi : ledger).
         raise ValueError("provider_is_client")
     quote = BotQuote(
         mission_id=mission_id,
         provider_telegram_id=provider_telegram_id,
+        provider_account_id=provider_account_id,
         amount=amount,
         currency=currency,
         delay_hours=delay_hours,
@@ -322,6 +331,7 @@ def accept_quote(db: Session, quote_id: int) -> BotQuote | None:
         mission.status = "confirmed"
         _touch_status(mission)
         mission.provider_telegram_id = quote.provider_telegram_id
+        mission.provider_account_id = quote.provider_account_id or _account_id_for_telegram(db, quote.provider_telegram_id)
 
     db.commit()
     db.refresh(quote)
@@ -409,7 +419,7 @@ def _earned_badge(provider: BotProvider) -> str:
     return "verified" if provider.is_verified else "pending"
 
 
-def _recompute_provider_stats(db: Session, provider_telegram_id: int) -> None:
+def _recompute_provider_stats(db: Session, provider_telegram_id: int, provider_account_id: int | None = None) -> None:
     """Recalcule note, volume, taux de succès et badge d'un prestataire.
 
     Tout est recalculé depuis les tables sources (bot_reviews, bot_missions)
@@ -420,9 +430,11 @@ def _recompute_provider_stats(db: Session, provider_telegram_id: int) -> None:
     if provider is None:
         return
 
+    provider_account_id = provider_account_id or _account_id_for_telegram(db, provider_telegram_id)
+
     avg_rating, total_reviews = (
         db.query(func.avg(BotReview.rating), func.count(BotReview.id))
-        .filter(BotReview.provider_telegram_id == provider_telegram_id)
+        .filter(or_(BotReview.provider_account_id == provider_account_id, BotReview.provider_telegram_id == provider_telegram_id))
         .one()
     )
     provider.average_rating = round(float(avg_rating), 1) if avg_rating is not None else 0.0
@@ -430,7 +442,7 @@ def _recompute_provider_stats(db: Session, provider_telegram_id: int) -> None:
 
     status_counts = dict(
         db.query(BotMission.status, func.count(BotMission.mission_id))
-        .filter(BotMission.provider_telegram_id == provider_telegram_id)
+        .filter(or_(BotMission.provider_account_id == provider_account_id, BotMission.provider_telegram_id == provider_telegram_id))
         .group_by(BotMission.status)
         .all()
     )
@@ -459,7 +471,9 @@ def create_review(
     mission = db.get(BotMission, mission_id)
     if mission is None:
         raise ValueError("Mission introuvable")
-    if mission.telegram_id != client_telegram_id:
+    client_account_id = _account_id_for_telegram(db, client_telegram_id)
+    mission_client_account_id = mission.client_account_id or _account_id_for_telegram(db, mission.telegram_id)
+    if mission_client_account_id != client_account_id:
         raise ValueError("Ce client n'est pas associé à cette mission")
     if mission.provider_telegram_id is None:
         raise ValueError("Aucun prestataire associé à cette mission")
@@ -474,6 +488,8 @@ def create_review(
         mission_id=mission_id,
         client_telegram_id=client_telegram_id,
         provider_telegram_id=mission.provider_telegram_id,
+        client_account_id=client_account_id,
+        provider_account_id=mission.provider_account_id or _account_id_for_telegram(db, mission.provider_telegram_id),
         rating=rating,
         comment=comment or None,
     )
@@ -481,7 +497,7 @@ def create_review(
     db.commit()
     db.refresh(review)
 
-    _recompute_provider_stats(db, mission.provider_telegram_id)
+    _recompute_provider_stats(db, mission.provider_telegram_id, review.provider_account_id)
     return review
 
 
@@ -542,6 +558,7 @@ def _service_request_to_dict(req: BotServiceRequest, provider: BotProvider | Non
     data = {
         "id": req.id,
         "provider_telegram_id": req.provider_telegram_id,
+        "provider_account_id": req.provider_account_id,
         "service_name": req.service_name,
         "description": req.description,
         "status": req.status,
@@ -565,6 +582,7 @@ def create_service_request(
         raise ValueError("Prestataire introuvable")
     req = BotServiceRequest(
         provider_telegram_id=provider_telegram_id,
+        provider_account_id=_account_id_for_telegram(db, provider_telegram_id),
         service_name=service_name,
         description=description,
         status="pending",

@@ -493,7 +493,7 @@ Ce qui a été fait pour finaliser le transfert :
   (schéma de données, terminologie des statuts) même si l'implémentation reste incrémentale ici.
 - Les tests sont un bon garde-fou avant toute modification majeure.
 
-## Reprise identité multicanal / WhatsApp (2026-10-03)
+## Reprise identité multicanal / WhatsApp (mise à jour 2026-10-07)
 
 La référence complète est maintenant versionnée dans
 [`docs/ARCHITECTURE_WHATSAPP.md`](docs/ARCHITECTURE_WHATSAPP.md). Elle reprend
@@ -502,17 +502,25 @@ le document approuvé et complété sur `origin/claude/project-thread-ojlicd`
 qui ne contient pas les précisions sur les comptes contestés, les notifications
 incertaines, la conservation et l'exploitation.
 
-Le travail reprend sur `feature/v5-migration` après la fusion du registre
-financier (`aa15372`). Les comptes Nexis et les wallets uniques existent déjà.
-La migration `e6f7a8b9c0d1_account_identity_metadata.py` et les changements
-associés ajoutent les rôles, la langue commune et les champs réservés au numéro
-vérifié. Les numéros historiques ne sont pas considérés vérifiés : l'ancien
-parcours ne conserve pas la preuve de provenance. Les écritures de profil
-Telegram synchronisent désormais le rôle et la langue sur le compte Nexis.
+Le travail continue sur `feature/mobile-money` (HEAD `c72499b`, après fusion du
+chantier identité et Mobile Money). Les comptes Nexis et wallets uniques sont
+déjà établis. La migration `e6f7a8b9c0d1_account_identity_metadata.py` ajoute
+les rôles, la langue commune et les champs du téléphone vérifié. Les numéros
+historiques ne sont pas considérés vérifiés. Les écritures de profil Telegram
+synchronisent le rôle et la langue sur le compte Nexis.
 
-**État : rôles, langue commune et numéro vérifié faits et testés** (migration
-aller-retour sur Postgres, `backend/tests/test_account_identity.py`). Il reste
-à migrer les références des missions, devis, avis, demandes de service et API
-vers `account_id` sans modifier les montants du registre. Le flux de liaison téléphone / canaux, les notifications multicanal
-et le service WhatsApp lui-même restent ultérieurs. Ne pas commencer le bot
-WhatsApp avant que ces prérequis soient validés.
+**Étape en cours : références métier.** La migration
+`a1b2c3d4e5f6_business_account_references.py` ajoute et rétro-remplit les
+références de compte des missions, devis, avis et demandes de service. Les
+créations backend écrivent désormais ces références ; l'acceptation d'un devis
+transfère le compte prestataire à la mission et les statistiques préfèrent la
+relation compte tout en gardant le repli Telegram historique. Aucun montant ni
+mouvement du registre n'est modifié. Les sérialisations exposent l'`account_id`
+en plus des identifiants Telegram historiques ; les routes restent encore
+adressées par Telegram. Cette modification est en cours et n'a pas encore été
+vérifiée par exécution de tests ou de migration. À reprendre : examiner la
+migration sur PostgreSQL et les historiques incomplets, adapter authentification
+et routes des API ainsi que les parcours Telegram/Mini App vers `account_id`,
+puis vérifier parité et non-régression avant toute liaison WhatsApp. Conserver ce fichier et
+`CONCEPTION_ARGENT.md` à jour pour les agents suivants. La liaison de canaux,
+les notifications multicanal et le bot WhatsApp restent ultérieurs.

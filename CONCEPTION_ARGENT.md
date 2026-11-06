@@ -49,10 +49,14 @@ uniquement par Telegram, la Mini App ou la future application.
   comme vérifiés ; si un compte a deux profils, la langue client devient la
   langue commune initiale. Les changements de langue suivants sont propagés
   au compte depuis les parcours Telegram.
-- Le passage des missions, devis, avis, demandes de service et des API à des
-  références `account_id` reste à réaliser avant l'ouverture de WhatsApp ;
-  cette migration doit conserver les identifiants Telegram comme identités
-  de canal et garder les montants du registre inchangés.
+- Les missions, devis, avis et demandes de service ont désormais des références
+  vers `accounts`. Les profils Telegram restent les adaptateurs de canal ; les
+  créations écrivent aussi l'identifiant canonique et l'acceptation du devis
+  propage le compte prestataire à la mission. La migration de schéma
+  `a1b2c3d4e5f6` rattache les lignes historiques aux identités Telegram déjà
+  connues, sans modifier le registre ni ses montants.
+- Le passage complet des appels d'API à `account_id` et l'adaptation des
+  parcours Mini App/Telegram restent à réaliser avant l'ouverture de WhatsApp.
 
 ## Registre (ledger) en partie double
 

@@ -18,11 +18,11 @@ Décisions prises par Ben le 2 octobre 2026 :
 3. **Un seul compte client** : un même client peut relier Telegram et WhatsApp à un seul compte et un seul wallet. La liaison est vérifiée par le numéro de téléphone.
 4. **Refus explicite** : une personne qui demande à s'inscrire comme prestataire sur WhatsApp reçoit un refus clair et un lien vers Telegram ou la Mini App.
 
-## État actuel vérifié dans le dépôt — 3 octobre 2026
+## État actuel vérifié dans le dépôt — 7 octobre 2026
 
 Aucun code WhatsApp n'existe encore. Le document décrit une architecture cible, pas un bot déjà opérationnel. Depuis sa première rédaction, le chantier financier a été fusionné dans `feature/v5-migration` (`aa15372`) et la conception des paiements Mobile Money réels a été ajoutée (`be2c2c7`).
 
-La base multicanal est partiellement en place : `accounts` et `channel_identities` existent ; le registre utilise les comptes Nexis pour les wallets ; les missions payées portent `client_account_id` et `provider_account_id`. En revanche, les profils, devis, avis, demandes de service et appels d'API restent largement indexés par `telegram_id`. Le travail en cours ajoute les rôles, la langue du compte et les champs réservés au téléphone vérifié. Les numéros historiques saisis ou partagés dans l'ancien parcours ne sont pas considérés vérifiés, car leur provenance n'est pas enregistrée.
+La base multicanal progresse : `accounts` et `channel_identities` existent ; le registre utilise les comptes Nexis pour les wallets ; missions, devis, avis et demandes de service portent maintenant des références `account_id`. La migration `a1b2c3d4e5f6` rattache l'historique aux identités Telegram existantes ; les nouvelles écritures renseignent ces références, et les réponses API exposent maintenant les IDs de compte en plus des anciens IDs Telegram. Les identifiants Telegram restent présents pour les adaptateurs existants. Les rôles, la langue commune et les champs du téléphone vérifié sont également en place. Les numéros historiques ne sont pas considérés vérifiés, car leur provenance n'est pas enregistrée. Les routes API restent indexées par `telegram_id` : leur authentification et leur adaptation à `account_id` sont à faire avant tout flux WhatsApp.
 
 Autres dépendances encore ouvertes :
 

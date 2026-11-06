@@ -247,6 +247,7 @@ def ensure_mission(
                 BotMission(
                     mission_id=mission_id,
                     telegram_id=client_telegram_id,
+                    client_account_id=account_id_for(db, TELEGRAM, client_telegram_id, create=True),
                     service=service,
                     commune=commune,
                     currency=currency,
