@@ -1,4 +1,5 @@
 import importlib
+import itertools
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -49,6 +50,20 @@ def _reload_backend_with_db(monkeypatch, tmp_path, name="test_tasks.db"):
     return database_module, tasks_module
 
 
+def _new_mission(db, crud, client_id, alert=()):
+    """Mission créée par le backend (il lui donne son numéro)."""
+    from backend.app import ledger
+
+    mission, _ = crud.create_mission(
+        db, channel=ledger.TELEGRAM, client_external_id=str(client_id), creation_key=f"demande-{next(_KEYS)}",
+        service="service_menage", commune="Gombe", alert_provider_telegram_ids=list(alert),
+    )
+    return mission
+
+
+_KEYS = itertools.count(1)
+
+
 def _seed_mission_with_quote(db, crud, models, mission_id, quote_created_at, provider_id=7, client_id=1):
     if db.get(models.BotUser, client_id) is None:
         db.add(models.BotUser(telegram_id=client_id))
@@ -56,7 +71,8 @@ def _seed_mission_with_quote(db, crud, models, mission_id, quote_created_at, pro
         db.add(models.BotProvider(telegram_id=provider_id, full_name="Prestataire Test"))
     db.commit()
 
-    mission = crud.create_mission(db, client_id, mission_id, "service_menage", "Gombe")
+    mission = _new_mission(db, crud, client_id, alert=(provider_id,))
+    assert mission.mission_id == mission_id
     quote = crud.create_quote(db, mission_id, provider_id, amount=10.0, currency="USD", delay_hours=2)
     quote.created_at = quote_created_at
     db.commit()
@@ -87,20 +103,10 @@ def test_expire_stale_quotes_expires_only_quotes_older_than_24h(monkeypatch, tmp
 
 
 def _paid_and_finished_mission(db, ledger, crud, mission_id, provider_id=7, client_id=1):
-    crud.create_mission(db, client_id, mission_id, "service_menage", "Gombe")
-    ledger.fund_mission(
-        db,
-        mission_id,
-        method="mobile_money",
-        client_account_id=acc(db, client_id),
-        provider_account_id=acc(db, provider_id),
-        quote_ref=mission_id,
-        amount=10.0,
-        currency="USD",
-        urgent=False,
-        service="service_menage",
-        commune="Gombe",
-    )
+    assert _new_mission(db, crud, client_id, alert=(provider_id,)).mission_id == mission_id
+    quote = crud.create_quote(db, mission_id, provider_id, amount=10.0, currency="USD", delay_hours=2)
+    crud.accept_quote(db, quote.id, acc(db, client_id))
+    ledger.fund_mission(db, mission_id, method="mobile_money", client_account_id=acc(db, client_id), quote_id=quote.id)
     ledger.start_mission(db, mission_id, acc(db, provider_id))
     ledger.finish_mission(db, mission_id, acc(db, provider_id))
 
@@ -178,15 +184,12 @@ def test_send_provider_reminders_does_not_duplicate_within_same_tier(monkeypatch
         db.add(models.BotUser(telegram_id=1))
         db.commit()
 
-        mission = models.BotMission(
-            mission_id=1,
-            telegram_id=1,
-            service="service_menage",
-            commune="Gombe",
-            status="pending",
-        )
-        db.add(mission)
+        from backend.app import crud
+
+        # Deux prestataires couvrent ce service : seul le prévenu (7) est relancé.
+        db.add(models.BotProvider(telegram_id=8, full_name="Non prévenu", services=["service_menage"], communes=["Gombe"]))
         db.commit()
+        mission = _new_mission(db, crud, 1, alert=(7,))
         mission.created_at = datetime.utcnow() - timedelta(minutes=12)
         db.commit()
 
@@ -197,3 +200,4 @@ def test_send_provider_reminders_does_not_duplicate_within_same_tier(monkeypatch
     assert second_run == 0  # déjà relancé pour ce palier, pas de doublon
 
     assert len(sent) == 1
+    assert sent[0][0] == 7

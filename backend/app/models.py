@@ -48,8 +48,15 @@ class BotProvider(Base):
 
 class BotMission(Base):
     __tablename__ = "bot_missions"
+    __table_args__ = (
+        # Une demande de création rejouée (réseau coupé, double clic) retrouve
+        # la mission déjà créée au lieu d'en créer une seconde.
+        UniqueConstraint("client_account_id", "creation_key", name="uq_bot_missions_client_creation_key"),
+    )
 
-    mission_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    # Numéro attribué par le backend, seule mémoire des missions : aucun canal
+    # ne choisit le numéro d'une mission.
+    mission_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
     provider_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     service: Mapped[str] = mapped_column(String(255))
@@ -67,8 +74,7 @@ class BotMission(Base):
     dispute_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     dispute_opened_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     dispute_deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # Id du devis accepté côté bot (db.py), reçu avec la demande de paiement :
-    # trace d'audit, les devis backend ont leur propre séquence.
+    # Devis accepté (bot_quotes.id) sur lequel la mission a été payée.
     accepted_quote_ref: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Comptes Nexis (indépendants du canal) du client et du prestataire, fixés
     # au paiement : le règlement crédite ces comptes, quel que soit le canal
@@ -82,6 +88,36 @@ class BotMission(Base):
     status_changed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     reminder_sent_10min: Mapped[bool] = mapped_column(Boolean, default=False)
     reminder_sent_20min: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Clé choisie par le canal pour une demande de création (idempotence).
+    creation_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class MissionMedia(Base):
+    """Photo ou note vocale jointe à une mission. L'identifiant n'a de sens que
+    pour son canal (un identifiant de fichier Telegram ne sert qu'au bot
+    Telegram) : il est toujours rangé avec ce canal."""
+
+    __tablename__ = "mission_media"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mission_id: Mapped[int] = mapped_column(ForeignKey("bot_missions.mission_id"), index=True)
+    channel: Mapped[str] = mapped_column(String(20))
+    kind: Mapped[str] = mapped_column(String(10))
+    external_id: Mapped[str] = mapped_column(String(255))
+    position: Mapped[int] = mapped_column(Integer)
+
+
+class MissionAlert(Base):
+    """Prestataire prévenu d'une mission. Seul un prestataire prévenu peut lire
+    la mission et y répondre par un devis."""
+
+    __tablename__ = "mission_alerts"
+    __table_args__ = (UniqueConstraint("mission_id", "provider_account_id", name="uq_mission_alerts_mission_provider"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mission_id: Mapped[int] = mapped_column(ForeignKey("bot_missions.mission_id"), index=True)
+    provider_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    alerted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class BotQuote(Base):

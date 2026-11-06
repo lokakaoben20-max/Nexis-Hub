@@ -78,10 +78,8 @@ def send_provider_reminders() -> int:
     """Relance les prestataires matchés si une mission reste `pending` (sans
     devis) après 10 min, puis après 20 min.
 
-    Version simplifiée : re-notifie les mêmes prestataires que la diffusion
-    initiale (`find_matching_providers`), sans suivi individuel par
-    prestataire ni réattribution séquentielle — voir V5_MIGRATION_PLAN.md
-    Phase 2 pour le choix de scope.
+    Relance les prestataires prévenus à la création (`mission_alerts`), et
+    eux seuls : ce sont les seuls qui peuvent répondre par un devis.
     """
     db = SessionLocal()
     try:
@@ -92,13 +90,16 @@ def send_provider_reminders() -> int:
             (tiers["second"], "mission_reminder_20min_provider"),
         ):
             for mission in missions:
-                providers = crud.find_matching_providers(db, mission.service, mission.commune)
-                for provider in providers:
+                for account_id in crud.alerted_provider_account_ids(db, mission.mission_id):
+                    provider_telegram_id = ledger.telegram_id_of(db, account_id)
+                    if provider_telegram_id is None:
+                        continue
+                    provider = db.get(BotProvider, provider_telegram_id)
                     send_telegram_message(
-                        provider.telegram_id,
+                        provider_telegram_id,
                         get_message(
                             message_key,
-                            provider.language,
+                            provider.language if provider is not None else "fr",
                             mission_id=mission.mission_id,
                             service=mission.service,
                             commune=mission.commune,

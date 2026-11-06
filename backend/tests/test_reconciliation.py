@@ -13,6 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.app import crud, ledger, mobile_money, reconciliation
+from backend.tests.test_ledger import accepted_quote
 from backend.app.payment_gateway import FAILED, PENDING, SUCCEEDED, GatewayResult
 
 LedgerEntry = ledger.LedgerEntry
@@ -68,7 +69,7 @@ def db(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'reco.db'}", future=True)
     LedgerEntry.metadata.create_all(bind=engine)
     session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
-    session.add(ledger.BotUser(telegram_id=CLIENT_ID, first_name="Client"))
+    session.add(crud.BotUser(telegram_id=CLIENT_ID, first_name="Client"))
     session.add(crud.BotProvider(telegram_id=PROVIDER_ID, full_name="Prestataire"))
     session.commit()
     yield session
@@ -76,16 +77,11 @@ def db(tmp_path):
     engine.dispose()
 
 
-def request(db, amount=100.0, quote_ref=5):
-    return {
-        "client_account_id": acc(db, CLIENT_ID), "provider_account_id": acc(db, PROVIDER_ID), "quote_ref": quote_ref,
-        "amount": amount, "currency": "USD", "urgent": False,
-        "service": "service_plomberie", "commune": "Gombe", "description": "",
-    }
-
-
-def pay(db, mission_id=1, **kwargs):
-    return mobile_money.create_intent(db, mission_id, phone=PHONE, operator="mpesa", funding_request=request(db, **kwargs))
+def pay(db, mission_id=1, amount=100.0, quote_ref=5):
+    quote_id = accepted_quote(db, mission_id, amount=amount, quote_ref=quote_ref)
+    return mobile_money.create_intent(
+        db, mission_id, phone=PHONE, operator="mpesa", client_account_id=acc(db, CLIENT_ID), quote_id=quote_id
+    )
 
 
 def complete(db, mission_id):
@@ -194,9 +190,10 @@ def test_a_fee_different_from_the_expected_rate_is_reported(db, gateway, monkeyp
 
 
 def test_a_mobile_money_payment_without_a_confirmed_intent_is_reported(db, gateway):
-    base = request(db)
-    ledger.fund_mission(db, 1, method="mobile_money", reference="FAKE-999", **base)
-    ledger.fund_mission(db, 2, method="mobile_money", **{**base, "quote_ref": 6})  # ancien paiement simulé « SIM-0006 »
+    client = acc(db, CLIENT_ID)
+    ledger.fund_mission(db, 1, method="mobile_money", reference="FAKE-999", client_account_id=client, quote_id=accepted_quote(db, 1))
+    # ancien paiement simulé « SIM-0006 »
+    ledger.fund_mission(db, 2, method="mobile_money", client_account_id=client, quote_id=accepted_quote(db, 2, quote_ref=6))
 
     report = reconciliation.reconcile(db)
     assert codes(report) == ["funding_without_intent"]

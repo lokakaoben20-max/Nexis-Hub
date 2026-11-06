@@ -15,10 +15,9 @@ action d'argent n'a lieu et l'utilisateur est invité à réessayer.
 Frontière nette : **tout ce qui suit le paiement est décidé par le backend**
 (paiement, démarrage, fin, confirmation, libération automatique, litige,
 résolution). Ce qui précède le paiement (création de mission, devis,
-acceptation) reste dans `db.py` comme aujourd'hui ; la demande de paiement
-porte elle-même les informations nécessaires (mission, client, prestataire,
-montant, devise, urgence), le backend ne dépend donc d'aucune recopie
-antérieure.
+acceptation) est aussi enregistré par le backend seul (CONCEPTION_MISSIONS.md) :
+la demande de paiement ne porte que les numéros de la mission et du devis
+accepté, et le backend y relit montant, devise, prestataire et urgence.
 
 ## Comptes Nexis : l'argent ne dépend d'aucun canal
 
@@ -151,20 +150,19 @@ Remplacent les anciens endpoints de recopie (`/api/bot/payments`,
 Refus métier : HTTP 409 (ou 404 / 403) avec un code stable (`already_paid`,
 `insufficient_balance`, `not_paid`, `invalid_state`, `mission_disputed`,
 `already_settled`, `not_mission_client`, `not_mission_provider`,
-`provider_is_client`, `invalid_percentage`…) et l'état courant de la mission, que le bot recopie.
+`provider_is_client`, `quote_not_accepted`, `invalid_percentage`…) et l'état courant de la mission.
 
 ## Bot
 
-- Chaque bouton d'argent appelle le backend ; en cas de succès, le bot
-  recopie l'état renvoyé dans `db.py` (statut, payment_status, montants,
-  prestataire) pour les écrans et les listes admin ; en cas de refus, il
-  recopie aussi l'état et affiche le motif traduit ; backend injoignable :
-  message « réessaie dans un instant », rien n'est écrit.
+- Chaque bouton d'argent appelle le backend et affiche ce qu'il répond ; en
+  cas de refus, le motif traduit ; backend injoignable : message « réessaie
+  dans un instant », rien n'est écrit. Le bot ne garde aucune copie des
+  missions : écrans et listes admin les relisent dans le backend.
 - Les soldes affichés (wallet client, wallet prestataire, écran de paiement)
   viennent uniquement du backend ; injoignable = « solde indisponible ».
 - Les actions admin sur l'argent exigent `ADMIN_TELEGRAM_ID` configuré (avant,
   sans cette variable, tout le monde était admin).
-- Supprimés : soldes et transactions dans `db.py`, fonctions de paiement,
+- Supprimés : soldes, transactions, missions, devis et avis dans `db.py`, fonctions de paiement,
   libération et litige de `db.py`, file `backend_outbox` et son rejeu,
   `backfill_wallets_to_backend.py`, comparaison des wallets dans
   `audit_backend_parity.py`.

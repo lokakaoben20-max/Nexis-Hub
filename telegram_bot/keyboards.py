@@ -397,24 +397,17 @@ def clavier_alerte_mission(mission_id: int):
     return builder.as_markup()
 
 
-def clavier_devis_client(quote_id: int, backend_quote_id: int | None = None):
-    backend_suffix = backend_quote_id if backend_quote_id is not None else "-"
+# Devis et paiement : numéros du backend, seule mémoire des devis. Les anciens
+# boutons (`client_accept_quote_`, `pay_mobile_`…) portaient des numéros de
+# db.py : ils sont répondus « bouton plus actif » (payment.OLD_QUOTE_PREFIXES).
+
+
+def clavier_devis_client(quote_id: int):
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Accepter ce devis", callback_data=f"client_accept_quote_{quote_id}:{backend_suffix}")
-    builder.button(text="❌ Refuser", callback_data=f"client_reject_quote_{quote_id}:{backend_suffix}")
+    builder.button(text="✅ Accepter ce devis", callback_data=f"quote_accept_{quote_id}")
+    builder.button(text="❌ Refuser", callback_data=f"quote_reject_{quote_id}")
     builder.adjust(1)
     return builder.as_markup()
-
-
-def _parse_quote_callback_ids(raw: str) -> tuple[int, int | None]:
-    """Sépare l'id local (db.py) de l'id backend encodés dans un callback_data.
-
-    Les deux séquences d'autoincrement divergent (SQLite vs Postgres) — voir
-    V5_MIGRATION_PLAN.md, flow devis. `-` signale un sync backend échoué.
-    """
-    local_part, _, backend_part = raw.partition(":")
-    backend_id = int(backend_part) if backend_part and backend_part != "-" else None
-    return int(local_part), backend_id
 
 
 # ── Vérification prestataire (V5_MIGRATION_PLAN.md) ─────────────────────────
@@ -432,8 +425,8 @@ def clavier_portfolio_prestataire(lang: str = "fr"):
 
 def clavier_paiement(quote_id: int):
     builder = InlineKeyboardBuilder()
-    builder.button(text="📱 Payer via Mobile Money", callback_data=f"pay_mobile_{quote_id}")
-    builder.button(text="👛 Payer avec Wallet", callback_data=f"pay_wallet_{quote_id}")
+    builder.button(text="📱 Payer via Mobile Money", callback_data=f"qpay_mobile_{quote_id}")
+    builder.button(text="👛 Payer avec Wallet", callback_data=f"qpay_wallet_{quote_id}")
     builder.button(text="⬅️ Plus tard", callback_data="profil_client")
     builder.adjust(1)
     return builder.as_markup()

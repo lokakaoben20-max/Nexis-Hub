@@ -1,3 +1,5 @@
+"""Écrans de missions du bot : lus dans le backend, seule mémoire des missions."""
+
 import asyncio
 import os
 import sys
@@ -9,37 +11,20 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
-from telegram_bot import backend_client, dashboard
+from telegram_bot import dashboard
 
 
-class DummyResponse:
-    def __init__(self, payload, status_code=200):
-        self._payload = payload
-        self.status_code = status_code
+def test_my_missions_are_read_in_the_backend_by_role(live_backend):
+    ordered = live_backend.new_mission(99)
+    entrusted, _ = live_backend.accepted_quote(50, 99)
 
-    def raise_for_status(self):
-        return None
+    as_client = asyncio.run(dashboard.fetch_my_missions(99, "client"))
+    as_provider = asyncio.run(dashboard.fetch_my_missions(99, "provider"))
 
-    def json(self):
-        return self._payload
-
-
-class DummyAsyncClient:
-    def __init__(self, *args, **kwargs):
-        self.last_request = None
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        return False
-
-    async def get(self, url, params=None):
-        self.last_request = {"url": url, "params": params}
-        return DummyResponse({"client_missions": [{"mission_id": 12, "service": "service_plomberie"}]})
+    assert [mission["mission_id"] for mission in as_client] == [ordered]
+    assert [mission["mission_id"] for mission in as_provider] == [entrusted]
 
 
-def test_fetch_backend_missions_returns_backend_payload(monkeypatch):
-    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
-    result = asyncio.run(dashboard.fetch_backend_missions(99))
-    assert result[0]["mission_id"] == 12
+def test_my_missions_are_unknown_when_the_backend_is_down():
+    """Aucune copie locale : None, jamais une liste vide trompeuse."""
+    assert asyncio.run(dashboard.fetch_my_missions(99, "client")) is None

@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
 import db
+from messages import get_message
 from telegram_bot import backend_client, mission
 
 
@@ -163,10 +164,22 @@ async def _async_return(value):
     return value
 
 
-def test_mission_alert_is_sent_in_each_provider_language(monkeypatch, tmp_path):
+def _mission_request(**fields):
+    return {
+        "service": "service_plomberie",
+        "commune": "Gombe",
+        "currency": "USD",
+        "description": "Fuite d'eau",
+        "urgent": True,
+        "language": "fr",
+        "creation_key": "demande-test-1",
+        **fields,
+    }
+
+
+def test_mission_alert_is_sent_in_each_provider_language(monkeypatch, tmp_path, live_backend):
     """Régression : l'alerte était envoyée en français à tous les prestataires."""
     _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
     db.create_user(900, "+243800000900", "Cliente", language="fr")
     db.create_provider(901, "+243800000901", "Prestataire FR", ["service_plomberie"], ["Gombe"], language="fr")
     db.create_provider(902, "+243800000902", "Prestataire EN", ["service_plomberie"], ["Gombe"], language="en")
@@ -176,16 +189,7 @@ def test_mission_alert_is_sent_in_each_provider_language(monkeypatch, tmp_path):
 
     bot = DummyBot()
     callback = DummyCallback(telegram_id=900, data="mission_confirmer", bot=bot)
-    state = DummyState(data={
-        "service": "service_plomberie",
-        "commune": "Gombe",
-        "currency": "USD",
-        "description": "Fuite d'eau",
-        "urgent": True,
-        "language": "fr",
-    })
-
-    asyncio.run(mission.mission_confirmer(callback, state))
+    asyncio.run(mission.mission_confirmer(callback, DummyState(data=_mission_request())))
 
     sent_by_provider = {m.chat_id: m.text for m in bot.messages}
     assert set(sent_by_provider) == {901, 902}, "les deux prestataires matchés doivent être alertés"
@@ -193,18 +197,48 @@ def test_mission_alert_is_sent_in_each_provider_language(monkeypatch, tmp_path):
     assert "New request" in sent_by_provider[902], "le prestataire anglophone recevait l'alerte en français"
 
 
-def test_quote_creation_writes_backend_and_local(monkeypatch, tmp_path):
+def test_confirming_twice_creates_one_mission_and_alerts_the_same_providers(monkeypatch, tmp_path, live_backend):
+    """Double clic ou réponse perdue : la même clé de création, une seule mission."""
     _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
+    db.create_user(900, "+243800000900", "Cliente", language="fr")
+    db.create_provider(901, "+243800000901", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+    monkeypatch.setattr(mission, "get_provider_language", lambda tid: _async_return("fr"))
+
+    first, second = DummyBot(), DummyBot()
+    asyncio.run(mission.mission_confirmer(DummyCallback(900, data="mission_confirmer", bot=first), DummyState(data=_mission_request())))
+    # Entre-temps un autre prestataire est devenu disponible : la liste
+    # enregistrée avec la mission fait foi.
+    db.create_provider(903, "+243800000903", "Nouveau", ["service_plomberie"], ["Gombe"], language="fr")
+    asyncio.run(mission.mission_confirmer(DummyCallback(900, data="mission_confirmer", bot=second), DummyState(data=_mission_request())))
+
+    from backend.app.models import BotMission
+
+    with live_backend.database.SessionLocal() as session:
+        assert session.query(BotMission).count() == 1
+    assert [m.chat_id for m in first.messages] == [901]
+    assert [m.chat_id for m in second.messages] == [901]
+
+
+def test_mission_is_not_created_while_the_backend_is_down(monkeypatch, tmp_path):
+    _init_db(tmp_path)
+    db.create_user(900, "+243800000900", "Cliente", language="fr")
+    db.create_provider(901, "+243800000901", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+
+    bot = DummyBot()
+    callback = DummyCallback(telegram_id=900, data="mission_confirmer", bot=bot)
+    state = DummyState(data=_mission_request())
+    asyncio.run(mission.mission_confirmer(callback, state))
+
+    assert callback.answered == get_message("service_unavailable", "fr")
+    assert bot.messages == [], "aucun prestataire prévenu d'une mission qui n'existe pas"
+    assert state._data["creation_key"] == "demande-test-1", "la demande reste à l'écran pour un nouvel essai"
+
+
+def test_quote_is_recorded_by_the_backend_and_sent_to_the_client(monkeypatch, tmp_path, live_backend):
+    _init_db(tmp_path)
     db.create_user(910, "+243800000910", "Cliente", language="fr")
     db.create_provider(911, "+243800000911", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-    mission_id = db.create_mission(910, {
-        "service": "service_plomberie",
-        "commune": "Gombe",
-        "currency": "USD",
-        "description": "Fuite",
-        "urgent": False,
-    })
+    mission_id = live_backend.new_mission(910, alert=(911,), service="service_plomberie")
 
     monkeypatch.setattr(mission, "get_provider_language", lambda tid: _async_return("fr"))
     monkeypatch.setattr(mission, "get_user_language", lambda tid: _async_return("fr"))
@@ -220,29 +254,41 @@ def test_quote_creation_writes_backend_and_local(monkeypatch, tmp_path):
 
     asyncio.run(mission.devis_message_recu(message, state))
 
-    assert DummyAsyncClient.last_request["url"].endswith("/api/bot/quotes")
-    assert DummyAsyncClient.last_request["json"]["amount"] == 50.0
+    from backend.app.models import BotQuote
 
-    quotes = db.get_quotes_for_mission(mission_id) if hasattr(db, "get_quotes_for_mission") else None
-    if quotes is not None:
-        assert len(quotes) == 1, "le devis doit aussi exister en local (double écriture)"
-
+    with live_backend.database.SessionLocal() as session:
+        quote = session.query(BotQuote).one()
+    assert (quote.mission_id, quote.provider_telegram_id, quote.amount, quote.status) == (mission_id, 911, 50.0, "pending")
     assert len(bot.messages) == 1, "le client doit recevoir le devis"
     assert bot.messages[0].chat_id == 910
+    buttons = [button.callback_data for row in bot.messages[0].kwargs["reply_markup"].inline_keyboard for button in row]
+    assert buttons == [f"quote_accept_{quote.id}", f"quote_reject_{quote.id}"]
     assert state.cleared is True
 
 
-def test_devis_message_recu_uses_backend_stats_when_available(monkeypatch, tmp_path):
+def test_a_provider_who_was_not_alerted_cannot_quote(monkeypatch, tmp_path, live_backend):
+    _init_db(tmp_path)
+    db.create_provider(912, "+243800000912", "Pas prévenu", ["service_plomberie"], ["Gombe"], language="fr")
+    mission_id = live_backend.new_mission(910, alert=(911,))
+    monkeypatch.setattr(mission, "get_provider_language", lambda tid: _async_return("fr"))
+
+    bot = DummyBot()
+    message = DummyMessage(telegram_id=912, text="-", bot=bot)
+    state = DummyState(data={"quote_mission_id": mission_id, "quote_amount": 50.0, "quote_currency": "USD", "quote_delay_hours": 3})
+    asyncio.run(mission.devis_message_recu(message, state))
+
+    assert message.answers == [get_message("money_error_provider_not_alerted", "fr")]
+    assert bot.messages == []
+    assert live_backend.mission(mission_id).status == "pending"
+
+
+def test_devis_message_recu_uses_backend_stats_when_available(monkeypatch, tmp_path, live_backend):
     """rating côté backend reste toujours 0 (jamais alimenté) : le mapping
     doit lire average_rating, pas rating, pour afficher la vraie note."""
     _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
     db.create_user(930, "+243800000930", "Cliente", language="fr")
     db.create_provider(931, "+243800000931", "Nom Local", ["service_plomberie"], ["Gombe"], language="fr")
-    mission_id = db.create_mission(930, {
-        "service": "service_plomberie", "commune": "Gombe", "currency": "USD",
-        "description": "Fuite", "urgent": False,
-    })
+    mission_id = live_backend.new_mission(930, alert=(931,))
 
     monkeypatch.setattr(mission, "get_provider_language", lambda tid: _async_return("fr"))
     monkeypatch.setattr(mission, "get_user_language", lambda tid: _async_return("fr"))
@@ -311,7 +357,7 @@ def test_matching_follows_backend_ranking(tmp_path, monkeypatch):
     _matching_db(tmp_path, [501, 502, 503, 504])
     _backend_ranking(monkeypatch, [504, 503, 502, 501])
 
-    chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe"))
+    chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe", 1))
 
     assert _ids(chosen) == [504, 503, 502], "le classement backend remplace l'ordre d'inscription"
 
@@ -323,7 +369,7 @@ def test_matching_skips_provider_unavailable_locally(tmp_path, monkeypatch):
     db.update_provider_status(514, "unavailable")
     _backend_ranking(monkeypatch, [514, 513, 512, 511])
 
-    chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe"))
+    chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe", 1))
 
     assert _ids(chosen) == [513, 512, 511]
 
@@ -332,7 +378,7 @@ def test_matching_keeps_local_provider_unknown_to_backend(tmp_path, monkeypatch)
     _matching_db(tmp_path, [521, 522, 523])
     _backend_ranking(monkeypatch, [523])  # 521/522 jamais synchronisés au backend
 
-    chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe"))
+    chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe", 1))
 
     assert _ids(chosen) == [523, 521, 522]
 
@@ -341,6 +387,6 @@ def test_matching_falls_back_to_local_order_when_backend_down(tmp_path, monkeypa
     _matching_db(tmp_path, [531, 532, 533, 534])
     _backend_ranking(monkeypatch, None)
 
-    chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe"))
+    chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe", 1))
 
     assert _ids(chosen) == _ids(db.find_matching_providers("service_plomberie", "Gombe"))

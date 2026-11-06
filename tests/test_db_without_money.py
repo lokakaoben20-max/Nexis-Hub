@@ -42,14 +42,3 @@ def test_startup_refuses_to_lose_money_moves_still_waiting_for_the_backend(tmp_p
 
     with pytest.raises(RuntimeError, match="2 mouvement"):
         db.init_db()
-
-
-def test_a_provider_cannot_quote_their_own_mission(tmp_path):
-    db.DB_PATH = tmp_path / "quotes.db"
-    db.init_db()
-    db.create_user(7, "+243800000007", "Ben", language="fr")
-    db.create_provider(7, "+243800000007", "Ben", ["service_plomberie"], ["Gombe"], language="fr")
-    mission_id = db.create_mission(7, {"service": "service_plomberie", "commune": "Gombe", "currency": "USD", "description": "x", "urgent": False})
-
-    with pytest.raises(ValueError, match="propre mission"):
-        db.create_quote(mission_id, 7, 10.0, "USD", 1, "")

@@ -10,7 +10,7 @@ if str(ROOT) not in sys.path:
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
 import db
-from telegram_bot import backend_client, dashboard, keyboards, payment
+from telegram_bot import backend_client, dashboard, payment
 
 
 class DummyResponse:
@@ -37,12 +37,6 @@ class DummyAsyncClient:
 
     async def post(self, url, json=None):
         self.last_request = {"url": url, "json": json}
-        if url.endswith("/api/bot/quotes"):
-            return DummyResponse({"status": "ok", "quote": {"id": 501, **json}})
-        if "/quotes/" in url and url.endswith("/accept"):
-            return DummyResponse({"status": "ok", "quote": {"id": 501, "status": "accepted"}})
-        if "/quotes/" in url and url.endswith("/reject"):
-            return DummyResponse({"status": "ok", "quote": {"id": 501, "status": "rejected"}})
         telegram_id = json["telegram_id"] if json else None
         return DummyResponse({"status": "ok", "user": {"telegram_id": telegram_id}})
 
@@ -93,31 +87,15 @@ def test_fetch_backend_profile_returns_payload(monkeypatch):
     assert result["client_missions"][0]["mission_id"] == 1
 
 
-def test_persist_client_registration_returns_backend_and_local(monkeypatch):
+def test_persist_client_registration_returns_backend_and_local(monkeypatch, tmp_path):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "test_nexis_hub.db")
+    db.init_db()
     monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
 
     result = asyncio.run(backend_client.persist_client_registration(77, first_name="Bob", phone_number="+243", language="fr"))
 
     assert result["backend"]["status"] == "ok"
     assert result["local"]["telegram_id"] == 77
-
-
-def test_persist_mission_creation_returns_backend_and_local(monkeypatch):
-    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
-
-    result = asyncio.run(backend_client.persist_mission_creation(88, 999, {"service": "service_plomberie", "commune": "Gombe", "currency": "USD"}))
-
-    assert result["backend"]["status"] == "ok"
-    assert result["local"]["id"] == 999
-
-
-def test_persist_mission_creation_survives_backend_outage(monkeypatch):
-    monkeypatch.setattr(backend_client.httpx, "AsyncClient", RaisingAsyncClient)
-
-    result = asyncio.run(backend_client.persist_mission_creation(88, 999, {"service": "service_plomberie", "commune": "Gombe", "currency": "USD"}))
-
-    assert result["backend"] is None
-    assert result["local"]["id"] == 999
 
 
 def test_sync_provider_status_to_backend_patches_status(monkeypatch):
@@ -218,42 +196,6 @@ def test_get_provider_language_falls_back_to_local_db_when_backend_unavailable(t
 
 async def _async_return(value):
     return value
-
-
-def test_sync_quote_to_backend_posts_payload(monkeypatch):
-    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
-
-    result = asyncio.run(backend_client.sync_quote_to_backend(
-        mission_id=1001, provider_telegram_id=7, amount=50.0, currency="USD", delay_hours=2, message="ok",
-    ))
-
-    assert result["status"] == "ok"
-    assert result["quote"]["id"] == 501
-    assert result["quote"]["mission_id"] == 1001
-
-
-def test_sync_quote_accept_and_reject_to_backend(monkeypatch):
-    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
-
-    accept_result = asyncio.run(backend_client.sync_quote_accept_to_backend(501, 42))
-    reject_result = asyncio.run(backend_client.sync_quote_reject_to_backend(501, 42))
-
-    assert accept_result["quote"]["status"] == "accepted"
-    assert reject_result["quote"]["status"] == "rejected"
-
-
-def test_parse_quote_callback_ids_with_backend_id():
-    local_id, backend_id = keyboards._parse_quote_callback_ids("5:501")
-
-    assert local_id == 5
-    assert backend_id == 501
-
-
-def test_parse_quote_callback_ids_without_backend_id():
-    local_id, backend_id = keyboards._parse_quote_callback_ids("5:-")
-
-    assert local_id == 5
-    assert backend_id is None
 
 
 class DummyState:

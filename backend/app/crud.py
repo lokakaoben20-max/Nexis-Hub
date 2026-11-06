@@ -1,10 +1,21 @@
 from datetime import datetime, timedelta
 
 from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app import ledger
-from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotUser, NexisAccount
+from backend.app.models import (
+    BotMission,
+    BotProvider,
+    BotQuote,
+    BotReview,
+    BotServiceRequest,
+    BotUser,
+    MissionAlert,
+    MissionMedia,
+    NexisAccount,
+)
 
 MODULE_B_SERVICES = {"service_plomberie", "service_electricite", "service_climatisation"}
 BADGE_SCORES = {"partner": 30, "expert": 20, "premium": 10, "verified": 5, "pending": 0}
@@ -247,34 +258,202 @@ def rank_providers(db: Session, telegram_ids: list[int]) -> list[int]:
     return [provider.telegram_id for provider in providers]
 
 
+MEDIA_KINDS = ("photo", "voice")
+# Une mission reçoit des devis tant qu'aucun n'est accepté.
+QUOTABLE_STATUSES = {"pending", "quoted"}
+MAX_MISSION_MEDIA = 20
+MAX_ALERTED_PROVIDERS = 20
+
+
+class MissionRefused(ValueError):
+    """Refus métier d'une demande sur une mission : code stable pour le canal."""
+
+    def __init__(self, code: str, http_status: int = 409):
+        super().__init__(code)
+        self.code = code
+        self.http_status = http_status
+
+
 def create_mission(
     db: Session,
-    telegram_id: int,
-    mission_id: int,
+    *,
+    channel: str,
+    client_external_id: str,
+    creation_key: str,
     service: str,
     commune: str,
     currency: str = "USD",
     description: str = "",
     urgent: bool = False,
-) -> BotMission:
+    media: list[tuple[str, str]] | None = None,
+    alert_provider_telegram_ids: list[int] | None = None,
+) -> tuple[BotMission, bool]:
+    """Crée une mission : le backend lui donne son numéro, le client est la
+    personne pour qui le canal agit. Mission, médias et prestataires prévenus
+    sont écrits dans une seule transaction.
+
+    Idempotent : la même `creation_key` pour le même client renvoie la mission
+    déjà créée (second élément `False`), ou un refus si la demande diffère.
+    Le client n'est jamais prévenu de sa propre mission comme prestataire."""
+    media = list(media or [])
+    alert_ids = list(dict.fromkeys(alert_provider_telegram_ids or []))
+    if not creation_key or len(creation_key) > 64:
+        raise MissionRefused("invalid_creation_key", 400)
+    if not service or not commune:
+        raise MissionRefused("invalid_mission", 400)
+    if currency not in ledger.CURRENCIES:
+        raise MissionRefused("invalid_currency", 400)
+    if len(media) > MAX_MISSION_MEDIA:
+        raise MissionRefused("too_many_media", 400)
+    if any(kind not in MEDIA_KINDS or not external_id for kind, external_id in media):
+        raise MissionRefused("invalid_media", 400)
+    if len(alert_ids) > MAX_ALERTED_PROVIDERS:
+        raise MissionRefused("too_many_alerts", 400)
+
+    client_account_id = ledger.account_id_for(db, channel, client_external_id, create=True)
+    request = {"service": service, "commune": commune, "currency": currency, "description": description, "urgent": bool(urgent)}
+
+    def already_created() -> BotMission | None:
+        existing = (
+            db.query(BotMission)
+            .filter(BotMission.client_account_id == client_account_id, BotMission.creation_key == creation_key)
+            .one_or_none()
+        )
+        if existing is None:
+            return None
+        same_request = {
+            "service": existing.service,
+            "commune": existing.commune,
+            "currency": existing.currency,
+            "description": existing.description,
+            "urgent": bool(existing.urgent),
+        } == request and [(item.kind, item.external_id) for item in mission_media(db, existing.mission_id)] == media
+        if not same_request:
+            raise MissionRefused("creation_key_reused")
+        return existing
+
+    existing = already_created()
+    if existing is not None:
+        return existing, False
+
+    client_telegram_id = ledger.telegram_id_of(db, client_account_id)
+    if client_telegram_id is None:
+        # `bot_missions.telegram_id` reste obligatoire tant que seul Telegram
+        # crée des missions (étape 1 de docs/ARCHITECTURE_WHATSAPP.md).
+        raise MissionRefused("channel_identity_missing", 400)
+
     mission = BotMission(
-        mission_id=mission_id,
-        telegram_id=telegram_id,
-        client_account_id=_account_id_for_telegram(db, telegram_id),
+        telegram_id=client_telegram_id,
+        client_account_id=client_account_id,
+        creation_key=creation_key,
         service=service,
         commune=commune,
         currency=currency,
         description=description,
-        urgent=urgent,
+        urgent=bool(urgent),
         status="pending",
     )
     db.add(mission)
-    user = db.get(BotUser, telegram_id)
+    db.flush()
+    for position, (kind, external_id) in enumerate(media):
+        db.add(MissionMedia(mission_id=mission.mission_id, channel=channel, kind=kind, external_id=external_id, position=position))
+    for provider_telegram_id in alert_ids:
+        provider_account_id = ledger.account_id_for(db, ledger.TELEGRAM, provider_telegram_id, create=True)
+        if provider_account_id == client_account_id:
+            continue
+        db.add(MissionAlert(mission_id=mission.mission_id, provider_account_id=provider_account_id))
+    user = db.get(BotUser, client_telegram_id)
     if user is not None:
         user.total_missions += 1
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # La même demande, arrivée au même instant, a été écrite la première :
+        # c'est elle qui fait foi (même réponse qu'un rejeu).
+        db.rollback()
+        existing = already_created()
+        if existing is None:
+            raise
+        return existing, False
     db.refresh(mission)
-    return mission
+    return mission, True
+
+
+def mission_media(db: Session, mission_id: int) -> list[MissionMedia]:
+    return (
+        db.query(MissionMedia).filter(MissionMedia.mission_id == mission_id).order_by(MissionMedia.position).all()
+    )
+
+
+def alerted_provider_account_ids(db: Session, mission_id: int) -> list[int]:
+    rows = db.query(MissionAlert.provider_account_id).filter(MissionAlert.mission_id == mission_id).order_by(MissionAlert.id)
+    return [account_id for (account_id,) in rows]
+
+
+def was_alerted(db: Session, mission_id: int, provider_account_id: int) -> bool:
+    return (
+        db.query(MissionAlert.id)
+        .filter(MissionAlert.mission_id == mission_id, MissionAlert.provider_account_id == provider_account_id)
+        .first()
+        is not None
+    )
+
+
+def mission_viewer_role(db: Session, mission: BotMission, account_id: int | None) -> str | None:
+    """Ce que la personne est pour cette mission : `client`, `provider` (choisi,
+    ou auteur d'un devis), `alerted` (prévenu, peut répondre), sinon `None`
+    (elle ne lit pas la mission)."""
+    if account_id is None:
+        return None
+    if mission.client_account_id == account_id:
+        return "client"
+    if mission.provider_account_id == account_id:
+        return "provider"
+    quoted = (
+        db.query(BotQuote.id)
+        .filter(BotQuote.mission_id == mission.mission_id, BotQuote.provider_account_id == account_id)
+        .first()
+    )
+    if quoted is not None:
+        return "provider"
+    if was_alerted(db, mission.mission_id, account_id):
+        return "alerted"
+    return None
+
+
+def client_missions(db: Session, client_account_id: int, limit: int = 20) -> list[BotMission]:
+    return (
+        db.query(BotMission)
+        .filter(BotMission.client_account_id == client_account_id)
+        .order_by(BotMission.mission_id.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+def provider_missions(db: Session, provider_account_id: int, limit: int = 20) -> list[BotMission]:
+    """Missions confiées à ce prestataire (devis accepté)."""
+    return (
+        db.query(BotMission)
+        .filter(BotMission.provider_account_id == provider_account_id)
+        .order_by(BotMission.mission_id.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+def admin_missions(db: Session, status: str | None = None, limit: int = 10) -> list[BotMission]:
+    query = db.query(BotMission)
+    if status is not None:
+        query = query.filter(BotMission.status == status)
+    return query.order_by(BotMission.mission_id.desc()).limit(limit).all()
+
+
+def mission_stats(db: Session) -> dict:
+    return {
+        "missions": db.query(func.count(BotMission.mission_id)).scalar() or 0,
+        "disputes": db.query(func.count(BotMission.mission_id)).filter(BotMission.status == "disputed").scalar() or 0,
+    }
 
 
 def create_quote(
@@ -286,15 +465,21 @@ def create_quote(
     delay_hours: int,
     message: str = "",
 ) -> BotQuote | None:
-    mission = db.get(BotMission, mission_id)
+    mission = db.get(BotMission, mission_id, with_for_update=True)
     if mission is None:
         return None
+    if mission.status not in QUOTABLE_STATUSES:
+        # Devis accepté ou mission payée : plus de nouveau devis.
+        raise MissionRefused("mission_not_open")
     provider_account_id = _account_id_for_telegram(db, provider_telegram_id)
     client_account_id = mission.client_account_id or _account_id_for_telegram(db, mission.telegram_id)
     if client_account_id == provider_account_id:
         # Un prestataire peut commander comme client, jamais chiffrer sa
         # propre mission (le paiement le refuserait aussi : ledger).
         raise ValueError("provider_is_client")
+    if not was_alerted(db, mission_id, provider_account_id):
+        # Seul un prestataire prévenu de la mission y répond.
+        raise MissionRefused("provider_not_alerted", 403)
     quote = BotQuote(
         mission_id=mission_id,
         provider_telegram_id=provider_telegram_id,
@@ -322,10 +507,18 @@ def _require_quote_client(db: Session, quote: BotQuote, client_account_id: int) 
 
 
 def accept_quote(db: Session, quote_id: int, client_account_id: int) -> BotQuote | None:
+    """Un seul devis accepté par mission, et seulement tant qu'aucun ne l'est :
+    c'est ce devis, et lui seul, que le paiement relira."""
     quote = db.get(BotQuote, quote_id)
     if quote is None:
         return None
     _require_quote_client(db, quote, client_account_id)
+    mission = db.get(BotMission, quote.mission_id, with_for_update=True)
+    db.refresh(quote)
+    if quote.status == "accepted":
+        return quote  # rejeu de la même acceptation
+    if quote.status != "pending" or mission.status not in QUOTABLE_STATUSES:
+        raise MissionRefused("quote_not_open")
 
     quote.status = "accepted"
     other_quotes = (
@@ -353,6 +546,11 @@ def reject_quote(db: Session, quote_id: int, client_account_id: int) -> BotQuote
     if quote is None:
         return None
     _require_quote_client(db, quote, client_account_id)
+    if quote.status == "rejected":
+        return quote  # rejeu
+    if quote.status != "pending":
+        # Un devis accepté ne se refuse plus : c'est celui que le paiement relit.
+        raise MissionRefused("quote_not_open")
     quote.status = "rejected"
     db.commit()
     db.refresh(quote)

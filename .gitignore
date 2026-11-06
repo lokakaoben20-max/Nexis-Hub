@@ -7,3 +7,4 @@ __pycache__/
 .vscode/
 exchange_rate_cache.json
 *.log
+*_anciennes_missions.json

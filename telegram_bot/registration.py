@@ -633,7 +633,9 @@ async def afficher_profil_client(callback: CallbackQuery):
     client_profile = profile_data.get("client") or {}
     display_name = client_profile.get("first_name") or (user["first_name"] if user else "Client")
     display_phone = client_profile.get("phone_number") or (user["phone_number"] if user else "Non renseigné")
-    total_missions = len(profile_data.get("client_missions", [])) if profile_data else (user["total_missions"] if user else 0)
+    # Compté dans le backend (seule mémoire des missions) ; inconnu s'il ne répond pas.
+    client_missions = profile_data.get("client_missions")
+    total_missions = len(client_missions) if client_missions is not None else "?"
 
     lang = await get_user_language(callback.from_user.id)
     lang_labels = {"fr": "Français", "ln": "Lingala", "en": "English"}

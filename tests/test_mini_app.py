@@ -294,26 +294,20 @@ def test_health_needs_no_authentication(client):
 # --- Démarrer / finir une mission : décidé par le registre du backend -----------
 
 
-def _paid_mission_for_provider(provider_id: int = CLIENT_ID) -> int:
+def _paid_mission_for_provider(live, provider_id: int = CLIENT_ID) -> int:
+    """Mission d'un autre client confiée à `provider_id` et payée en escrow."""
     import asyncio
 
     from telegram_bot import backend_client
 
-    db.create_user(OTHER_ID, "+243800009999", "Cliente", language="fr")
     db.create_provider(provider_id, "+243800004242", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-    mission_id = db.create_mission(OTHER_ID, {
-        "service": "service_plomberie", "commune": "Gombe", "currency": "USD",
-        "description": "Fuite", "urgent": False,
-    })
-    quote_id = db.create_quote(mission_id, provider_id, 30.0, "USD", 2, "")
-    db.accept_quote(quote_id, OTHER_ID)
-    result = asyncio.run(backend_client.create_payment_intent(db.get_mission_by_id(mission_id), db.get_quote_by_id(quote_id), "+243810000000", "mpesa", OTHER_ID))
-    db.apply_backend_mission(mission_id, result["mission"])
+    mission_id, quote_id = live.accepted_quote(OTHER_ID, provider_id, amount=30.0)
+    asyncio.run(backend_client.create_payment_intent(mission_id, quote_id, "+243810000000", "mpesa", OTHER_ID))
     return mission_id
 
 
 def test_provider_starts_and_finishes_a_paid_mission_through_the_registry(client, live_backend):
-    mission_id = _paid_mission_for_provider()
+    mission_id = _paid_mission_for_provider(live_backend)
 
     started = client.post(f"/api/provider/{CLIENT_ID}/missions/{mission_id}/start", headers=_auth())
     finished = client.post(f"/api/provider/{CLIENT_ID}/missions/{mission_id}/finish", headers=_auth())
@@ -321,11 +315,10 @@ def test_provider_starts_and_finishes_a_paid_mission_through_the_registry(client
     assert started.status_code == 200 and started.json()["mission"]["status"] == "in_progress"
     assert finished.status_code == 200 and finished.json()["mission"]["status"] == "awaiting_confirmation"
     assert live_backend.mission(mission_id).status == "awaiting_confirmation"
-    assert db.get_mission_by_id(mission_id)["status"] == "awaiting_confirmation"
 
 
 def test_mission_actions_are_refused_with_a_code(client, live_backend):
-    mission_id = _paid_mission_for_provider()
+    mission_id = _paid_mission_for_provider(live_backend)
 
     early_finish = client.post(f"/api/provider/{CLIENT_ID}/missions/{mission_id}/finish", headers=_auth())
 
@@ -352,6 +345,23 @@ def test_profile_shows_the_registry_wallet_of_the_verified_user(client, live_bac
 
     assert wallet["wallet_balance_usd"] == 12.5
     assert wallet["wallet_balance_cdf"] == 0.0
+
+
+def test_profile_lists_the_backend_missions_by_role(client, live_backend):
+    ordered = live_backend.new_mission(CLIENT_ID, service="service_plomberie")
+    entrusted = _paid_mission_for_provider(live_backend)
+
+    body = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth()).json()
+
+    assert [mission["id"] for mission in body["client_missions"]] == [ordered]
+    assert [mission["id"] for mission in body["provider_missions"]] == [entrusted]
+    assert body["provider_missions"][0]["payment_status"] == "paid_escrow"
+
+
+def test_profile_missions_are_unknown_when_the_backend_is_down(client):
+    body = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth()).json()
+
+    assert body["client_missions"] is None and body["provider_missions"] is None
 
 
 def test_profile_wallet_is_unknown_when_the_backend_is_down(client):

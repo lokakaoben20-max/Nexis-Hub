@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 from pathlib import Path
 
@@ -20,8 +21,7 @@ def init_db():
                 phone_number TEXT NOT NULL,
                 first_name TEXT,
                 language TEXT DEFAULT 'fr',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                total_missions INTEGER DEFAULT 0
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
@@ -29,87 +29,6 @@ def init_db():
         ensure_column(conn, "users", "commune", "TEXT")
         ensure_column(conn, "users", "preferred_currency", "TEXT DEFAULT 'USD'")
         ensure_column(conn, "users", "is_active", "INTEGER DEFAULT 1")
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS missions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                provider_id INTEGER,
-                service TEXT NOT NULL,
-                is_urgent INTEGER DEFAULT 0,
-                commune TEXT NOT NULL,
-                currency TEXT DEFAULT 'USD',
-                description TEXT NOT NULL,
-                photo_file_id TEXT,
-                voice_file_id TEXT,
-                status TEXT DEFAULT 'pending',
-                payment_status TEXT DEFAULT 'unpaid',
-                visit_fee_paid INTEGER DEFAULT 0,
-                visit_fee_status TEXT DEFAULT 'none',
-                commission_amount REAL DEFAULT 0.00,
-                tola_fee REAL DEFAULT 0.00,
-                total_client REAL DEFAULT 0.00,
-                net_provider REAL DEFAULT 0.00,
-                dispute_reason TEXT,
-                dispute_deadline TEXT,
-                admin_note TEXT,
-                client_latitude REAL,
-                client_longitude REAL,
-                distance_km REAL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(user_id) REFERENCES users(id),
-                FOREIGN KEY(provider_id) REFERENCES providers(id)
-            )
-            """
-        )
-        ensure_column(conn, "missions", "provider_id", "INTEGER")
-        ensure_column(conn, "missions", "channel", "TEXT DEFAULT 'telegram'")
-        ensure_column(conn, "missions", "service_id", "INTEGER")
-        ensure_column(conn, "missions", "address_details", "TEXT")
-        ensure_column(conn, "missions", "amount", "REAL DEFAULT 0.00")
-        ensure_column(conn, "missions", "amount_usd_equiv", "REAL DEFAULT 0.00")
-        ensure_column(conn, "missions", "commission_rate", "REAL DEFAULT 10.00")
-        ensure_column(conn, "missions", "photo_file_id", "TEXT")
-        ensure_column(conn, "missions", "voice_file_id", "TEXT")
-        ensure_column(conn, "missions", "payment_status", "TEXT DEFAULT 'unpaid'")
-        ensure_column(conn, "missions", "visit_fee_paid", "INTEGER DEFAULT 0")
-        ensure_column(conn, "missions", "visit_fee_status", "TEXT DEFAULT 'none'")
-        ensure_column(conn, "missions", "commission_amount", "REAL DEFAULT 0.00")
-        ensure_column(conn, "missions", "tola_fee", "REAL DEFAULT 0.00")
-        ensure_column(conn, "missions", "aggregator_fee", "REAL DEFAULT 0.00")
-        ensure_column(conn, "missions", "total_client", "REAL DEFAULT 0.00")
-        ensure_column(conn, "missions", "net_provider", "REAL DEFAULT 0.00")
-        ensure_column(conn, "missions", "payment_ref", "TEXT")
-        ensure_column(conn, "missions", "scheduled_at", "TEXT")
-        ensure_column(conn, "missions", "arrived_at", "TEXT")
-        ensure_column(conn, "missions", "started_at", "TEXT")
-        ensure_column(conn, "missions", "finished_at", "TEXT")
-        ensure_column(conn, "missions", "confirmed_at", "TEXT")
-        ensure_column(conn, "missions", "dispute_reason", "TEXT")
-        ensure_column(conn, "missions", "dispute_deadline", "TEXT")
-        ensure_column(conn, "missions", "admin_note", "TEXT")
-        ensure_column(conn, "missions", "client_latitude", "REAL")
-        ensure_column(conn, "missions", "client_longitude", "REAL")
-        ensure_column(conn, "missions", "distance_km", "REAL")
-        ensure_column(conn, "missions", "preferred_provider_id", "INTEGER")
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS quotes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                mission_id INTEGER NOT NULL,
-                provider_id INTEGER NOT NULL,
-                amount REAL NOT NULL,
-                currency TEXT NOT NULL,
-                delay_hours INTEGER NOT NULL,
-                message TEXT,
-                status TEXT DEFAULT 'pending',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(mission_id) REFERENCES missions(id),
-                FOREIGN KEY(provider_id) REFERENCES providers(id)
-            )
-            """
-        )
-        ensure_column(conn, "quotes", "amount_usd_equiv", "REAL DEFAULT 0.00")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS providers (
@@ -199,26 +118,6 @@ def init_db():
         )
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS reviews (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                mission_id INTEGER UNIQUE NOT NULL,
-                user_id INTEGER NOT NULL,
-                provider_id INTEGER NOT NULL,
-                rating INTEGER NOT NULL,
-                was_punctual INTEGER,
-                was_professional INTEGER,
-                was_resolved INTEGER,
-                comment TEXT,
-                is_public INTEGER DEFAULT 1,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(mission_id) REFERENCES missions(id),
-                FOREIGN KEY(user_id) REFERENCES users(id),
-                FOREIGN KEY(provider_id) REFERENCES providers(id)
-            )
-            """
-        )
-        conn.execute(
-            """
             CREATE TABLE IF NOT EXISTS platform_settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL,
@@ -228,6 +127,7 @@ def init_db():
             """
         )
         _drop_legacy_money_storage(conn)
+        _drop_legacy_mission_storage(conn)
         seed_default_services(conn)
         seed_platform_settings(conn)
 
@@ -256,6 +156,55 @@ def _drop_legacy_money_storage(conn):
         for column in ("wallet_balance_usd", "wallet_balance_cdf"):
             if column in columns:
                 conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+
+
+# Ordre de suppression : ce qui pointe vers une mission d'abord.
+LEGACY_MISSION_TABLES = ("reviews", "quotes", "missions")
+
+
+def mission_archive_path():
+    return DB_PATH.with_name(f"{DB_PATH.stem}_anciennes_missions.json")
+
+
+def _drop_legacy_mission_storage(conn):
+    """Missions, devis et avis vivent dans le seul backend (CONCEPTION_MISSIONS.md) :
+    SQLite n'en garde plus aucune copie.
+
+    Les lignes des anciennes tables sont d'abord écrites dans une archive JSON
+    à côté de la base (jamais écrasée : une archive existante fait refuser le
+    démarrage plutôt que de la perdre). Les tables ne sont supprimées qu'une
+    fois l'archive écrite sur le disque ; une erreur d'écriture laisse tout en
+    place. Le nombre de missions par client, qui n'est plus tenu ici, part aussi.
+    """
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    present = [table for table in LEGACY_MISSION_TABLES if table in tables]
+    if present:
+        archive = {}
+        for table in present:
+            cursor = conn.execute(f"SELECT * FROM {table}")
+            names = [column[0] for column in cursor.description]
+            archive[table] = [dict(zip(names, row)) for row in cursor.fetchall()]
+        if any(archive.values()):
+            path = mission_archive_path()
+            if path.exists():
+                raise RuntimeError(
+                    f"{path.name} existe déjà : la déplacer avant de démarrer, pour ne pas écraser une archive."
+                )
+            partial = path.with_name(path.name + ".partiel")
+            try:
+                with open(partial, "w", encoding="utf-8") as archive_file:
+                    json.dump(archive, archive_file, ensure_ascii=False, indent=1, default=str)
+                    archive_file.flush()
+                    os.fsync(archive_file.fileno())
+                # L'archive n'apparaît qu'entière, sous son nom final.
+                os.replace(partial, path)
+            finally:
+                partial.unlink(missing_ok=True)
+        for table in present:
+            conn.execute(f"DROP TABLE {table}")
+    columns = {column[1] for column in conn.execute("PRAGMA table_info(users)")}
+    if "total_missions" in columns:
+        conn.execute("ALTER TABLE users DROP COLUMN total_missions")
 
 
 def ensure_column(conn, table_name: str, column_name: str, column_type: str):
@@ -358,28 +307,6 @@ def get_user_by_telegram_id(telegram_id: int):
         ).fetchone()
 
 
-def get_user_missions(telegram_id: int):
-    user = get_user_by_telegram_id(telegram_id)
-    if user is None:
-        return []
-
-    with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
-        return conn.execute(
-            """
-            SELECT
-                missions.*,
-                providers.full_name AS provider_name
-            FROM missions
-            LEFT JOIN providers ON providers.id = missions.provider_id
-            WHERE missions.user_id = ?
-            ORDER BY missions.id DESC
-            LIMIT 10
-            """,
-            (user["id"],),
-        ).fetchall()
-
-
 def get_all_users(limit: int = 10):
     with get_connection() as conn:
         conn.row_factory = sqlite3.Row
@@ -425,57 +352,6 @@ def update_user_name(telegram_id: int, first_name: str):
         )
 
 
-def create_mission(telegram_id: int, data: dict):
-    user = get_user_by_telegram_id(telegram_id)
-    if user is None:
-        raise ValueError("Client introuvable pour cette mission")
-
-    with get_connection() as conn:
-        cursor = conn.execute(
-            """
-            INSERT INTO missions (
-                user_id, service, is_urgent, commune, currency, description,
-                photo_file_id, voice_file_id
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                user["id"],
-                data["service"],
-                1 if data.get("urgent") else 0,
-                data["commune"],
-                data.get("currency", "USD"),
-                data["description"],
-                data.get("photo_file_id"),
-                data.get("voice_file_id"),
-            ),
-        )
-        conn.execute(
-            "UPDATE users SET total_missions = total_missions + 1 WHERE id = ?",
-            (user["id"],),
-        )
-        return cursor.lastrowid
-
-
-def get_mission_by_id(mission_id: int):
-    with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
-        return conn.execute(
-            """
-            SELECT
-                missions.*,
-                users.telegram_id AS client_telegram_id,
-                providers.telegram_id AS provider_telegram_id,
-                providers.full_name AS provider_name
-            FROM missions
-            JOIN users ON users.id = missions.user_id
-            LEFT JOIN providers ON providers.id = missions.provider_id
-            WHERE missions.id = ?
-            """,
-            (mission_id,),
-        ).fetchone()
-
-
 def get_provider_by_telegram_id(telegram_id: int):
     with get_connection() as conn:
         conn.row_factory = sqlite3.Row
@@ -483,28 +359,6 @@ def get_provider_by_telegram_id(telegram_id: int):
             "SELECT * FROM providers WHERE telegram_id = ?",
             (telegram_id,),
         ).fetchone()
-
-
-def get_provider_missions(telegram_id: int):
-    provider = get_provider_by_telegram_id(telegram_id)
-    if provider is None:
-        return []
-
-    with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
-        return conn.execute(
-            """
-            SELECT
-                missions.*,
-                users.first_name AS client_name
-            FROM missions
-            JOIN users ON users.id = missions.user_id
-            WHERE missions.provider_id = ?
-            ORDER BY missions.id DESC
-            LIMIT 10
-            """,
-            (provider["id"],),
-        ).fetchall()
 
 
 def get_all_providers(limit: int = 10):
@@ -652,56 +506,13 @@ def set_provider_suspended(provider_id: int, is_suspended: bool = True):
     return get_provider_by_id(provider_id)
 
 
-def get_recent_missions(limit: int = 10):
-    with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
-        return conn.execute(
-            """
-            SELECT
-                missions.*,
-                users.first_name AS client_name,
-                providers.full_name AS provider_name
-            FROM missions
-            JOIN users ON users.id = missions.user_id
-            LEFT JOIN providers ON providers.id = missions.provider_id
-            ORDER BY missions.id DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
-
-
-def get_disputed_missions(limit: int = 10):
-    with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
-        return conn.execute(
-            """
-            SELECT
-                missions.*,
-                users.first_name AS client_name,
-                providers.full_name AS provider_name
-            FROM missions
-            JOIN users ON users.id = missions.user_id
-            LEFT JOIN providers ON providers.id = missions.provider_id
-            WHERE missions.status = 'disputed'
-            ORDER BY missions.id DESC
-            LIMIT ?
-            """,
-            (limit,),
-        ).fetchall()
-
-
 def get_admin_stats():
     with get_connection() as conn:
         return {
             "users": conn.execute("SELECT COUNT(*) FROM users").fetchone()[0],
             "providers": conn.execute("SELECT COUNT(*) FROM providers").fetchone()[0],
-            "missions": conn.execute("SELECT COUNT(*) FROM missions").fetchone()[0],
             "pending_services": conn.execute(
                 "SELECT COUNT(*) FROM service_requests WHERE status = 'pending'"
-            ).fetchone()[0],
-            "disputes": conn.execute(
-                "SELECT COUNT(*) FROM missions WHERE status = 'disputed'"
             ).fetchone()[0],
         }
 
@@ -860,107 +671,6 @@ def decide_pending_service_request(request_id: int, status: str, admin_note: str
         return cursor.rowcount == 1
 
 
-def create_quote(
-    mission_id: int,
-    provider_telegram_id: int,
-    amount: float,
-    currency: str,
-    delay_hours: int,
-    message: str = "",
-):
-    provider = get_provider_by_telegram_id(provider_telegram_id)
-    if provider is None:
-        raise ValueError("Prestataire introuvable pour ce devis")
-    mission = get_mission_by_id(mission_id)
-    if mission is not None and mission["client_telegram_id"] == provider_telegram_id:
-        # Un prestataire peut commander comme client, jamais chiffrer sa
-        # propre mission (le backend refuse aussi devis et paiement).
-        raise ValueError("Vous ne pouvez pas faire de devis sur votre propre mission")
-
-    with get_connection() as conn:
-        cursor = conn.execute(
-            """
-            INSERT INTO quotes (
-                mission_id, provider_id, amount, currency, delay_hours, message
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                mission_id,
-                provider["id"],
-                amount,
-                currency,
-                delay_hours,
-                message,
-            ),
-        )
-        conn.execute(
-            "UPDATE missions SET status = 'quoted' WHERE id = ?",
-            (mission_id,),
-        )
-        return cursor.lastrowid
-
-
-def get_quote_by_id(quote_id: int):
-    with get_connection() as conn:
-        conn.row_factory = sqlite3.Row
-        return conn.execute(
-            """
-            SELECT
-                quotes.*,
-                providers.full_name AS provider_name,
-                providers.telegram_id AS provider_telegram_id,
-                providers.rating AS provider_rating,
-                missions.user_id,
-                users.telegram_id AS client_telegram_id
-            FROM quotes
-            JOIN providers ON providers.id = quotes.provider_id
-            JOIN missions ON missions.id = quotes.mission_id
-            JOIN users ON users.id = missions.user_id
-            WHERE quotes.id = ?
-            """,
-            (quote_id,),
-        ).fetchone()
-
-
-def accept_quote(quote_id: int, client_telegram_id: int):
-    quote = get_quote_by_id(quote_id)
-    if quote is None:
-        raise ValueError("Devis introuvable")
-    if quote["client_telegram_id"] != client_telegram_id:
-        raise ValueError("Ce devis n'appartient pas à ce client")
-
-    with get_connection() as conn:
-        conn.execute(
-            "UPDATE quotes SET status = 'accepted' WHERE id = ?",
-            (quote_id,),
-        )
-        conn.execute(
-            "UPDATE quotes SET status = 'rejected' WHERE mission_id = ? AND id != ?",
-            (quote["mission_id"], quote_id),
-        )
-        conn.execute(
-            "UPDATE missions SET status = 'confirmed', provider_id = ? WHERE id = ?",
-            (quote["provider_id"], quote["mission_id"]),
-        )
-    return quote
-
-
-def reject_quote(quote_id: int, client_telegram_id: int):
-    quote = get_quote_by_id(quote_id)
-    if quote is None:
-        raise ValueError("Devis introuvable")
-    if quote["client_telegram_id"] != client_telegram_id:
-        raise ValueError("Ce devis n'appartient pas à ce client")
-
-    with get_connection() as conn:
-        conn.execute(
-            "UPDATE quotes SET status = 'rejected' WHERE id = ?",
-            (quote_id,),
-        )
-    return quote
-
-
 def update_consecutive_ignored(telegram_id: int):
     """Incrémente le compteur de demandes ignorées."""
     with get_connection() as conn:
@@ -991,45 +701,3 @@ def reset_consecutive_ignored(telegram_id: int):
             "UPDATE providers SET consecutive_ignored = 0 WHERE telegram_id = ?",
             (telegram_id,),
         )
-
-
-def apply_backend_mission(mission_id: int, backend_mission: dict):
-    """Recopie dans db.py l'état d'une mission décidé par le backend (seule
-    source de vérité de l'argent) : statut, paiement, montants, litige,
-    prestataire. Appelé après chaque réponse du backend, acceptation comme
-    refus, pour que les écrans et listes admin ne montrent jamais un état
-    périmé. N'écrit aucun solde : il n'y en a plus dans SQLite."""
-    provider_id = None
-    provider_telegram_id = backend_mission.get("provider_telegram_id")
-    if provider_telegram_id is not None:
-        provider = get_provider_by_telegram_id(provider_telegram_id)
-        provider_id = provider["id"] if provider is not None else None
-    with get_connection() as conn:
-        conn.execute(
-            """
-            UPDATE missions
-            SET status = ?,
-                payment_status = COALESCE(?, payment_status),
-                commission_amount = ?,
-                tola_fee = ?,
-                total_client = ?,
-                net_provider = ?,
-                dispute_reason = ?,
-                dispute_deadline = ?,
-                provider_id = COALESCE(?, provider_id)
-            WHERE id = ?
-            """,
-            (
-                backend_mission.get("status"),
-                backend_mission.get("payment_status"),
-                backend_mission.get("commission_amount") or 0.0,
-                backend_mission.get("tola_fee") or 0.0,
-                backend_mission.get("total_client") or 0.0,
-                backend_mission.get("net_provider") or 0.0,
-                backend_mission.get("dispute_reason"),
-                backend_mission.get("dispute_deadline"),
-                provider_id,
-                mission_id,
-            ),
-        )
-    return get_mission_by_id(mission_id)

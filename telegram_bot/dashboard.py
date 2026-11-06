@@ -7,10 +7,8 @@ Même contrat que `telegram_bot/registration.py`, `telegram_bot/mission.py`,
 Couvre : services du prestataire (affichage, proposition de service
 manquant), missions/wallet client et prestataire, historique, aide.
 
-`fetch_backend_missions` réutilise `backend_client.fetch_backend_profile`
-(déjà l'endpoint `/api/profile/{telegram_id}`) au lieu de refaire son propre
-appel `httpx` comme dans `main.py` — même comportement (liste vide sur tout
-échec), sans dupliquer la logique de requête déjà centralisée.
+Les missions sont lues dans le backend (`/api/me/missions`), seule mémoire des
+missions : backend injoignable, l'écran le dit (aucune copie locale).
 """
 
 import html
@@ -31,13 +29,12 @@ from aiogram.types import (
 from db import (
     create_service_request,
     get_provider_by_telegram_id,
-    get_provider_missions,
     get_provider_service_requests,
     get_user_by_telegram_id,
-    get_user_missions,
     set_service_request_backend_id,
 )
 from messages import MESSAGES, get_message
+from telegram_bot import backend_client
 from telegram_bot.backend_client import (
     BackendUnavailable,
     MoneyRefused,
@@ -95,24 +92,18 @@ PAYMENT_STATUS_LABELS = {
 }
 
 
-async def fetch_backend_missions(telegram_id: int) -> list[dict]:
-    profile = await fetch_backend_profile(telegram_id)
-    return profile.get("client_missions", []) if isinstance(profile, dict) else []
-
-
-async def fetch_backend_provider_missions(telegram_id: int) -> list[dict]:
-    """Retourne les missions attribuées au prestataire depuis le profil V5.
-
-    Une liste vide garde le même contrat que ``fetch_backend_missions`` :
-    l'appelant peut alors réutiliser les données SQLite locales si le backend
-    est indisponible ou ne contient pas encore de mission synchronisée.
-    """
-    profile = await fetch_backend_profile(telegram_id)
-    return profile.get("provider_missions", []) if isinstance(profile, dict) else []
+async def fetch_my_missions(telegram_id: int, role: str) -> list[dict] | None:
+    """Missions de la personne, lues dans le backend (seule mémoire des
+    missions). None si le backend ne répond pas : l'écran le dit, il n'y a
+    pas de copie locale à montrer."""
+    try:
+        return await backend_client.list_my_missions(telegram_id, role)
+    except (BackendUnavailable, MoneyRefused):
+        return None
 
 
 def mission_value(mission, key: str, default=None):
-    """Read fields from either a SQLite Row or a backend V5 dictionary."""
+    """Champ d'une mission du backend, avec une valeur par défaut."""
     try:
         value = mission[key]
     except (KeyError, IndexError, TypeError):
@@ -140,7 +131,6 @@ def format_mission_client(mission) -> str:
 
 
 def format_mission_provider(mission) -> str:
-    """Formate indifféremment une mission SQLite ou une mission du backend V5."""
     service_key = mission_value(mission, "service", "")
     status_key = mission_value(mission, "status", "")
     payment_key = mission_value(mission, "payment_status", "")
@@ -287,9 +277,10 @@ async def wallet_text(telegram_id: int, title_key: str, lang: str) -> str:
 @router.callback_query(F.data == "client_missions")
 async def afficher_missions_client(callback: CallbackQuery):
     lang = await get_user_language(callback.from_user.id)
-    local_missions = get_user_missions(callback.from_user.id)
-    backend_missions = await fetch_backend_missions(callback.from_user.id)
-    missions = backend_missions or local_missions
+    missions = await fetch_my_missions(callback.from_user.id, "client")
+    if missions is None:
+        await callback.answer(get_message("service_unavailable", lang), show_alert=True)
+        return
 
     if not missions:
         await callback.message.edit_text(
@@ -301,8 +292,7 @@ async def afficher_missions_client(callback: CallbackQuery):
         return
 
     text = get_message("missions_title", lang) + "\n\n" + "\n\n".join(
-        html.escape(format_mission_client(mission)) if mission_value(mission, "service") is not None else html.escape(str(mission))
-        for mission in missions
+        html.escape(format_mission_client(mission)) for mission in missions
     )
     await callback.message.edit_text(
         text,
@@ -331,9 +321,10 @@ async def afficher_wallet_client(callback: CallbackQuery):
 @router.callback_query(F.data == "prest_missions")
 async def afficher_missions_prestataire(callback: CallbackQuery):
     lang = await get_provider_language(callback.from_user.id)
-    local_missions = get_provider_missions(callback.from_user.id)
-    backend_missions = await fetch_backend_provider_missions(callback.from_user.id)
-    missions = backend_missions or local_missions
+    missions = await fetch_my_missions(callback.from_user.id, "provider")
+    if missions is None:
+        await callback.answer(get_message("service_unavailable", lang), show_alert=True)
+        return
     if not missions:
         await callback.message.edit_text(
             get_message("provider_missions_empty", lang),
@@ -373,9 +364,10 @@ async def afficher_wallet_prestataire(callback: CallbackQuery):
 @router.callback_query(F.data == "client_historique")
 async def afficher_historique_client(callback: CallbackQuery):
     lang = await get_user_language(callback.from_user.id)
-    local_missions = get_user_missions(callback.from_user.id)
-    backend_missions = await fetch_backend_missions(callback.from_user.id)
-    missions = backend_missions or local_missions
+    missions = await fetch_my_missions(callback.from_user.id, "client")
+    if missions is None:
+        await callback.answer(get_message("service_unavailable", lang), show_alert=True)
+        return
     terminal_statuses = {"completed", "cancelled", "disputed"}
     history = [
         mission
@@ -514,7 +506,7 @@ async def retrait_demander_montant(callback: CallbackQuery, state: FSMContext):
     lang = await _withdraw_language(callback.from_user.id)
     balance = wallet_balance(await fetch_wallets(callback.from_user.id), currency)
     if balance is None:
-        await callback.answer(get_message("money_backend_unavailable", lang), show_alert=True)
+        await callback.answer(get_message("service_unavailable", lang), show_alert=True)
         return
     await state.set_state(WithdrawFlow.amount)
     await state.update_data(withdraw_currency=currency)
@@ -560,7 +552,7 @@ async def retrait_operateur_recu(callback: CallbackQuery, state: FSMContext):
         )
     except BackendUnavailable:
         # On garde la saisie : la personne réessaie le même bouton.
-        await callback.answer(get_message("money_backend_unavailable", lang), show_alert=True)
+        await callback.answer(get_message("service_unavailable", lang), show_alert=True)
         return
     except MoneyRefused as error:
         await state.clear()

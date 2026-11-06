@@ -235,5 +235,12 @@
   "admin_new_provider_portfolio_caption": "Portfolio",
   "admin_new_provider_approve_prompt": "Approuver ce prestataire ?",
   "unexpected_message": "Je n'attendais pas ce message. Utilisez les boutons du dernier message, ou envoyez /start pour revenir au menu.",
-  "inactive_button": "Ce bouton n'est plus actif. Envoyez /start pour revenir au menu."
+  "inactive_button": "Ce bouton n'est plus actif. Envoyez /start pour revenir au menu.",
+  "service_unavailable": "⏳ Service momentanément indisponible. Rien n'a été créé ni modifié. Réessayez dans un instant.",
+  "money_error_quote_not_found": "Ce devis est introuvable.",
+  "money_error_quote_not_accepted": "Ce devis n'est pas accepté : seul le devis accepté peut être payé.",
+  "money_error_quote_not_open": "Ce devis ne peut plus être accepté ni refusé.",
+  "money_error_mission_not_open": "Cette mission a déjà un devis accepté : elle ne reçoit plus de devis.",
+  "money_error_provider_not_alerted": "Cette mission ne vous a pas été proposée.",
+  "money_error_creation_key_reused": "Cette demande a changé entre deux essais. Recommencez la demande depuis le menu."
 }

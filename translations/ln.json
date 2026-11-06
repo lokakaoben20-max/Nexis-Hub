@@ -229,5 +229,12 @@
   "admin_new_provider_portfolio_caption": "Portfolio",
   "admin_new_provider_approve_prompt": "Ondimi prestataire oyo ?",
   "unexpected_message": "Nazalaki kozela message oyo te. Salela ba bouton ya message ya nsuka, to tinda /start mpo na kozonga na menu.",
-  "inactive_button": "Bouton oyo esalaka lisusu te. Tinda /start mpo na kozonga na menu."
+  "inactive_button": "Bouton oyo esalaka lisusu te. Tinda /start mpo na kozonga na menu.",
+  "service_unavailable": "Service ezali kosala te mpo na mwa ntango. Eloko moko te esalemi to ebongwani. Meká lisusu nsima mwa ntango.",
+  "money_error_quote_not_found": "Devis oyo ezwami te.",
+  "money_error_quote_not_accepted": "Devis oyo endimami te : kaka devis oyo endimami nde ekoki kofutama.",
+  "money_error_quote_not_open": "Devis oyo ekoki lisusu kondimama to koboyama te.",
+  "money_error_mission_not_open": "Mosala oyo ezali na devis oyo endimami : ezwaka lisusu devis te.",
+  "money_error_provider_not_alerted": "Mosala oyo epesamaki yo te.",
+  "money_error_creation_key_reused": "Bosenga oyo ebongwani kati na mimekano mibale. Banda bosenga lisusu na menu."
 }

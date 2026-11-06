@@ -227,5 +227,12 @@
   "admin_new_provider_portfolio_caption": "Portfolio",
   "admin_new_provider_approve_prompt": "Approve this provider?",
   "unexpected_message": "I wasn't expecting this message. Use the buttons on the last message, or send /start to go back to the menu.",
-  "inactive_button": "This button is no longer active. Send /start to go back to the menu."
+  "inactive_button": "This button is no longer active. Send /start to go back to the menu.",
+  "service_unavailable": "⏳ Service temporarily unavailable. Nothing was created or changed. Please try again shortly.",
+  "money_error_quote_not_found": "This quote could not be found.",
+  "money_error_quote_not_accepted": "This quote is not accepted: only the accepted quote can be paid.",
+  "money_error_quote_not_open": "This quote can no longer be accepted or declined.",
+  "money_error_mission_not_open": "This mission already has an accepted quote and no longer takes quotes.",
+  "money_error_provider_not_alerted": "This mission was not offered to you.",
+  "money_error_creation_key_reused": "This request changed between two attempts. Please start the request again from the menu."
 }

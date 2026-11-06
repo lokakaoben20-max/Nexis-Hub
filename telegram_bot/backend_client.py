@@ -5,10 +5,10 @@ Déplacé depuis `main.py` — regroupe les helpers `sync_*`/`fetch_*` utilisés
 `main.py` importe les fonctions ci-dessous au lieu de les redéfinir, pour que les
 handlers hors scope qui les utilisent encore n'aient rien à changer.
 
-Double écriture maintenue (backend + `db.py`) pour toutes les écritures de ce module :
-`find_matching_providers` (flow mission, pas migré) et la Mini App lisent encore
-`db.py` pour le statut/les services/la langue du prestataire — couper l'écriture locale
-maintenant leur ferait lire une donnée périmée. Voir V5_MIGRATION_PLAN.md, Phase 3.
+Missions, devis et argent n'existent que dans le backend (CONCEPTION_MISSIONS.md,
+CONCEPTION_ARGENT.md) : le bot les lit et les demande ici, et n'en garde aucune
+copie. Les profils (client, prestataire, langue, statut) restent encore écrits
+des deux côtés : `db.py` les lit pour le matching et la Mini App.
 """
 
 import json
@@ -17,7 +17,7 @@ import os
 import httpx
 from dotenv import load_dotenv
 
-from db import apply_backend_mission, create_user, get_mission_by_id, get_provider_by_telegram_id, get_user_by_telegram_id
+from db import create_user, get_provider_by_telegram_id, get_user_by_telegram_id
 from messages import MESSAGES, get_message
 
 load_dotenv()
@@ -151,50 +151,6 @@ async def sync_provider_ignored_increment_to_backend(telegram_id: int) -> dict:
         return response.json()
 
 
-async def sync_mission_to_backend(telegram_id: int, mission_id: int, data: dict) -> dict:
-    payload = {
-        "telegram_id": telegram_id,
-        "mission_id": mission_id,
-        "service": data.get("service", "service_autre"),
-        "commune": data.get("commune", "Autre commune"),
-        "currency": data.get("currency", "USD"),
-        "description": data.get("description", ""),
-        "urgent": bool(data.get("urgent", False)),
-    }
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/missions", json=payload)
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_quote_to_backend(mission_id: int, provider_telegram_id: int, amount: float, currency: str, delay_hours: int, message: str = "") -> dict:
-    payload = {
-        "mission_id": mission_id,
-        "amount": amount,
-        "currency": currency,
-        "delay_hours": delay_hours,
-        "message": message,
-    }
-    async with httpx.AsyncClient(timeout=5.0, headers=actor_headers(provider_telegram_id)) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes", json=payload)
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_quote_accept_to_backend(backend_quote_id: int, client_telegram_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=actor_headers(client_telegram_id)) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes/{backend_quote_id}/accept")
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_quote_reject_to_backend(backend_quote_id: int, client_telegram_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=actor_headers(client_telegram_id)) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes/{backend_quote_id}/reject")
-        response.raise_for_status()
-        return response.json()
-
-
 async def sync_service_request_to_backend(provider_telegram_id: int, service_name: str, description: str = "") -> dict:
     payload = {
         "service_name": service_name,
@@ -217,11 +173,10 @@ async def sync_service_request_status_to_backend(backend_request_id: int, status
 
 
 # --- Argent : le backend décide, seul (voir CONCEPTION_ARGENT.md) -----------
-# Paiement, démarrage, fin, confirmation, litige et résolution sont des
-# demandes au registre du backend. Le bot n'écrit l'état dans db.py qu'après
-# la réponse du backend (`db.apply_backend_mission`), jamais avant. Backend
-# injoignable ou réponse inattendue = `BackendUnavailable` : aucune action
-# d'argent n'a eu lieu, l'utilisateur réessaie.
+# Missions, devis, paiement, démarrage, fin, confirmation, litige et
+# résolution vivent dans le backend, seule mémoire (CONCEPTION_MISSIONS.md) :
+# le bot n'en garde aucune copie. Backend injoignable ou réponse inattendue =
+# `BackendUnavailable` : rien n'a été créé ni payé, l'utilisateur réessaie.
 
 
 class BackendUnavailable(Exception):
@@ -239,7 +194,9 @@ class MoneyRefused(Exception):
         self.money = money
 
 
-async def _money_call(method: str, path: str, payload: dict | None = None, actor: int | None = None) -> dict:
+async def _money_call(
+    method: str, path: str, payload: dict | None = None, actor: int | None = None, expect: str = "mission"
+) -> dict:
     """`actor` : identifiant Telegram de la personne qui agit (sauf lecture ou
     relance d'un paiement, qui n'agissent au nom de personne)."""
     headers = actor_headers(actor) if actor is not None else BACKEND_AUTH_HEADERS
@@ -259,32 +216,73 @@ async def _money_call(method: str, path: str, payload: dict | None = None, actor
         detail = body.get("detail") if isinstance(body, dict) else None
         if isinstance(detail, dict) and isinstance(detail.get("code"), str):
             raise MoneyRefused(detail["code"], detail.get("mission"), detail.get("money"))
-    if response.status_code != 200 or not isinstance(body, dict) or not isinstance(body.get("mission"), dict):
+    if response.status_code != 200 or not isinstance(body, dict) or not isinstance(body.get(expect), (dict, list)):
         raise BackendUnavailable(f"réponse inattendue ({response.status_code})")
     return body
 
 
-async def fund_mission(mission, quote, method: str, client_telegram_id: int) -> dict:
-    """Paie la mission en escrow par le wallet (seul paiement direct possible).
-    `mission` et `quote` sont les lignes db.py : la demande porte tout ce dont
-    le backend a besoin. `client_telegram_id` : la personne qui paie."""
-    return await _money_call(
-        "POST", f"/api/bot/missions/{mission['id']}/fund", _funding_payload(mission, quote, method), actor=client_telegram_id
-    )
-
-
-def _funding_payload(mission, quote, method: str) -> dict:
-    return {
-        "method": method,
-        "provider_telegram_id": quote["provider_telegram_id"],
-        "quote_ref": quote["id"],
-        "amount": quote["amount"],
-        "currency": quote["currency"],
-        "urgent": bool(mission["is_urgent"]),
-        "service": mission["service"],
-        "commune": mission["commune"],
-        "description": mission["description"] or "",
+async def create_mission(client_telegram_id: int, data: dict, creation_key: str, alert_provider_telegram_ids: list[int]) -> dict:
+    """Crée la mission dans le backend, qui lui donne son numéro, et enregistre
+    les prestataires prévenus. `creation_key` : la même à chaque nouvel essai
+    de la même demande (le backend ne la crée qu'une fois). Renvoie la vue de
+    la mission, avec `alerted_provider_telegram_ids` : les seuls à prévenir."""
+    media = [{"kind": "photo", "id": file_id} for file_id in data.get("photo_file_ids") or []]
+    media += [{"kind": "voice", "id": file_id} for file_id in data.get("voice_file_ids") or []]
+    payload = {
+        "creation_key": creation_key,
+        "service": data["service"],
+        "commune": data["commune"],
+        "currency": data.get("currency", "USD"),
+        "description": data.get("description", ""),
+        "urgent": bool(data.get("urgent", False)),
+        "media": media,
+        "alert_provider_telegram_ids": alert_provider_telegram_ids,
     }
+    return await _money_call("POST", "/api/bot/missions", payload, actor=client_telegram_id)
+
+
+async def get_mission(mission_id: int, telegram_id: int) -> dict:
+    """La mission telle que cette personne peut la lire (sinon `mission_not_found`)."""
+    return await _money_call("GET", f"/api/bot/missions/{mission_id}", actor=telegram_id)
+
+
+async def create_quote(mission_id: int, provider_telegram_id: int, amount: float, currency: str, delay_hours: int, message: str = "") -> dict:
+    payload = {"mission_id": mission_id, "amount": amount, "currency": currency, "delay_hours": delay_hours, "message": message}
+    return await _money_call("POST", "/api/bot/quotes", payload, actor=provider_telegram_id)
+
+
+async def get_quote(quote_id: int, telegram_id: int) -> dict:
+    return await _money_call("GET", f"/api/bot/quotes/{quote_id}", actor=telegram_id)
+
+
+async def accept_quote(quote_id: int, client_telegram_id: int) -> dict:
+    return await _money_call("POST", f"/api/bot/quotes/{quote_id}/accept", actor=client_telegram_id)
+
+
+async def reject_quote(quote_id: int, client_telegram_id: int) -> dict:
+    return await _money_call("POST", f"/api/bot/quotes/{quote_id}/reject", actor=client_telegram_id)
+
+
+async def list_my_missions(telegram_id: int, role: str) -> list[dict]:
+    """Missions commandées (`client`) ou confiées (`provider`) à cette personne."""
+    return (await _money_call("GET", f"/api/me/missions?role={role}", actor=telegram_id, expect="missions"))["missions"]
+
+
+async def admin_list_missions(admin_telegram_id: int, status: str | None = None) -> list[dict]:
+    query = f"?status={status}" if status else ""
+    return (await _money_call("GET", f"/api/admin/missions{query}", actor=admin_telegram_id, expect="missions"))["missions"]
+
+
+async def admin_mission_stats(admin_telegram_id: int) -> dict:
+    return (await _money_call("GET", "/api/admin/stats", actor=admin_telegram_id, expect="stats"))["stats"]
+
+
+async def fund_mission(mission_id: int, quote_id: int, client_telegram_id: int) -> dict:
+    """Paie la mission par le wallet (seul paiement direct possible), sur son
+    devis accepté : montant et prestataire sont relus par le backend."""
+    return await _money_call(
+        "POST", f"/api/bot/missions/{mission_id}/fund", {"method": "wallet", "quote_id": quote_id}, actor=client_telegram_id
+    )
 
 
 # --- Mobile Money réel (CONCEPTION_MOBILE_MONEY.md) --------------------------
@@ -311,11 +309,11 @@ def detect_operator(phone: str | None) -> str | None:
     return _OPERATOR_PREFIXES.get(phone[4:6]) if phone else None
 
 
-async def create_payment_intent(mission, quote, phone: str, operator: str, client_telegram_id: int) -> dict:
+async def create_payment_intent(mission_id: int, quote_id: int, phone: str, operator: str, client_telegram_id: int) -> dict:
     return await _money_call(
         "POST",
-        f"/api/bot/missions/{mission['id']}/payment-intents",
-        {**_funding_payload(mission, quote, "mobile_money"), "phone": phone, "operator": operator},
+        f"/api/bot/missions/{mission_id}/payment-intents",
+        {"quote_id": quote_id, "phone": phone, "operator": operator},
         actor=client_telegram_id,
     )
 
@@ -409,15 +407,14 @@ async def fetch_wallets(telegram_id: int) -> dict | None:
     return body if isinstance(body, dict) else None
 
 
-def money_failure_text(mission_id: int, error: Exception, lang: str) -> str:
-    """Message à montrer quand une action d'argent n'a pas abouti. Sur un refus
-    du backend, recopie d'abord l'état réel de la mission dans db.py."""
+def money_failure_text(mission_id: int, error: Exception, lang: str, unavailable_key: str = "money_backend_unavailable") -> str:
+    """Message à montrer quand une demande au backend n'a pas abouti.
+    `unavailable_key` : texte « service indisponible » adapté à la demande
+    (paiement par défaut ; `service_unavailable` hors argent)."""
     if isinstance(error, MoneyRefused):
-        if isinstance(error.mission, dict):
-            apply_backend_mission(mission_id, error.mission)
         key = f"money_error_{error.code}"
         return get_message(key if key in MESSAGES["fr"] else "money_error_generic", lang)
-    return get_message("money_backend_unavailable", lang)
+    return get_message(unavailable_key, lang)
 
 
 def wallet_balance(wallets: dict | None, currency: str) -> float | None:
@@ -439,17 +436,6 @@ async def sync_review_to_backend(mission_id: int, client_telegram_id: int, ratin
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/reviews", json=payload)
         response.raise_for_status()
         return response.json()
-
-
-async def persist_mission_creation(telegram_id: int, mission_id: int, data: dict) -> dict:
-    local_mission = get_mission_by_id(mission_id)
-    if local_mission is None:
-        local_mission = {"id": mission_id, "status": "created"}
-    backend_result = await _safe_backend_call(sync_mission_to_backend(telegram_id, mission_id, data))
-    return {
-        "local": local_mission,
-        "backend": backend_result,
-    }
 
 
 async def fetch_backend_profile(telegram_id: int) -> dict | None:
@@ -491,7 +477,8 @@ async def load_profile_from_backend(telegram_id: int, fallback_user: dict | None
     # fallback_user vient souvent de db.py (sqlite3.Row, pas de .get()) ; les
     # appelants traitent toujours profile_data["client"] comme un dict.
     client = dict(fallback_user) if fallback_user else {"telegram_id": telegram_id, "first_name": "Client"}
-    return {"client": client, "provider": None, "client_missions": [], "provider_missions": []}
+    # Missions inconnues (None, pas une liste vide) : le backend seul les connaît.
+    return {"client": client, "provider": None, "client_missions": None, "provider_missions": None}
 
 
 async def get_state_language(state) -> str:
