@@ -307,7 +307,7 @@ def _paid_mission_for_provider(provider_id: int = CLIENT_ID) -> int:
     })
     quote_id = db.create_quote(mission_id, provider_id, 30.0, "USD", 2, "")
     db.accept_quote(quote_id, OTHER_ID)
-    result = asyncio.run(backend_client.create_payment_intent(db.get_mission_by_id(mission_id), db.get_quote_by_id(quote_id), "+243810000000", "mpesa"))
+    result = asyncio.run(backend_client.create_payment_intent(db.get_mission_by_id(mission_id), db.get_quote_by_id(quote_id), "+243810000000", "mpesa", OTHER_ID))
     db.apply_backend_mission(mission_id, result["mission"])
     return mission_id
 
@@ -340,3 +340,22 @@ def test_mission_actions_fail_safe_when_the_backend_is_down(client):
 
     assert response.status_code == 503
     assert response.json()["detail"] == {"code": "backend_unavailable"}
+
+
+# ── Wallet : lu dans le registre du backend, jamais un chiffre par défaut ──
+
+
+def test_profile_shows_the_registry_wallet_of_the_verified_user(client, live_backend):
+    live_backend.credit_wallet(CLIENT_ID, 12.5)
+
+    wallet = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth()).json()["wallet"]
+
+    assert wallet["wallet_balance_usd"] == 12.5
+    assert wallet["wallet_balance_cdf"] == 0.0
+
+
+def test_profile_wallet_is_unknown_when_the_backend_is_down(client):
+    response = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth())
+
+    assert response.status_code == 200
+    assert response.json()["wallet"] is None

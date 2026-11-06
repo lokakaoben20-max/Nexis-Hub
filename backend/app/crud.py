@@ -312,10 +312,20 @@ def create_quote(
     return quote
 
 
-def accept_quote(db: Session, quote_id: int) -> BotQuote | None:
+def _require_quote_client(db: Session, quote: BotQuote, client_account_id: int) -> None:
+    """Seul le client de la mission accepte ou refuse ses devis."""
+    mission = db.get(BotMission, quote.mission_id)
+    if mission is None or mission.client_account_id is None:
+        raise ValueError("mission_account_missing")
+    if mission.client_account_id != client_account_id:
+        raise ValueError("not_mission_client")
+
+
+def accept_quote(db: Session, quote_id: int, client_account_id: int) -> BotQuote | None:
     quote = db.get(BotQuote, quote_id)
     if quote is None:
         return None
+    _require_quote_client(db, quote, client_account_id)
 
     quote.status = "accepted"
     other_quotes = (
@@ -338,10 +348,11 @@ def accept_quote(db: Session, quote_id: int) -> BotQuote | None:
     return quote
 
 
-def reject_quote(db: Session, quote_id: int) -> BotQuote | None:
+def reject_quote(db: Session, quote_id: int, client_account_id: int) -> BotQuote | None:
     quote = db.get(BotQuote, quote_id)
     if quote is None:
         return None
+    _require_quote_client(db, quote, client_account_id)
     quote.status = "rejected"
     db.commit()
     db.refresh(quote)

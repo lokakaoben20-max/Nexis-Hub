@@ -427,7 +427,7 @@ async def admin_payouts(callback: CallbackQuery):
         await callback.answer("Accès admin refusé.", show_alert=True)
         return
     try:
-        payouts = await list_payouts_awaiting_approval()
+        payouts = await list_payouts_awaiting_approval(callback.from_user.id)
     except (MoneyRefused, BackendUnavailable) as error:
         await callback.answer(money_failure_text(0, error, "fr"), show_alert=True)
         return

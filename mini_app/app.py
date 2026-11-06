@@ -177,8 +177,13 @@ def compact_mission(row):
 
 
 @app.get("/api/profile/{telegram_id}")
-def profile(telegram_id: int, telegram_user: dict = Depends(verify_telegram_init_data)):
+async def profile(telegram_id: int, telegram_user: dict = Depends(verify_telegram_init_data)):
     require_same_telegram_user(telegram_id, telegram_user)
+    # Soldes lus dans le registre du backend, au nom de la personne vérifiée
+    # par Telegram : seule source de vérité. Backend injoignable = None, la
+    # page affiche « indisponible », jamais un chiffre par défaut.
+    wallets = await backend_client.fetch_wallets(telegram_id)
+    wallet = wallets.get("wallet") if isinstance(wallets, dict) else None
     user = row_to_dict(get_user_by_telegram_id(telegram_id))
     provider = row_to_dict(get_provider_by_telegram_id(telegram_id))
     user_missions = [compact_mission(row) for row in get_user_missions(telegram_id)]
@@ -197,6 +202,7 @@ def profile(telegram_id: int, telegram_user: dict = Depends(verify_telegram_init
         "client_missions": user_missions,
         "provider_missions": provider_missions,
         "service_requests": service_requests,
+        "wallet": wallet if isinstance(wallet, dict) else None,
         "available_services": active_services(),
         "available_communes": COMMUNES,
     }

@@ -40,7 +40,6 @@ def _fund(test_client, mission_id=1001, quote_id=1, amount=100.0, currency="USD"
         json={
             **extra,
             "method": method,
-            "client_telegram_id": client,
             "provider_telegram_id": provider,
             "quote_ref": quote_id,
             "amount": amount,
@@ -50,6 +49,7 @@ def _fund(test_client, mission_id=1001, quote_id=1, amount=100.0, currency="USD"
             "commune": "Gombe",
             "description": "Peindre le salon",
         },
+        headers=_as(client),
     )
 
 
@@ -61,6 +61,11 @@ def _credit_client_wallet(database_module, telegram_id, amount, currency="USD"):
         ledger.record_opening_balance(db, account_id, currency, amount)
         db.commit()
 
+
+
+def _as(telegram_id):
+    """En-têtes d'une action faite au nom d'une personne connue par Telegram."""
+    return {"X-Actor-Channel": "telegram", "X-Actor-Id": str(telegram_id)}
 
 def _authed_client(backend_main):
     """TestClient qui envoie X-API-Key sur chaque requête, sans toucher aux
@@ -258,11 +263,11 @@ def _setup_mission_with_quote(test_client, mission_id=1001, amount=100.0, curren
         "/api/bot/quotes",
         json={
             "mission_id": mission_id,
-            "provider_telegram_id": 7,
             "amount": amount,
             "currency": currency,
             "delay_hours": 2,
         },
+        headers=_as(7),
     )
     assert quote_response.status_code == 200
     return quote_response.json()["quote"]["id"]
@@ -276,10 +281,11 @@ def test_accepting_a_quote_rejects_the_others_and_confirms_mission(tmp_path, mon
         _register_provider(test_client, 8, ["service_peinture"], ["Gombe"])
         second_quote = test_client.post(
             "/api/bot/quotes",
-            json={"mission_id": 1001, "provider_telegram_id": 8, "amount": 90.0, "currency": "USD", "delay_hours": 3},
+            json={"mission_id": 1001, "amount": 90.0, "currency": "USD", "delay_hours": 3},
+            headers=_as(8),
         ).json()["quote"]
 
-        accept_response = test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+        accept_response = test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
         assert accept_response.status_code == 200
         assert accept_response.json()["quote"]["status"] == "accepted"
 
@@ -290,7 +296,7 @@ def test_accepting_a_quote_rejects_the_others_and_confirms_mission(tmp_path, mon
         assert mission["status"] == "confirmed"
         assert mission["provider_telegram_id"] == 7
 
-        second_quote_after = test_client.post(f"/api/bot/quotes/{second_quote['id']}/reject")
+        second_quote_after = test_client.post(f"/api/bot/quotes/{second_quote['id']}/reject", headers=_as(42))
         assert second_quote_after.json()["quote"]["status"] == "rejected"
 
 
@@ -322,9 +328,9 @@ def test_mission_cannot_start_before_escrow_payment(tmp_path, monkeypatch):
 
     with _authed_client(backend_main) as test_client:
         quote_id = _setup_mission_with_quote(test_client)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
 
-        response = test_client.post("/api/bot/missions/1001/start", json={"provider_telegram_id": 7})
+        response = test_client.post("/api/bot/missions/1001/start", headers=_as(7))
         assert response.status_code == 409
         assert response.json()["detail"]["code"] == "not_paid"
         assert response.json()["detail"]["mission"]["status"] == "confirmed"
@@ -335,7 +341,7 @@ def test_full_escrow_and_release_flow(tmp_path, monkeypatch):
 
     with _authed_client(backend_main) as test_client:
         quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
 
         pay_response = _fund(test_client, quote_id=quote_id)
         assert pay_response.status_code == 200
@@ -343,15 +349,15 @@ def test_full_escrow_and_release_flow(tmp_path, monkeypatch):
         assert pay_response.json()["money"]["funding"]["reference"] == "SIM-PAY-000001"
         assert pay_response.json()["money"]["funding"]["net"] == "90.00"
 
-        start_response = test_client.post("/api/bot/missions/1001/start", json={"provider_telegram_id": 7})
+        start_response = test_client.post("/api/bot/missions/1001/start", headers=_as(7))
         assert start_response.status_code == 200
         assert start_response.json()["mission"]["status"] == "in_progress"
 
-        finish_response = test_client.post("/api/bot/missions/1001/finish", json={"provider_telegram_id": 7})
+        finish_response = test_client.post("/api/bot/missions/1001/finish", headers=_as(7))
         assert finish_response.status_code == 200
         assert finish_response.json()["mission"]["status"] == "awaiting_confirmation"
 
-        release_response = test_client.post("/api/bot/missions/1001/confirm", json={"client_telegram_id": 42})
+        release_response = test_client.post("/api/bot/missions/1001/confirm", headers=_as(42))
         assert release_response.status_code == 200
         released = release_response.json()["mission"]
         assert released["status"] == "completed"
@@ -359,7 +365,7 @@ def test_full_escrow_and_release_flow(tmp_path, monkeypatch):
 
         provider_profile = test_client.get("/api/profile/7").json()
         assert provider_profile["provider"]["wallet_balance_usd"] == 90.0
-        assert test_client.get("/api/bot/wallets/7").json()["wallet"]["wallet_balance_usd"] == 90.0
+        assert test_client.get("/api/me/wallet", headers=_as(7)).json()["wallet"]["wallet_balance_usd"] == 90.0
 
 
 def test_wallet_payment_fails_when_balance_insufficient(tmp_path, monkeypatch):
@@ -367,7 +373,7 @@ def test_wallet_payment_fails_when_balance_insufficient(tmp_path, monkeypatch):
 
     with _authed_client(backend_main) as test_client:
         quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
 
         response = _fund(test_client, quote_id=quote_id, method="wallet")
         assert response.status_code == 409
@@ -380,7 +386,7 @@ def test_wallet_payment_succeeds_and_debits_balance(tmp_path, monkeypatch):
 
     with _authed_client(backend_main) as test_client:
         quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
         _credit_client_wallet(database_module, 42, 200.0)
 
         response = _fund(test_client, quote_id=quote_id, method="wallet")
@@ -403,11 +409,11 @@ def test_money_endpoints_return_a_stable_code_and_the_current_mission_on_refusal
         assert second.json()["detail"]["code"] == "already_paid"
         assert second.json()["detail"]["money"]["funding"]["total"] == "100.00"
 
-        intruder = test_client.post("/api/bot/missions/1001/confirm", json={"client_telegram_id": 999})
+        intruder = test_client.post("/api/bot/missions/1001/confirm", headers=_as(999))
         assert intruder.status_code == 403
         assert intruder.json()["detail"]["code"] == "not_mission_client"
 
-        missing = test_client.post("/api/bot/missions/4242/confirm", json={"client_telegram_id": 42})
+        missing = test_client.post("/api/bot/missions/4242/confirm", headers=_as(42))
         assert missing.status_code == 404
         assert missing.json()["detail"] == {"code": "mission_not_found"}
 
@@ -420,37 +426,40 @@ def test_dispute_freezes_funds_and_admin_split_pays_both_parties(tmp_path, monke
         quote_id = _setup_mission_with_quote(test_client, amount=100.0)
         _fund(test_client, quote_id=quote_id)
 
-        dispute = test_client.post("/api/bot/missions/1001/dispute", json={"client_telegram_id": 42, "reason": "Travail non fait"})
+        dispute = test_client.post("/api/bot/missions/1001/dispute", json={"reason": "Travail non fait"}, headers=_as(42))
         assert dispute.status_code == 200
         assert dispute.json()["mission"]["status"] == "disputed"
         assert dispute.json()["mission"]["dispute_deadline"] is not None
 
-        frozen = test_client.post("/api/bot/missions/1001/confirm", json={"client_telegram_id": 42})
+        frozen = test_client.post("/api/bot/missions/1001/confirm", headers=_as(42))
         assert frozen.status_code == 409
         assert frozen.json()["detail"]["code"] == "mission_disputed"
 
         not_admin = test_client.post(
             "/api/bot/missions/1001/dispute/resolve",
-            json={"decision": "refund", "admin_telegram_id": 42},
+            json={"decision": "refund"},
+            headers=_as(42),
         )
         assert not_admin.status_code == 403
         assert not_admin.json()["detail"] == {"code": "not_admin"}
 
         resolved = test_client.post(
             "/api/bot/missions/1001/dispute/resolve",
-            json={"decision": "split", "provider_percentage": 50, "admin_telegram_id": 1},
+            json={"decision": "split", "provider_percentage": 50},
+            headers=_as(1),
         )
         assert resolved.status_code == 200
         assert resolved.json()["mission"]["payment_status"] == "split"
         assert resolved.json()["money"]["settlement"]["provider_amount"] == "45.00"
         assert resolved.json()["money"]["settlement"]["client_amount"] == "45.00"
         assert resolved.json()["money"]["settlement"]["platform_amount"] == "10.00"
-        assert test_client.get("/api/bot/wallets/7").json()["wallet"]["wallet_balance_usd"] == 45.0
-        assert test_client.get("/api/bot/wallets/42").json()["wallet"]["wallet_balance_usd"] == 45.0
+        assert test_client.get("/api/me/wallet", headers=_as(7)).json()["wallet"]["wallet_balance_usd"] == 45.0
+        assert test_client.get("/api/me/wallet", headers=_as(42)).json()["wallet"]["wallet_balance_usd"] == 45.0
 
         again = test_client.post(
             "/api/bot/missions/1001/dispute/resolve",
-            json={"decision": "refund", "admin_telegram_id": 1},
+            json={"decision": "refund"},
+            headers=_as(1),
         )
         assert again.status_code == 409
         assert again.json()["detail"]["code"] == "already_settled"
@@ -465,7 +474,7 @@ def test_profile_provider_missions_are_filtered_by_provider_not_client(tmp_path,
 
     with _authed_client(backend_main) as test_client:
         quote_id = _setup_mission_with_quote(test_client)
-        test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
 
         client_profile = test_client.get("/api/profile/42").json()
         provider_profile = test_client.get("/api/profile/7").json()
@@ -514,11 +523,11 @@ def test_update_user_language(tmp_path, monkeypatch):
 
 def _complete_mission_flow(test_client, mission_id=1001, amount=100.0, currency="USD", provider_telegram_id=7):
     quote_id = _setup_mission_with_quote(test_client, mission_id=mission_id, amount=amount, currency=currency)
-    test_client.post(f"/api/bot/quotes/{quote_id}/accept")
+    test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
     assert _fund(test_client, mission_id=mission_id, quote_id=quote_id, amount=amount, currency=currency, provider=provider_telegram_id).status_code == 200
-    test_client.post(f"/api/bot/missions/{mission_id}/start", json={"provider_telegram_id": provider_telegram_id})
-    test_client.post(f"/api/bot/missions/{mission_id}/finish", json={"provider_telegram_id": provider_telegram_id})
-    release_response = test_client.post(f"/api/bot/missions/{mission_id}/confirm", json={"client_telegram_id": 42})
+    test_client.post(f"/api/bot/missions/{mission_id}/start", headers=_as(provider_telegram_id))
+    test_client.post(f"/api/bot/missions/{mission_id}/finish", headers=_as(provider_telegram_id))
+    release_response = test_client.post(f"/api/bot/missions/{mission_id}/confirm", headers=_as(42))
     assert release_response.status_code == 200
     return quote_id
 
@@ -530,7 +539,8 @@ def test_review_creation_updates_provider_average_and_total_reviews(tmp_path, mo
         _complete_mission_flow(test_client, mission_id=1001)
         first = test_client.post(
             "/api/bot/reviews",
-            json={"mission_id": 1001, "client_telegram_id": 42, "rating": 5, "comment": "Top"},
+            json={"mission_id": 1001, "rating": 5, "comment": "Top"},
+            headers=_as(42),
         )
         assert first.status_code == 200
         assert first.json()["review"]["rating"] == 5
@@ -538,7 +548,8 @@ def test_review_creation_updates_provider_average_and_total_reviews(tmp_path, mo
         _complete_mission_flow(test_client, mission_id=1002)
         second = test_client.post(
             "/api/bot/reviews",
-            json={"mission_id": 1002, "client_telegram_id": 42, "rating": 3},
+            json={"mission_id": 1002, "rating": 3},
+            headers=_as(42),
         )
         assert second.status_code == 200
 
@@ -552,11 +563,12 @@ def test_review_rejected_for_duplicate_mission(tmp_path, monkeypatch):
 
     with _authed_client(backend_main) as test_client:
         _complete_mission_flow(test_client, mission_id=1001)
-        test_client.post("/api/bot/reviews", json={"mission_id": 1001, "client_telegram_id": 42, "rating": 4})
+        test_client.post("/api/bot/reviews", json={"mission_id": 1001, "rating": 4}, headers=_as(42))
 
         duplicate = test_client.post(
             "/api/bot/reviews",
-            json={"mission_id": 1001, "client_telegram_id": 42, "rating": 2},
+            json={"mission_id": 1001, "rating": 2},
+            headers=_as(42),
         )
         assert duplicate.status_code == 400
         assert "déjà été évaluée" in duplicate.json()["detail"]
@@ -568,11 +580,11 @@ def test_review_rejected_for_rating_out_of_range(tmp_path, monkeypatch):
     with _authed_client(backend_main) as test_client:
         _complete_mission_flow(test_client, mission_id=1001)
 
-        too_low = test_client.post("/api/bot/reviews", json={"mission_id": 1001, "client_telegram_id": 42, "rating": 0})
+        too_low = test_client.post("/api/bot/reviews", json={"mission_id": 1001, "rating": 0}, headers=_as(42))
         assert too_low.status_code == 400
         assert "1 et 5" in too_low.json()["detail"]
 
-        too_high = test_client.post("/api/bot/reviews", json={"mission_id": 1001, "client_telegram_id": 42, "rating": 6})
+        too_high = test_client.post("/api/bot/reviews", json={"mission_id": 1001, "rating": 6}, headers=_as(42))
         assert too_high.status_code == 400
         assert "1 et 5" in too_high.json()["detail"]
 
@@ -585,7 +597,8 @@ def test_review_rejected_for_mismatched_client(tmp_path, monkeypatch):
 
         response = test_client.post(
             "/api/bot/reviews",
-            json={"mission_id": 1001, "client_telegram_id": 999, "rating": 5},
+            json={"mission_id": 1001, "rating": 5},
+            headers=_as(999),
         )
         assert response.status_code == 400
         assert "associé" in response.json()["detail"]
@@ -611,7 +624,8 @@ def test_update_provider_language(tmp_path, monkeypatch):
 def _rate(test_client, mission_id, rating, client_telegram_id=42):
     return test_client.post(
         "/api/bot/reviews",
-        json={"mission_id": mission_id, "client_telegram_id": client_telegram_id, "rating": rating},
+        json={"mission_id": mission_id, "rating": rating},
+        headers=_as(client_telegram_id),
     )
 
 
@@ -839,7 +853,8 @@ def test_backend_refuses_a_quote_from_the_mission_client(tmp_path, monkeypatch):
         _register_provider(test_client, 42, ["service_peinture"], ["Gombe"])
         response = test_client.post(
             "/api/bot/quotes",
-            json={"mission_id": 1001, "provider_telegram_id": 42, "amount": 10.0, "currency": "USD", "delay_hours": 1},
+            json={"mission_id": 1001, "amount": 10.0, "currency": "USD", "delay_hours": 1},
+            headers=_as(42),
         )
 
         assert response.status_code == 409
@@ -853,8 +868,9 @@ def test_mobile_money_cannot_be_declared_paid_by_the_bot(tmp_path, monkeypatch):
     with _authed_client(backend_main) as test_client:
         response = test_client.post(
             "/api/bot/missions/1/fund",
-            json={"method": "mobile_money", "client_telegram_id": 42, "provider_telegram_id": 7, "quote_ref": 1,
+            json={"method": "mobile_money", "provider_telegram_id": 7, "quote_ref": 1,
                   "amount": 10.0, "currency": "USD", "service": "s", "commune": "Gombe"},
+            headers=_as(42),
         )
         assert response.status_code == 400
         assert response.json()["detail"] == {"code": "use_payment_intent"}
@@ -866,22 +882,23 @@ def test_payout_endpoints_hold_then_pay_after_admin_approval(tmp_path, monkeypat
 
     with _authed_client(backend_main) as test_client:
         _complete_mission_flow(test_client)  # le prestataire 7 gagne 90 USD
-        payout = {"telegram_id": 7, "amount": 50.0, "currency": "USD", "phone": "+243970000000", "operator": "airtel"}
+        payout = {"amount": 50.0, "currency": "USD", "phone": "+243970000000", "operator": "airtel"}
 
-        requested = test_client.post("/api/bot/payouts", json=payout).json()["payout"]
+        requested = test_client.post("/api/bot/payouts", json=payout, headers=_as(7)).json()["payout"]
         assert requested["status"] == "awaiting_approval"
-        assert test_client.get("/api/bot/wallets/7").json()["wallet"]["wallet_balance_usd"] == 40.0
-        assert [p["id"] for p in test_client.get("/api/bot/payouts").json()["payouts"]] == [requested["id"]]
+        assert test_client.get("/api/me/wallet", headers=_as(7)).json()["wallet"]["wallet_balance_usd"] == 40.0
+        assert test_client.get("/api/bot/payouts", headers=_as(7)).status_code == 403, "liste réservée à l'admin"
+        assert [p["id"] for p in test_client.get("/api/bot/payouts", headers=_as(1)).json()["payouts"]] == [requested["id"]]
 
         for decision in ("approve", "reject"):
-            refused = test_client.post(f"/api/bot/payouts/{requested['id']}/{decision}", json={"admin_telegram_id": 7})
+            refused = test_client.post(f"/api/bot/payouts/{requested['id']}/{decision}", json={}, headers=_as(7))
             assert refused.status_code == 403
             assert refused.json()["detail"] == {"code": "not_admin"}
 
-        approved = test_client.post(f"/api/bot/payouts/{requested['id']}/approve", json={"admin_telegram_id": 1})
+        approved = test_client.post(f"/api/bot/payouts/{requested['id']}/approve", json={}, headers=_as(1))
         assert approved.json()["payout"]["status"] == "succeeded"
 
-        too_much = test_client.post("/api/bot/payouts", json={**payout, "amount": 100.0})
+        too_much = test_client.post("/api/bot/payouts", json={**payout, "amount": 100.0}, headers=_as(7))
         assert too_much.status_code == 409
         assert too_much.json()["detail"] == {"code": "insufficient_balance"}
 
@@ -907,3 +924,52 @@ def test_payment_intents_name_the_parties_by_account(tmp_path, monkeypatch):
         assert request["client_account_id"] == ledger.account_id_for(db, ledger.TELEGRAM, 42)
         assert request["provider_account_id"] == ledger.account_id_for(db, ledger.TELEGRAM, 7)
         assert "client_telegram_id" not in request and "provider_telegram_id" not in request
+
+
+# ── Acteur : identité de canal résolue par le backend ───────────
+
+
+def test_actions_without_a_valid_actor_are_refused(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        missing = test_client.post("/api/bot/missions/1/confirm")
+        assert missing.status_code == 400
+        assert missing.json()["detail"] == {"code": "actor_required"}
+        unknown = test_client.post(
+            "/api/bot/missions/1/confirm", headers={"X-Actor-Channel": "sms", "X-Actor-Id": "42"}
+        )
+        assert unknown.json()["detail"] == {"code": "unknown_channel"}
+        forged = test_client.post("/api/bot/missions/1/confirm", headers={"X-Actor-Channel": "telegram", "X-Actor-Id": "42 OR 1"})
+        assert forged.json()["detail"] == {"code": "invalid_actor"}
+
+
+def test_only_the_mission_client_accepts_or_rejects_its_quotes(tmp_path, monkeypatch):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+
+    with _authed_client(backend_main) as test_client:
+        test_client.post(
+            "/api/bot/missions",
+            json={"telegram_id": 42, "mission_id": 1001, "service": "s", "commune": "Gombe", "currency": "USD"},
+        )
+        quote_id = test_client.post(
+            "/api/bot/quotes",
+            json={"mission_id": 1001, "amount": 90.0, "currency": "USD", "delay_hours": 3},
+            headers=_as(7),
+        ).json()["quote"]["id"]
+
+        for action in ("accept", "reject"):
+            intruder = test_client.post(f"/api/bot/quotes/{quote_id}/{action}", headers=_as(7))
+            assert intruder.status_code == 403
+            assert intruder.json()["detail"] == {"code": "not_mission_client"}
+        assert test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42)).json()["quote"]["status"] == "accepted"
+
+
+def test_a_wallet_is_only_read_by_its_owner(tmp_path, monkeypatch):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+    _credit_client_wallet(database_module, 42, 30.0)
+
+    with _authed_client(backend_main) as test_client:
+        assert test_client.get("/api/me/wallet", headers=_as(42)).json()["wallet"]["wallet_balance_usd"] == 30.0
+        assert test_client.get("/api/me/wallet", headers=_as(7)).json()["wallet"]["wallet_balance_usd"] == 0.0
+        assert test_client.get("/api/bot/wallets/42").status_code == 404, "plus de lecture du wallet d'autrui"

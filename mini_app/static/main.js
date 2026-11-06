@@ -149,7 +149,7 @@ function renderRole(role, data) {
   } else {
     renderRows("profile-details", [
       { title: profile.first_name || "Client", subtitle: `Telephone: ${profile.phone_number || "Non renseigne"}` },
-      { title: "Wallet", subtitle: `${profile.wallet_balance_usd || 0} USD | ${profile.wallet_balance_cdf || 0} CDF` },
+      { title: "Wallet", subtitle: `${walletAmount(data.wallet, "USD")} | ${walletAmount(data.wallet, "CDF")}` },
     ], "Aucune information");
   }
 
@@ -175,6 +175,13 @@ function renderRole(role, data) {
 function money(value, currency) {
   const amount = Number(value || 0);
   return `${amount.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} ${currency}`;
+}
+
+// Solde du registre du backend ; jamais de chiffre par défaut quand il est
+// inconnu (backend injoignable).
+function walletAmount(wallet, currency) {
+  const value = wallet ? wallet[currency === "USD" ? "wallet_balance_usd" : "wallet_balance_cdf"] : null;
+  return typeof value === "number" ? money(value, currency) : "Solde indisponible";
 }
 
 function statusLabel(status) {
@@ -263,8 +270,8 @@ function renderProviderOverview(data) {
   setText("provider-missions-total", String(provider.total_missions || 0));
   setText("provider-rating", Number(provider.rating || 0).toFixed(1));
   setText("provider-success-rate", `${Number(provider.success_rate || 0).toFixed(0)}%`);
-  setText("provider-wallet-usd", money(provider.wallet_balance_usd, "USD"));
-  setText("provider-wallet-cdf", money(provider.wallet_balance_cdf, "CDF"));
+  setText("provider-wallet-usd", walletAmount(data.wallet, "USD"));
+  setText("provider-wallet-cdf", walletAmount(data.wallet, "CDF"));
   statusButton.disabled = false;
   statusButton.textContent = provider.status === "available" ? "Me rendre indisponible" : "Me rendre disponible";
 }

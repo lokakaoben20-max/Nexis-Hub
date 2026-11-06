@@ -511,9 +511,18 @@ synchronisent le rôle et la langue sur le compte Nexis.
 
 **Fait (2026-11-06) : règles d'argent par compte**, migration
 `b2c3d4e5f6a7`, vérifiée sur PostgreSQL 16 (aller-retour, arrêt si une
-intention n'a pas de compte). Voir `CONCEPTION_ARGENT.md`. Suite du découpage :
-routes API avec acteur résolu par identité de canal, bot Telegram, Mini App,
-puis rapport de migration sur une copie de la vraie base.
+intention n'a pas de compte). Voir `CONCEPTION_ARGENT.md`.
+
+**Fait (2026-11-06) : acteur résolu par le backend.** Toute action faite au nom
+d'une personne porte les en-têtes `X-Actor-Channel` / `X-Actor-Id` (identité
+de l'expéditeur Telegram, jamais lue dans `db.py`) ; le backend en déduit le
+compte (`current_actor` / `_actor_account` dans `backend/app/main.py`). Plus
+aucun identifiant d'acteur dans les corps de requête ; admin vérifié sur
+l'acteur ; accepter/refuser un devis réservé au client de la mission ; wallet
+lu par `GET /api/me/wallet` (le sien seulement) ; la Mini App affiche le solde
+du registre ou « Solde indisponible ». Reste : rapport de migration sur une
+copie de la vraie base, puis le socle (missions et devis uniquement dans le
+backend, fin de la copie `db.py`), qui n'est pas couvert par ce chantier.
 
 **Étape précédente : références métier.** La migration
 `a1b2c3d4e5f6_business_account_references.py` ajoute et rétro-remplit les

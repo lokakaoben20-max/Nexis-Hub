@@ -85,7 +85,7 @@ async def client_accepte_devis(callback: CallbackQuery):
         await callback.answer(str(error), show_alert=True)
         return
     if backend_quote_id is not None:
-        await _safe_backend_call(sync_quote_accept_to_backend(backend_quote_id))
+        await _safe_backend_call(sync_quote_accept_to_backend(backend_quote_id, callback.from_user.id))
     total_client = quote["amount"]
 
     client_lang = await get_user_language(callback.from_user.id)
@@ -242,7 +242,9 @@ async def paiement_mobile_money_operateur(callback: CallbackQuery):
         await callback.answer(get_message("money_error_invalid_phone", lang), show_alert=True)
         return
     try:
-        result = await backend_client.create_payment_intent(get_mission_by_id(quote["mission_id"]), quote, phone, operator)
+        result = await backend_client.create_payment_intent(
+            get_mission_by_id(quote["mission_id"]), quote, phone, operator, callback.from_user.id
+        )
     except (MoneyRefused, BackendUnavailable) as error:
         await callback.answer(money_failure_text(quote["mission_id"], error, lang), show_alert=True)
         return
@@ -502,7 +504,7 @@ async def paiement_wallet(callback: CallbackQuery):
         return
     lang = await get_user_language(callback.from_user.id)
     try:
-        result = await backend_client.fund_mission(get_mission_by_id(quote["mission_id"]), quote, "wallet")
+        result = await backend_client.fund_mission(get_mission_by_id(quote["mission_id"]), quote, "wallet", callback.from_user.id)
     except (MoneyRefused, BackendUnavailable) as error:
         await callback.answer(money_failure_text(quote["mission_id"], error, lang), show_alert=True)
         return
@@ -534,7 +536,7 @@ async def client_refuse_devis(callback: CallbackQuery):
         await callback.answer(str(error), show_alert=True)
         return
     if backend_quote_id is not None:
-        await _safe_backend_call(sync_quote_reject_to_backend(backend_quote_id))
+        await _safe_backend_call(sync_quote_reject_to_backend(backend_quote_id, callback.from_user.id))
     client_lang = await get_user_language(callback.from_user.id)
     await callback.message.edit_text(
         get_message(

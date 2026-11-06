@@ -1,5 +1,6 @@
 import hmac
 import os
+from dataclasses import dataclass
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
@@ -37,6 +38,55 @@ def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
 # `app` directement, sans authentification, pour rester utilisable par un
 # outil de supervision externe.
 router = APIRouter(dependencies=[Depends(verify_api_key)])
+
+
+# Canaux dont le backend sait résoudre l'identité d'un acteur. WhatsApp s'y
+# ajoutera avec sa propre clé de service (docs/ARCHITECTURE_WHATSAPP.md).
+ACTOR_CHANNELS = (ledger.TELEGRAM,)
+
+
+@dataclass(frozen=True)
+class Actor:
+    """La personne pour qui le canal appelle, telle que le canal la connaît.
+    Le canal ne dit jamais « j'agis pour le compte n° X » : le backend résout
+    lui-même le compte (`_actor_account`)."""
+
+    channel: str
+    external_id: str
+
+    @property
+    def telegram_id(self) -> int:
+        if self.channel != ledger.TELEGRAM:
+            raise HTTPException(status_code=403, detail={"code": "telegram_only"})
+        return int(self.external_id)
+
+
+def current_actor(
+    x_actor_channel: str | None = Header(default=None),
+    x_actor_id: str | None = Header(default=None),
+) -> Actor:
+    """En-têtes `X-Actor-Channel` / `X-Actor-Id`, obligatoires sur toute
+    action faite au nom d'une personne."""
+    if not x_actor_channel or not x_actor_id:
+        raise HTTPException(status_code=400, detail={"code": "actor_required"})
+    if x_actor_channel not in ACTOR_CHANNELS:
+        raise HTTPException(status_code=400, detail={"code": "unknown_channel"})
+    if x_actor_channel == ledger.TELEGRAM and not x_actor_id.isdigit():
+        raise HTTPException(status_code=400, detail={"code": "invalid_actor"})
+    return Actor(channel=x_actor_channel, external_id=x_actor_id)
+
+
+def _actor_account(
+    db, actor: Actor, *, create: bool = False, missing: str = "account_not_found", http_status: int = 404
+) -> int:
+    """Compte Nexis de l'acteur : le seul endroit où l'API traduit une identité
+    de canal en compte. Les règles d'argent ne comparent ensuite que des
+    comptes. `create` : le canal garantit l'identifiant de l'expéditeur (c'est
+    lui qui écrit), son compte peut donc naître de sa première action."""
+    account_id = ledger.account_id_for(db, actor.channel, actor.external_id, create=create)
+    if account_id is None:
+        raise ledger.MoneyError(missing, http_status)
+    return account_id
 
 
 class BotUserPayload(BaseModel):
@@ -86,7 +136,6 @@ class NamePayload(BaseModel):
 
 class QuoteCreatePayload(BaseModel):
     mission_id: int
-    provider_telegram_id: int
     amount: float
     currency: str = "USD"
     delay_hours: int
@@ -95,7 +144,7 @@ class QuoteCreatePayload(BaseModel):
 
 class FundPayload(BaseModel):
     method: str
-    client_telegram_id: int
+    # Le prestataire est désigné (le client paie) : il n'existe que sur Telegram.
     provider_telegram_id: int
     quote_ref: int
     amount: float
@@ -113,7 +162,6 @@ class PaymentIntentPayload(FundPayload):
 
 
 class PayoutPayload(BaseModel):
-    telegram_id: int
     amount: float
     currency: str
     phone: str
@@ -121,37 +169,24 @@ class PayoutPayload(BaseModel):
 
 
 class PayoutDecisionPayload(BaseModel):
-    admin_telegram_id: int
     reason: str = ""
 
 
 class MismatchDecisionPayload(BaseModel):
-    admin_telegram_id: int
     decision: str
 
 
-class ProviderActionPayload(BaseModel):
-    provider_telegram_id: int
-
-
-class ClientActionPayload(BaseModel):
-    client_telegram_id: int
-
-
 class DisputeOpenPayload(BaseModel):
-    client_telegram_id: int
     reason: str
 
 
 class DisputeResolvePayload(BaseModel):
     decision: str
-    admin_telegram_id: int
     provider_percentage: float | None = None
 
 
 class ReviewCreatePayload(BaseModel):
     mission_id: int
-    client_telegram_id: int
     rating: int
     comment: str | None = None
 
@@ -161,7 +196,6 @@ class ProviderRankPayload(BaseModel):
 
 
 class ServiceRequestPayload(BaseModel):
-    provider_telegram_id: int
     service_name: str
     description: str = ""
 
@@ -169,18 +203,6 @@ class ServiceRequestPayload(BaseModel):
 class ServiceRequestStatusPayload(BaseModel):
     status: str
     admin_note: str = ""
-
-
-def _telegram_account(
-    db, telegram_id: int, *, create: bool = False, missing: str = "account_not_found", http_status: int = 404
-) -> int:
-    """Compte Nexis d'une identité Telegram : le seul endroit où l'API traduit
-    une identité de canal en compte. Les règles d'argent ne comparent ensuite
-    que des comptes. Sans `create`, une identité inconnue est refusée."""
-    account_id = ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=create)
-    if account_id is None:
-        raise ledger.MoneyError(missing, http_status)
-    return account_id
 
 
 def _wallet_fields(db, telegram_id: int) -> dict:
@@ -454,13 +476,13 @@ def rank_providers(payload: ProviderRankPayload):
 
 
 @router.post("/api/bot/quotes")
-def create_quote(payload: QuoteCreatePayload):
+def create_quote(payload: QuoteCreatePayload, actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
         try:
             quote = crud.create_quote(
                 db,
                 mission_id=payload.mission_id,
-                provider_telegram_id=payload.provider_telegram_id,
+                provider_telegram_id=actor.telegram_id,
                 amount=payload.amount,
                 currency=payload.currency,
                 delay_hours=payload.delay_hours,
@@ -474,13 +496,13 @@ def create_quote(payload: QuoteCreatePayload):
 
 
 @router.post("/api/bot/reviews")
-def create_review(payload: ReviewCreatePayload):
+def create_review(payload: ReviewCreatePayload, actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
         try:
             review = crud.create_review(
                 db,
                 mission_id=payload.mission_id,
-                client_telegram_id=payload.client_telegram_id,
+                client_telegram_id=actor.telegram_id,
                 rating=payload.rating,
                 comment=payload.comment,
             )
@@ -489,22 +511,29 @@ def create_review(payload: ReviewCreatePayload):
         return {"status": "ok", "review": _review_to_dict(review)}
 
 
-@router.post("/api/bot/quotes/{quote_id}/accept")
-def accept_quote(quote_id: int):
+def _quote_decision(quote_id: int, actor: Actor, decide) -> dict:
     with SessionLocal() as db:
-        quote = crud.accept_quote(db, quote_id)
+        client_account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
+        if client_account_id is None:
+            raise HTTPException(status_code=403, detail={"code": "not_mission_client"})
+        try:
+            quote = decide(db, quote_id, client_account_id)
+        except ValueError as exc:
+            status = 403 if str(exc) == "not_mission_client" else 409
+            raise HTTPException(status_code=status, detail={"code": str(exc)}) from exc
         if quote is None:
             raise HTTPException(status_code=404, detail="quote_not_found")
         return {"status": "ok", "quote": _quote_to_dict(quote)}
+
+
+@router.post("/api/bot/quotes/{quote_id}/accept")
+def accept_quote(quote_id: int, actor: Actor = Depends(current_actor)):
+    return _quote_decision(quote_id, actor, crud.accept_quote)
 
 
 @router.post("/api/bot/quotes/{quote_id}/reject")
-def reject_quote(quote_id: int):
-    with SessionLocal() as db:
-        quote = crud.reject_quote(db, quote_id)
-        if quote is None:
-            raise HTTPException(status_code=404, detail="quote_not_found")
-        return {"status": "ok", "quote": _quote_to_dict(quote)}
+def reject_quote(quote_id: int, actor: Actor = Depends(current_actor)):
+    return _quote_decision(quote_id, actor, crud.reject_quote)
 
 
 def _money_response(db, mission: BotMission) -> dict:
@@ -541,7 +570,7 @@ def _money_call(operation):
 
 
 @router.post("/api/bot/missions/{mission_id}/fund")
-def fund_mission(mission_id: int, payload: FundPayload):
+def fund_mission(mission_id: int, payload: FundPayload, actor: Actor = Depends(current_actor)):
     # Seul le wallet paie directement : un paiement Mobile Money n'existe que
     # confirmé par l'agrégateur (/payment-intents, CONCEPTION_MOBILE_MONEY.md).
     if payload.method != "wallet":
@@ -551,7 +580,7 @@ def fund_mission(mission_id: int, payload: FundPayload):
             db,
             mission_id,
             method=payload.method,
-            **_funding_parties(db, payload),
+            **_funding_parties(db, actor, payload),
             quote_ref=payload.quote_ref,
             amount=payload.amount,
             currency=payload.currency,
@@ -563,14 +592,16 @@ def fund_mission(mission_id: int, payload: FundPayload):
     )
 
 
-def _funding_parties(db, payload: FundPayload) -> dict:
-    """Comptes du client et du prestataire, créés au besoin. Un identifiant
-    Telegram ne désigne qu'une personne : créer son compte ne peut rattacher
-    l'argent à personne d'autre. L'exiger au préalable bloquerait le paiement
-    d'un prestataire dont l'inscription n'a pas encore été recopiée."""
+def _funding_parties(db, actor: Actor, payload: FundPayload) -> dict:
+    """Le client est l'acteur ; le prestataire est désigné par son identifiant
+    Telegram (les prestataires n'existent que sur Telegram). Comptes créés au
+    besoin : un identifiant Telegram ne désigne qu'une personne, créer son
+    compte ne peut rattacher l'argent à personne d'autre, et l'exiger au
+    préalable bloquerait le paiement d'un prestataire dont l'inscription n'a
+    pas encore été recopiée."""
     return {
-        "client_account_id": _telegram_account(db, payload.client_telegram_id, create=True),
-        "provider_account_id": _telegram_account(db, payload.provider_telegram_id, create=True),
+        "client_account_id": _actor_account(db, actor, create=True),
+        "provider_account_id": ledger.account_id_for(db, ledger.TELEGRAM, payload.provider_telegram_id, create=True),
     }
 
 
@@ -611,12 +642,12 @@ def _intent_response(db, intent: PaymentIntent) -> dict:
 
 
 @router.post("/api/bot/missions/{mission_id}/payment-intents")
-def create_payment_intent(mission_id: int, payload: PaymentIntentPayload):
+def create_payment_intent(mission_id: int, payload: PaymentIntentPayload, actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
         try:
             funding_request = {
-                **payload.model_dump(exclude={"method", "phone", "operator", "client_telegram_id", "provider_telegram_id"}),
-                **_funding_parties(db, payload),
+                **payload.model_dump(exclude={"method", "phone", "operator", "provider_telegram_id"}),
+                **_funding_parties(db, actor, payload),
             }
             intent = mobile_money.create_intent(
                 db, mission_id, phone=payload.phone, operator=payload.operator, funding_request=funding_request
@@ -651,12 +682,12 @@ def _payout_call(operation):
 
 
 @router.post("/api/bot/payouts")
-def request_payout(payload: PayoutPayload):
+def request_payout(payload: PayoutPayload, actor: Actor = Depends(current_actor)):
     return _payout_call(
         lambda db: mobile_money.request_payout(
             db,
             # Sans compte, il n'y a pas de solde à retirer.
-            account_id=_telegram_account(db, payload.telegram_id, missing="insufficient_balance", http_status=409),
+            account_id=_actor_account(db, actor, missing="insufficient_balance", http_status=409),
             amount=payload.amount,
             currency=payload.currency,
             phone=payload.phone,
@@ -666,38 +697,42 @@ def request_payout(payload: PayoutPayload):
 
 
 @router.get("/api/bot/payouts")
-def list_payouts(status: str = "awaiting_approval", limit: int = 20):
+def list_payouts(status: str = "awaiting_approval", limit: int = 20, actor: Actor = Depends(current_actor)):
+    # Téléphones des prestataires : réservé à l'admin.
+    _require_admin(actor)
     with SessionLocal() as db:
         payouts = db.query(Payout).filter(Payout.status == status).order_by(Payout.id).limit(min(limit, 50)).all()
         return {"status": "ok", "payouts": [_payout_to_dict(payout) for payout in payouts]}
 
 
-def _require_admin(admin_telegram_id: int) -> None:
-    """Décisions d'argent réservées à l'admin configuré. Le bot le vérifie
-    déjà ; le backend le revérifie pour qu'une erreur côté bot ne suffise
-    jamais à valider un retrait ou trancher un litige. Sans ADMIN_TELEGRAM_ID,
-    personne n'est admin (même règle que le bot)."""
+def _require_admin(actor: Actor) -> int:
+    """Décisions d'argent réservées à l'admin configuré, qui agit depuis
+    Telegram. Le bot le vérifie déjà ; le backend le revérifie pour qu'une
+    erreur côté bot ne suffise jamais à valider un retrait ou trancher un
+    litige. Sans ADMIN_TELEGRAM_ID, personne n'est admin (même règle que le
+    bot). Renvoie l'identifiant Telegram de l'admin, pour l'audit."""
     configured = os.getenv("ADMIN_TELEGRAM_ID", "").strip()
-    if not configured or not hmac.compare_digest(configured, str(admin_telegram_id)):
+    if actor.channel != ledger.TELEGRAM or not configured or not hmac.compare_digest(configured, actor.external_id):
         raise HTTPException(status_code=403, detail={"code": "not_admin"})
+    return actor.telegram_id
 
 
 @router.post("/api/bot/payouts/{payout_id}/approve")
-def approve_payout(payout_id: int, payload: PayoutDecisionPayload):
-    _require_admin(payload.admin_telegram_id)
-    return _payout_call(lambda db: mobile_money.approve_payout(db, payout_id, payload.admin_telegram_id))
+def approve_payout(payout_id: int, payload: PayoutDecisionPayload, actor: Actor = Depends(current_actor)):
+    admin_telegram_id = _require_admin(actor)
+    return _payout_call(lambda db: mobile_money.approve_payout(db, payout_id, admin_telegram_id))
 
 
 @router.post("/api/bot/payouts/{payout_id}/reject")
-def reject_payout(payout_id: int, payload: PayoutDecisionPayload):
-    _require_admin(payload.admin_telegram_id)
-    return _payout_call(lambda db: mobile_money.reject_payout(db, payout_id, payload.admin_telegram_id, payload.reason))
+def reject_payout(payout_id: int, payload: PayoutDecisionPayload, actor: Actor = Depends(current_actor)):
+    admin_telegram_id = _require_admin(actor)
+    return _payout_call(lambda db: mobile_money.reject_payout(db, payout_id, admin_telegram_id, payload.reason))
 
 
 @router.get("/api/bot/payment-intents/mismatches")
-def list_payment_mismatches(admin_telegram_id: int, limit: int = 20):
+def list_payment_mismatches(limit: int = 20, actor: Actor = Depends(current_actor)):
     # Téléphone et identifiant du client : réservé à l'admin.
-    _require_admin(admin_telegram_id)
+    _require_admin(actor)
     with SessionLocal() as db:
         intents = mobile_money.list_mismatches(db, limit)
         return {
@@ -722,11 +757,13 @@ def _notify_mismatch_resolved(intent_id: int) -> None:
 
 
 @router.post("/api/bot/payment-intents/{intent_id}/resolve-mismatch")
-def resolve_payment_mismatch(intent_id: int, payload: MismatchDecisionPayload, background_tasks: BackgroundTasks):
-    _require_admin(payload.admin_telegram_id)
+def resolve_payment_mismatch(
+    intent_id: int, payload: MismatchDecisionPayload, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)
+):
+    admin_telegram_id = _require_admin(actor)
     with SessionLocal() as db:
         try:
-            intent, resolved_now = mobile_money.resolve_mismatch(db, intent_id, payload.admin_telegram_id, payload.decision)
+            intent, resolved_now = mobile_money.resolve_mismatch(db, intent_id, admin_telegram_id, payload.decision)
         except ledger.MoneyError as error:
             raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
         if resolved_now:
@@ -762,44 +799,44 @@ async def payment_webhook(gateway_name: str, request: Request):
 
 
 @router.post("/api/bot/missions/{mission_id}/start")
-def start_mission(mission_id: int, payload: ProviderActionPayload):
+def start_mission(mission_id: int, actor: Actor = Depends(current_actor)):
     return _money_call(
-        lambda db: ledger.start_mission(db, mission_id, _telegram_account(db, payload.provider_telegram_id, missing="not_mission_provider", http_status=403))
+        lambda db: ledger.start_mission(db, mission_id, _actor_account(db, actor, missing="not_mission_provider", http_status=403))
     )
 
 
 @router.post("/api/bot/missions/{mission_id}/finish")
-def finish_mission(mission_id: int, payload: ProviderActionPayload):
+def finish_mission(mission_id: int, actor: Actor = Depends(current_actor)):
     return _money_call(
-        lambda db: ledger.finish_mission(db, mission_id, _telegram_account(db, payload.provider_telegram_id, missing="not_mission_provider", http_status=403))
+        lambda db: ledger.finish_mission(db, mission_id, _actor_account(db, actor, missing="not_mission_provider", http_status=403))
     )
 
 
 @router.post("/api/bot/missions/{mission_id}/confirm")
-def confirm_mission(mission_id: int, payload: ClientActionPayload):
+def confirm_mission(mission_id: int, actor: Actor = Depends(current_actor)):
     return _money_call(
-        lambda db: ledger.confirm_completion(db, mission_id, _telegram_account(db, payload.client_telegram_id, missing="not_mission_client", http_status=403))
+        lambda db: ledger.confirm_completion(db, mission_id, _actor_account(db, actor, missing="not_mission_client", http_status=403))
     )
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute")
-def open_dispute(mission_id: int, payload: DisputeOpenPayload):
+def open_dispute(mission_id: int, payload: DisputeOpenPayload, actor: Actor = Depends(current_actor)):
     return _money_call(
         lambda db: ledger.open_dispute(
-            db, mission_id, _telegram_account(db, payload.client_telegram_id, missing="not_mission_client", http_status=403), payload.reason
+            db, mission_id, _actor_account(db, actor, missing="not_mission_client", http_status=403), payload.reason
         )
     )
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute/resolve")
-def resolve_dispute(mission_id: int, payload: DisputeResolvePayload):
-    _require_admin(payload.admin_telegram_id)
+def resolve_dispute(mission_id: int, payload: DisputeResolvePayload, actor: Actor = Depends(current_actor)):
+    admin_telegram_id = _require_admin(actor)
     return _money_call(
         lambda db: ledger.resolve_dispute(
             db,
             mission_id,
             decision=payload.decision,
-            admin_telegram_id=payload.admin_telegram_id,
+            admin_telegram_id=admin_telegram_id,
             provider_percentage=payload.provider_percentage,
         )
     )
@@ -814,19 +851,30 @@ def get_mission(mission_id: int):
         return _money_response(db, mission)
 
 
-@router.get("/api/bot/wallets/{telegram_id}")
-def get_wallets(telegram_id: int):
+@router.get("/api/me/wallet")
+def get_my_wallet(actor: Actor = Depends(current_actor)):
+    """Wallet de l'acteur, et de lui seul : un canal ne lit jamais le solde
+    d'une autre personne par cette route."""
     with SessionLocal() as db:
-        return {"status": "ok", "telegram_id": telegram_id, "wallet": _wallet_fields(db, telegram_id)}
+        account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
+        balances = ledger.wallet_balances(db, account_id)
+        return {
+            "status": "ok",
+            "wallet": {
+                "account_id": account_id,
+                "wallet_balance_usd": float(balances["USD"]),
+                "wallet_balance_cdf": float(balances["CDF"]),
+            },
+        }
 
 
 @router.post("/api/bot/service-requests")
-def create_service_request(payload: ServiceRequestPayload):
+def create_service_request(payload: ServiceRequestPayload, actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
         try:
             req = crud.create_service_request(
                 db,
-                provider_telegram_id=payload.provider_telegram_id,
+                provider_telegram_id=actor.telegram_id,
                 service_name=payload.service_name,
                 description=payload.description,
             )

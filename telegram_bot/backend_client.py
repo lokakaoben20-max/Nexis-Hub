@@ -26,6 +26,13 @@ BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
 BACKEND_AUTH_HEADERS = {"X-API-Key": BACKEND_API_KEY}
 
 
+def actor_headers(telegram_id: int) -> dict:
+    """En-têtes d'une action faite au nom d'une personne : son identité
+    Telegram, toujours celle de l'expéditeur du message ou du clic (jamais lue
+    dans db.py). Le backend en déduit lui-même le compte Nexis."""
+    return {**BACKEND_AUTH_HEADERS, "X-Actor-Channel": "telegram", "X-Actor-Id": str(int(telegram_id))}
+
+
 async def _safe_backend_call(coro):
     try:
         return await coro
@@ -163,27 +170,26 @@ async def sync_mission_to_backend(telegram_id: int, mission_id: int, data: dict)
 async def sync_quote_to_backend(mission_id: int, provider_telegram_id: int, amount: float, currency: str, delay_hours: int, message: str = "") -> dict:
     payload = {
         "mission_id": mission_id,
-        "provider_telegram_id": provider_telegram_id,
         "amount": amount,
         "currency": currency,
         "delay_hours": delay_hours,
         "message": message,
     }
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=actor_headers(provider_telegram_id)) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes", json=payload)
         response.raise_for_status()
         return response.json()
 
 
-async def sync_quote_accept_to_backend(backend_quote_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+async def sync_quote_accept_to_backend(backend_quote_id: int, client_telegram_id: int) -> dict:
+    async with httpx.AsyncClient(timeout=5.0, headers=actor_headers(client_telegram_id)) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes/{backend_quote_id}/accept")
         response.raise_for_status()
         return response.json()
 
 
-async def sync_quote_reject_to_backend(backend_quote_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+async def sync_quote_reject_to_backend(backend_quote_id: int, client_telegram_id: int) -> dict:
+    async with httpx.AsyncClient(timeout=5.0, headers=actor_headers(client_telegram_id)) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/quotes/{backend_quote_id}/reject")
         response.raise_for_status()
         return response.json()
@@ -191,11 +197,10 @@ async def sync_quote_reject_to_backend(backend_quote_id: int) -> dict:
 
 async def sync_service_request_to_backend(provider_telegram_id: int, service_name: str, description: str = "") -> dict:
     payload = {
-        "provider_telegram_id": provider_telegram_id,
         "service_name": service_name,
         "description": description,
     }
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=actor_headers(provider_telegram_id)) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/service-requests", json=payload)
         response.raise_for_status()
         return response.json()
@@ -234,9 +239,12 @@ class MoneyRefused(Exception):
         self.money = money
 
 
-async def _money_call(method: str, path: str, payload: dict | None = None) -> dict:
+async def _money_call(method: str, path: str, payload: dict | None = None, actor: int | None = None) -> dict:
+    """`actor` : identifiant Telegram de la personne qui agit (sauf lecture ou
+    relance d'un paiement, qui n'agissent au nom de personne)."""
+    headers = actor_headers(actor) if actor is not None else BACKEND_AUTH_HEADERS
     try:
-        async with httpx.AsyncClient(timeout=10.0, headers=BACKEND_AUTH_HEADERS) as client:
+        async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
             if method == "GET":
                 response = await client.get(f"{BACKEND_BASE_URL}{path}")
             else:
@@ -256,17 +264,18 @@ async def _money_call(method: str, path: str, payload: dict | None = None) -> di
     return body
 
 
-async def fund_mission(mission, quote, method: str) -> dict:
+async def fund_mission(mission, quote, method: str, client_telegram_id: int) -> dict:
     """Paie la mission en escrow par le wallet (seul paiement direct possible).
     `mission` et `quote` sont les lignes db.py : la demande porte tout ce dont
-    le backend a besoin."""
-    return await _money_call("POST", f"/api/bot/missions/{mission['id']}/fund", _funding_payload(mission, quote, method))
+    le backend a besoin. `client_telegram_id` : la personne qui paie."""
+    return await _money_call(
+        "POST", f"/api/bot/missions/{mission['id']}/fund", _funding_payload(mission, quote, method), actor=client_telegram_id
+    )
 
 
 def _funding_payload(mission, quote, method: str) -> dict:
     return {
         "method": method,
-        "client_telegram_id": mission["client_telegram_id"],
         "provider_telegram_id": quote["provider_telegram_id"],
         "quote_ref": quote["id"],
         "amount": quote["amount"],
@@ -302,11 +311,12 @@ def detect_operator(phone: str | None) -> str | None:
     return _OPERATOR_PREFIXES.get(phone[4:6]) if phone else None
 
 
-async def create_payment_intent(mission, quote, phone: str, operator: str) -> dict:
+async def create_payment_intent(mission, quote, phone: str, operator: str, client_telegram_id: int) -> dict:
     return await _money_call(
         "POST",
         f"/api/bot/missions/{mission['id']}/payment-intents",
         {**_funding_payload(mission, quote, "mobile_money"), "phone": phone, "operator": operator},
+        actor=client_telegram_id,
     )
 
 
@@ -314,11 +324,11 @@ async def refresh_payment_intent(intent_id: int) -> dict:
     return await _money_call("POST", f"/api/bot/payment-intents/{intent_id}/refresh")
 
 
-async def _payout_call(method: str, path: str, payload: dict | None = None, keys=("payout", "payouts")) -> dict:
+async def _payout_call(method: str, path: str, actor: int, payload: dict | None = None, keys=("payout", "payouts")) -> dict:
     """Comme `_money_call`, pour les réponses sans mission : retraits
     (`payout`/`payouts`), liste des montants différents (`intents`)."""
     try:
-        async with httpx.AsyncClient(timeout=10.0, headers=BACKEND_AUTH_HEADERS) as client:
+        async with httpx.AsyncClient(timeout=10.0, headers=actor_headers(actor)) as client:
             if method == "GET":
                 response = await client.get(f"{BACKEND_BASE_URL}{path}")
             else:
@@ -336,66 +346,62 @@ async def _payout_call(method: str, path: str, payload: dict | None = None, keys
 
 
 async def request_payout(telegram_id: int, amount: float, currency: str, phone: str, operator: str) -> dict:
-    payload = {"telegram_id": telegram_id, "amount": amount, "currency": currency, "phone": phone, "operator": operator}
-    return (await _payout_call("POST", "/api/bot/payouts", payload))["payout"]
+    payload = {"amount": amount, "currency": currency, "phone": phone, "operator": operator}
+    return (await _payout_call("POST", "/api/bot/payouts", telegram_id, payload))["payout"]
 
 
-async def list_payouts_awaiting_approval() -> list[dict]:
-    return (await _payout_call("GET", "/api/bot/payouts?status=awaiting_approval"))["payouts"]
+async def list_payouts_awaiting_approval(admin_telegram_id: int) -> list[dict]:
+    return (await _payout_call("GET", "/api/bot/payouts?status=awaiting_approval", admin_telegram_id))["payouts"]
 
 
 async def decide_payout(payout_id: int, approve: bool, admin_telegram_id: int, reason: str = "") -> dict:
     action = "approve" if approve else "reject"
-    payload = {"admin_telegram_id": admin_telegram_id, "reason": reason}
-    return (await _payout_call("POST", f"/api/bot/payouts/{payout_id}/{action}", payload))["payout"]
+    return (await _payout_call("POST", f"/api/bot/payouts/{payout_id}/{action}", admin_telegram_id, {"reason": reason}))["payout"]
 
 
 async def list_payment_mismatches(admin_telegram_id: int) -> list[dict]:
-    path = f"/api/bot/payment-intents/mismatches?admin_telegram_id={admin_telegram_id}"
-    return (await _payout_call("GET", path, keys=("intents",)))["intents"]
+    return (await _payout_call("GET", "/api/bot/payment-intents/mismatches", admin_telegram_id, keys=("intents",)))["intents"]
 
 
 async def resolve_payment_mismatch(intent_id: int, decision: str, admin_telegram_id: int) -> dict:
     return await _money_call(
-        "POST",
-        f"/api/bot/payment-intents/{intent_id}/resolve-mismatch",
-        {"decision": decision, "admin_telegram_id": admin_telegram_id},
+        "POST", f"/api/bot/payment-intents/{intent_id}/resolve-mismatch", {"decision": decision}, actor=admin_telegram_id
     )
 
 
 async def start_mission(mission_id: int, provider_telegram_id: int) -> dict:
-    return await _money_call("POST", f"/api/bot/missions/{mission_id}/start", {"provider_telegram_id": provider_telegram_id})
+    return await _money_call("POST", f"/api/bot/missions/{mission_id}/start", actor=provider_telegram_id)
 
 
 async def finish_mission(mission_id: int, provider_telegram_id: int) -> dict:
-    return await _money_call("POST", f"/api/bot/missions/{mission_id}/finish", {"provider_telegram_id": provider_telegram_id})
+    return await _money_call("POST", f"/api/bot/missions/{mission_id}/finish", actor=provider_telegram_id)
 
 
 async def confirm_mission(mission_id: int, client_telegram_id: int) -> dict:
-    return await _money_call("POST", f"/api/bot/missions/{mission_id}/confirm", {"client_telegram_id": client_telegram_id})
+    return await _money_call("POST", f"/api/bot/missions/{mission_id}/confirm", actor=client_telegram_id)
 
 
 async def open_dispute(mission_id: int, client_telegram_id: int, reason: str) -> dict:
-    return await _money_call(
-        "POST", f"/api/bot/missions/{mission_id}/dispute", {"client_telegram_id": client_telegram_id, "reason": reason}
-    )
+    return await _money_call("POST", f"/api/bot/missions/{mission_id}/dispute", {"reason": reason}, actor=client_telegram_id)
 
 
 async def resolve_dispute(mission_id: int, decision: str, admin_telegram_id: int, provider_percentage: float | None = None) -> dict:
     return await _money_call(
         "POST",
         f"/api/bot/missions/{mission_id}/dispute/resolve",
-        {"decision": decision, "admin_telegram_id": admin_telegram_id, "provider_percentage": provider_percentage},
+        {"decision": decision, "provider_percentage": provider_percentage},
+        actor=admin_telegram_id,
     )
 
 
 async def fetch_wallets(telegram_id: int) -> dict | None:
     """Wallet de la personne (un seul, qu'elle soit cliente, prestataire ou
     les deux), lu dans le registre. None si le backend ne répond pas : l'écran
-    affiche alors « solde indisponible », jamais un chiffre local."""
+    affiche alors « solde indisponible », jamais un chiffre local. Toujours
+    le wallet de la personne qui regarde (`telegram_id` = l'expéditeur)."""
     try:
-        async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-            response = await client.get(f"{BACKEND_BASE_URL}/api/bot/wallets/{telegram_id}")
+        async with httpx.AsyncClient(timeout=5.0, headers=actor_headers(telegram_id)) as client:
+            response = await client.get(f"{BACKEND_BASE_URL}/api/me/wallet")
             response.raise_for_status()
             body = response.json()
     except Exception:
@@ -426,11 +432,10 @@ def wallet_balance(wallets: dict | None, currency: str) -> float | None:
 async def sync_review_to_backend(mission_id: int, client_telegram_id: int, rating: int, comment: str = "") -> dict:
     payload = {
         "mission_id": mission_id,
-        "client_telegram_id": client_telegram_id,
         "rating": rating,
         "comment": comment,
     }
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=actor_headers(client_telegram_id)) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/reviews", json=payload)
         response.raise_for_status()
         return response.json()

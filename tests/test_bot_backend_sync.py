@@ -235,8 +235,8 @@ def test_sync_quote_to_backend_posts_payload(monkeypatch):
 def test_sync_quote_accept_and_reject_to_backend(monkeypatch):
     monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
 
-    accept_result = asyncio.run(backend_client.sync_quote_accept_to_backend(501))
-    reject_result = asyncio.run(backend_client.sync_quote_reject_to_backend(501))
+    accept_result = asyncio.run(backend_client.sync_quote_accept_to_backend(501, 42))
+    reject_result = asyncio.run(backend_client.sync_quote_reject_to_backend(501, 42))
 
     assert accept_result["quote"]["status"] == "accepted"
     assert reject_result["quote"]["status"] == "rejected"

@@ -26,6 +26,11 @@ def _reload_backend_with_db(monkeypatch, tmp_path, name="test_service_requests.d
     return backend_main, database_module
 
 
+
+def _as(telegram_id):
+    """En-têtes d'une action faite au nom d'une personne connue par Telegram."""
+    return {"X-Actor-Channel": "telegram", "X-Actor-Id": str(telegram_id)}
+
 def _authed_client(backend_main):
     test_client = TestClient(backend_main.app)
     test_client.headers["X-API-Key"] = TEST_API_KEY
@@ -54,10 +59,10 @@ def test_create_service_request_nominal(tmp_path, monkeypatch):
         response = test_client.post(
             "/api/bot/service-requests",
             json={
-                "provider_telegram_id": 1001,
                 "service_name": "Soudure industrielle",
                 "description": "Spécialiste soudure à l'arc et réparation de portails.",
             },
+            headers=_as(1001),
         )
         assert response.status_code == 200
         data = response.json()
@@ -75,10 +80,10 @@ def test_create_service_request_provider_not_found(tmp_path, monkeypatch):
         response = test_client.post(
             "/api/bot/service-requests",
             json={
-                "provider_telegram_id": 999999,
                 "service_name": "Soudure",
                 "description": "Description valide mais sans prestataire existant.",
             },
+            headers=_as(999999),
         )
         assert response.status_code == 404
 
@@ -102,18 +107,18 @@ def test_get_pending_service_requests(tmp_path, monkeypatch):
         test_client.post(
             "/api/bot/service-requests",
             json={
-                "provider_telegram_id": 2001,
                 "service_name": "Domotique",
                 "description": "Installation d'équipements connectés.",
             },
+            headers=_as(2001),
         )
         test_client.post(
             "/api/bot/service-requests",
             json={
-                "provider_telegram_id": 2002,
                 "service_name": "Menuiserie aluminium",
                 "description": "Portes et fenêtres sur mesure.",
             },
+            headers=_as(2002),
         )
 
         response = test_client.get("/api/bot/service-requests/pending")
@@ -142,10 +147,10 @@ def test_update_service_request_status_flow(tmp_path, monkeypatch):
         req_res = test_client.post(
             "/api/bot/service-requests",
             json={
-                "provider_telegram_id": 3001,
                 "service_name": "Frigoriste",
                 "description": "Réparation chambres froides.",
             },
+            headers=_as(3001),
         )
         req_id = req_res.json()["service_request"]["id"]
 
@@ -197,10 +202,10 @@ def test_profile_includes_service_requests(tmp_path, monkeypatch):
         test_client.post(
             "/api/bot/service-requests",
             json={
-                "provider_telegram_id": 4001,
                 "service_name": "Peinture époxy",
                 "description": "Revêtement sols industriels et résine.",
             },
+            headers=_as(4001),
         )
 
         profile_res = test_client.get("/api/profile/4001")
