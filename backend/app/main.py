@@ -96,14 +96,26 @@ class BotUserPayload(BaseModel):
     language: str = "fr"
 
 
-class BotMissionPayload(BaseModel):
-    telegram_id: int
-    mission_id: int
-    service: str
-    commune: str
+class MissionMediaPayload(BaseModel):
+    kind: str
+    id: str = Field(min_length=1, max_length=255)
+
+
+class MissionCreatePayload(BaseModel):
+    """Demande de création d'une mission. Le client est l'acteur (en-têtes),
+    le numéro est attribué par le backend. `creation_key` : choisie par le
+    canal, la même pour chaque nouvel essai de la même demande."""
+
+    creation_key: str = Field(min_length=1, max_length=64)
+    service: str = Field(min_length=1, max_length=255)
+    commune: str = Field(min_length=1, max_length=255)
     currency: str = "USD"
-    description: str = ""
+    description: str = Field(default="", max_length=4000)
     urgent: bool = False
+    media: list[MissionMediaPayload] = Field(default_factory=list, max_length=crud.MAX_MISSION_MEDIA)
+    # Prestataires à prévenir (choisis par le canal Telegram, seul canal des
+    # prestataires) ; le backend écarte le client lui-même.
+    alert_provider_telegram_ids: list[int] = Field(default_factory=list, max_length=crud.MAX_ALERTED_PROVIDERS)
 
 
 class BotProviderPayload(BaseModel):
@@ -337,19 +349,47 @@ def create_bot_user(payload: BotUserPayload):
 
 
 @router.post("/api/bot/missions")
-def create_bot_mission(payload: BotMissionPayload):
+def create_bot_mission(payload: MissionCreatePayload, actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
-        mission = crud.create_mission(
-            db,
-            telegram_id=payload.telegram_id,
-            mission_id=payload.mission_id,
-            service=payload.service,
-            commune=payload.commune,
-            currency=payload.currency,
-            description=payload.description,
-            urgent=payload.urgent,
-        )
-        return {"status": "ok", "mission": _mission_to_dict(mission)}
+        try:
+            mission, created = crud.create_mission(
+                db,
+                channel=actor.channel,
+                client_external_id=actor.external_id,
+                creation_key=payload.creation_key,
+                service=payload.service,
+                commune=payload.commune,
+                currency=payload.currency,
+                description=payload.description,
+                urgent=payload.urgent,
+                media=[(item.kind, item.id) for item in payload.media],
+                alert_provider_telegram_ids=payload.alert_provider_telegram_ids,
+            )
+        except crud.MissionRefused as refusal:
+            db.rollback()
+            raise HTTPException(status_code=refusal.http_status, detail={"code": refusal.code}) from refusal
+        return {"status": "ok", "created": created, **_mission_view(db, mission, "client")}
+
+
+def _mission_view(db, mission: BotMission, role: str) -> dict:
+    """Mission telle qu'une personne autorisée la lit : état, argent, médias
+    et, pour le client, les prestataires prévenus."""
+    view = {
+        "mission": {
+            **_mission_to_dict(mission),
+            "media": [
+                {"channel": item.channel, "kind": item.kind, "id": item.external_id}
+                for item in crud.mission_media(db, mission.mission_id)
+            ],
+        },
+        "money": ledger.mission_money_state(db, mission.mission_id),
+        "viewer_role": role,
+    }
+    if role in ("client", "admin"):
+        view["alerted_provider_telegram_ids"] = [
+            ledger.telegram_id_of(db, account_id) for account_id in crud.alerted_provider_account_ids(db, mission.mission_id)
+        ]
+    return view
 
 
 @router.post("/api/bot/providers")
@@ -488,6 +528,8 @@ def create_quote(payload: QuoteCreatePayload, actor: Actor = Depends(current_act
                 delay_hours=payload.delay_hours,
                 message=payload.message,
             )
+        except crud.MissionRefused as refusal:
+            raise HTTPException(status_code=refusal.http_status, detail={"code": refusal.code}) from refusal
         except ValueError as exc:
             raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
         if quote is None:
@@ -711,10 +753,14 @@ def _require_admin(actor: Actor) -> int:
     erreur côté bot ne suffise jamais à valider un retrait ou trancher un
     litige. Sans ADMIN_TELEGRAM_ID, personne n'est admin (même règle que le
     bot). Renvoie l'identifiant Telegram de l'admin, pour l'audit."""
-    configured = os.getenv("ADMIN_TELEGRAM_ID", "").strip()
-    if actor.channel != ledger.TELEGRAM or not configured or not hmac.compare_digest(configured, actor.external_id):
+    if not _is_admin(actor):
         raise HTTPException(status_code=403, detail={"code": "not_admin"})
     return actor.telegram_id
+
+
+def _is_admin(actor: Actor) -> bool:
+    configured = os.getenv("ADMIN_TELEGRAM_ID", "").strip()
+    return actor.channel == ledger.TELEGRAM and bool(configured) and hmac.compare_digest(configured, actor.external_id)
 
 
 @router.post("/api/bot/payouts/{payout_id}/approve")
@@ -843,12 +889,52 @@ def resolve_dispute(mission_id: int, payload: DisputeResolvePayload, actor: Acto
 
 
 @router.get("/api/bot/missions/{mission_id}")
-def get_mission(mission_id: int):
+def get_mission(mission_id: int, actor: Actor = Depends(current_actor)):
+    """Lisible par le client, le prestataire concerné, un prestataire prévenu
+    et l'admin. Pour tout autre, la mission n'existe pas (même réponse qu'un
+    numéro inconnu : on ne confirme pas son existence)."""
     with SessionLocal() as db:
         mission = db.get(BotMission, mission_id)
-        if mission is None:
+        role = None
+        if mission is not None:
+            if _is_admin(actor):
+                role = "admin"
+            else:
+                account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
+                role = crud.mission_viewer_role(db, mission, account_id)
+        if role is None:
             raise HTTPException(status_code=404, detail={"code": "mission_not_found"})
-        return _money_response(db, mission)
+        return {"status": "ok", **_mission_view(db, mission, role)}
+
+
+@router.get("/api/me/missions")
+def my_missions(role: str = "client", limit: int = 20, actor: Actor = Depends(current_actor)):
+    """Missions de l'acteur : celles qu'il a commandées (`client`) ou qui lui
+    sont confiées (`provider`)."""
+    if role not in ("client", "provider"):
+        raise HTTPException(status_code=400, detail={"code": "invalid_role"})
+    limit = max(1, min(limit, 50))
+    with SessionLocal() as db:
+        account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
+        if account_id is None:
+            return {"status": "ok", "missions": []}
+        missions = (crud.client_missions if role == "client" else crud.provider_missions)(db, account_id, limit)
+        return {"status": "ok", "missions": [_mission_to_dict(mission) for mission in missions]}
+
+
+@router.get("/api/admin/missions")
+def admin_list_missions(status: str | None = None, limit: int = 10, actor: Actor = Depends(current_actor)):
+    _require_admin(actor)
+    with SessionLocal() as db:
+        missions = crud.admin_missions(db, status=status, limit=max(1, min(limit, 50)))
+        return {"status": "ok", "missions": [_mission_to_dict(mission) for mission in missions]}
+
+
+@router.get("/api/admin/stats")
+def admin_stats(actor: Actor = Depends(current_actor)):
+    _require_admin(actor)
+    with SessionLocal() as db:
+        return {"status": "ok", "stats": crud.mission_stats(db)}
 
 
 @router.get("/api/me/wallet")

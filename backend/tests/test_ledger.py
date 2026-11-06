@@ -62,6 +62,15 @@ def fund(db, mission_id=1, method="mobile_money", amount=100.0, currency="USD", 
     )
 
 
+def new_mission(db, client=CLIENT_ID, key="demande-1", alert=()):
+    """Mission créée par le backend ; renvoie le numéro qu'il lui donne."""
+    mission, _ = crud.create_mission(
+        db, channel=ledger.TELEGRAM, client_external_id=str(client), creation_key=key,
+        service="service_plomberie", commune="Gombe", alert_provider_telegram_ids=list(alert),
+    )
+    return mission.mission_id
+
+
 def finished(db, mission_id=1, **kwargs):
     fund(db, mission_id, **kwargs)
     ledger.start_mission(db, mission_id, acc(db, PROVIDER_ID))
@@ -194,8 +203,8 @@ def test_currencies_are_separate_wallets(db):
 
 
 def test_only_the_mission_client_can_pay(db):
-    crud.create_mission(db, CLIENT_ID, 1, "service_plomberie", "Gombe")
-    refused("not_mission_client", lambda: fund(db, client=999))
+    mission_id = new_mission(db)
+    refused("not_mission_client", lambda: fund(db, mission_id=mission_id, client=999))
 
 
 @pytest.mark.parametrize("field,value,code", [("method", "cash", "invalid_method"), ("currency", "EUR", "invalid_currency")])
@@ -233,10 +242,10 @@ def test_a_lost_race_on_the_same_phase_is_resolved_by_the_database(db):
 
 
 def test_mission_cannot_start_before_payment(db):
-    crud.create_mission(db, CLIENT_ID, 1, "service_plomberie", "Gombe")
-    db.get(BotMission, 1).provider_telegram_id = PROVIDER_ID
+    mission_id = new_mission(db)
+    db.get(BotMission, mission_id).provider_telegram_id = PROVIDER_ID
     db.commit()
-    refused("not_paid", lambda: ledger.start_mission(db, 1, acc(db, PROVIDER_ID)))
+    refused("not_paid", lambda: ledger.start_mission(db, mission_id, acc(db, PROVIDER_ID)))
 
 
 def test_only_the_mission_provider_can_start_or_finish(db):
@@ -335,13 +344,14 @@ def test_dispute_can_be_opened_from_any_unsettled_paid_state(db):
 
 
 def test_dispute_is_refused_before_payment_after_settlement_or_for_another_client(db):
-    crud.create_mission(db, CLIENT_ID, 9, "service_plomberie", "Gombe")
-    refused("not_paid", lambda: ledger.open_dispute(db, 9, acc(db, CLIENT_ID), "x"))
+    unpaid = new_mission(db)
+    refused("not_paid", lambda: ledger.open_dispute(db, unpaid, acc(db, CLIENT_ID), "x"))
 
-    finished(db)
-    refused("not_mission_client", lambda: ledger.open_dispute(db, 1, acc(db, 999), "x"))
-    ledger.confirm_completion(db, 1, acc(db, CLIENT_ID))
-    refused("already_settled", lambda: ledger.open_dispute(db, 1, acc(db, CLIENT_ID), "x"))
+    paid = unpaid + 1
+    finished(db, mission_id=paid)
+    refused("not_mission_client", lambda: ledger.open_dispute(db, paid, acc(db, 999), "x"))
+    ledger.confirm_completion(db, paid, acc(db, CLIENT_ID))
+    refused("already_settled", lambda: ledger.open_dispute(db, paid, acc(db, CLIENT_ID), "x"))
 
 
 @pytest.mark.parametrize("reason", ["", "   ", "x" * 1001])

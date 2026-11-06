@@ -1,4 +1,5 @@
 import importlib
+import itertools
 import sys
 from pathlib import Path
 
@@ -125,14 +126,14 @@ def test_mission_lifecycle_round_trip(tmp_path, monkeypatch):
         create_response = test_client.post(
             "/api/bot/missions",
             json={
-                "telegram_id": 42,
-                "mission_id": 1001,
+                "creation_key": "demande-fuite",
                 "service": "plomberie",
                 "commune": "Gombe",
                 "currency": "USD",
                 "description": "Fuite d'eau",
                 "urgent": True,
             },
+            headers=_as(42),
         )
         assert create_response.status_code == 200
         # "pending" dès la création (et non None) : parité avec le défaut SQL
@@ -140,8 +141,9 @@ def test_mission_lifecycle_round_trip(tmp_path, monkeypatch):
         # nécessaire aux tâches Celery de la Phase 2 (relances : "mission
         # encore sans devis").
         assert create_response.json()["mission"]["status"] == "pending"
+        mission_id = create_response.json()["mission"]["mission_id"]
 
-        payment_response = _fund(test_client, mission_id=1001)
+        payment_response = _fund(test_client, mission_id=mission_id)
         assert payment_response.status_code == 200
         assert payment_response.json()["mission"]["status"] == "confirmed"
         assert payment_response.json()["mission"]["payment_status"] == "paid_escrow"
@@ -244,21 +246,31 @@ def test_perfect_success_rate_gives_no_bonus_without_enough_missions(tmp_path, m
         assert [p["telegram_id"] for p in response.json()["providers"]][0] == 2
 
 
-def _setup_mission_with_quote(test_client, mission_id=1001, amount=100.0, currency="USD", urgent=False):
+_CREATION_KEYS = itertools.count(1)
+
+
+def _create_mission(test_client, client=42, alert=(7,), key=None, **fields):
+    """Mission créée par le backend pour le client `client`, avec les
+    prestataires `alert` prévenus. Renvoie son numéro, attribué par le backend."""
+    payload = {
+        "creation_key": key or f"demande-{next(_CREATION_KEYS)}",
+        "service": "service_peinture",
+        "commune": "Gombe",
+        "currency": "USD",
+        "description": "Peindre le salon",
+        "urgent": False,
+        "alert_provider_telegram_ids": list(alert),
+        **fields,
+    }
+    response = test_client.post("/api/bot/missions", json=payload, headers=_as(client))
+    assert response.status_code == 200, response.json()
+    return response.json()["mission"]["mission_id"]
+
+
+def _setup_mission_with_quote(test_client, amount=100.0, currency="USD", urgent=False):
     test_client.post("/api/bot/users", json={"telegram_id": 42, "first_name": "Client"})
     _register_provider(test_client, 7, ["service_peinture"], ["Gombe"])
-    test_client.post(
-        "/api/bot/missions",
-        json={
-            "telegram_id": 42,
-            "mission_id": mission_id,
-            "service": "service_peinture",
-            "commune": "Gombe",
-            "currency": currency,
-            "description": "Peindre le salon",
-            "urgent": urgent,
-        },
-    )
+    mission_id = _create_mission(test_client, alert=(7, 8), currency=currency, urgent=urgent)
     quote_response = test_client.post(
         "/api/bot/quotes",
         json={
@@ -270,18 +282,18 @@ def _setup_mission_with_quote(test_client, mission_id=1001, amount=100.0, curren
         headers=_as(7),
     )
     assert quote_response.status_code == 200
-    return quote_response.json()["quote"]["id"]
+    return mission_id, quote_response.json()["quote"]["id"]
 
 
 def test_accepting_a_quote_rejects_the_others_and_confirms_mission(tmp_path, monkeypatch):
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client)
+        mission_id, quote_id = _setup_mission_with_quote(test_client)
         _register_provider(test_client, 8, ["service_peinture"], ["Gombe"])
         second_quote = test_client.post(
             "/api/bot/quotes",
-            json={"mission_id": 1001, "amount": 90.0, "currency": "USD", "delay_hours": 3},
+            json={"mission_id": mission_id, "amount": 90.0, "currency": "USD", "delay_hours": 3},
             headers=_as(8),
         ).json()["quote"]
 
@@ -292,7 +304,7 @@ def test_accepting_a_quote_rejects_the_others_and_confirms_mission(tmp_path, mon
         rejected = test_client.get("/api/profile/42")
         assert rejected.status_code == 200
 
-        mission = test_client.get("/api/bot/missions/1001").json()["mission"]
+        mission = test_client.get(f"/api/bot/missions/{mission_id}", headers=_as(42)).json()["mission"]
         assert mission["status"] == "confirmed"
         assert mission["provider_telegram_id"] == 7
 
@@ -327,10 +339,10 @@ def test_mission_cannot_start_before_escrow_payment(tmp_path, monkeypatch):
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client)
+        mission_id, quote_id = _setup_mission_with_quote(test_client)
         test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
 
-        response = test_client.post("/api/bot/missions/1001/start", headers=_as(7))
+        response = test_client.post(f"/api/bot/missions/{mission_id}/start", headers=_as(7))
         assert response.status_code == 409
         assert response.json()["detail"]["code"] == "not_paid"
         assert response.json()["detail"]["mission"]["status"] == "confirmed"
@@ -340,24 +352,24 @@ def test_full_escrow_and_release_flow(tmp_path, monkeypatch):
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
         test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
 
-        pay_response = _fund(test_client, quote_id=quote_id)
+        pay_response = _fund(test_client, mission_id=mission_id, quote_id=quote_id)
         assert pay_response.status_code == 200
         assert pay_response.json()["intent"]["status"] == "succeeded"
         assert pay_response.json()["money"]["funding"]["reference"] == "SIM-PAY-000001"
         assert pay_response.json()["money"]["funding"]["net"] == "90.00"
 
-        start_response = test_client.post("/api/bot/missions/1001/start", headers=_as(7))
+        start_response = test_client.post(f"/api/bot/missions/{mission_id}/start", headers=_as(7))
         assert start_response.status_code == 200
         assert start_response.json()["mission"]["status"] == "in_progress"
 
-        finish_response = test_client.post("/api/bot/missions/1001/finish", headers=_as(7))
+        finish_response = test_client.post(f"/api/bot/missions/{mission_id}/finish", headers=_as(7))
         assert finish_response.status_code == 200
         assert finish_response.json()["mission"]["status"] == "awaiting_confirmation"
 
-        release_response = test_client.post("/api/bot/missions/1001/confirm", headers=_as(42))
+        release_response = test_client.post(f"/api/bot/missions/{mission_id}/confirm", headers=_as(42))
         assert release_response.status_code == 200
         released = release_response.json()["mission"]
         assert released["status"] == "completed"
@@ -372,10 +384,10 @@ def test_wallet_payment_fails_when_balance_insufficient(tmp_path, monkeypatch):
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
         test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
 
-        response = _fund(test_client, quote_id=quote_id, method="wallet")
+        response = _fund(test_client, mission_id=mission_id, quote_id=quote_id, method="wallet")
         assert response.status_code == 409
         assert response.json()["detail"]["code"] == "insufficient_balance"
         assert response.json()["detail"]["mission"]["payment_status"] is None
@@ -385,11 +397,11 @@ def test_wallet_payment_succeeds_and_debits_balance(tmp_path, monkeypatch):
     backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
         test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
         _credit_client_wallet(database_module, 42, 200.0)
 
-        response = _fund(test_client, quote_id=quote_id, method="wallet")
+        response = _fund(test_client, mission_id=mission_id, quote_id=quote_id, method="wallet")
         assert response.status_code == 200
         assert response.json()["money"]["funding"]["reference"] == f"WLT-{quote_id:04d}"
 
@@ -401,15 +413,15 @@ def test_money_endpoints_return_a_stable_code_and_the_current_mission_on_refusal
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        _fund(test_client, quote_id=quote_id)
+        mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        _fund(test_client, mission_id=mission_id, quote_id=quote_id)
 
-        second = _fund(test_client, quote_id=quote_id + 1, amount=50.0)
+        second = _fund(test_client, mission_id=mission_id, quote_id=quote_id + 1, amount=50.0)
         assert second.status_code == 409
         assert second.json()["detail"]["code"] == "already_paid"
         assert second.json()["detail"]["money"]["funding"]["total"] == "100.00"
 
-        intruder = test_client.post("/api/bot/missions/1001/confirm", headers=_as(999))
+        intruder = test_client.post(f"/api/bot/missions/{mission_id}/confirm", headers=_as(999))
         assert intruder.status_code == 403
         assert intruder.json()["detail"]["code"] == "not_mission_client"
 
@@ -423,20 +435,20 @@ def test_dispute_freezes_funds_and_admin_split_pays_both_parties(tmp_path, monke
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client, amount=100.0)
-        _fund(test_client, quote_id=quote_id)
+        mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        _fund(test_client, mission_id=mission_id, quote_id=quote_id)
 
-        dispute = test_client.post("/api/bot/missions/1001/dispute", json={"reason": "Travail non fait"}, headers=_as(42))
+        dispute = test_client.post(f"/api/bot/missions/{mission_id}/dispute", json={"reason": "Travail non fait"}, headers=_as(42))
         assert dispute.status_code == 200
         assert dispute.json()["mission"]["status"] == "disputed"
         assert dispute.json()["mission"]["dispute_deadline"] is not None
 
-        frozen = test_client.post("/api/bot/missions/1001/confirm", headers=_as(42))
+        frozen = test_client.post(f"/api/bot/missions/{mission_id}/confirm", headers=_as(42))
         assert frozen.status_code == 409
         assert frozen.json()["detail"]["code"] == "mission_disputed"
 
         not_admin = test_client.post(
-            "/api/bot/missions/1001/dispute/resolve",
+            f"/api/bot/missions/{mission_id}/dispute/resolve",
             json={"decision": "refund"},
             headers=_as(42),
         )
@@ -444,7 +456,7 @@ def test_dispute_freezes_funds_and_admin_split_pays_both_parties(tmp_path, monke
         assert not_admin.json()["detail"] == {"code": "not_admin"}
 
         resolved = test_client.post(
-            "/api/bot/missions/1001/dispute/resolve",
+            f"/api/bot/missions/{mission_id}/dispute/resolve",
             json={"decision": "split", "provider_percentage": 50},
             headers=_as(1),
         )
@@ -457,7 +469,7 @@ def test_dispute_freezes_funds_and_admin_split_pays_both_parties(tmp_path, monke
         assert test_client.get("/api/me/wallet", headers=_as(42)).json()["wallet"]["wallet_balance_usd"] == 45.0
 
         again = test_client.post(
-            "/api/bot/missions/1001/dispute/resolve",
+            f"/api/bot/missions/{mission_id}/dispute/resolve",
             json={"decision": "refund"},
             headers=_as(1),
         )
@@ -473,7 +485,7 @@ def test_profile_provider_missions_are_filtered_by_provider_not_client(tmp_path,
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        quote_id = _setup_mission_with_quote(test_client)
+        mission_id, quote_id = _setup_mission_with_quote(test_client)
         test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
 
         client_profile = test_client.get("/api/profile/42").json()
@@ -481,9 +493,9 @@ def test_profile_provider_missions_are_filtered_by_provider_not_client(tmp_path,
 
         assert len(client_profile["client_missions"]) == 1
         assert len(provider_profile["provider_missions"]) == 1
-        assert provider_profile["provider_missions"][0]["mission_id"] == 1001
+        assert provider_profile["provider_missions"][0]["mission_id"] == mission_id
         assert provider_profile["provider_missions"][0]["client_name"] == "Client"
-        assert provider_profile["client_missions"] == [], "7 n'est pas client de la mission 1001"
+        assert provider_profile["client_missions"] == [], "7 n'est pas client de cette mission"
 
 
 def test_consecutive_ignored_auto_pauses_provider_after_three(tmp_path, monkeypatch):
@@ -521,34 +533,34 @@ def test_update_user_language(tmp_path, monkeypatch):
         assert missing_response.status_code == 404
 
 
-def _complete_mission_flow(test_client, mission_id=1001, amount=100.0, currency="USD", provider_telegram_id=7):
-    quote_id = _setup_mission_with_quote(test_client, mission_id=mission_id, amount=amount, currency=currency)
+def _complete_mission_flow(test_client, amount=100.0, currency="USD", provider_telegram_id=7):
+    mission_id, quote_id = _setup_mission_with_quote(test_client, amount=amount, currency=currency)
     test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
     assert _fund(test_client, mission_id=mission_id, quote_id=quote_id, amount=amount, currency=currency, provider=provider_telegram_id).status_code == 200
     test_client.post(f"/api/bot/missions/{mission_id}/start", headers=_as(provider_telegram_id))
     test_client.post(f"/api/bot/missions/{mission_id}/finish", headers=_as(provider_telegram_id))
     release_response = test_client.post(f"/api/bot/missions/{mission_id}/confirm", headers=_as(42))
     assert release_response.status_code == 200
-    return quote_id
+    return mission_id
 
 
 def test_review_creation_updates_provider_average_and_total_reviews(tmp_path, monkeypatch):
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        _complete_mission_flow(test_client, mission_id=1001)
+        mission_id = _complete_mission_flow(test_client)
         first = test_client.post(
             "/api/bot/reviews",
-            json={"mission_id": 1001, "rating": 5, "comment": "Top"},
+            json={"mission_id": mission_id, "rating": 5, "comment": "Top"},
             headers=_as(42),
         )
         assert first.status_code == 200
         assert first.json()["review"]["rating"] == 5
 
-        _complete_mission_flow(test_client, mission_id=1002)
+        second_mission_id = _complete_mission_flow(test_client)
         second = test_client.post(
             "/api/bot/reviews",
-            json={"mission_id": 1002, "rating": 3},
+            json={"mission_id": second_mission_id, "rating": 3},
             headers=_as(42),
         )
         assert second.status_code == 200
@@ -562,12 +574,12 @@ def test_review_rejected_for_duplicate_mission(tmp_path, monkeypatch):
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        _complete_mission_flow(test_client, mission_id=1001)
-        test_client.post("/api/bot/reviews", json={"mission_id": 1001, "rating": 4}, headers=_as(42))
+        mission_id = _complete_mission_flow(test_client)
+        test_client.post("/api/bot/reviews", json={"mission_id": mission_id, "rating": 4}, headers=_as(42))
 
         duplicate = test_client.post(
             "/api/bot/reviews",
-            json={"mission_id": 1001, "rating": 2},
+            json={"mission_id": mission_id, "rating": 2},
             headers=_as(42),
         )
         assert duplicate.status_code == 400
@@ -578,13 +590,13 @@ def test_review_rejected_for_rating_out_of_range(tmp_path, monkeypatch):
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        _complete_mission_flow(test_client, mission_id=1001)
+        mission_id = _complete_mission_flow(test_client)
 
-        too_low = test_client.post("/api/bot/reviews", json={"mission_id": 1001, "rating": 0}, headers=_as(42))
+        too_low = test_client.post("/api/bot/reviews", json={"mission_id": mission_id, "rating": 0}, headers=_as(42))
         assert too_low.status_code == 400
         assert "1 et 5" in too_low.json()["detail"]
 
-        too_high = test_client.post("/api/bot/reviews", json={"mission_id": 1001, "rating": 6}, headers=_as(42))
+        too_high = test_client.post("/api/bot/reviews", json={"mission_id": mission_id, "rating": 6}, headers=_as(42))
         assert too_high.status_code == 400
         assert "1 et 5" in too_high.json()["detail"]
 
@@ -593,11 +605,11 @@ def test_review_rejected_for_mismatched_client(tmp_path, monkeypatch):
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        _complete_mission_flow(test_client, mission_id=1001)
+        mission_id = _complete_mission_flow(test_client)
 
         response = test_client.post(
             "/api/bot/reviews",
-            json={"mission_id": 1001, "rating": 5},
+            json={"mission_id": mission_id, "rating": 5},
             headers=_as(999),
         )
         assert response.status_code == 400
@@ -637,10 +649,10 @@ def test_completing_a_mission_counts_towards_total_missions(tmp_path, monkeypatc
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        _complete_mission_flow(test_client, mission_id=1001)
+        mission_id = _complete_mission_flow(test_client)
         assert _provider_stats(test_client)["total_missions"] == 1
 
-        _complete_mission_flow(test_client, mission_id=1002)
+        _complete_mission_flow(test_client)
         assert _provider_stats(test_client)["total_missions"] == 2
 
 
@@ -648,7 +660,7 @@ def test_success_rate_is_100_when_nothing_has_failed(tmp_path, monkeypatch):
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        _complete_mission_flow(test_client, mission_id=1001)
+        mission_id = _complete_mission_flow(test_client)
         assert _provider_stats(test_client)["success_rate"] == 100.0
 
 
@@ -656,16 +668,16 @@ def test_a_disputed_mission_lowers_the_success_rate(tmp_path, monkeypatch):
     backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        _complete_mission_flow(test_client, mission_id=1001)
-        _complete_mission_flow(test_client, mission_id=1002)
-        _complete_mission_flow(test_client, mission_id=1003)
+        _complete_mission_flow(test_client)
+        _complete_mission_flow(test_client)
+        disputed_id = _complete_mission_flow(test_client)
 
         # Une des trois part en litige, puis on redéclenche un recalcul.
         from backend.app import crud
         from backend.app.models import BotMission
 
         with database_module.SessionLocal() as db:
-            db.get(BotMission, 1003).status = "disputed"
+            db.get(BotMission, disputed_id).status = "disputed"
             db.commit()
             crud._recompute_provider_stats(db, 7)
 
@@ -679,8 +691,7 @@ def test_provider_earns_premium_badge_at_five_missions_and_good_rating(tmp_path,
 
     with _authed_client(backend_main) as test_client:
         for index in range(5):
-            mission_id = 2000 + index
-            _complete_mission_flow(test_client, mission_id=mission_id)
+            mission_id = _complete_mission_flow(test_client)
             _rate(test_client, mission_id, 5)
 
         stats = _provider_stats(test_client)
@@ -694,8 +705,7 @@ def test_badge_stays_below_premium_when_rating_is_too_low(tmp_path, monkeypatch)
 
     with _authed_client(backend_main) as test_client:
         for index in range(5):
-            mission_id = 2100 + index
-            _complete_mission_flow(test_client, mission_id=mission_id)
+            mission_id = _complete_mission_flow(test_client)
             _rate(test_client, mission_id, 3)  # moyenne 3.0 < 4.0
 
         stats = _provider_stats(test_client)
@@ -710,8 +720,8 @@ def test_badge_falls_back_to_verified_when_no_tier_is_earned(tmp_path, monkeypat
         _register_provider(test_client, 7, ["service_plomberie"], ["Gombe"])
         assert test_client.post("/api/bot/providers/7/verify").status_code == 200
 
-        _complete_mission_flow(test_client, mission_id=2200)
-        _rate(test_client, 2200, 5)
+        mission_id = _complete_mission_flow(test_client)
+        _rate(test_client, mission_id, 5)
 
         stats = _provider_stats(test_client)
         assert stats["total_missions"] == 1  # trop peu pour premium
@@ -842,18 +852,18 @@ def test_wallet_refusal_on_a_mission_the_backend_never_saw_returns_409_not_500(t
 
         assert response.status_code == 409
         assert response.json()["detail"] == {"code": "insufficient_balance"}
-        assert test_client.get("/api/bot/missions/555").status_code == 404
+        assert test_client.get("/api/bot/missions/555", headers=_as(42)).status_code == 404
 
 
 def test_backend_refuses_a_quote_from_the_mission_client(tmp_path, monkeypatch):
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        _setup_mission_with_quote(test_client)
+        mission_id, _ = _setup_mission_with_quote(test_client)
         _register_provider(test_client, 42, ["service_peinture"], ["Gombe"])
         response = test_client.post(
             "/api/bot/quotes",
-            json={"mission_id": 1001, "amount": 10.0, "currency": "USD", "delay_hours": 1},
+            json={"mission_id": mission_id, "amount": 10.0, "currency": "USD", "delay_hours": 1},
             headers=_as(42),
         )
 
@@ -948,13 +958,10 @@ def test_only_the_mission_client_accepts_or_rejects_its_quotes(tmp_path, monkeyp
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        test_client.post(
-            "/api/bot/missions",
-            json={"telegram_id": 42, "mission_id": 1001, "service": "s", "commune": "Gombe", "currency": "USD"},
-        )
+        mission_id = _create_mission(test_client, service="s")
         quote_id = test_client.post(
             "/api/bot/quotes",
-            json={"mission_id": 1001, "amount": 90.0, "currency": "USD", "delay_hours": 3},
+            json={"mission_id": mission_id, "amount": 90.0, "currency": "USD", "delay_hours": 3},
             headers=_as(7),
         ).json()["quote"]["id"]
 
