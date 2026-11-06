@@ -477,6 +477,15 @@ def clavier_admin_payout(payout_id: int):
     return builder.as_markup()
 
 
+def clavier_admin_mismatch(intent_id: int, can_pay_mission: bool):
+    builder = InlineKeyboardBuilder()
+    if can_pay_mission:
+        builder.button(text="✅ Payer la mission", callback_data=f"admin_mismatch_pay_{intent_id}")
+    builder.button(text="👛 Créditer le wallet du client", callback_data=f"admin_mismatch_wallet_{intent_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def clavier_verifier_paiement(intent_id: int, lang: str = "fr"):
     builder = InlineKeyboardBuilder()
     builder.button(text=get_message("button_check_payment", lang), callback_data=f"check_mm_{intent_id}")
@@ -581,6 +590,7 @@ def clavier_admin_menu():
     builder.button(text="⚠️ Litiges", callback_data="admin_disputes")
     builder.button(text="➕ Services proposés", callback_data="admin_service_requests")
     builder.button(text="💸 Retraits", callback_data="admin_payouts")
+    builder.button(text="⚖️ Montants différents", callback_data="admin_mismatches")
     builder.adjust(2)
     return builder.as_markup()
 

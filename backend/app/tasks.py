@@ -2,7 +2,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 
-from backend.app import crud, ledger, mobile_money
+from backend.app import crud, ledger, mobile_money, reconciliation
 from backend.app.celery_app import celery_app
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, BotProvider, BotUser, NexisAccount, PaymentIntent, Payout
@@ -200,19 +200,7 @@ def _notify_intent(db, intent: PaymentIntent) -> None:
                 mission_id=intent.mission_id, ref=funding["reference"], total=float(funding["total"]), currency=intent.currency,
             ),
         )
-        provider_lang = _language(db, provider_id)
-        send_telegram_message(
-            provider_id,
-            get_message(
-                "payment_confirmed_provider_notify", provider_lang,
-                mission_id=intent.mission_id, brut=float(funding["total"]), commission=float(funding["commission"]),
-                net=float(funding["net"]), currency=intent.currency,
-            ),
-            reply_markup={"inline_keyboard": [[{
-                "text": get_message("button_start_mission", provider_lang),
-                "callback_data": f"mission_start_{intent.mission_id}",
-            }]]},
-        )
+        _notify_provider_paid(db, provider_id, intent, funding)
     elif intent.status in ("failed", "expired"):
         send_telegram_message(client_id, get_message("payment_mobile_failed_client", client_lang, mission_id=intent.mission_id))
     elif intent.status == "overpaid":
@@ -222,7 +210,42 @@ def _notify_intent(db, intent: PaymentIntent) -> None:
         )
         _alert_admin(f"⚠️ Paiement en trop crédité au wallet : intention {intent.id}, mission NXH-{intent.mission_id:04d}, {intent.amount} {intent.currency}.")
     elif intent.status == "mismatch":
-        _alert_admin(f"⚠️ Montant reçu différent : intention {intent.id}, mission NXH-{intent.mission_id:04d} ({intent.failure_reason}). Rien n'a été payé.")
+        send_telegram_message(client_id, get_message("payment_mismatch_client", client_lang, mission_id=intent.mission_id))
+        _alert_admin(
+            f"⚠️ Montant reçu différent : intention {intent.id}, mission NXH-{intent.mission_id:04d} ({intent.failure_reason}). "
+            "Rien n'a été payé. À régler dans /admin → Montants différents."
+        )
+
+
+def _notify_provider_paid(db, provider_id: int, intent: PaymentIntent, funding: dict) -> None:
+    provider_lang = _language(db, provider_id)
+    send_telegram_message(
+        provider_id,
+        get_message(
+            "payment_confirmed_provider_notify", provider_lang,
+            mission_id=intent.mission_id, brut=float(funding["total"]), commission=float(funding["commission"]),
+            net=float(funding["net"]), currency=intent.currency,
+        ),
+        reply_markup={"inline_keyboard": [[{
+            "text": get_message("button_start_mission", provider_lang),
+            "callback_data": f"mission_start_{intent.mission_id}",
+        }]]},
+    )
+
+
+def notify_mismatch_resolved(db, intent: PaymentIntent) -> None:
+    """Décision de l'admin sur un montant reçu différent : le client sait où
+    est son argent ; si la mission est payée, le prestataire peut commencer."""
+    request = intent.funding_request
+    client_id = request["client_telegram_id"]
+    client_lang = _language(db, client_id)
+    received = dict(mission_id=intent.mission_id, amount=f"{intent.received_amount:.2f}", currency=intent.received_currency)
+    if intent.status == "mismatch_credited":
+        send_telegram_message(client_id, get_message("payment_mismatch_credited_client", client_lang, **received))
+    elif intent.status == "mismatch_paid":
+        send_telegram_message(client_id, get_message("payment_mismatch_paid_client", client_lang, **received))
+        funding = ledger.mission_money_state(db, intent.mission_id)["funding"]
+        _notify_provider_paid(db, request["provider_telegram_id"], intent, funding)
 
 
 def refresh_and_notify_payout(db, payout_id: int) -> str:
@@ -249,25 +272,32 @@ def notify_payout(db, payout: Payout) -> None:
 
 @celery_app.task(name="backend.app.tasks.check_pending_mobile_money")
 def check_pending_mobile_money() -> int:
-    """Vérification de secours : relit chez l'agrégateur les paiements et
-    retraits en attente (webhook perdu, retard). Les intentions expirées sont
-    relues 24 h de plus : un paiement confirmé en retard n'est jamais ignoré."""
+    """Vérification de secours : relit chez l'agrégateur les paiements
+    (`mobile_money.intents_to_refresh`) et retraits en attente (webhook perdu,
+    retard)."""
     db = SessionLocal()
     try:
-        now = mobile_money._utcnow()
-        intents = (
-            db.query(PaymentIntent.id)
-            .filter(
-                (PaymentIntent.status == "pending")
-                | ((PaymentIntent.status == "expired") & (PaymentIntent.expires_at > now - timedelta(hours=24)))
-            )
-            .all()
-        )
-        payouts = db.query(Payout.id).filter(Payout.status == "processing").all()
-        for (intent_id,) in intents:
+        intent_ids = mobile_money.intents_to_refresh(db, mobile_money._utcnow())
+        payout_ids = [payout_id for (payout_id,) in db.query(Payout.id).filter(Payout.status == "processing")]
+        for intent_id in intent_ids:
             refresh_and_notify_intent(db, intent_id)
-        for (payout_id,) in payouts:
+        for payout_id in payout_ids:
             refresh_and_notify_payout(db, payout_id)
-        return len(intents) + len(payouts)
+        return len(intent_ids) + len(payout_ids)
+    finally:
+        db.close()
+
+
+@celery_app.task(name="backend.app.tasks.send_daily_reconciliation")
+def send_daily_reconciliation() -> bool:
+    """Rapprochement interne quotidien (backend/app/reconciliation.py), envoyé
+    à l'admin même sans écart : un rapport qui n'arrive pas se remarque."""
+    db = SessionLocal()
+    try:
+        report = reconciliation.reconcile(db)
+        if not report.ok:
+            logger.warning("Rapprochement : %d écart(s) : %s", len(report.anomalies), report.anomalies)
+        _alert_admin(reconciliation.format_admin_report(report))
+        return report.ok
     finally:
         db.close()

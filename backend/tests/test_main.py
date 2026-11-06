@@ -413,6 +413,7 @@ def test_money_endpoints_return_a_stable_code_and_the_current_mission_on_refusal
 
 
 def test_dispute_freezes_funds_and_admin_split_pays_both_parties(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADMIN_TELEGRAM_ID", "1")
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
@@ -427,6 +428,13 @@ def test_dispute_freezes_funds_and_admin_split_pays_both_parties(tmp_path, monke
         frozen = test_client.post("/api/bot/missions/1001/confirm", json={"client_telegram_id": 42})
         assert frozen.status_code == 409
         assert frozen.json()["detail"]["code"] == "mission_disputed"
+
+        not_admin = test_client.post(
+            "/api/bot/missions/1001/dispute/resolve",
+            json={"decision": "refund", "admin_telegram_id": 42},
+        )
+        assert not_admin.status_code == 403
+        assert not_admin.json()["detail"] == {"code": "not_admin"}
 
         resolved = test_client.post(
             "/api/bot/missions/1001/dispute/resolve",
@@ -853,6 +861,7 @@ def test_mobile_money_cannot_be_declared_paid_by_the_bot(tmp_path, monkeypatch):
 
 
 def test_payout_endpoints_hold_then_pay_after_admin_approval(tmp_path, monkeypatch):
+    monkeypatch.setenv("ADMIN_TELEGRAM_ID", "1")
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
@@ -863,6 +872,11 @@ def test_payout_endpoints_hold_then_pay_after_admin_approval(tmp_path, monkeypat
         assert requested["status"] == "awaiting_approval"
         assert test_client.get("/api/bot/wallets/7").json()["wallet"]["wallet_balance_usd"] == 40.0
         assert [p["id"] for p in test_client.get("/api/bot/payouts").json()["payouts"]] == [requested["id"]]
+
+        for decision in ("approve", "reject"):
+            refused = test_client.post(f"/api/bot/payouts/{requested['id']}/{decision}", json={"admin_telegram_id": 7})
+            assert refused.status_code == 403
+            assert refused.json()["detail"] == {"code": "not_admin"}
 
         approved = test_client.post(f"/api/bot/payouts/{requested['id']}/approve", json={"admin_telegram_id": 1})
         assert approved.json()["payout"]["status"] == "succeeded"

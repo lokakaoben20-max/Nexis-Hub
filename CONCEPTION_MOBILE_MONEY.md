@@ -197,6 +197,39 @@ tarifs), `PAYOUT_AUTO_LIMIT_USD|CDF` (0 par défaut : tout retrait passe par
 l'admin). La tâche Celery `check_pending_mobile_money` (toutes les 2 min) fait
 la vérification de secours. Reste : étapes 5 et 6.
 
+**Étape 6, partie sans agrégateur (2026-10-06) : faite.**
+`backend/app/reconciliation.py` vérifie chaque jour à 6 h UTC (tâche
+`send_daily_reconciliation`, rapport Telegram à l'admin même sans écart) :
+partie double de chaque opération, aucun solde négatif, escrow de chaque
+mission et statut recopié sur la mission, argent bloqué et opérations de
+chaque retrait, intentions confirmées ou payées en trop présentes au
+registre, montants différents en attente de l'admin, intentions et retraits
+bloqués, frais d'encaissement par rapport au taux attendu, paiements Mobile
+Money sans intention. Lecture seule, aucune correction automatique. Revue
+de sécurité du même jour, corrigé : une intention restée « created » (backend
+arrêté pendant l'appel à l'agrégateur) est maintenant relue par la
+vérification de secours ; le compte est verrouillé avant de décider si un
+retrait demande l'admin (deux retraits simultanés pouvaient sortir l'argent
+d'un remboursement sans validation, reproduit sur Postgres) ; le backend
+revérifie que la décision vient de `ADMIN_TELEGRAM_ID` (retraits, litiges),
+qui doit donc être réglé aussi pour le backend.
+
+**Montant reçu différent : outil admin fait (2026-10-06).** Le client est
+prévenu que son argent n'est pas perdu ; l'admin voit chaque cas dans
+`/admin` → « Montants différents » et choisit : créditer le wallet du client,
+ou payer la mission depuis ce crédit (même devise et reçu suffisant, surplus
+au wallet). Le montant et la référence sont relus chez l'agrégateur au moment
+de décider (injoignable, non confirmé ou sans référence : rien ne bouge),
+tout s'écrit en une transaction, un double clic ne crédite jamais deux fois,
+et ce crédit ne se retire qu'après vérification admin
+(`mobile_money.resolve_mismatch`, opération `mismatch_credit`). Le
+rapprochement vérifie chaque décision et signale tout crédit sans décision
+enregistrée.
+
+Reste pour l'étape 6 : comparer le relevé de l'agrégateur (avec l'étape 5) ;
+verser seulement vers un numéro vérifié (preuve du numéro au backend, étape 1
+du chantier WhatsApp) ; la revue de sécurité finale avant mise en ligne.
+
 1. **Registre et tables** : intentions de paiement, retraits, comptes
    `payout_pending` et `fees`, origine des crédits (remboursement), réglages
    (payeur et taux des frais, frais et minimum de retrait, plafond

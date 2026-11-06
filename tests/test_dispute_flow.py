@@ -112,6 +112,8 @@ def _languages(monkeypatch):
         monkeypatch.setattr(module, "get_user_language", lambda tid: _async_return("fr"))
         monkeypatch.setattr(module, "get_provider_language", lambda tid: _async_return("fr"))
     monkeypatch.setattr(admin, "ADMIN_TELEGRAM_ID", str(ADMIN_ID))
+    # Le backend revérifie l'admin (backend/app/main.py::_require_admin).
+    monkeypatch.setenv("ADMIN_TELEGRAM_ID", str(ADMIN_ID))
 
 
 def _paid_mission(tmp_path, monkeypatch, amount=100.0):

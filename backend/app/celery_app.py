@@ -39,6 +39,10 @@ celery_app.conf.beat_schedule = {
         "task": "backend.app.tasks.check_pending_mobile_money",
         "schedule": crontab(minute="*/2"),
     },
+    "send-daily-reconciliation": {
+        "task": "backend.app.tasks.send_daily_reconciliation",
+        "schedule": crontab(hour=6, minute=0),
+    },
     "send-daily-analytics": {
         "task": "backend.app.tasks.send_daily_analytics",
         "schedule": crontab(hour=8, minute=0),
