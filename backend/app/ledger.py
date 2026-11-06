@@ -26,7 +26,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app.models import BotMission, BotUser, ChannelIdentity, LedgerEntry, MoneyOperation, NexisAccount, Payout
+from backend.app.models import BotMission, BotQuote, ChannelIdentity, LedgerEntry, MoneyOperation, NexisAccount, Payout
 
 CENT = Decimal("0.01")
 ZERO = Decimal("0.00")
@@ -266,41 +266,35 @@ def _require_provider(db: Session, mission: BotMission, account_id: int) -> None
         raise MoneyError("not_mission_provider", 403, mission)
 
 
-def ensure_mission(
-    db: Session, mission_id: int, *, client_account_id: int, service: str, commune: str, currency: str, description: str, urgent: bool
-) -> BotMission:
-    """Mission verrouillée, créée si le backend ne l'a jamais reçue (le bot
-    crée missions et devis dans db.py). Création dans un point de reprise :
-    deux requêtes simultanées ne la créent qu'une fois."""
+def funding_terms(db: Session, mission_id: int, quote_id: int, client_account_id: int) -> dict:
+    """Ce qui sera payé, lu dans le backend et nulle part ailleurs : la mission
+    (verrouillée jusqu'à la fin de la demande), son devis accepté, le
+    prestataire de ce devis. Aucun canal ne fixe le montant, la devise ni le
+    prestataire d'un paiement."""
     mission = db.get(BotMission, mission_id, with_for_update=True)
-    if mission is not None:
-        return mission
-    client_telegram_id = telegram_id_of(db, client_account_id)
-    if client_telegram_id is None:
-        # `bot_missions.telegram_id` est encore obligatoire : seul un compte
-        # joignable par Telegram peut créer une mission tant qu'il l'est.
-        raise MoneyError("channel_identity_missing")
-    try:
-        with db.begin_nested():
-            db.add(
-                BotMission(
-                    mission_id=mission_id,
-                    telegram_id=client_telegram_id,
-                    client_account_id=client_account_id,
-                    service=service,
-                    commune=commune,
-                    currency=currency,
-                    description=description,
-                    urgent=bool(urgent),
-                    status="pending",
-                )
-            )
-            client = db.get(BotUser, client_telegram_id)
-            if client is not None:
-                client.total_missions += 1
-    except IntegrityError:
-        pass  # créée au même instant par une autre requête
-    return db.get(BotMission, mission_id, with_for_update=True)
+    if mission is None:
+        raise MoneyError("mission_not_found", 404)
+    require_mission_client(mission, client_account_id)
+    quote = db.get(BotQuote, quote_id)
+    if quote is None or quote.mission_id != mission_id or quote.status != "accepted":
+        if mission_operation(db, mission_id, FUNDING) is not None:
+            # Mission déjà payée (sur un autre devis) : c'est ce qu'il faut dire.
+            raise MoneyError("already_paid", mission=mission)
+        if quote is None or quote.mission_id != mission_id:
+            raise MoneyError("quote_not_found", 404, mission)
+        raise MoneyError("quote_not_accepted", mission=mission)
+    if quote.provider_account_id is None:
+        raise MoneyError("mission_account_missing", mission=mission)
+    if quote.currency not in CURRENCIES:
+        raise MoneyError("invalid_currency", 400, mission)
+    return {
+        "mission": mission,
+        "quote_id": quote.id,
+        "provider_account_id": quote.provider_account_id,
+        "amount": quote.amount,
+        "currency": quote.currency,
+        "urgent": bool(mission.urgent),
+    }
 
 
 def _funded_amounts(db: Session, mission: BotMission) -> dict[str, Decimal]:
@@ -339,29 +333,26 @@ def fund_mission(
     *,
     method: str,
     client_account_id: int,
-    provider_account_id: int,
-    quote_ref: int,
-    amount,
-    currency: str,
-    urgent: bool,
-    service: str,
-    commune: str,
-    description: str = "",
+    quote_id: int,
     reference: str | None = None,
     also=None,
 ) -> BotMission:
-    """Paie une mission en escrow.
+    """Paie une mission en escrow, sur son devis accepté.
 
-    `reference` : référence de l'agrégateur (paiement Mobile Money réel) ;
-    `also(mission)` : écritures à valider dans la même transaction (statut de
-    l'intention de paiement, frais d'agrégateur). La demande porte tout ce qu'il faut (le
-    bot crée missions et devis dans db.py) : si la mission n'existe pas encore
-    côté backend, elle est créée ici, sans dépendre d'une recopie antérieure."""
+    Montant, devise, prestataire et urgence viennent du backend
+    (`funding_terms`), jamais de la demande. `reference` : référence de
+    l'agrégateur (paiement Mobile Money réel) ; `also(mission)` : écritures à
+    valider dans la même transaction (statut de l'intention de paiement, frais
+    d'agrégateur). La mission doit exister : un paiement n'en crée jamais."""
     if method not in PAYMENT_METHODS:
         raise MoneyError("invalid_method", 400)
-    if currency not in CURRENCIES:
-        raise MoneyError("invalid_currency", 400)
-    amounts = payment_amounts(amount, urgent)
+    terms = funding_terms(db, mission_id, quote_id, client_account_id)
+    mission = terms["mission"]
+    provider_account_id = terms["provider_account_id"]
+    currency = terms["currency"]
+    urgent = terms["urgent"]
+    quote_ref = terms["quote_id"]
+    amounts = payment_amounts(terms["amount"], urgent)
     kind, reference_prefix = PAYMENT_METHODS[method]
     details = {
         "method": method,
@@ -388,16 +379,11 @@ def fund_mission(
     if provider_account_id == client_account_id:
         # Une même personne peut être cliente et prestataire, jamais sur la
         # même mission : elle se paierait elle-même.
-        raise MoneyError("provider_is_client")
+        raise MoneyError("provider_is_client", mission=mission)
     provider_telegram_id = telegram_id_of(db, provider_account_id)
     if provider_telegram_id is None:
         # Les prestataires n'existent que sur Telegram (et la Mini App).
-        raise MoneyError("provider_not_found", 404)
-    mission = ensure_mission(
-        db, mission_id, client_account_id=client_account_id, service=service, commune=commune,
-        currency=currency, description=description, urgent=urgent,
-    )
-    require_mission_client(mission, client_account_id)
+        raise MoneyError("provider_not_found", 404, mission)
 
     existing = mission_operation(db, mission_id, FUNDING)
     if existing is not None:

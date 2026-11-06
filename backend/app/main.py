@@ -155,20 +155,15 @@ class QuoteCreatePayload(BaseModel):
 
 
 class FundPayload(BaseModel):
+    """Payer = « ce devis de cette mission ». Montant, devise et prestataire
+    sont ceux du devis accepté enregistré par le backend."""
+
     method: str
-    # Le prestataire est désigné (le client paie) : il n'existe que sur Telegram.
-    provider_telegram_id: int
-    quote_ref: int
-    amount: float
-    currency: str
-    urgent: bool = False
-    service: str
-    commune: str
-    description: str = ""
+    quote_id: int
 
 
-class PaymentIntentPayload(FundPayload):
-    method: str = "mobile_money"
+class PaymentIntentPayload(BaseModel):
+    quote_id: int
     phone: str
     operator: str
 
@@ -291,8 +286,10 @@ def _mission_to_dict(mission: BotMission) -> dict:
     }
 
 
-def _quote_to_dict(quote: BotQuote) -> dict:
+def _quote_to_dict(quote: BotQuote, db=None) -> dict:
+    provider = db.get(BotProvider, quote.provider_telegram_id) if db is not None else None
     return {
+        "provider_name": provider.full_name if provider is not None else None,
         "id": quote.id,
         "mission_id": quote.mission_id,
         "provider_telegram_id": quote.provider_telegram_id,
@@ -534,7 +531,7 @@ def create_quote(payload: QuoteCreatePayload, actor: Actor = Depends(current_act
             raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
         if quote is None:
             raise HTTPException(status_code=404, detail="mission_not_found")
-        return {"status": "ok", "quote": _quote_to_dict(quote)}
+        return {"status": "ok", "quote": _quote_to_dict(quote, db), "mission": _mission_to_dict(db.get(BotMission, quote.mission_id))}
 
 
 @router.post("/api/bot/reviews")
@@ -565,7 +562,23 @@ def _quote_decision(quote_id: int, actor: Actor, decide) -> dict:
             raise HTTPException(status_code=status, detail={"code": str(exc)}) from exc
         if quote is None:
             raise HTTPException(status_code=404, detail="quote_not_found")
-        return {"status": "ok", "quote": _quote_to_dict(quote)}
+        return {"status": "ok", "quote": _quote_to_dict(quote, db), "mission": _mission_to_dict(db.get(BotMission, quote.mission_id))}
+
+
+@router.get("/api/bot/quotes/{quote_id}")
+def get_quote(quote_id: int, actor: Actor = Depends(current_actor)):
+    """Lisible par le client de la mission et par l'auteur du devis (et
+    l'admin) ; pour tout autre, le devis n'existe pas."""
+    with SessionLocal() as db:
+        quote = db.get(BotQuote, quote_id)
+        if quote is not None and not _is_admin(actor):
+            account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
+            mission = db.get(BotMission, quote.mission_id)
+            if account_id is None or account_id not in (mission.client_account_id, quote.provider_account_id):
+                quote = None
+        if quote is None:
+            raise HTTPException(status_code=404, detail={"code": "quote_not_found"})
+        return {"status": "ok", "quote": _quote_to_dict(quote, db), "mission": _mission_to_dict(db.get(BotMission, quote.mission_id))}
 
 
 @router.post("/api/bot/quotes/{quote_id}/accept")
@@ -622,29 +635,10 @@ def fund_mission(mission_id: int, payload: FundPayload, actor: Actor = Depends(c
             db,
             mission_id,
             method=payload.method,
-            **_funding_parties(db, actor, payload),
-            quote_ref=payload.quote_ref,
-            amount=payload.amount,
-            currency=payload.currency,
-            urgent=payload.urgent,
-            service=payload.service,
-            commune=payload.commune,
-            description=payload.description,
+            client_account_id=_actor_account(db, actor, missing="mission_not_found"),
+            quote_id=payload.quote_id,
         )
     )
-
-
-def _funding_parties(db, actor: Actor, payload: FundPayload) -> dict:
-    """Le client est l'acteur ; le prestataire est désigné par son identifiant
-    Telegram (les prestataires n'existent que sur Telegram). Comptes créés au
-    besoin : un identifiant Telegram ne désigne qu'une personne, créer son
-    compte ne peut rattacher l'argent à personne d'autre, et l'exiger au
-    préalable bloquerait le paiement d'un prestataire dont l'inscription n'a
-    pas encore été recopiée."""
-    return {
-        "client_account_id": _actor_account(db, actor, create=True),
-        "provider_account_id": ledger.account_id_for(db, ledger.TELEGRAM, payload.provider_telegram_id, create=True),
-    }
 
 
 def _intent_to_dict(intent: PaymentIntent) -> dict:
@@ -687,12 +681,13 @@ def _intent_response(db, intent: PaymentIntent) -> dict:
 def create_payment_intent(mission_id: int, payload: PaymentIntentPayload, actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
         try:
-            funding_request = {
-                **payload.model_dump(exclude={"method", "phone", "operator", "provider_telegram_id"}),
-                **_funding_parties(db, actor, payload),
-            }
             intent = mobile_money.create_intent(
-                db, mission_id, phone=payload.phone, operator=payload.operator, funding_request=funding_request
+                db,
+                mission_id,
+                phone=payload.phone,
+                operator=payload.operator,
+                client_account_id=_actor_account(db, actor, missing="mission_not_found"),
+                quote_id=payload.quote_id,
             )
         except ledger.MoneyError as error:
             raise _money_refusal(db, error) from error
@@ -919,7 +914,18 @@ def my_missions(role: str = "client", limit: int = 20, actor: Actor = Depends(cu
         if account_id is None:
             return {"status": "ok", "missions": []}
         missions = (crud.client_missions if role == "client" else crud.provider_missions)(db, account_id, limit)
-        return {"status": "ok", "missions": [_mission_to_dict(mission) for mission in missions]}
+        return {"status": "ok", "missions": [_listed_mission(db, mission) for mission in missions]}
+
+
+def _listed_mission(db, mission: BotMission) -> dict:
+    """Mission d'une liste, avec les noms affichés par les canaux."""
+    client = db.get(BotUser, mission.telegram_id)
+    provider = db.get(BotProvider, mission.provider_telegram_id) if mission.provider_telegram_id else None
+    return {
+        **_mission_to_dict(mission),
+        "client_name": client.first_name if client is not None else None,
+        "provider_name": provider.full_name if provider is not None else None,
+    }
 
 
 @router.get("/api/admin/missions")
@@ -927,7 +933,7 @@ def admin_list_missions(status: str | None = None, limit: int = 10, actor: Actor
     _require_admin(actor)
     with SessionLocal() as db:
         missions = crud.admin_missions(db, status=status, limit=max(1, min(limit, 50)))
-        return {"status": "ok", "missions": [_mission_to_dict(mission) for mission in missions]}
+        return {"status": "ok", "missions": [_listed_mission(db, mission) for mission in missions]}
 
 
 @router.get("/api/admin/stats")

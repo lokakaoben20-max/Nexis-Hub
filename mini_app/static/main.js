@@ -120,12 +120,14 @@ function renderRole(role, data) {
 
   const isProvider = role === "provider";
   const profile = isProvider ? data.provider : data.client;
-  const missions = isProvider ? data.provider_missions : data.client_missions;
+  // null : le backend (seule mémoire des missions) n'a pas répondu.
+  const missionsUnavailable = (isProvider ? data.provider_missions : data.client_missions) == null;
+  const missions = (isProvider ? data.provider_missions : data.client_missions) || [];
   const services = data.provider?.services || [];
   const hasProvider = Boolean(data.provider);
 
   setText("profile-type", profile ? (isProvider ? "Prestataire" : "Client") : "Non enregistre");
-  setText("missions-count", String(missions.length));
+  setText("missions-count", missionsUnavailable ? "?" : String(missions.length));
   setText("services-count", isProvider ? String(services.length) : "-");
   document.querySelectorAll(".provider-only").forEach((panel) => {
     panel.hidden = !isProvider;
@@ -159,7 +161,7 @@ function renderRole(role, data) {
   renderMissions(
     "missions-list",
     visibleMissions,
-    "Aucune mission recente",
+    missionsUnavailable ? "Missions indisponibles pour le moment" : "Aucune mission recente",
     role
   );
 

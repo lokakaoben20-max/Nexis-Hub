@@ -78,6 +78,87 @@ class LiveBackend:
         with self.database.SessionLocal() as session:
             return session.get(ledger.BotMission, mission_id)
 
+    def new_mission(
+        self,
+        client: int,
+        alert=(),
+        service: str = "service_menage",
+        commune: str = "Gombe",
+        currency: str = "USD",
+        urgent: bool = False,
+        description: str = "Test",
+    ) -> int:
+        """Mission créée par le backend, comme le ferait le bot ; renvoie son numéro."""
+        import uuid
+
+        from backend.app import crud, ledger
+
+        with self.database.SessionLocal() as session:
+            mission, _ = crud.create_mission(
+                session,
+                channel=ledger.TELEGRAM,
+                client_external_id=str(client),
+                creation_key=uuid.uuid4().hex,
+                service=service,
+                commune=commune,
+                currency=currency,
+                description=description,
+                urgent=urgent,
+                alert_provider_telegram_ids=list(alert),
+            )
+            return mission.mission_id
+
+    def quote(self, mission_id: int, provider: int, amount: float = 100.0, currency: str = "USD", delay_hours: int = 2) -> int:
+        """Devis envoyé par un prestataire prévenu ; renvoie son numéro."""
+        from backend.app import crud
+
+        with self.database.SessionLocal() as session:
+            return crud.create_quote(session, mission_id, provider, amount=amount, currency=currency, delay_hours=delay_hours).id
+
+    def accept(self, quote_id: int, client: int) -> None:
+        from backend.app import crud, ledger
+
+        with self.database.SessionLocal() as session:
+            crud.accept_quote(session, quote_id, ledger.account_id_for(session, ledger.TELEGRAM, client, create=True))
+
+    def quoted_mission(self, client: int, provider: int, amount: float = 100.0, currency: str = "USD", **mission) -> tuple[int, int]:
+        """Mission avec un devis en attente : (numéro de mission, numéro de devis)."""
+        mission_id = self.new_mission(client, alert=(provider,), currency=currency, **mission)
+        return mission_id, self.quote(mission_id, provider, amount=amount, currency=currency)
+
+    def accepted_quote(self, client: int, provider: int, amount: float = 100.0, currency: str = "USD", **mission) -> tuple[int, int]:
+        """Mission dont le client a accepté le devis : prête à être payée."""
+        mission_id, quote_id = self.quoted_mission(client, provider, amount=amount, currency=currency, **mission)
+        self.accept(quote_id, client)
+        return mission_id, quote_id
+
+    def completed_mission(self, client: int, provider: int, amount: float = 100.0, **mission) -> int:
+        """Mission payée par le wallet, faite et confirmée : le registre a réglé."""
+        from backend.app import ledger
+
+        mission_id, quote_id = self.accepted_quote(client, provider, amount=amount, **mission)
+        self.credit_wallet(client, amount, mission.get("currency", "USD"))
+        with self.database.SessionLocal() as session:
+            client_account = ledger.account_id_for(session, ledger.TELEGRAM, client)
+            provider_account = ledger.account_id_for(session, ledger.TELEGRAM, provider)
+            ledger.fund_mission(session, mission_id, method="wallet", client_account_id=client_account, quote_id=quote_id)
+            ledger.start_mission(session, mission_id, provider_account)
+            ledger.finish_mission(session, mission_id, provider_account)
+            ledger.confirm_completion(session, mission_id, client_account)
+        return mission_id
+
+    def get_quote(self, quote_id: int):
+        from backend.app.models import BotQuote
+
+        with self.database.SessionLocal() as session:
+            return session.get(BotQuote, quote_id)
+
+    def disputed_ids(self) -> list[int]:
+        from backend.app import crud
+
+        with self.database.SessionLocal() as session:
+            return [mission.mission_id for mission in crud.admin_missions(session, status="disputed")]
+
     def age_status(self, mission_id: int, hours: int) -> None:
         """Fait comme si la mission était dans son statut depuis `hours` heures."""
         from datetime import timedelta

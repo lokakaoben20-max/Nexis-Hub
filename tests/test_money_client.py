@@ -71,19 +71,36 @@ def test_wallets_are_unknown_when_the_backend_is_down():
     assert backend_client.wallet_balance(wallets, "USD") is None
 
 
-def test_fund_request_carries_everything_the_backend_needs(live_backend):
-    mission = {
-        "id": 3,
-        "client_telegram_id": 42,
-        "is_urgent": 1,
-        "service": "service_plomberie",
-        "commune": "Gombe",
-        "description": "Fuite",
-    }
-    quote = {"id": 9, "provider_telegram_id": 7, "amount": 100.0, "currency": "USD"}
+def test_payment_amount_and_provider_come_from_the_recorded_quote(live_backend):
+    """Le bot n'envoie que les numéros de mission et de devis : montant,
+    devise, prestataire et urgence sont relus par le backend."""
+    mission_id, quote_id = live_backend.accepted_quote(42, 7, amount=100.0, urgent=True)
 
-    result = asyncio.run(backend_client.create_payment_intent(mission, quote, "+243810000000", "mpesa", 42))
+    result = asyncio.run(backend_client.create_payment_intent(mission_id, quote_id, "+243810000000", "mpesa", 42))
 
     assert result["mission"]["payment_status"] == "paid_escrow"
+    assert result["money"]["funding"]["total"] == "100.00"
     assert result["money"]["funding"]["commission"] == "15.00"  # urgente : 15 %
     assert result["money"]["funding"]["reference"] == "SIM-PAY-000001"
+    assert live_backend.mission(mission_id).provider_telegram_id == 7
+
+
+def test_mission_creation_is_numbered_by_the_backend_and_replayable(live_backend):
+    data = {
+        "service": "service_plomberie", "commune": "Gombe", "currency": "USD", "description": "Fuite",
+        "urgent": False, "photo_file_ids": ["photo-1"], "voice_file_ids": ["voix-1"],
+    }
+
+    first = asyncio.run(backend_client.create_mission(42, data, "demande-a", [7, 42]))
+    replay = asyncio.run(backend_client.create_mission(42, data, "demande-a", [7, 42]))
+
+    assert first["created"] is True and replay["created"] is False
+    assert replay["mission"]["mission_id"] == first["mission"]["mission_id"]
+    assert first["mission"]["media"] == [
+        {"channel": "telegram", "kind": "photo", "id": "photo-1"},
+        {"channel": "telegram", "kind": "voice", "id": "voix-1"},
+    ]
+    assert first["alerted_provider_telegram_ids"] == [7]  # jamais le client lui-même
+    with pytest.raises(backend_client.MoneyRefused) as refused:
+        asyncio.run(backend_client.create_mission(42, {**data, "description": "Autre"}, "demande-a", [7]))
+    assert refused.value.code == "creation_key_reused"

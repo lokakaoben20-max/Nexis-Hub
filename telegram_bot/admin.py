@@ -38,23 +38,20 @@ from db import (
     get_admin_stats,
     get_all_providers,
     get_all_users,
-    get_disputed_missions,
-    get_mission_by_id,
     get_pending_service_requests,
     get_provider_by_id,
     get_provider_by_telegram_id,
-    get_recent_missions,
     get_service_request_by_id,
     set_provider_suspended,
     set_provider_verified,
     update_provider_status,
 )
 from messages import get_message
+from telegram_bot import backend_client
 from telegram_bot.backend_client import (
     BackendUnavailable,
     MoneyRefused,
     _safe_backend_call,
-    apply_backend_mission,
     get_provider_language,
     get_user_language,
     money_failure_text,
@@ -97,13 +94,25 @@ class AdminDisputeSplit(StatesGroup):
     percentage = State()
 
 
+async def _admin_stats(admin_telegram_id: int) -> dict:
+    """Comptes des profils (db.py) et des missions (backend, seule mémoire des
+    missions). Backend injoignable : « ? » pour les missions, jamais un chiffre
+    local."""
+    stats = get_admin_stats()
+    try:
+        stats.update(await backend_client.admin_mission_stats(admin_telegram_id))
+    except (BackendUnavailable, MoneyRefused):
+        stats.update(missions="?", disputes="?")
+    return stats
+
+
 @router.message(Command("admin"))
 async def cmd_admin(message: Message):
     if not is_admin(message.from_user.id):
         await message.answer("Accès admin refusé.")
         return
 
-    stats = get_admin_stats()
+    stats = await _admin_stats(message.from_user.id)
     await message.answer(
         "🛠️ <b>Tableau admin NEXIS HUB</b>\n\n"
         f"👥 Clients : <b>{stats['users']}</b>\n"
@@ -122,7 +131,7 @@ async def admin_home(callback: CallbackQuery):
         await callback.answer("Accès admin refusé.", show_alert=True)
         return
 
-    stats = get_admin_stats()
+    stats = await _admin_stats(callback.from_user.id)
     await callback.message.edit_text(
         "🛠️ <b>Tableau admin NEXIS HUB</b>\n\n"
         f"👥 Clients : <b>{stats['users']}</b>\n"
@@ -142,7 +151,7 @@ async def admin_stats(callback: CallbackQuery):
         await callback.answer("Accès admin refusé.", show_alert=True)
         return
 
-    stats = get_admin_stats()
+    stats = await _admin_stats(callback.from_user.id)
     await callback.message.edit_text(
         "📊 <b>Statistiques</b>\n\n"
         f"Clients : <b>{stats['users']}</b>\n"
@@ -188,7 +197,11 @@ async def admin_missions(callback: CallbackQuery):
         await callback.answer("Accès admin refusé.", show_alert=True)
         return
 
-    missions = get_recent_missions()
+    try:
+        missions = await backend_client.admin_list_missions(callback.from_user.id)
+    except (BackendUnavailable, MoneyRefused) as error:
+        await callback.answer(money_failure_text(0, error, "fr"), show_alert=True)
+        return
     if not missions:
         await callback.message.edit_text("Aucune mission enregistrée.", reply_markup=clavier_admin_menu())
         await callback.answer()
@@ -197,7 +210,7 @@ async def admin_missions(callback: CallbackQuery):
     lines = []
     for mission in missions:
         lines.append(
-            f"NXH-{mission['id']:04d} | {SERVICES.get(mission['service'], mission['service'])}\n"
+            f"NXH-{mission['mission_id']:04d} | {SERVICES.get(mission['service'], mission['service'])}\n"
             f"Client : {mission['client_name'] or 'Client'} | Prestataire : {mission['provider_name'] or 'Non attribué'}\n"
             f"Statut : {mission['status']} | Paiement : {mission['payment_status']}"
         )
@@ -239,7 +252,11 @@ async def admin_disputes(callback: CallbackQuery):
         await callback.answer("Accès admin refusé.", show_alert=True)
         return
 
-    disputes = get_disputed_missions()
+    try:
+        disputes = await backend_client.admin_list_missions(callback.from_user.id, status="disputed")
+    except (BackendUnavailable, MoneyRefused) as error:
+        await callback.answer(money_failure_text(0, error, "fr"), show_alert=True)
+        return
     if not disputes:
         await callback.message.edit_text("✅ Aucun litige ouvert.", reply_markup=clavier_admin_menu())
         await callback.answer()
@@ -248,7 +265,7 @@ async def admin_disputes(callback: CallbackQuery):
     await callback.message.edit_text("⚠️ <b>Litiges ouverts</b>", parse_mode="HTML", reply_markup=clavier_admin_menu())
     for mission in disputes:
         text = (
-            f"NXH-{mission['id']:04d} | {SERVICES.get(mission['service'], mission['service'])}\n"
+            f"NXH-{mission['mission_id']:04d} | {SERVICES.get(mission['service'], mission['service'])}\n"
             f"Client : {mission['client_name'] or 'Client'} | Prestataire : {mission['provider_name'] or 'Non attribué'}\n"
             f"Montant escrow : {mission['total_client']:.2f} {mission['currency']}\n"
             f"Raison : {mission['dispute_reason'] or 'Non précisée'}\n"
@@ -256,7 +273,7 @@ async def admin_disputes(callback: CallbackQuery):
         )
         await callback.message.answer(
             html.escape(text),
-            reply_markup=clavier_admin_dispute(mission["id"]),
+            reply_markup=clavier_admin_dispute(mission["mission_id"]),
         )
     await callback.answer()
 
@@ -264,13 +281,13 @@ async def admin_disputes(callback: CallbackQuery):
 async def _resolve(mission_id: int, decision: str, admin_telegram_id: int, percentage: float | None = None):
     """Décision de litige par le registre du backend.
 
-    Retourne (mission db.py, montants du règlement, None) si elle est
+    Retourne (mission du backend, montants du règlement, None) si elle est
     enregistrée, sinon (None, None, erreur)."""
     try:
         result = await resolve_dispute(mission_id, decision, admin_telegram_id, percentage)
     except (MoneyRefused, BackendUnavailable) as error:
         return None, None, error
-    return apply_backend_mission(mission_id, result["mission"]), result["money"]["settlement"], None
+    return result["mission"], result["money"]["settlement"], None
 
 
 @router.callback_query(F.data.startswith("admin_dispute_refund_"))
@@ -287,9 +304,9 @@ async def admin_litige_rembourser(callback: CallbackQuery):
 
     await callback.message.edit_text(f"💸 Litige NXH-{mission_id:04d} : client remboursé.")
 
-    client_lang = await get_user_language(mission["client_telegram_id"])
+    client_lang = await get_user_language(mission["telegram_id"])
     await callback.bot.send_message(
-        mission["client_telegram_id"],
+        mission["telegram_id"],
         get_message("dispute_resolved_refund_client", client_lang, mission_id=mission_id),
         parse_mode="HTML",
     )
@@ -317,9 +334,9 @@ async def admin_litige_payer_prestataire(callback: CallbackQuery):
 
     await callback.message.edit_text(f"✅ Litige NXH-{mission_id:04d} : prestataire payé.")
 
-    client_lang = await get_user_language(mission["client_telegram_id"])
+    client_lang = await get_user_language(mission["telegram_id"])
     await callback.bot.send_message(
-        mission["client_telegram_id"],
+        mission["telegram_id"],
         get_message("dispute_resolved_release_client", client_lang, mission_id=mission_id),
         parse_mode="HTML",
     )
@@ -388,9 +405,9 @@ async def admin_litige_partage_recu(message: Message, state: FSMContext):
         f"{settlement['platform_amount']} {mission['currency']} de commission."
     )
 
-    client_lang = await get_user_language(mission["client_telegram_id"])
+    client_lang = await get_user_language(mission["telegram_id"])
     await message.bot.send_message(
-        mission["client_telegram_id"],
+        mission["telegram_id"],
         get_message(
             "dispute_resolved_split_client",
             client_lang,
@@ -545,7 +562,6 @@ async def admin_regler_montant_different(callback: CallbackQuery):
         await callback.answer(money_failure_text(0, error, "fr"), show_alert=True)
         return
     intent = result["intent"]
-    apply_backend_mission(intent["mission_id"], result["mission"])
     outcome = "mission payée, surplus au wallet" if intent["status"] == "mismatch_paid" else "crédité au wallet du client"
     await callback.message.edit_text(
         html.escape(f"Paiement #{intent_id} : {_received_text(intent)} {outcome}. Le client a été prévenu.")

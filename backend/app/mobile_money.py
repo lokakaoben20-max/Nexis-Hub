@@ -59,35 +59,44 @@ def _check_phone_and_operator(phone: str, operator: str) -> None:
 # --- Encaissement -----------------------------------------------------------------
 
 
-def create_intent(db: Session, mission_id: int, *, phone: str, operator: str, funding_request: dict) -> PaymentIntent:
+def _funding_parties(intent: PaymentIntent) -> dict:
+    """Client et devis d'une intention : le reste est relu dans le backend au
+    moment du paiement. Une intention d'avant le paiement sur devis (montant
+    fourni par le canal) n'a pas de devis : refus, jamais d'interprétation."""
+    request = intent.funding_request or {}
+    if "quote_id" not in request:
+        raise MoneyError("intent_without_quote")
+    return {"client_account_id": request["client_account_id"], "quote_id": request["quote_id"]}
+
+
+def create_intent(
+    db: Session, mission_id: int, *, phone: str, operator: str, client_account_id: int, quote_id: int
+) -> PaymentIntent:
     """Ouvre (ou renvoie) l'intention de paiement de la mission et demande à
     l'agrégateur d'envoyer la demande sur le téléphone du client.
 
-    `funding_request` : les paramètres de `ledger.fund_mission`, sauf la
-    méthode ; ils serviront tels quels quand l'argent arrivera."""
+    Le montant est celui du devis accepté, lu dans le backend
+    (`ledger.funding_terms`). `funding_request` garde le client, le devis et
+    son prestataire ; `ledger.fund_mission` relit le devis quand l'argent
+    arrive."""
     _check_phone_and_operator(phone, operator)
-    currency = funding_request["currency"]
-    if currency not in ledger.CURRENCIES:
-        raise MoneyError("invalid_currency", 400)
-    amount = ledger.payment_amounts(funding_request["amount"], funding_request["urgent"])["total"]
-    client_account_id = funding_request["client_account_id"]
-    if funding_request["provider_account_id"] == client_account_id:
-        raise MoneyError("provider_is_client")
-    if ledger.telegram_id_of(db, funding_request["provider_account_id"]) is None:
-        raise MoneyError("provider_not_found", 404)
-
-    # La mission doit exister pour l'intention (clé étrangère) : même création
-    # que le paiement, sans argent. Verrouillée jusqu'à la fin de la demande.
-    mission = ledger.ensure_mission(
-        db, mission_id, client_account_id=client_account_id, service=funding_request["service"],
-        commune=funding_request["commune"], currency=currency, description=funding_request.get("description", ""),
-        urgent=funding_request["urgent"],
-    )
-    ledger.require_mission_client(mission, client_account_id)
+    terms = ledger.funding_terms(db, mission_id, quote_id, client_account_id)
+    mission = terms["mission"]
+    currency = terms["currency"]
+    amount = ledger.payment_amounts(terms["amount"], terms["urgent"])["total"]
+    if terms["provider_account_id"] == client_account_id:
+        raise MoneyError("provider_is_client", mission=mission)
+    if ledger.telegram_id_of(db, terms["provider_account_id"]) is None:
+        raise MoneyError("provider_not_found", 404, mission)
     if ledger.mission_operation(db, mission_id, ledger.FUNDING) is not None:
         raise MoneyError("already_paid", mission=mission)
     if mission.status not in ledger.FUNDABLE_STATUSES or mission.payment_status not in (None, "unpaid"):
         raise MoneyError("invalid_state", mission=mission)
+    funding_request = {
+        "client_account_id": client_account_id,
+        "quote_id": terms["quote_id"],
+        "provider_account_id": terms["provider_account_id"],
+    }
 
     existing = _open_intent(db, mission_id)
     if existing is not None:
@@ -208,9 +217,10 @@ def _apply_collection_result(db: Session, intent: PaymentIntent, result) -> Paym
         intent.status, intent.updated_at = "succeeded", now
         ledger.record_collection_fee(db, mission_id=intent.mission_id, currency=intent.currency, fee=fee, reference=reference)
 
-    request = dict(intent.funding_request)
     try:
-        ledger.fund_mission(db, intent.mission_id, method="mobile_money", reference=reference, also=also, **request)
+        ledger.fund_mission(
+            db, intent.mission_id, method="mobile_money", reference=reference, also=also, **_funding_parties(intent)
+        )
     except MoneyError as error:
         if error.code in ("invalid_amount", "invalid_currency", "invalid_method"):
             raise
@@ -322,7 +332,7 @@ def _resolve_mismatch(db: Session, intent_id: int, admin_telegram_id: int, decis
     # Le solde du wallet est relu par `fund_mission` : écritures envoyées
     # d'abord, validées ensemble avec le paiement (ou annulées avec lui).
     db.flush()
-    ledger.fund_mission(db, intent.mission_id, method="wallet", reference=reference, **dict(intent.funding_request))
+    ledger.fund_mission(db, intent.mission_id, method="wallet", reference=reference, **_funding_parties(intent))
     intent = db.get(PaymentIntent, intent_id)
     if intent.status != "mismatch_paid":
         # `fund_mission` n'a rien validé (rejeu concurrent impossible sous le

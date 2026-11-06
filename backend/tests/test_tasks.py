@@ -103,20 +103,10 @@ def test_expire_stale_quotes_expires_only_quotes_older_than_24h(monkeypatch, tmp
 
 
 def _paid_and_finished_mission(db, ledger, crud, mission_id, provider_id=7, client_id=1):
-    assert _new_mission(db, crud, client_id).mission_id == mission_id
-    ledger.fund_mission(
-        db,
-        mission_id,
-        method="mobile_money",
-        client_account_id=acc(db, client_id),
-        provider_account_id=acc(db, provider_id),
-        quote_ref=mission_id,
-        amount=10.0,
-        currency="USD",
-        urgent=False,
-        service="service_menage",
-        commune="Gombe",
-    )
+    assert _new_mission(db, crud, client_id, alert=(provider_id,)).mission_id == mission_id
+    quote = crud.create_quote(db, mission_id, provider_id, amount=10.0, currency="USD", delay_hours=2)
+    crud.accept_quote(db, quote.id, acc(db, client_id))
+    ledger.fund_mission(db, mission_id, method="mobile_money", client_account_id=acc(db, client_id), quote_id=quote.id)
     ledger.start_mission(db, mission_id, acc(db, provider_id))
     ledger.finish_mission(db, mission_id, acc(db, provider_id))
 

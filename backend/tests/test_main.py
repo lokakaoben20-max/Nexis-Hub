@@ -31,27 +31,17 @@ def _reload_backend_with_db(monkeypatch, tmp_path, name="test_backend.db"):
     return backend_main, database_module
 
 
-def _fund(test_client, mission_id=1001, quote_id=1, amount=100.0, currency="USD", method="mobile_money", urgent=False, client=42, provider=7):
-    # Mobile Money : par une intention de paiement, confirmée ici tout de suite
-    # par l'agrégateur simulé ; wallet : paiement direct.
+def _fund(test_client, mission_id, quote_id, method="mobile_money", client=42):
+    """Le client 42 accepte le devis (rejeu sans effet s'il l'est déjà), puis
+    `client` paie la mission sur ce devis. Mobile Money : par une intention de
+    paiement, confirmée ici tout de suite par l'agrégateur simulé ; wallet :
+    paiement direct. Montant et prestataire sont ceux du devis."""
+    test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
     path = "fund" if method == "wallet" else "payment-intents"
-    extra = {} if method == "wallet" else {"phone": "+243810000000", "operator": "mpesa"}
-    return test_client.post(
-        f"/api/bot/missions/{mission_id}/{path}",
-        json={
-            **extra,
-            "method": method,
-            "provider_telegram_id": provider,
-            "quote_ref": quote_id,
-            "amount": amount,
-            "currency": currency,
-            "urgent": urgent,
-            "service": "service_peinture",
-            "commune": "Gombe",
-            "description": "Peindre le salon",
-        },
-        headers=_as(client),
-    )
+    payload = {"method": "wallet", "quote_id": quote_id} if method == "wallet" else {
+        "quote_id": quote_id, "phone": "+243810000000", "operator": "mpesa"
+    }
+    return test_client.post(f"/api/bot/missions/{mission_id}/{path}", json=payload, headers=_as(client))
 
 
 def _credit_client_wallet(database_module, telegram_id, amount, currency="USD"):
@@ -123,30 +113,19 @@ def test_mission_lifecycle_round_trip(tmp_path, monkeypatch):
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        create_response = test_client.post(
-            "/api/bot/missions",
-            json={
-                "creation_key": "demande-fuite",
-                "service": "plomberie",
-                "commune": "Gombe",
-                "currency": "USD",
-                "description": "Fuite d'eau",
-                "urgent": True,
-            },
-            headers=_as(42),
-        )
-        assert create_response.status_code == 200
+        mission_id, quote_id = _setup_mission_with_quote(test_client, urgent=True)
         # "pending" dès la création (et non None) : parité avec le défaut SQL
         # de db.py légataire (`status TEXT DEFAULT 'pending'`), et signal
         # nécessaire aux tâches Celery de la Phase 2 (relances : "mission
-        # encore sans devis").
-        assert create_response.json()["mission"]["status"] == "pending"
-        mission_id = create_response.json()["mission"]["mission_id"]
+        # encore sans devis"). Après le devis : "quoted".
+        assert test_client.get(f"/api/bot/missions/{mission_id}", headers=_as(42)).json()["mission"]["status"] == "quoted"
 
-        payment_response = _fund(test_client, mission_id=mission_id)
+        payment_response = _fund(test_client, mission_id=mission_id, quote_id=quote_id)
         assert payment_response.status_code == 200
         assert payment_response.json()["mission"]["status"] == "confirmed"
         assert payment_response.json()["mission"]["payment_status"] == "paid_escrow"
+        # Urgence lue sur la mission : commission de 15 %.
+        assert payment_response.json()["money"]["funding"]["commission"] == "15.00"
 
         profile_response = test_client.get("/api/profile/42")
         missions = profile_response.json()["client_missions"]
@@ -416,7 +395,7 @@ def test_money_endpoints_return_a_stable_code_and_the_current_mission_on_refusal
         mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
         _fund(test_client, mission_id=mission_id, quote_id=quote_id)
 
-        second = _fund(test_client, mission_id=mission_id, quote_id=quote_id + 1, amount=50.0)
+        second = _fund(test_client, mission_id=mission_id, quote_id=quote_id + 1)
         assert second.status_code == 409
         assert second.json()["detail"]["code"] == "already_paid"
         assert second.json()["detail"]["money"]["funding"]["total"] == "100.00"
@@ -536,7 +515,7 @@ def test_update_user_language(tmp_path, monkeypatch):
 def _complete_mission_flow(test_client, amount=100.0, currency="USD", provider_telegram_id=7):
     mission_id, quote_id = _setup_mission_with_quote(test_client, amount=amount, currency=currency)
     test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
-    assert _fund(test_client, mission_id=mission_id, quote_id=quote_id, amount=amount, currency=currency, provider=provider_telegram_id).status_code == 200
+    assert _fund(test_client, mission_id=mission_id, quote_id=quote_id).status_code == 200
     test_client.post(f"/api/bot/missions/{mission_id}/start", headers=_as(provider_telegram_id))
     test_client.post(f"/api/bot/missions/{mission_id}/finish", headers=_as(provider_telegram_id))
     release_response = test_client.post(f"/api/bot/missions/{mission_id}/confirm", headers=_as(42))
@@ -842,17 +821,80 @@ def test_rank_providers_orders_given_ids_by_score_without_availability_filter(tm
         assert too_many.status_code == 422
 
 
-def test_wallet_refusal_on_a_mission_the_backend_never_saw_returns_409_not_500(tmp_path, monkeypatch):
-    """La mission est créée par la demande de paiement elle-même ; refusée,
-    elle disparaît avec la transaction : la réponse reste un refus propre."""
+def test_a_payment_never_creates_a_mission(tmp_path, monkeypatch):
+    """Payer une mission que le backend ne connaît pas : refus propre, rien
+    n'est créé (avant, la demande de paiement créait la mission)."""
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+    _credit_client_wallet(database_module, 42, 500.0)
+
+    with _authed_client(backend_main) as test_client:
+        wallet = test_client.post("/api/bot/missions/555/fund", json={"method": "wallet", "quote_id": 1}, headers=_as(42))
+        intent = test_client.post(
+            "/api/bot/missions/555/payment-intents",
+            json={"quote_id": 1, "phone": "+243810000000", "operator": "mpesa"},
+            headers=_as(42),
+        )
+
+        assert wallet.status_code == intent.status_code == 404
+        assert wallet.json()["detail"] == intent.json()["detail"] == {"code": "mission_not_found"}
+        assert test_client.get("/api/bot/missions/555", headers=_as(42)).status_code == 404
+
+
+def test_the_channel_cannot_choose_the_amount_or_the_provider(tmp_path, monkeypatch):
+    """Les anciens champs (montant, prestataire, devis du bot) sont ignorés :
+    le montant payé est celui du devis accepté."""
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+    _credit_client_wallet(database_module, 42, 500.0)
+
+    with _authed_client(backend_main) as test_client:
+        mission_id, quote_id = _setup_mission_with_quote(test_client, amount=80.0)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
+        response = test_client.post(
+            f"/api/bot/missions/{mission_id}/fund",
+            json={"method": "wallet", "quote_id": quote_id, "amount": 1.0, "provider_telegram_id": 42, "quote_ref": 99},
+            headers=_as(42),
+        )
+
+        assert response.status_code == 200
+        assert response.json()["money"]["funding"]["total"] == "80.00"
+        assert response.json()["mission"]["provider_telegram_id"] == 7
+
+
+def test_a_quote_must_be_accepted_before_payment(tmp_path, monkeypatch):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+    _credit_client_wallet(database_module, 42, 500.0)
+
+    with _authed_client(backend_main) as test_client:
+        mission_id, quote_id = _setup_mission_with_quote(test_client)
+        response = test_client.post(
+            f"/api/bot/missions/{mission_id}/fund", json={"method": "wallet", "quote_id": quote_id}, headers=_as(42)
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"]["code"] == "quote_not_accepted"
+
+
+def test_only_one_quote_is_accepted_and_it_cannot_be_withdrawn(tmp_path, monkeypatch):
     backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
 
     with _authed_client(backend_main) as test_client:
-        response = _fund(test_client, mission_id=555, method="wallet")
+        mission_id, first = _setup_mission_with_quote(test_client)
+        _register_provider(test_client, 8, ["service_peinture"], ["Gombe"])
+        second = test_client.post(
+            "/api/bot/quotes",
+            json={"mission_id": mission_id, "amount": 90.0, "currency": "USD", "delay_hours": 3},
+            headers=_as(8),
+        ).json()["quote"]["id"]
 
-        assert response.status_code == 409
-        assert response.json()["detail"] == {"code": "insufficient_balance"}
-        assert test_client.get("/api/bot/missions/555", headers=_as(42)).status_code == 404
+        assert test_client.post(f"/api/bot/quotes/{first}/accept", headers=_as(42)).status_code == 200
+        assert test_client.post(f"/api/bot/quotes/{first}/accept", headers=_as(42)).status_code == 200, "rejeu"
+        assert test_client.post(f"/api/bot/quotes/{second}/accept", headers=_as(42)).json()["detail"] == {"code": "quote_not_open"}
+        assert test_client.post(f"/api/bot/quotes/{first}/reject", headers=_as(42)).json()["detail"] == {"code": "quote_not_open"}
+        late = test_client.post(
+            "/api/bot/quotes",
+            json={"mission_id": mission_id, "amount": 70.0, "currency": "USD", "delay_hours": 1},
+            headers=_as(8),
+        )
+        assert late.json()["detail"] == {"code": "mission_not_open"}
 
 
 def test_backend_refuses_a_quote_from_the_mission_client(tmp_path, monkeypatch):
@@ -878,8 +920,7 @@ def test_mobile_money_cannot_be_declared_paid_by_the_bot(tmp_path, monkeypatch):
     with _authed_client(backend_main) as test_client:
         response = test_client.post(
             "/api/bot/missions/1/fund",
-            json={"method": "mobile_money", "provider_telegram_id": 7, "quote_ref": 1,
-                  "amount": 10.0, "currency": "USD", "service": "s", "commune": "Gombe"},
+            json={"method": "mobile_money", "quote_id": 1},
             headers=_as(42),
         )
         assert response.status_code == 400
@@ -928,9 +969,12 @@ def test_payment_intents_name_the_parties_by_account(tmp_path, monkeypatch):
     from backend.app.models import PaymentIntent
 
     with _authed_client(backend_main) as test_client:
-        assert _fund(test_client, mission_id=1001).status_code == 200
+        mission_id, quote_id = _setup_mission_with_quote(test_client)
+        assert _fund(test_client, mission_id=mission_id, quote_id=quote_id).status_code == 200
     with database_module.SessionLocal() as db:
         request = db.query(PaymentIntent).one().funding_request
+        assert request["quote_id"] == quote_id
+        assert "amount" not in request, "le montant est relu dans le devis, jamais gardé de la demande"
         assert request["client_account_id"] == ledger.account_id_for(db, ledger.TELEGRAM, 42)
         assert request["provider_account_id"] == ledger.account_id_for(db, ledger.TELEGRAM, 7)
         assert "client_telegram_id" not in request and "provider_telegram_id" not in request

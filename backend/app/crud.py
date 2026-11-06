@@ -259,6 +259,8 @@ def rank_providers(db: Session, telegram_ids: list[int]) -> list[int]:
 
 
 MEDIA_KINDS = ("photo", "voice")
+# Une mission reçoit des devis tant qu'aucun n'est accepté.
+QUOTABLE_STATUSES = {"pending", "quoted"}
 MAX_MISSION_MEDIA = 20
 MAX_ALERTED_PROVIDERS = 20
 
@@ -463,9 +465,12 @@ def create_quote(
     delay_hours: int,
     message: str = "",
 ) -> BotQuote | None:
-    mission = db.get(BotMission, mission_id)
+    mission = db.get(BotMission, mission_id, with_for_update=True)
     if mission is None:
         return None
+    if mission.status not in QUOTABLE_STATUSES:
+        # Devis accepté ou mission payée : plus de nouveau devis.
+        raise MissionRefused("mission_not_open")
     provider_account_id = _account_id_for_telegram(db, provider_telegram_id)
     client_account_id = mission.client_account_id or _account_id_for_telegram(db, mission.telegram_id)
     if client_account_id == provider_account_id:
@@ -502,10 +507,18 @@ def _require_quote_client(db: Session, quote: BotQuote, client_account_id: int) 
 
 
 def accept_quote(db: Session, quote_id: int, client_account_id: int) -> BotQuote | None:
+    """Un seul devis accepté par mission, et seulement tant qu'aucun ne l'est :
+    c'est ce devis, et lui seul, que le paiement relira."""
     quote = db.get(BotQuote, quote_id)
     if quote is None:
         return None
     _require_quote_client(db, quote, client_account_id)
+    mission = db.get(BotMission, quote.mission_id, with_for_update=True)
+    db.refresh(quote)
+    if quote.status == "accepted":
+        return quote  # rejeu de la même acceptation
+    if quote.status != "pending" or mission.status not in QUOTABLE_STATUSES:
+        raise MissionRefused("quote_not_open")
 
     quote.status = "accepted"
     other_quotes = (
@@ -533,6 +546,11 @@ def reject_quote(db: Session, quote_id: int, client_account_id: int) -> BotQuote
     if quote is None:
         return None
     _require_quote_client(db, quote, client_account_id)
+    if quote.status == "rejected":
+        return quote  # rejeu
+    if quote.status != "pending":
+        # Un devis accepté ne se refuse plus : c'est celui que le paiement relit.
+        raise MissionRefused("quote_not_open")
     quote.status = "rejected"
     db.commit()
     db.refresh(quote)

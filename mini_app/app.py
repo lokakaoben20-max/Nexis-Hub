@@ -13,15 +13,12 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from db import (
-    apply_backend_mission,
     create_provider,
     create_service_request,
     get_active_services,
     get_provider_by_telegram_id,
-    get_provider_missions,
     get_provider_service_requests,
     get_user_by_telegram_id,
-    get_user_missions,
     provider_can_change_own_status,
     update_provider_services,
     update_provider_status,
@@ -159,21 +156,27 @@ def require_same_telegram_user(telegram_id: int, telegram_user: dict):
         raise HTTPException(status_code=403, detail="Acces refuse")
 
 
-def compact_mission(row):
-    mission = row_to_dict(row)
-    if not mission:
-        return None
+def compact_mission(mission: dict) -> dict:
+    """Mission du backend (seule mémoire des missions), réduite à ce que la
+    page affiche."""
     return {
-        "id": mission["id"],
+        "id": mission["mission_id"],
         "service": mission["service"],
         "commune": mission["commune"],
         "status": mission["status"],
         "payment_status": mission["payment_status"],
         "currency": mission["currency"],
-        "created_at": mission["created_at"],
         "provider_name": mission.get("provider_name"),
         "client_name": mission.get("client_name"),
     }
+
+
+async def my_missions(telegram_id: int, role: str) -> list[dict] | None:
+    """None si le backend ne répond pas : la page affiche « indisponible »."""
+    try:
+        return [compact_mission(mission) for mission in await backend_client.list_my_missions(telegram_id, role)]
+    except (BackendUnavailable, MoneyRefused):
+        return None
 
 
 @app.get("/api/profile/{telegram_id}")
@@ -186,8 +189,8 @@ async def profile(telegram_id: int, telegram_user: dict = Depends(verify_telegra
     wallet = wallets.get("wallet") if isinstance(wallets, dict) else None
     user = row_to_dict(get_user_by_telegram_id(telegram_id))
     provider = row_to_dict(get_provider_by_telegram_id(telegram_id))
-    user_missions = [compact_mission(row) for row in get_user_missions(telegram_id)]
-    provider_missions = [compact_mission(row) for row in get_provider_missions(telegram_id)]
+    user_missions = await my_missions(telegram_id, "client")
+    provider_missions = await my_missions(telegram_id, "provider")
     service_requests = [row_to_dict(row) for row in get_provider_service_requests(telegram_id)]
 
     if provider:
@@ -328,17 +331,15 @@ def save_provider_status(
 async def _mission_action(mission_id: int, action) -> dict:
     """Démarrer ou finir une mission conditionne la libération des fonds :
     c'est le registre du backend qui décide (CONCEPTION_ARGENT.md), la Mini App
-    recopie l'état renvoyé. Refus métier : 409 avec son code ; backend
+    affiche l'état renvoyé. Refus métier : 409 avec son code ; backend
     injoignable : 503, rien n'a changé."""
     try:
         result = await action
     except MoneyRefused as error:
-        if isinstance(error.mission, dict):
-            apply_backend_mission(mission_id, error.mission)
         raise HTTPException(status_code=409, detail={"code": error.code})
     except BackendUnavailable:
         raise HTTPException(status_code=503, detail={"code": "backend_unavailable"})
-    return {"status": "ok", "mission": compact_mission(apply_backend_mission(mission_id, result["mission"]))}
+    return {"status": "ok", "mission": compact_mission(result["mission"])}
 
 
 @app.post("/api/provider/{telegram_id}/missions/{mission_id}/start")

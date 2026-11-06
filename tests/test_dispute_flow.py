@@ -2,7 +2,7 @@
 
 Le litige s'ouvre dans le registre du backend, qui gèle les fonds ; seule une
 décision admin les libère (remboursement total, paiement du prestataire, ou
-partage du net). db.py ne fait que recopier l'état renvoyé (CONCEPTION_ARGENT.md).
+partage du net). db.py n'en garde aucune copie (CONCEPTION_MISSIONS.md).
 """
 
 import asyncio
@@ -116,23 +116,18 @@ def _languages(monkeypatch):
     monkeypatch.setenv("ADMIN_TELEGRAM_ID", str(ADMIN_ID))
 
 
-def _paid_mission(tmp_path, monkeypatch, amount=100.0):
-    """Mission payée en escrow par le vrai parcours : devis accepté dans db.py,
-    paiement Mobile Money par le registre."""
+def _paid_mission(tmp_path, monkeypatch, live, amount=100.0):
+    """Mission payée en escrow par le vrai parcours : mission et devis accepté
+    dans le backend, paiement Mobile Money par le registre."""
     db.DB_PATH = tmp_path / "test_nexis_hub.db"
     db.init_db()
     _languages(monkeypatch)
     db.create_user(CLIENT_ID, "+243800000100", "Cliente", language="fr")
     db.create_provider(PROVIDER_ID, "+243800000200", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-    mission_id = db.create_mission(CLIENT_ID, {
-        "service": "service_plomberie", "commune": "Gombe", "currency": "USD",
-        "description": "Fuite d'eau", "urgent": False,
-    })
-    quote_id = db.create_quote(mission_id, PROVIDER_ID, amount, "USD", 4, "")
-    db.accept_quote(quote_id, CLIENT_ID)
-    callback = DummyCallback(CLIENT_ID, data=f"pay_mm_{quote_id}_mpesa")
+    mission_id, quote_id = live.accepted_quote(CLIENT_ID, PROVIDER_ID, amount=amount, service="service_plomberie")
+    callback = DummyCallback(CLIENT_ID, data=f"qpay_op_{quote_id}_mpesa")
     asyncio.run(payment.paiement_mobile_money_operateur(callback))
-    assert db.get_mission_by_id(mission_id)["payment_status"] == "paid_escrow", callback.answered
+    assert live.mission(mission_id).payment_status == "paid_escrow", callback.answered
     return mission_id
 
 
@@ -161,7 +156,7 @@ def _go_offline(monkeypatch):
 
 
 def test_client_signale_probleme_starts_dispute_fsm(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     state = DummyState()
     callback = DummyCallback(CLIENT_ID, data=f"client_report_issue_{mission_id}")
 
@@ -172,22 +167,21 @@ def test_client_signale_probleme_starts_dispute_fsm(tmp_path, monkeypatch, live_
 
 
 def test_dispute_freezes_funds_in_the_registry_and_notifies_the_provider(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
 
     message, state = _open_dispute(mission_id)
 
     assert state.cleared
     assert live_backend.mission(mission_id).status == "disputed"
-    local = db.get_mission_by_id(mission_id)
-    assert local["status"] == "disputed"
-    assert local["dispute_reason"] == "Travail non terminé"
-    assert local["dispute_deadline"]
+    stored = live_backend.mission(mission_id)
+    assert stored.dispute_reason == "Travail non terminé"
+    assert stored.dispute_deadline
     assert message.bot.messages[0].chat_id == PROVIDER_ID
-    assert db.get_disputed_missions()[0]["id"] == mission_id
+    assert live_backend.disputed_ids() == [mission_id]
 
 
 def test_empty_reason_is_refused_without_touching_the_registry(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
 
     message, state = _open_dispute(mission_id, reason="   ")
 
@@ -197,20 +191,20 @@ def test_empty_reason_is_refused_without_touching_the_registry(tmp_path, monkeyp
 
 
 def test_dispute_is_not_opened_while_the_backend_is_down_and_the_reason_is_kept(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     _go_offline(monkeypatch)
 
     message, state = _open_dispute(mission_id)
 
     assert message.answers == [get_message("money_backend_unavailable", "fr")]
     assert not state.cleared
-    assert db.get_mission_by_id(mission_id)["status"] == "confirmed"
+    assert live_backend.mission(mission_id).status == "confirmed"
 
 
 def test_dispute_after_release_explains_the_mission_was_already_paid(tmp_path, monkeypatch, live_backend):
-    """Délai de 24 h dépassé : le backend a libéré seul. db.py l'apprend au
-    refus du litige et recopie l'état réel."""
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    """Délai de 24 h dépassé : le backend a libéré seul ; le litige refusé
+    l'explique au client."""
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     asyncio.run(payment.prestataire_demarre_mission(DummyCallback(PROVIDER_ID, data=f"mission_start_{mission_id}")))
     asyncio.run(payment.prestataire_termine_mission(DummyCallback(PROVIDER_ID, data=f"mission_finish_{mission_id}")))
     live_backend.age_status(mission_id, hours=25)
@@ -220,13 +214,13 @@ def test_dispute_after_release_explains_the_mission_was_already_paid(tmp_path, m
 
     assert message.answers == [get_message("dispute_already_released", "fr", mission_id=mission_id)]
     assert state.cleared
-    local = db.get_mission_by_id(mission_id)
-    assert (local["status"], local["payment_status"]) == ("completed", "released")
+    local = live_backend.mission(mission_id)
+    assert (local.status, local.payment_status) == ("completed", "released")
     assert live_backend.balance(PROVIDER_ID) == 90.0
 
 
 def test_another_client_cannot_open_the_dispute(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     state = DummyState({"dispute_mission_id": mission_id})
     message = DummyMessage(555, text="Je conteste")
 
@@ -240,7 +234,7 @@ def test_another_client_cannot_open_the_dispute(tmp_path, monkeypatch, live_back
 
 
 def test_admin_screens_are_closed_when_no_admin_is_configured(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     _open_dispute(mission_id)
     monkeypatch.setattr(admin, "ADMIN_TELEGRAM_ID", None)
 
@@ -252,7 +246,7 @@ def test_admin_screens_are_closed_when_no_admin_is_configured(tmp_path, monkeypa
 
 
 def test_only_the_configured_admin_can_decide(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     _open_dispute(mission_id)
 
     callback = DummyCallback(CLIENT_ID, data=f"admin_dispute_refund_{mission_id}")
@@ -263,7 +257,7 @@ def test_only_the_configured_admin_can_decide(tmp_path, monkeypatch, live_backen
 
 
 def test_admin_refund_returns_everything_to_the_client_wallet(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     _open_dispute(mission_id)
     bot = DummyBot()
 
@@ -271,14 +265,14 @@ def test_admin_refund_returns_everything_to_the_client_wallet(tmp_path, monkeypa
 
     assert live_backend.balance(CLIENT_ID) == 100.0
     assert live_backend.balance(PROVIDER_ID) == 0.0
-    local = db.get_mission_by_id(mission_id)
-    assert (local["status"], local["payment_status"]) == ("cancelled", "refunded")
+    local = live_backend.mission(mission_id)
+    assert (local.status, local.payment_status) == ("cancelled", "refunded")
     assert {message.chat_id for message in bot.messages} == {CLIENT_ID, PROVIDER_ID}
-    assert db.get_disputed_missions() == []
+    assert live_backend.disputed_ids() == []
 
 
 def test_admin_release_pays_the_provider_net(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     _open_dispute(mission_id)
     bot = DummyBot()
 
@@ -291,7 +285,7 @@ def test_admin_release_pays_the_provider_net(tmp_path, monkeypatch, live_backend
 
 
 def test_admin_split_starts_fsm(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     _open_dispute(mission_id)
     state = DummyState()
     callback = DummyCallback(ADMIN_ID, data=f"admin_dispute_split_{mission_id}")
@@ -303,7 +297,7 @@ def test_admin_split_starts_fsm(tmp_path, monkeypatch, live_backend):
 
 
 def test_admin_split_shares_the_provider_net_and_keeps_the_commission(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     _open_dispute(mission_id)
     bot = DummyBot()
     message = DummyMessage(ADMIN_ID, text="50", bot=bot)
@@ -316,14 +310,14 @@ def test_admin_split_shares_the_provider_net_and_keeps_the_commission(tmp_path, 
     assert live_backend.balance(CLIENT_ID) == 45.0
     assert "45.00 USD au prestataire" in message.answers[0]
     assert "10.00 USD de commission" in message.answers[0]
-    local = db.get_mission_by_id(mission_id)
-    assert (local["status"], local["payment_status"]) == ("completed", "split")
+    local = live_backend.mission(mission_id)
+    assert (local.status, local.payment_status) == ("completed", "split")
     client_message = next(sent for sent in bot.messages if sent.chat_id == CLIENT_ID)
     assert "45.00" in client_message.text
 
 
 def test_admin_split_rejects_non_numeric_input_without_crashing(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     _open_dispute(mission_id)
     message = DummyMessage(ADMIN_ID, text="moitié")
     state = DummyState({"dispute_split_mission_id": mission_id})
@@ -335,7 +329,7 @@ def test_admin_split_rejects_non_numeric_input_without_crashing(tmp_path, monkey
 
 
 def test_admin_split_refuses_an_out_of_range_percentage(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     _open_dispute(mission_id)
     message = DummyMessage(ADMIN_ID, text="150")
     state = DummyState({"dispute_split_mission_id": mission_id})
@@ -347,7 +341,7 @@ def test_admin_split_refuses_an_out_of_range_percentage(tmp_path, monkeypatch, l
 
 
 def test_admin_decision_is_refused_while_the_backend_is_down(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     _open_dispute(mission_id)
     _go_offline(monkeypatch)
 
@@ -360,11 +354,11 @@ def test_admin_decision_is_refused_while_the_backend_is_down(tmp_path, monkeypat
     assert callback.answered == get_message("money_backend_unavailable", "fr")
     assert message.answers == [get_message("money_backend_unavailable", "fr")]
     assert not state.cleared  # l'admin renvoie le même pourcentage
-    assert db.get_mission_by_id(mission_id)["status"] == "disputed"
+    assert live_backend.mission(mission_id).status == "disputed"
 
 
 def test_a_dispute_is_decided_once(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     _open_dispute(mission_id)
     asyncio.run(admin.admin_litige_rembourser(DummyCallback(ADMIN_ID, data=f"admin_dispute_refund_{mission_id}")))
 
@@ -377,7 +371,7 @@ def test_a_dispute_is_decided_once(tmp_path, monkeypatch, live_backend):
 
 
 def test_confirming_a_disputed_mission_is_refused(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch)
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     _open_dispute(mission_id)
 
     callback = DummyCallback(CLIENT_ID, data=f"client_confirm_done_{mission_id}")

@@ -6,8 +6,9 @@ confirmation et la diffusion aux prestataires matchés) et la réponse du presta
 devis** : acceptation du devis, paiement, lifecycle et notation restent dans `main.py`
 — la partie argent mérite son propre commit, séparé de celui-ci.
 
-Même contrat que `telegram_bot/registration.py` : Router aiogram dédié, double
-écriture backend + `db.py` maintenue, lecture backend-first.
+Missions et devis vivent dans le backend, seule mémoire (CONCEPTION_MISSIONS.md) :
+le bot les crée et les lit par l'API, sans copie dans db.py. Backend injoignable :
+rien n'est créé, aucun prestataire n'est prévenu, la personne réessaie.
 
 `bot` n'est pas importé depuis `main.py` (ça réexécuterait tout le module) : aiogram 3
 expose l'instance sur chaque événement via `message.bot` / `callback.bot`, ce qui est
@@ -16,6 +17,7 @@ aussi le pattern correct pour un handler vivant dans un router séparé.
 
 import html
 import json
+import uuid
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -23,26 +25,25 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from db import (
-    create_mission,
-    create_quote,
-    rank_eligible_providers,
-    get_mission_by_id,
     get_provider_by_telegram_id,
+    rank_eligible_providers,
     reset_consecutive_ignored,
     update_consecutive_ignored,
 )
 from messages import get_message
+from telegram_bot import backend_client
 from telegram_bot.backend_client import (
+    BackendUnavailable,
+    MoneyRefused,
     _safe_backend_call,
+    money_failure_text,
     fetch_backend_provider_ranking,
     fetch_backend_profile,
     get_provider_language,
     get_state_language,
     get_user_language,
-    persist_mission_creation,
     sync_provider_ignored_increment_to_backend,
     sync_provider_ignored_reset_to_backend,
-    sync_quote_to_backend,
 )
 from telegram_bot.keyboards import (
     COMMUNES,
@@ -292,6 +293,9 @@ async def explication_terminee(callback: CallbackQuery, state: FSMContext):
     )
     data = await state.get_data()
     await state.clear()
+    # Clé de cette demande : la même à chaque nouvel essai de confirmation,
+    # le backend ne crée donc la mission qu'une fois.
+    data["creation_key"] = uuid.uuid4().hex
     await state.update_data(**data)
     await callback.message.edit_text(
         format_recap(data),
@@ -301,12 +305,14 @@ async def explication_terminee(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-async def choose_providers_to_alert(service: str, commune: str, count: int = 3) -> list:
+async def choose_providers_to_alert(service: str, commune: str, client_telegram_id: int, count: int = 3) -> list:
     """Matching "mélange" choisi par Ben (étape D) : db.py décide qui est
     disponible (la Mini App n'écrit que là), le backend décide l'ordre (db.py
     ne calcule jamais note, missions ni taux de succès, donc tous les vérifiés
     y sont à égalité). Backend coupé : classement local, comme avant."""
-    eligible = rank_eligible_providers(service, commune)
+    # Un client qui est aussi prestataire n'est jamais prévenu de sa propre
+    # mission (le backend l'écarte aussi).
+    eligible = [provider for provider in rank_eligible_providers(service, commune) if provider["telegram_id"] != client_telegram_id]
     if not eligible:
         return []
     ranking = await fetch_backend_provider_ranking([provider["telegram_id"] for provider in eligible])
@@ -324,14 +330,31 @@ async def choose_providers_to_alert(service: str, commune: str, count: int = 3) 
 @router.callback_query(F.data == "mission_confirmer")
 async def mission_confirmer(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    mission_id = create_mission(callback.from_user.id, data)
-    await persist_mission_creation(callback.from_user.id, mission_id, data)
-    matching_providers = await choose_providers_to_alert(data["service"], data["commune"])
+    client_lang = data.get("language", "fr")
+    if not data.get("creation_key"):
+        data["creation_key"] = uuid.uuid4().hex
+        await state.update_data(creation_key=data["creation_key"])
+    candidates = await choose_providers_to_alert(data["service"], data["commune"], callback.from_user.id)
+    data["photo_file_ids"] = media_list(data, "photo_file_ids") or media_list(data, "photo_file_id")
+    data["voice_file_ids"] = media_list(data, "voice_file_ids") or media_list(data, "voice_file_id")
+    try:
+        result = await backend_client.create_mission(
+            callback.from_user.id, data, data["creation_key"], [provider["telegram_id"] for provider in candidates]
+        )
+    except (MoneyRefused, BackendUnavailable) as error:
+        # Rien n'est créé : la demande reste à l'écran, le client réessaie
+        # (même clé, une seule mission même si le premier essai avait abouti).
+        await callback.answer(money_failure_text(0, error, client_lang, "service_unavailable"), show_alert=True)
+        return
+    mission_id = result["mission"]["mission_id"]
+    # Prévenir exactement ceux que le backend a enregistrés (sur un nouvel
+    # essai, ceux du premier : c'est la liste qui fait foi).
+    matching_providers = [{"telegram_id": telegram_id} for telegram_id in result["alerted_provider_telegram_ids"]]
 
-    photo_file_ids = media_list(data, "photo_file_ids") or media_list(data, "photo_file_id")
-    voice_file_ids = media_list(data, "voice_file_ids") or media_list(data, "voice_file_id")
+    photo_file_ids = data["photo_file_ids"]
+    voice_file_ids = data["voice_file_ids"]
 
-    for provider in matching_providers[:3]:
+    for provider in matching_providers:
         # Chaque prestataire est alerté dans SA langue. L'ancienne version figeait
         # "fr" ici, donc un prestataire lingala ou anglophone recevait l'alerte en
         # français — corrigé en extrayant ce flow (voir le skill textes-utilisateur).
@@ -364,9 +387,8 @@ async def mission_confirmer(callback: CallbackQuery, state: FSMContext):
             )
 
     await state.clear()
-    client_lang = data.get("language", "fr")
     matching_text = (
-        get_message("matching_providers_notified", client_lang, count=len(matching_providers[:3]))
+        get_message("matching_providers_notified", client_lang, count=len(matching_providers))
         if matching_providers
         else get_message("matching_no_providers", client_lang)
     )
@@ -400,10 +422,15 @@ async def mission_annuler(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("provider_accept_"))
 async def accepter_mission_prestataire(callback: CallbackQuery, state: FSMContext):
     mission_id = int(callback.data.replace("provider_accept_", "", 1))
-    mission = get_mission_by_id(mission_id)
     provider_lang = await get_provider_language(callback.from_user.id)
-    if mission is None:
+    try:
+        await backend_client.get_mission(mission_id, callback.from_user.id)
+    except MoneyRefused:
+        # Inconnue, ou ce prestataire n'en a pas été prévenu.
         await callback.answer(get_message("provider_mission_not_found", provider_lang), show_alert=True)
+        return
+    except BackendUnavailable as error:
+        await callback.answer(money_failure_text(mission_id, error, provider_lang, "service_unavailable"), show_alert=True)
         return
 
     await state.clear()
@@ -476,10 +503,9 @@ async def devis_delai_recu(message: Message, state: FSMContext):
 async def devis_message_recu(message: Message, state: FSMContext):
     data = await state.get_data()
     provider = get_provider_by_telegram_id(message.from_user.id)
-    mission = get_mission_by_id(data["quote_mission_id"])
     provider_lang = await get_provider_language(message.from_user.id)
 
-    if provider is None or mission is None:
+    if provider is None:
         await state.clear()
         await message.answer(get_message("quote_create_failed", provider_lang))
         return
@@ -488,28 +514,27 @@ async def devis_message_recu(message: Message, state: FSMContext):
     if quote_message == "-":
         quote_message = ""
 
-    quote_id = create_quote(
-        mission_id=data["quote_mission_id"],
-        provider_telegram_id=message.from_user.id,
-        amount=data["quote_amount"],
-        currency=data["quote_currency"],
-        delay_hours=data["quote_delay_hours"],
-        message=quote_message,
-    )
+    try:
+        result = await backend_client.create_quote(
+            data["quote_mission_id"],
+            message.from_user.id,
+            data["quote_amount"],
+            data["quote_currency"],
+            data["quote_delay_hours"],
+            quote_message,
+        )
+    except BackendUnavailable as error:
+        # Devis gardé : le prestataire renvoie son message quand le service répond.
+        await message.answer(money_failure_text(data["quote_mission_id"], error, provider_lang, "service_unavailable"))
+        return
+    except MoneyRefused as error:
+        await state.clear()
+        await message.answer(money_failure_text(data["quote_mission_id"], error, provider_lang), reply_markup=clavier_prestataire(provider_lang))
+        return
+    quote_id = result["quote"]["id"]
+    mission = result["mission"]
     reset_consecutive_ignored(message.from_user.id)
     await _safe_backend_call(sync_provider_ignored_reset_to_backend(message.from_user.id))
-
-    backend_quote = await _safe_backend_call(
-        sync_quote_to_backend(
-            mission_id=data["quote_mission_id"],
-            provider_telegram_id=message.from_user.id,
-            amount=data["quote_amount"],
-            currency=data["quote_currency"],
-            delay_hours=data["quote_delay_hours"],
-            message=quote_message,
-        )
-    )
-    backend_quote_id = backend_quote["quote"]["id"] if backend_quote else None
 
     # Lecture backend-first pour l'affichage (nom + ligne de confiance) :
     # total_missions/success_rate/badge sont réellement recalculés côté
@@ -532,9 +557,9 @@ async def devis_message_recu(message: Message, state: FSMContext):
     else:
         trust_source = provider
 
-    client_lang = await get_user_language(mission["client_telegram_id"])
+    client_lang = await get_user_language(mission["telegram_id"])
     await message.bot.send_message(
-        mission["client_telegram_id"],
+        mission["telegram_id"],
         get_message(
             "new_quote_received_client",
             client_lang,
@@ -547,7 +572,7 @@ async def devis_message_recu(message: Message, state: FSMContext):
             message=html.escape(quote_message) if quote_message else get_message("quote_no_message", client_lang),
         ),
         parse_mode="HTML",
-        reply_markup=clavier_devis_client(quote_id, backend_quote_id),
+        reply_markup=clavier_devis_client(quote_id),
     )
 
     await state.clear()

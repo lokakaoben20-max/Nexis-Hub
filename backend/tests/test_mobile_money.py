@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 
 from backend.app import crud, ledger, mobile_money
+from backend.tests.test_ledger import accepted_quote
 from backend.app.payment_gateway import FAILED, PENDING, SUCCEEDED, GatewayResult, GatewayUnavailable
 
 LedgerEntry = ledger.LedgerEntry
@@ -76,7 +77,7 @@ def db(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'mm.db'}", future=True)
     LedgerEntry.metadata.create_all(bind=engine)
     session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
-    session.add(ledger.BotUser(telegram_id=CLIENT_ID, first_name="Client"))
+    session.add(crud.BotUser(telegram_id=CLIENT_ID, first_name="Client"))
     session.add(crud.BotProvider(telegram_id=PROVIDER_ID, full_name="Prestataire"))
     session.commit()
     yield session
@@ -88,16 +89,13 @@ def money(value):
     return Decimal(str(value)).quantize(Decimal("0.01"))
 
 
-def request(db, mission_id=1, amount=100.0, quote_ref=5, client=CLIENT_ID, provider=PROVIDER_ID):
-    return {
-        "client_account_id": acc(db, client), "provider_account_id": acc(db, provider), "quote_ref": quote_ref,
-        "amount": amount, "currency": "USD", "urgent": False,
-        "service": "service_plomberie", "commune": "Gombe", "description": "",
-    }
-
-
-def pay(db, mission_id=1, **kwargs):
-    return mobile_money.create_intent(db, mission_id, phone=PHONE, operator="mpesa", funding_request=request(db, mission_id, **kwargs))
+def pay(db, mission_id=1, amount=100.0, quote_ref=5, client=CLIENT_ID, provider=PROVIDER_ID):
+    """Intention de paiement sur le devis accepté de la mission (montant et
+    prestataire relus dans le backend)."""
+    quote_id = accepted_quote(db, mission_id, amount=amount, quote_ref=quote_ref, provider_account=acc(db, provider))
+    return mobile_money.create_intent(
+        db, mission_id, phone=PHONE, operator="mpesa", client_account_id=acc(db, client), quote_id=quote_id
+    )
 
 
 def wallet(db, telegram_id, currency="USD"):
@@ -226,7 +224,8 @@ def test_a_provider_cannot_pay_their_own_mission(db, gateway):
 
 @pytest.mark.parametrize("phone,operator,code", [("0810000000", "mpesa", "invalid_phone"), (PHONE, "africell", "invalid_operator")])
 def test_phone_and_operator_are_checked(db, gateway, phone, operator, code):
-    refused(code, lambda: mobile_money.create_intent(db, 1, phone=phone, operator=operator, funding_request=request(db)))
+    quote_id = accepted_quote(db)
+    refused(code, lambda: mobile_money.create_intent(db, 1, phone=phone, operator=operator, client_account_id=acc(db, CLIENT_ID), quote_id=quote_id))
 
 
 # --- Retraits -----------------------------------------------------------------------

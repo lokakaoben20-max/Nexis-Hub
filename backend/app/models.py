@@ -74,8 +74,7 @@ class BotMission(Base):
     dispute_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     dispute_opened_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     dispute_deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # Id du devis accepté côté bot (db.py), reçu avec la demande de paiement :
-    # trace d'audit, les devis backend ont leur propre séquence.
+    # Devis accepté (bot_quotes.id) sur lequel la mission a été payée.
     accepted_quote_ref: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Comptes Nexis (indépendants du canal) du client et du prestataire, fixés
     # au paiement : le règlement crédite ces comptes, quel que soit le canal

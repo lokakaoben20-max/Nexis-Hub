@@ -15,7 +15,8 @@ from sqlalchemy.orm import sessionmaker
 from backend.app import crud, ledger
 
 BotMission = ledger.BotMission
-BotUser = ledger.BotUser
+BotUser = crud.BotUser
+BotQuote = crud.BotQuote
 BotProvider = crud.BotProvider
 LedgerEntry = ledger.LedgerEntry
 MoneyOperation = ledger.MoneyOperation
@@ -46,20 +47,36 @@ def money(value) -> Decimal:
     return Decimal(str(value)).quantize(Decimal("0.01"))
 
 
+def accepted_quote(db, mission_id=1, amount=100.0, currency="USD", urgent=False, quote_ref=5, client=CLIENT_ID, provider_account=None, status="accepted"):
+    """Mission du client CLIENT_ID et son devis accepté de PROVIDER_ID, tels
+    que le backend les a enregistrés : ce que le paiement relit. Le devis
+    porte le numéro `quote_ref` quand il est libre (références stables)."""
+    mission = db.get(BotMission, mission_id)
+    if mission is None:
+        mission = BotMission(
+            mission_id=mission_id, telegram_id=client, client_account_id=acc(db, client),
+            service="service_plomberie", commune="Gombe", currency=currency, urgent=urgent, status="confirmed",
+        )
+        db.add(mission)
+        db.flush()
+    quote = db.get(BotQuote, quote_ref)
+    provider_account = provider_account or acc(db, PROVIDER_ID)
+    if (
+        quote is None or quote.mission_id != mission_id or quote.amount != amount or quote.currency != currency
+        or quote.provider_account_id != provider_account or quote.status != status
+    ):
+        quote = BotQuote(
+            id=None if quote is not None else quote_ref, mission_id=mission_id, provider_telegram_id=PROVIDER_ID,
+            provider_account_id=provider_account, amount=amount, currency=currency, delay_hours=2, status=status,
+        )
+        db.add(quote)
+    db.commit()
+    return quote.id
+
+
 def fund(db, mission_id=1, method="mobile_money", amount=100.0, currency="USD", urgent=False, quote_ref=5, client=CLIENT_ID):
-    return ledger.fund_mission(
-        db,
-        mission_id,
-        method=method,
-        client_account_id=acc(db, client),
-        provider_account_id=acc(db, PROVIDER_ID),
-        quote_ref=quote_ref,
-        amount=amount,
-        currency=currency,
-        urgent=urgent,
-        service="service_plomberie",
-        commune="Gombe",
-    )
+    quote_id = accepted_quote(db, mission_id, amount, currency, urgent, quote_ref)
+    return ledger.fund_mission(db, mission_id, method=method, client_account_id=acc(db, client), quote_id=quote_id)
 
 
 def new_mission(db, client=CLIENT_ID, key="demande-1", alert=()):
@@ -151,11 +168,42 @@ def test_mobile_money_payment_moves_the_total_into_the_mission_escrow(db):
     assert_books_balanced(db)
 
 
-def test_payment_creates_the_mission_when_the_backend_never_received_it(db):
-    fund(db, mission_id=77)
+def test_a_payment_never_creates_a_mission(db):
+    refused("mission_not_found", lambda: ledger.fund_mission(db, 77, method="mobile_money", client_account_id=acc(db, CLIENT_ID), quote_id=5))
+    db.rollback()
 
-    assert db.get(BotMission, 77).telegram_id == CLIENT_ID
-    assert db.get(BotUser, CLIENT_ID).total_missions == 1
+    assert db.get(BotMission, 77) is None
+    assert operations(db) == []
+
+
+def test_the_amount_paid_is_the_accepted_quote_and_nothing_else(db):
+    """Le montant, la devise et le prestataire ne sont jamais fournis par le
+    canal : ils sont relus dans le devis accepté enregistré par le backend."""
+    quote_id = accepted_quote(db, amount=80.0, currency="CDF")
+    ledger.fund_mission(db, 1, method="mobile_money", client_account_id=acc(db, CLIENT_ID), quote_id=quote_id)
+
+    funding = ledger.mission_money_state(db, 1)["funding"]
+    assert (funding["total"], funding["commission"], funding["net"]) == ("80.00", "8.00", "72.00")
+    assert bal(db, ledger.ESCROW, 1, "CDF") == money(80)
+    assert db.get(BotMission, 1).provider_account_id == acc(db, PROVIDER_ID)
+    assert db.get(BotMission, 1).accepted_quote_ref == quote_id
+
+
+@pytest.mark.parametrize("status", ["pending", "rejected", "expired"])
+def test_only_an_accepted_quote_can_be_paid(db, status):
+    quote_id = accepted_quote(db, status=status)
+    refused("quote_not_accepted", lambda: ledger.fund_mission(db, 1, method="mobile_money", client_account_id=acc(db, CLIENT_ID), quote_id=quote_id))
+    db.rollback()
+    assert operations(db) == []
+
+
+def test_a_quote_of_another_mission_cannot_pay_this_one(db):
+    other_quote = accepted_quote(db, mission_id=2, quote_ref=6)
+    accepted_quote(db, mission_id=1)
+    refused("quote_not_found", lambda: ledger.fund_mission(db, 1, method="mobile_money", client_account_id=acc(db, CLIENT_ID), quote_id=other_quote))
+    refused("quote_not_found", lambda: ledger.fund_mission(db, 1, method="mobile_money", client_account_id=acc(db, CLIENT_ID), quote_id=4242))
+    db.rollback()
+    assert operations(db) == []
 
 
 def test_paying_twice_the_same_way_is_a_harmless_replay(db):
@@ -180,7 +228,7 @@ def test_wallet_payment_is_refused_when_the_balance_is_short_and_writes_nothing(
     refused("insufficient_balance", lambda: fund(db, mission_id=3, method="wallet"))
     db.rollback()
 
-    assert db.get(BotMission, 3) is None
+    assert db.get(BotMission, 3).payment_status in (None, "unpaid")
     assert operations(db, 3) == []
     assert bal(db, ledger.WALLET, CLIENT_ID) == money("99.99")
 
@@ -459,39 +507,17 @@ def test_one_person_has_a_single_wallet_whether_client_or_provider(db):
     db.add(BotUser(telegram_id=PROVIDER_ID, first_name="Prestataire"))
     db.commit()
 
-    ledger.fund_mission(
-        db,
-        2,
-        method="wallet",
-        client_account_id=acc(db, PROVIDER_ID),
-        provider_account_id=acc(db, CLIENT_ID),
-        quote_ref=9,
-        amount=40,
-        currency="USD",
-        urgent=False,
-        service="service_plomberie",
-        commune="Gombe",
-    )
+    quote_id = accepted_quote(db, mission_id=2, amount=40.0, quote_ref=9, client=PROVIDER_ID, provider_account=acc(db, CLIENT_ID))
+    ledger.fund_mission(db, 2, method="wallet", client_account_id=acc(db, PROVIDER_ID), quote_id=quote_id)
 
     assert bal(db, ledger.WALLET, PROVIDER_ID) == money(50)
 
 
 def test_a_provider_can_never_be_paid_for_their_own_mission(db):
+    quote_id = accepted_quote(db, amount=10.0, quote_ref=1, provider_account=acc(db, CLIENT_ID))
     refused(
         "provider_is_client",
-        lambda: ledger.fund_mission(
-            db,
-            1,
-            method="mobile_money",
-            client_account_id=acc(db, CLIENT_ID),
-            provider_account_id=acc(db, CLIENT_ID),
-            quote_ref=1,
-            amount=10,
-            currency="USD",
-            urgent=False,
-            service="service_plomberie",
-            commune="Gombe",
-        ),
+        lambda: ledger.fund_mission(db, 1, method="mobile_money", client_account_id=acc(db, CLIENT_ID), quote_id=quote_id),
     )
     db.rollback()
     assert db.query(MoneyOperation).count() == 0
@@ -530,14 +556,12 @@ def test_a_provider_without_account_cannot_be_paid(db):
     unknown = ledger.NexisAccount()
     db.add(unknown)
     db.commit()  # compte sans identité Telegram : pas un prestataire
+    quote_id = accepted_quote(db, amount=10.0, quote_ref=1, provider_account=unknown.id)
     refused(
         "provider_not_found",
-        lambda: ledger.fund_mission(
-            db, 1, method="mobile_money", client_account_id=client_account, provider_account_id=unknown.id,
-            quote_ref=1, amount=10, currency="USD", urgent=False, service="s", commune="c",
-        ),
+        lambda: ledger.fund_mission(db, 1, method="mobile_money", client_account_id=client_account, quote_id=quote_id),
     )
-    assert db.get(BotMission, 1) is None
+    db.rollback()
     assert operations(db) == []
 
 
