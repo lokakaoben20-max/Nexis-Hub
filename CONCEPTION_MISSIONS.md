@@ -64,5 +64,15 @@ Plan complet : `/mnt/project-files/socle/plan-socle-missions-devis-2026-11-06.md
   (`client_missions`, `provider_missions`) ; `null` si le backend ne répond
   pas, et la page affiche « Missions indisponibles pour le moment ».
 
-`db.py` garde encore ses tables de missions et devis, dont le bot et la Mini App
-ne se servent plus : l'étape 5 les supprime.
+## Étape 5 : `db.py` sans missions
+
+- `db.py` n'a plus de tables `missions`, `quotes`, `reviews` ni de compteur de
+  missions par client. Au premier démarrage, les lignes des anciennes tables
+  sont écrites dans `<base>_anciennes_missions.json` à côté de la base, puis
+  les tables sont supprimées. L'archive est écrite entière avant toute
+  suppression ; si elle ne peut pas l'être, rien n'est supprimé. Une archive
+  déjà présente n'est jamais écrasée : le bot refuse alors de démarrer.
+- Le compteur « Missions totales » du profil vient du backend ; « ? » s'il
+  ne répond pas.
+- Restent dans `db.py` : profils clients et prestataires, services, demandes
+  de service (chantier profils, à faire ensuite).

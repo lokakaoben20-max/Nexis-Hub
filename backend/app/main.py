@@ -1023,9 +1023,7 @@ def profile(telegram_id: int):
         for mission in db.query(BotMission).filter(BotMission.provider_telegram_id == telegram_id).all():
             mission_data = _mission_to_dict(mission)
             client = db.get(BotUser, mission.telegram_id)
-            # `get_provider_missions` dans db.py expose déjà ce champ grâce à
-            # sa jointure avec users ; le conserver dans le contrat V5 évite
-            # d'appauvrir l'affichage prestataire lors du basculement de lecture.
+            # Nom du client, affiché au prestataire.
             mission_data["client_name"] = client.first_name if client else None
             provider_missions.append(mission_data)
 

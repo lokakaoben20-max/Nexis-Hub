@@ -235,7 +235,7 @@ async def admin_clients(callback: CallbackQuery):
         return
 
     lines = [
-        f"#{user['id']} | {user['first_name'] or 'Client'} | {user['phone_number']} | missions: {user['total_missions']}"
+        f"#{user['id']} | {user['first_name'] or 'Client'} | {user['phone_number']}"
         for user in users
     ]
     await callback.message.edit_text(

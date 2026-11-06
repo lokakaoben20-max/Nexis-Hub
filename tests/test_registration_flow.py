@@ -260,6 +260,8 @@ def test_afficher_profil_client_survives_backend_unavailable(monkeypatch, tmp_pa
 
     assert "Cliente Locale" in callback.message.edited_text
     assert "Lingala" in callback.message.edited_text
+    # Les missions ne sont connues que du backend : inconnues, pas « 0 ».
+    assert "<b>?</b>" in callback.message.edited_text
 
 
 def test_afficher_profil_client_shows_backend_language_label(monkeypatch, tmp_path):

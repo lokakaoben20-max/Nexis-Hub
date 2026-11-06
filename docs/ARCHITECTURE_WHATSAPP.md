@@ -29,6 +29,7 @@ Autres dépendances encore ouvertes :
 - les notifications sont envoyées directement par Telegram ; la table `notifications` multi-canal n'est pas implémentée ;
 - les paiements Mobile Money sont simulés ; l'agrégateur n'est pas encore choisi ;
 - la Mini App authentifie toujours via Telegram `initData` et utilise encore `db.py` pour ses opérations de profil.
+- (6 novembre 2026) missions et devis : le backend est la seule mémoire (`CONCEPTION_MISSIONS.md`). Il numérote les missions, enregistre les prestataires prévenus et relit le devis accepté au paiement ; `db.py` n'en garde aucune copie. Les profils (clients, prestataires, demandes de service) sont encore dans `db.py`.
 
 Le service WhatsApp reste conditionné à la migration des entités métier vers `account_id`, à la liaison sûre des identités, aux notifications fiables et à la fin du chantier des paiements.
 
