@@ -171,11 +171,23 @@ class ServiceRequestStatusPayload(BaseModel):
     admin_note: str = ""
 
 
+def _telegram_account(
+    db, telegram_id: int, *, create: bool = False, missing: str = "account_not_found", http_status: int = 404
+) -> int:
+    """Compte Nexis d'une identité Telegram : le seul endroit où l'API traduit
+    une identité de canal en compte. Les règles d'argent ne comparent ensuite
+    que des comptes. Sans `create`, une identité inconnue est refusée."""
+    account_id = ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=create)
+    if account_id is None:
+        raise ledger.MoneyError(missing, http_status)
+    return account_id
+
+
 def _wallet_fields(db, telegram_id: int) -> dict:
     # Calculés depuis le registre, seule source de vérité (backend/app/ledger.py).
     # Un seul wallet par personne, qu'elle soit cliente, prestataire ou les deux.
-    balances = ledger.wallet_balances(db, ledger.TELEGRAM, telegram_id)
     account_id = ledger.account_id_for(db, ledger.TELEGRAM, telegram_id)
+    balances = ledger.wallet_balances(db, account_id)
     return {
         "account_id": account_id,
         "wallet_balance_usd": float(balances["USD"]),
@@ -539,8 +551,7 @@ def fund_mission(mission_id: int, payload: FundPayload):
             db,
             mission_id,
             method=payload.method,
-            client_telegram_id=payload.client_telegram_id,
-            provider_telegram_id=payload.provider_telegram_id,
+            **_funding_parties(db, payload),
             quote_ref=payload.quote_ref,
             amount=payload.amount,
             currency=payload.currency,
@@ -550,6 +561,17 @@ def fund_mission(mission_id: int, payload: FundPayload):
             description=payload.description,
         )
     )
+
+
+def _funding_parties(db, payload: FundPayload) -> dict:
+    """Comptes du client et du prestataire, créés au besoin. Un identifiant
+    Telegram ne désigne qu'une personne : créer son compte ne peut rattacher
+    l'argent à personne d'autre. L'exiger au préalable bloquerait le paiement
+    d'un prestataire dont l'inscription n'a pas encore été recopiée."""
+    return {
+        "client_account_id": _telegram_account(db, payload.client_telegram_id, create=True),
+        "provider_account_id": _telegram_account(db, payload.provider_telegram_id, create=True),
+    }
 
 
 def _intent_to_dict(intent: PaymentIntent) -> dict:
@@ -590,9 +612,12 @@ def _intent_response(db, intent: PaymentIntent) -> dict:
 
 @router.post("/api/bot/missions/{mission_id}/payment-intents")
 def create_payment_intent(mission_id: int, payload: PaymentIntentPayload):
-    funding_request = payload.model_dump(exclude={"method", "phone", "operator"})
     with SessionLocal() as db:
         try:
+            funding_request = {
+                **payload.model_dump(exclude={"method", "phone", "operator", "client_telegram_id", "provider_telegram_id"}),
+                **_funding_parties(db, payload),
+            }
             intent = mobile_money.create_intent(
                 db, mission_id, phone=payload.phone, operator=payload.operator, funding_request=funding_request
             )
@@ -630,7 +655,8 @@ def request_payout(payload: PayoutPayload):
     return _payout_call(
         lambda db: mobile_money.request_payout(
             db,
-            telegram_id=payload.telegram_id,
+            # Sans compte, il n'y a pas de solde à retirer.
+            account_id=_telegram_account(db, payload.telegram_id, missing="insufficient_balance", http_status=409),
             amount=payload.amount,
             currency=payload.currency,
             phone=payload.phone,
@@ -677,7 +703,12 @@ def list_payment_mismatches(admin_telegram_id: int, limit: int = 20):
         return {
             "status": "ok",
             "intents": [
-                {**_intent_to_dict(intent), "phone": intent.phone, "client_telegram_id": intent.funding_request["client_telegram_id"]}
+                {
+                    **_intent_to_dict(intent),
+                    "phone": intent.phone,
+                    "client_account_id": intent.account_id,
+                    "client_telegram_id": ledger.telegram_id_of(db, intent.account_id),
+                }
                 for intent in intents
             ],
         }
@@ -732,22 +763,32 @@ async def payment_webhook(gateway_name: str, request: Request):
 
 @router.post("/api/bot/missions/{mission_id}/start")
 def start_mission(mission_id: int, payload: ProviderActionPayload):
-    return _money_call(lambda db: ledger.start_mission(db, mission_id, payload.provider_telegram_id))
+    return _money_call(
+        lambda db: ledger.start_mission(db, mission_id, _telegram_account(db, payload.provider_telegram_id, missing="not_mission_provider", http_status=403))
+    )
 
 
 @router.post("/api/bot/missions/{mission_id}/finish")
 def finish_mission(mission_id: int, payload: ProviderActionPayload):
-    return _money_call(lambda db: ledger.finish_mission(db, mission_id, payload.provider_telegram_id))
+    return _money_call(
+        lambda db: ledger.finish_mission(db, mission_id, _telegram_account(db, payload.provider_telegram_id, missing="not_mission_provider", http_status=403))
+    )
 
 
 @router.post("/api/bot/missions/{mission_id}/confirm")
 def confirm_mission(mission_id: int, payload: ClientActionPayload):
-    return _money_call(lambda db: ledger.confirm_completion(db, mission_id, payload.client_telegram_id))
+    return _money_call(
+        lambda db: ledger.confirm_completion(db, mission_id, _telegram_account(db, payload.client_telegram_id, missing="not_mission_client", http_status=403))
+    )
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute")
 def open_dispute(mission_id: int, payload: DisputeOpenPayload):
-    return _money_call(lambda db: ledger.open_dispute(db, mission_id, payload.client_telegram_id, payload.reason))
+    return _money_call(
+        lambda db: ledger.open_dispute(
+            db, mission_id, _telegram_account(db, payload.client_telegram_id, missing="not_mission_client", http_status=403), payload.reason
+        )
+    )
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute/resolve")

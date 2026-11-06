@@ -21,6 +21,13 @@ from backend.app import tasks as _tasks_module  # noqa: F401
 # backend/tests/test_main.py.
 TEST_API_KEY = "test-backend-api-key-not-a-secret"
 
+def acc(db, telegram_id):
+    """Compte Nexis d'une personne connue par Telegram (créé au besoin)."""
+    from backend.app import ledger
+
+    return ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
+
+
 
 def _reload_backend_with_db(monkeypatch, tmp_path, name="test_tasks.db"):
     """Recharge database/models/tasks contre une SQLite jetable par test.
@@ -85,8 +92,8 @@ def _paid_and_finished_mission(db, ledger, crud, mission_id, provider_id=7, clie
         db,
         mission_id,
         method="mobile_money",
-        client_telegram_id=client_id,
-        provider_telegram_id=provider_id,
+        client_account_id=acc(db, client_id),
+        provider_account_id=acc(db, provider_id),
         quote_ref=mission_id,
         amount=10.0,
         currency="USD",
@@ -94,8 +101,8 @@ def _paid_and_finished_mission(db, ledger, crud, mission_id, provider_id=7, clie
         service="service_menage",
         commune="Gombe",
     )
-    ledger.start_mission(db, mission_id, provider_id)
-    ledger.finish_mission(db, mission_id, provider_id)
+    ledger.start_mission(db, mission_id, acc(db, provider_id))
+    ledger.finish_mission(db, mission_id, acc(db, provider_id))
 
 
 def test_release_auto_confirmed_missions_only_after_24h(monkeypatch, tmp_path):
@@ -124,7 +131,7 @@ def test_release_auto_confirmed_missions_only_after_24h(monkeypatch, tmp_path):
     with database_module.SessionLocal() as db:
         assert db.get(models.BotMission, 1).status == "completed"
         assert db.get(models.BotMission, 2).status == "awaiting_confirmation"
-        assert ledger.wallet_balances(db, ledger.TELEGRAM, 7)["USD"] == ledger.to_money("9.00")
+        assert ledger.wallet_balances(db, acc(db, 7))["USD"] == ledger.to_money("9.00")
 
     # Une notification au client et une au prestataire, pour la seule mission libérée.
     assert len(sent) == 2
@@ -142,7 +149,7 @@ def test_auto_release_never_pays_a_disputed_mission(monkeypatch, tmp_path):
         db.add(models.BotProvider(telegram_id=7, full_name="Prestataire Test"))
         db.commit()
         _paid_and_finished_mission(db, ledger, crud, 1)
-        ledger.open_dispute(db, 1, 1, "Travail bâclé")
+        ledger.open_dispute(db, 1, acc(db, 1), "Travail bâclé")
         db.get(models.BotMission, 1).status_changed_at = datetime.utcnow() - timedelta(hours=72)
         db.commit()
 
@@ -150,7 +157,7 @@ def test_auto_release_never_pays_a_disputed_mission(monkeypatch, tmp_path):
 
     with database_module.SessionLocal() as db:
         assert db.get(models.BotMission, 1).status == "disputed"
-        assert ledger.wallet_balances(db, ledger.TELEGRAM, 7)["USD"] == ledger.to_money(0)
+        assert ledger.wallet_balances(db, acc(db, 7))["USD"] == ledger.to_money(0)
         assert ledger.balance(db, ledger.ESCROW, 1, "USD") == ledger.to_money("10.00")
 
 

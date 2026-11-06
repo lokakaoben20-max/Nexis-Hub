@@ -55,6 +55,15 @@ uniquement par Telegram, la Mini App ou la future application.
   propage le compte prestataire à la mission. La migration de schéma
   `a1b2c3d4e5f6` rattache les lignes historiques aux identités Telegram déjà
   connues, sans modifier le registre ni ses montants.
+- Les règles d'argent ne comparent que des comptes (`ledger`, `mobile_money`) :
+  démarrer, terminer, confirmer, ouvrir un litige, payer et retirer sont
+  autorisés par `client_account_id` / `provider_account_id`, jamais par un
+  identifiant Telegram. Une mission payée sans compte rattaché est refusée
+  (`mission_account_missing`). L'API traduit l'identité Telegram en compte à un
+  seul endroit (`_telegram_account` dans `backend/app/main.py`). Les intentions
+  de paiement nomment le client et le prestataire par leur compte, et chaque
+  opération enregistre le compte qui l'a déclenchée (`actor_account_id`).
+  Migration `b2c3d4e5f6a7`, qui s'arrête si une intention n'a pas de compte.
 - Le passage complet des appels d'API à `account_id` et l'adaptation des
   parcours Mini App/Telegram restent à réaliser avant l'ouverture de WhatsApp.
 

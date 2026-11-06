@@ -148,8 +148,20 @@ def account_id_for(db: Session, channel: str, external_id, create: bool = False)
         return account_id
 
 
-def wallet_balances(db: Session, channel: str, external_id) -> dict[str, Decimal]:
-    account_id = account_id_for(db, channel, external_id)
+def telegram_id_of(db: Session, account_id: int | None) -> int | None:
+    """Identifiant Telegram d'un compte, pour les colonnes d'adaptateur du
+    canal Telegram (affichage du bot). Jamais utilisé pour une règle d'argent."""
+    if account_id is None:
+        return None
+    identity = (
+        db.query(ChannelIdentity)
+        .filter(ChannelIdentity.account_id == account_id, ChannelIdentity.channel == TELEGRAM)
+        .one_or_none()
+    )
+    return int(identity.external_id) if identity is not None else None
+
+
+def wallet_balances(db: Session, account_id: int | None) -> dict[str, Decimal]:
     if account_id is None:
         return {currency: ZERO for currency in CURRENCIES}
     return {currency: balance(db, WALLET, account_id, currency) for currency in CURRENCIES}
@@ -187,6 +199,7 @@ def _record(
     movements: list[tuple[str, int | None, Decimal]],
     mission_id: int | None = None,
     phase: str | None = None,
+    actor_account_id: int | None = None,
     actor_telegram_id: int | None = None,
     reference: str | None = None,
     details: dict | None = None,
@@ -201,6 +214,7 @@ def _record(
         kind=kind,
         mission_id=mission_id,
         phase=phase,
+        actor_account_id=actor_account_id,
         actor_telegram_id=actor_telegram_id,
         reference=reference,
         details=details or {},
@@ -232,8 +246,28 @@ def _lock_mission(db: Session, mission_id: int) -> BotMission:
     return mission
 
 
+def require_mission_client(mission: BotMission, account_id: int) -> None:
+    """Seul le compte client de la mission agit comme client. Une mission sans
+    compte client rattaché est refusée : on n'accepte jamais par défaut."""
+    if mission.client_account_id is None:
+        raise MoneyError("mission_account_missing", mission=mission)
+    if mission.client_account_id != account_id:
+        raise MoneyError("not_mission_client", 403, mission)
+
+
+def _require_provider(db: Session, mission: BotMission, account_id: int) -> None:
+    """Le prestataire n'est fixé qu'au paiement : sans paiement, la mission
+    n'a pas encore de prestataire. Payée sans compte prestataire : refus."""
+    if mission.provider_account_id is None:
+        if mission_operation(db, mission.mission_id, FUNDING) is None:
+            raise MoneyError("not_paid", mission=mission)
+        raise MoneyError("mission_account_missing", mission=mission)
+    if mission.provider_account_id != account_id:
+        raise MoneyError("not_mission_provider", 403, mission)
+
+
 def ensure_mission(
-    db: Session, mission_id: int, *, client_telegram_id: int, service: str, commune: str, currency: str, description: str, urgent: bool
+    db: Session, mission_id: int, *, client_account_id: int, service: str, commune: str, currency: str, description: str, urgent: bool
 ) -> BotMission:
     """Mission verrouillée, créée si le backend ne l'a jamais reçue (le bot
     crée missions et devis dans db.py). Création dans un point de reprise :
@@ -241,13 +275,18 @@ def ensure_mission(
     mission = db.get(BotMission, mission_id, with_for_update=True)
     if mission is not None:
         return mission
+    client_telegram_id = telegram_id_of(db, client_account_id)
+    if client_telegram_id is None:
+        # `bot_missions.telegram_id` est encore obligatoire : seul un compte
+        # joignable par Telegram peut créer une mission tant qu'il l'est.
+        raise MoneyError("channel_identity_missing")
     try:
         with db.begin_nested():
             db.add(
                 BotMission(
                     mission_id=mission_id,
                     telegram_id=client_telegram_id,
-                    client_account_id=account_id_for(db, TELEGRAM, client_telegram_id, create=True),
+                    client_account_id=client_account_id,
                     service=service,
                     commune=commune,
                     currency=currency,
@@ -299,8 +338,8 @@ def fund_mission(
     mission_id: int,
     *,
     method: str,
-    client_telegram_id: int,
-    provider_telegram_id: int,
+    client_account_id: int,
+    provider_account_id: int,
     quote_ref: int,
     amount,
     currency: str,
@@ -327,7 +366,7 @@ def fund_mission(
     details = {
         "method": method,
         "quote_ref": quote_ref,
-        "provider_telegram_id": provider_telegram_id,
+        "provider_account_id": provider_account_id,
         "currency": currency,
         "urgent": bool(urgent),
         "total": str(amounts["total"]),
@@ -340,14 +379,25 @@ def fund_mission(
     def matches(operation: MoneyOperation) -> bool:
         # Même référence exigée : un second paiement Mobile Money réel (autre
         # référence d'agrégateur) n'est jamais pris pour un rejeu du premier.
-        return operation.kind == kind and operation.details == details and operation.reference == reference
+        return (
+            operation.kind == kind
+            and _comparable_funding_details(db, operation.details) == details
+            and operation.reference == reference
+        )
 
+    if provider_account_id == client_account_id:
+        # Une même personne peut être cliente et prestataire, jamais sur la
+        # même mission : elle se paierait elle-même.
+        raise MoneyError("provider_is_client")
+    provider_telegram_id = telegram_id_of(db, provider_account_id)
+    if provider_telegram_id is None:
+        # Les prestataires n'existent que sur Telegram (et la Mini App).
+        raise MoneyError("provider_not_found", 404)
     mission = ensure_mission(
-        db, mission_id, client_telegram_id=client_telegram_id, service=service, commune=commune,
+        db, mission_id, client_account_id=client_account_id, service=service, commune=commune,
         currency=currency, description=description, urgent=urgent,
     )
-    if mission.telegram_id != client_telegram_id:
-        raise MoneyError("not_mission_client", 403, mission)
+    require_mission_client(mission, client_account_id)
 
     existing = mission_operation(db, mission_id, FUNDING)
     if existing is not None:
@@ -357,12 +407,6 @@ def fund_mission(
     if mission.status not in FUNDABLE_STATUSES or mission.payment_status not in (None, "unpaid"):
         raise MoneyError("invalid_state", mission=mission)
 
-    client_account_id = account_id_for(db, TELEGRAM, client_telegram_id, create=True)
-    provider_account_id = account_id_for(db, TELEGRAM, provider_telegram_id, create=True)
-    if provider_account_id == client_account_id:
-        # Une même personne peut être cliente et prestataire, jamais sur la
-        # même mission : elle se paierait elle-même.
-        raise MoneyError("provider_is_client", mission=mission)
     if method == "wallet":
         # Verrou sur le compte du client : deux paiements wallet simultanés ne
         # peuvent pas lire le même solde puis le débiter deux fois.
@@ -380,7 +424,8 @@ def fund_mission(
             currency=currency,
             mission_id=mission_id,
             phase=FUNDING,
-            actor_telegram_id=client_telegram_id,
+            actor_account_id=client_account_id,
+            actor_telegram_id=mission.telegram_id,
             reference=reference,
             details=details,
             movements=[(*source, -amounts["total"]), (ESCROW, mission_id, amounts["total"])],
@@ -388,7 +433,6 @@ def fund_mission(
         if also is not None:
             also(mission)
         mission.provider_telegram_id = provider_telegram_id
-        mission.client_account_id = client_account_id
         mission.provider_account_id = provider_account_id
         mission.currency = currency
         mission.urgent = bool(urgent)
@@ -405,13 +449,23 @@ def fund_mission(
     return db.get(BotMission, mission_id)
 
 
+def _comparable_funding_details(db: Session, details: dict | None) -> dict:
+    """Détails d'un paiement enregistré, exprimés comme aujourd'hui. Les
+    paiements antérieurs au passage aux comptes nommaient le prestataire par
+    son identifiant Telegram : on le traduit pour qu'un rejeu identique reste
+    reconnu, sans jamais réécrire l'opération enregistrée."""
+    details = dict(details or {})
+    if "provider_telegram_id" in details and "provider_account_id" not in details:
+        details["provider_account_id"] = account_id_for(db, TELEGRAM, details.pop("provider_telegram_id"))
+    return details
+
+
 # --- Déroulement de la mission -----------------------------------------------
 
 
-def start_mission(db: Session, mission_id: int, provider_telegram_id: int) -> BotMission:
+def start_mission(db: Session, mission_id: int, provider_account_id: int) -> BotMission:
     mission = _lock_mission(db, mission_id)
-    if mission.provider_telegram_id != provider_telegram_id:
-        raise MoneyError("not_mission_provider", 403, mission)
+    _require_provider(db, mission, provider_account_id)
     if mission.status == "in_progress":
         return mission
     _require_open_escrow(db, mission)
@@ -422,10 +476,9 @@ def start_mission(db: Session, mission_id: int, provider_telegram_id: int) -> Bo
     return mission
 
 
-def finish_mission(db: Session, mission_id: int, provider_telegram_id: int) -> BotMission:
+def finish_mission(db: Session, mission_id: int, provider_account_id: int) -> BotMission:
     mission = _lock_mission(db, mission_id)
-    if mission.provider_telegram_id != provider_telegram_id:
-        raise MoneyError("not_mission_provider", 403, mission)
+    _require_provider(db, mission, provider_account_id)
     if mission.status == "awaiting_confirmation":
         return mission
     _require_open_escrow(db, mission)
@@ -466,7 +519,8 @@ def _settle(
     mission: BotMission,
     *,
     kind: str,
-    actor: int | None,
+    actor_account_id: int | None,
+    actor_telegram_id: int | None,
     movements: list,
     details: dict,
     payment_status: str,
@@ -484,7 +538,8 @@ def _settle(
             currency=mission.currency,
             mission_id=mission_id,
             phase=SETTLEMENT,
-            actor_telegram_id=actor,
+            actor_account_id=actor_account_id,
+            actor_telegram_id=actor_telegram_id,
             details=details,
             movements=movements,
         )
@@ -495,11 +550,10 @@ def _settle(
     return _after_settlement(db, mission_id)
 
 
-def confirm_completion(db: Session, mission_id: int, client_telegram_id: int) -> BotMission:
+def confirm_completion(db: Session, mission_id: int, client_account_id: int) -> BotMission:
     """Le client confirme la fin : le prestataire est payé."""
     mission = _lock_mission(db, mission_id)
-    if mission.telegram_id != client_telegram_id:
-        raise MoneyError("not_mission_client", 403, mission)
+    require_mission_client(mission, client_account_id)
     settlement = mission_operation(db, mission_id, SETTLEMENT)
     if settlement is not None:
         if settlement.kind == "release":
@@ -513,7 +567,8 @@ def confirm_completion(db: Session, mission_id: int, client_telegram_id: int) ->
         db,
         mission,
         kind="release",
-        actor=client_telegram_id,
+        actor_account_id=client_account_id,
+        actor_telegram_id=mission.telegram_id,
         movements=_release_movements(mission, amounts),
         details=_release_details(amounts),
         payment_status="released",
@@ -535,7 +590,8 @@ def auto_release(db: Session, mission_id: int, now: datetime | None = None) -> B
         db,
         mission,
         kind="auto_release",
-        actor=None,
+        actor_account_id=None,
+        actor_telegram_id=None,
         movements=_release_movements(mission, amounts),
         details=_release_details(amounts),
         payment_status="released",
@@ -547,15 +603,14 @@ def auto_release(db: Session, mission_id: int, now: datetime | None = None) -> B
 # --- Litige -------------------------------------------------------------------
 
 
-def open_dispute(db: Session, mission_id: int, client_telegram_id: int, reason: str) -> BotMission:
+def open_dispute(db: Session, mission_id: int, client_account_id: int, reason: str) -> BotMission:
     """Gèle les fonds : plus aucune libération (manuelle ou automatique) tant
     que l'admin n'a pas tranché."""
     reason = (reason or "").strip()
     if not reason or len(reason) > MAX_DISPUTE_REASON_LENGTH:
         raise MoneyError("invalid_reason", 400)
     mission = _lock_mission(db, mission_id)
-    if mission.telegram_id != client_telegram_id:
-        raise MoneyError("not_mission_client", 403, mission)
+    require_mission_client(mission, client_account_id)
     if mission.status == "disputed":
         return mission
     if mission_operation(db, mission_id, SETTLEMENT) is not None:
@@ -646,7 +701,8 @@ def resolve_dispute(
         db,
         mission,
         kind=kind,
-        actor=admin_telegram_id,
+        actor_account_id=None,
+        actor_telegram_id=admin_telegram_id,
         movements=movements,
         details=details,
         payment_status=payment_status,
@@ -663,7 +719,7 @@ def _recompute_stats(db: Session, mission: BotMission) -> None:
     from backend.app.crud import _recompute_provider_stats
 
     if mission.provider_telegram_id is not None:
-        _recompute_provider_stats(db, mission.provider_telegram_id)
+        _recompute_provider_stats(db, mission.provider_telegram_id, mission.provider_account_id)
 
 
 def _after_settlement(db: Session, mission_id: int) -> BotMission:
@@ -782,6 +838,7 @@ def hold_payout(db: Session, payout: Payout) -> None:
         db,
         kind="payout_hold",
         currency=payout.currency,
+        actor_account_id=payout.account_id,
         details={"payout_id": payout.id},
         movements=[(WALLET, payout.account_id, -to_money(payout.amount)), (PAYOUT_PENDING, payout.id, to_money(payout.amount))],
     )

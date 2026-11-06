@@ -189,7 +189,8 @@ def refresh_and_notify_intent(db, intent_id: int) -> str:
 
 def _notify_intent(db, intent: PaymentIntent) -> None:
     request = intent.funding_request
-    client_id, provider_id = request["client_telegram_id"], request["provider_telegram_id"]
+    client_id = ledger.telegram_id_of(db, request["client_account_id"])
+    provider_id = ledger.telegram_id_of(db, request["provider_account_id"])
     client_lang = _language(db, client_id)
     if intent.status == "succeeded":
         funding = ledger.mission_money_state(db, intent.mission_id)["funding"]
@@ -237,7 +238,7 @@ def notify_mismatch_resolved(db, intent: PaymentIntent) -> None:
     """Décision de l'admin sur un montant reçu différent : le client sait où
     est son argent ; si la mission est payée, le prestataire peut commencer."""
     request = intent.funding_request
-    client_id = request["client_telegram_id"]
+    client_id = ledger.telegram_id_of(db, request["client_account_id"])
     client_lang = _language(db, client_id)
     received = dict(mission_id=intent.mission_id, amount=f"{intent.received_amount:.2f}", currency=intent.received_currency)
     if intent.status == "mismatch_credited":
@@ -245,7 +246,7 @@ def notify_mismatch_resolved(db, intent: PaymentIntent) -> None:
     elif intent.status == "mismatch_paid":
         send_telegram_message(client_id, get_message("payment_mismatch_paid_client", client_lang, **received))
         funding = ledger.mission_money_state(db, intent.mission_id)["funding"]
-        _notify_provider_paid(db, request["provider_telegram_id"], intent, funding)
+        _notify_provider_paid(db, ledger.telegram_id_of(db, request["provider_account_id"]), intent, funding)
 
 
 def refresh_and_notify_payout(db, payout_id: int) -> str:

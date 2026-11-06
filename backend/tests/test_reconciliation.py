@@ -21,6 +21,11 @@ Payout = mobile_money.Payout
 CLIENT_ID, PROVIDER_ID, ADMIN_ID = 42, 7, 1
 PHONE = "+243810000000"
 
+def acc(db, telegram_id):
+    """Compte Nexis d'une personne connue par Telegram (créé au besoin)."""
+    return ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
+
+
 
 class FakeGateway:
     name = "fake"
@@ -71,26 +76,26 @@ def db(tmp_path):
     engine.dispose()
 
 
-def request(amount=100.0, quote_ref=5):
+def request(db, amount=100.0, quote_ref=5):
     return {
-        "client_telegram_id": CLIENT_ID, "provider_telegram_id": PROVIDER_ID, "quote_ref": quote_ref,
+        "client_account_id": acc(db, CLIENT_ID), "provider_account_id": acc(db, PROVIDER_ID), "quote_ref": quote_ref,
         "amount": amount, "currency": "USD", "urgent": False,
         "service": "service_plomberie", "commune": "Gombe", "description": "",
     }
 
 
 def pay(db, mission_id=1, **kwargs):
-    return mobile_money.create_intent(db, mission_id, phone=PHONE, operator="mpesa", funding_request=request(**kwargs))
+    return mobile_money.create_intent(db, mission_id, phone=PHONE, operator="mpesa", funding_request=request(db, **kwargs))
 
 
 def complete(db, mission_id):
-    ledger.start_mission(db, mission_id, PROVIDER_ID)
-    ledger.finish_mission(db, mission_id, PROVIDER_ID)
-    ledger.confirm_completion(db, mission_id, CLIENT_ID)
+    ledger.start_mission(db, mission_id, acc(db, PROVIDER_ID))
+    ledger.finish_mission(db, mission_id, acc(db, PROVIDER_ID))
+    ledger.confirm_completion(db, mission_id, acc(db, CLIENT_ID))
 
 
 def withdraw(db, amount=20.0):
-    return mobile_money.request_payout(db, telegram_id=PROVIDER_ID, amount=amount, currency="USD", phone=PHONE, operator="airtel")
+    return mobile_money.request_payout(db, account_id=acc(db, PROVIDER_ID), amount=amount, currency="USD", phone=PHONE, operator="airtel")
 
 
 def codes(report):
@@ -189,7 +194,7 @@ def test_a_fee_different_from_the_expected_rate_is_reported(db, gateway, monkeyp
 
 
 def test_a_mobile_money_payment_without_a_confirmed_intent_is_reported(db, gateway):
-    base = request()
+    base = request(db)
     ledger.fund_mission(db, 1, method="mobile_money", reference="FAKE-999", **base)
     ledger.fund_mission(db, 2, method="mobile_money", **{**base, "quote_ref": 6})  # ancien paiement simulé « SIM-0006 »
 

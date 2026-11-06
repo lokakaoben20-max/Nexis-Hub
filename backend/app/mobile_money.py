@@ -70,19 +70,20 @@ def create_intent(db: Session, mission_id: int, *, phone: str, operator: str, fu
     if currency not in ledger.CURRENCIES:
         raise MoneyError("invalid_currency", 400)
     amount = ledger.payment_amounts(funding_request["amount"], funding_request["urgent"])["total"]
-    client_telegram_id = funding_request["client_telegram_id"]
-    if funding_request["provider_telegram_id"] == client_telegram_id:
+    client_account_id = funding_request["client_account_id"]
+    if funding_request["provider_account_id"] == client_account_id:
         raise MoneyError("provider_is_client")
+    if ledger.telegram_id_of(db, funding_request["provider_account_id"]) is None:
+        raise MoneyError("provider_not_found", 404)
 
     # La mission doit exister pour l'intention (clé étrangère) : même création
     # que le paiement, sans argent. Verrouillée jusqu'à la fin de la demande.
     mission = ledger.ensure_mission(
-        db, mission_id, client_telegram_id=client_telegram_id, service=funding_request["service"],
+        db, mission_id, client_account_id=client_account_id, service=funding_request["service"],
         commune=funding_request["commune"], currency=currency, description=funding_request.get("description", ""),
         urgent=funding_request["urgent"],
     )
-    if mission.telegram_id != client_telegram_id:
-        raise MoneyError("not_mission_client", 403, mission)
+    ledger.require_mission_client(mission, client_account_id)
     if ledger.mission_operation(db, mission_id, ledger.FUNDING) is not None:
         raise MoneyError("already_paid", mission=mission)
     if mission.status not in ledger.FUNDABLE_STATUSES or mission.payment_status not in (None, "unpaid"):
@@ -93,7 +94,7 @@ def create_intent(db: Session, mission_id: int, *, phone: str, operator: str, fu
         return existing
     intent = PaymentIntent(
         mission_id=mission_id,
-        account_id=ledger.account_id_for(db, ledger.TELEGRAM, client_telegram_id, create=True),
+        account_id=client_account_id,
         gateway=get_gateway().name,
         operator=operator,
         phone=phone,
@@ -333,7 +334,7 @@ def _resolve_mismatch(db: Session, intent_id: int, admin_telegram_id: int, decis
 # --- Retraits ---------------------------------------------------------------------
 
 
-def request_payout(db: Session, *, telegram_id: int, amount, currency: str, phone: str, operator: str) -> Payout:
+def request_payout(db: Session, *, account_id: int, amount, currency: str, phone: str, operator: str) -> Payout:
     """Bloque le montant et crée le retrait. Il part tout de suite seulement
     s'il ne demande aucune vérification (sous le plafond, aucun fonds de
     remboursement) ; sinon il attend l'admin."""
@@ -348,10 +349,6 @@ def request_payout(db: Session, *, telegram_id: int, amount, currency: str, phon
     fee = payout_fee(amount, currency)
     if fee >= amount:
         raise MoneyError("below_minimum")
-    account_id = ledger.account_id_for(db, ledger.TELEGRAM, telegram_id)
-    if account_id is None:
-        raise MoneyError("insufficient_balance")
-
     # Verrou sur le compte AVANT de décider s'il faut l'admin : sinon deux
     # retraits simultanés lisent la même part « sans vérification » et
     # sortent ensemble l'argent d'un remboursement sans validation.
@@ -364,7 +361,8 @@ def request_payout(db: Session, *, telegram_id: int, amount, currency: str, phon
 
     payout = Payout(
         account_id=account_id,
-        requested_by_telegram_id=telegram_id,
+        # Identité de canal du demandeur, pour l'audit et les messages Telegram.
+        requested_by_telegram_id=ledger.telegram_id_of(db, account_id),
         gateway=get_gateway().name,
         operator=operator,
         phone=phone,
@@ -452,10 +450,7 @@ def _apply_payout_result(db: Session, payout: Payout, result) -> Payout:
     return payout
 
 
-def withdrawable(db: Session, telegram_id: int, currency: str) -> dict:
-    account_id = ledger.account_id_for(db, ledger.TELEGRAM, telegram_id)
-    if account_id is None:
-        return {"balance": "0.00", "without_review": "0.00"}
+def withdrawable(db: Session, account_id: int, currency: str) -> dict:
     return {
         "balance": str(ledger.balance(db, ledger.WALLET, account_id, currency)),
         "without_review": str(ledger.withdrawable_without_review(db, account_id, currency)),

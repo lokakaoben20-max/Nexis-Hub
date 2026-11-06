@@ -20,6 +20,11 @@ Payout = mobile_money.Payout
 CLIENT_ID, PROVIDER_ID, ADMIN_ID = 42, 7, 1
 PHONE = "+243810000000"
 
+def acc(db, telegram_id):
+    """Compte Nexis d'une personne connue par Telegram (créé au besoin)."""
+    return ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
+
+
 
 class FakeGateway:
     """Agrégateur de test : `collection` / `payout` disent ce qu'il répondra."""
@@ -83,20 +88,20 @@ def money(value):
     return Decimal(str(value)).quantize(Decimal("0.01"))
 
 
-def request(mission_id=1, amount=100.0, quote_ref=5, client=CLIENT_ID, provider=PROVIDER_ID):
+def request(db, mission_id=1, amount=100.0, quote_ref=5, client=CLIENT_ID, provider=PROVIDER_ID):
     return {
-        "client_telegram_id": client, "provider_telegram_id": provider, "quote_ref": quote_ref,
+        "client_account_id": acc(db, client), "provider_account_id": acc(db, provider), "quote_ref": quote_ref,
         "amount": amount, "currency": "USD", "urgent": False,
         "service": "service_plomberie", "commune": "Gombe", "description": "",
     }
 
 
 def pay(db, mission_id=1, **kwargs):
-    return mobile_money.create_intent(db, mission_id, phone=PHONE, operator="mpesa", funding_request=request(mission_id, **kwargs))
+    return mobile_money.create_intent(db, mission_id, phone=PHONE, operator="mpesa", funding_request=request(db, mission_id, **kwargs))
 
 
 def wallet(db, telegram_id, currency="USD"):
-    return ledger.wallet_balances(db, ledger.TELEGRAM, telegram_id)[currency]
+    return ledger.wallet_balances(db, acc(db, telegram_id))[currency]
 
 
 def balance(db, account_type, account_id=None, currency="USD"):
@@ -221,7 +226,7 @@ def test_a_provider_cannot_pay_their_own_mission(db, gateway):
 
 @pytest.mark.parametrize("phone,operator,code", [("0810000000", "mpesa", "invalid_phone"), (PHONE, "africell", "invalid_operator")])
 def test_phone_and_operator_are_checked(db, gateway, phone, operator, code):
-    refused(code, lambda: mobile_money.create_intent(db, 1, phone=phone, operator=operator, funding_request=request()))
+    refused(code, lambda: mobile_money.create_intent(db, 1, phone=phone, operator=operator, funding_request=request(db)))
 
 
 # --- Retraits -----------------------------------------------------------------------
@@ -230,13 +235,13 @@ def test_phone_and_operator_are_checked(db, gateway, phone, operator, code):
 def earn(db, gateway, amount=100.0):
     """Le prestataire gagne le net d'une mission (90 % du montant)."""
     pay(db, amount=amount)
-    ledger.start_mission(db, 1, PROVIDER_ID)
-    ledger.finish_mission(db, 1, PROVIDER_ID)
-    ledger.confirm_completion(db, 1, CLIENT_ID)
+    ledger.start_mission(db, 1, acc(db, PROVIDER_ID))
+    ledger.finish_mission(db, 1, acc(db, PROVIDER_ID))
+    ledger.confirm_completion(db, 1, acc(db, CLIENT_ID))
 
 
 def withdraw(db, amount=50.0, telegram_id=PROVIDER_ID):
-    return mobile_money.request_payout(db, telegram_id=telegram_id, amount=amount, currency="USD", phone=PHONE, operator="airtel")
+    return mobile_money.request_payout(db, account_id=acc(db, telegram_id), amount=amount, currency="USD", phone=PHONE, operator="airtel")
 
 
 def test_a_payout_holds_the_money_and_waits_for_the_admin(db, gateway):
@@ -307,7 +312,7 @@ def test_payouts_under_the_auto_limit_leave_without_the_admin(db, gateway, monke
 def test_refund_money_needs_the_admin_even_under_the_auto_limit(db, gateway, monkeypatch):
     monkeypatch.setenv("PAYOUT_AUTO_LIMIT_USD", "1000")
     pay(db)
-    ledger.open_dispute(db, 1, CLIENT_ID, "Travail non fait")
+    ledger.open_dispute(db, 1, acc(db, CLIENT_ID), "Travail non fait")
     ledger.resolve_dispute(db, 1, decision="refund", admin_telegram_id=ADMIN_ID)
 
     payout = withdraw(db, 50, telegram_id=CLIENT_ID)

@@ -893,3 +893,17 @@ def test_webhook_without_a_valid_signature_is_refused(tmp_path, monkeypatch):
         response = test_client.post("/api/payments/webhook/simulation", content=b'{"reference": "SIM-PAY-000001"}')
         assert response.status_code == 401
         assert test_client.post("/api/payments/webhook/flexpay", content=b"{}").status_code == 404
+
+
+def test_payment_intents_name_the_parties_by_account(tmp_path, monkeypatch):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+    from backend.app import ledger
+    from backend.app.models import PaymentIntent
+
+    with _authed_client(backend_main) as test_client:
+        assert _fund(test_client, mission_id=1001).status_code == 200
+    with database_module.SessionLocal() as db:
+        request = db.query(PaymentIntent).one().funding_request
+        assert request["client_account_id"] == ledger.account_id_for(db, ledger.TELEGRAM, 42)
+        assert request["provider_account_id"] == ledger.account_id_for(db, ledger.TELEGRAM, 7)
+        assert "client_telegram_id" not in request and "provider_telegram_id" not in request

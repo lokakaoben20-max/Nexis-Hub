@@ -215,6 +215,10 @@ class MoneyOperation(Base):
     kind: Mapped[str] = mapped_column(String(30))
     mission_id: Mapped[int | None] = mapped_column(ForeignKey("bot_missions.mission_id"), nullable=True, index=True)
     phase: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Qui a déclenché l'opération : son compte Nexis, et l'identifiant Telegram
+    # quand l'action vient de Telegram (admin compris). Vides pour une
+    # opération automatique.
+    actor_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
     actor_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     reference: Mapped[str | None] = mapped_column(String(64), nullable=True)
     details: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -293,7 +297,8 @@ class Payout(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
-    requested_by_telegram_id: Mapped[int] = mapped_column(BigInteger)
+    # Identité Telegram du demandeur (audit, messages) ; vide pour un autre canal.
+    requested_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     gateway: Mapped[str] = mapped_column(String(30))
     gateway_reference: Mapped[str | None] = mapped_column(String(64), nullable=True)
     operator: Mapped[str] = mapped_column(String(20))

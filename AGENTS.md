@@ -509,7 +509,13 @@ les rôles, la langue commune et les champs du téléphone vérifié. Les numér
 historiques ne sont pas considérés vérifiés. Les écritures de profil Telegram
 synchronisent le rôle et la langue sur le compte Nexis.
 
-**Étape en cours : références métier.** La migration
+**Fait (2026-11-06) : règles d'argent par compte**, migration
+`b2c3d4e5f6a7`, vérifiée sur PostgreSQL 16 (aller-retour, arrêt si une
+intention n'a pas de compte). Voir `CONCEPTION_ARGENT.md`. Suite du découpage :
+routes API avec acteur résolu par identité de canal, bot Telegram, Mini App,
+puis rapport de migration sur une copie de la vraie base.
+
+**Étape précédente : références métier.** La migration
 `a1b2c3d4e5f6_business_account_references.py` ajoute et rétro-remplit les
 références de compte des missions, devis, avis et demandes de service. Les
 créations backend écrivent désormais ces références ; l'acceptation d'un devis

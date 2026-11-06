@@ -62,7 +62,7 @@ class LiveBackend:
         from backend.app import ledger
 
         with self.database.SessionLocal() as session:
-            return float(ledger.wallet_balances(session, ledger.TELEGRAM, telegram_id)[currency])
+            return float(ledger.wallet_balances(session, ledger.account_id_for(session, ledger.TELEGRAM, telegram_id))[currency])
 
     def credit_wallet(self, telegram_id: int, amount: float, currency: str = "USD") -> None:
         from backend.app import ledger

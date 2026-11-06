@@ -23,6 +23,11 @@ MoneyOperation = ledger.MoneyOperation
 CLIENT_ID = 42
 PROVIDER_ID = 7
 
+def acc(db, telegram_id):
+    """Compte Nexis d'une personne connue par Telegram (créé au besoin)."""
+    return ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
+
+
 
 @pytest.fixture
 def db(tmp_path):
@@ -46,8 +51,8 @@ def fund(db, mission_id=1, method="mobile_money", amount=100.0, currency="USD", 
         db,
         mission_id,
         method=method,
-        client_telegram_id=client,
-        provider_telegram_id=PROVIDER_ID,
+        client_account_id=acc(db, client),
+        provider_account_id=acc(db, PROVIDER_ID),
         quote_ref=quote_ref,
         amount=amount,
         currency=currency,
@@ -59,13 +64,13 @@ def fund(db, mission_id=1, method="mobile_money", amount=100.0, currency="USD", 
 
 def finished(db, mission_id=1, **kwargs):
     fund(db, mission_id, **kwargs)
-    ledger.start_mission(db, mission_id, PROVIDER_ID)
-    return ledger.finish_mission(db, mission_id, PROVIDER_ID)
+    ledger.start_mission(db, mission_id, acc(db, PROVIDER_ID))
+    return ledger.finish_mission(db, mission_id, acc(db, PROVIDER_ID))
 
 
 def disputed(db, mission_id=1, **kwargs):
     fund(db, mission_id, **kwargs)
-    return ledger.open_dispute(db, mission_id, CLIENT_ID, "Travail non fait")
+    return ledger.open_dispute(db, mission_id, acc(db, CLIENT_ID), "Travail non fait")
 
 
 def bal(db, account_type, account_id, currency="USD"):
@@ -231,27 +236,27 @@ def test_mission_cannot_start_before_payment(db):
     crud.create_mission(db, CLIENT_ID, 1, "service_plomberie", "Gombe")
     db.get(BotMission, 1).provider_telegram_id = PROVIDER_ID
     db.commit()
-    refused("not_paid", lambda: ledger.start_mission(db, 1, PROVIDER_ID))
+    refused("not_paid", lambda: ledger.start_mission(db, 1, acc(db, PROVIDER_ID)))
 
 
 def test_only_the_mission_provider_can_start_or_finish(db):
     fund(db)
-    refused("not_mission_provider", lambda: ledger.start_mission(db, 1, 999))
-    ledger.start_mission(db, 1, PROVIDER_ID)
-    refused("not_mission_provider", lambda: ledger.finish_mission(db, 1, 999))
+    refused("not_mission_provider", lambda: ledger.start_mission(db, 1, acc(db, 999)))
+    ledger.start_mission(db, 1, acc(db, PROVIDER_ID))
+    refused("not_mission_provider", lambda: ledger.finish_mission(db, 1, acc(db, 999)))
 
 
 def test_mission_must_start_before_it_finishes(db):
     fund(db)
-    refused("invalid_state", lambda: ledger.finish_mission(db, 1, PROVIDER_ID))
+    refused("invalid_state", lambda: ledger.finish_mission(db, 1, acc(db, PROVIDER_ID)))
 
 
 def test_start_and_finish_are_idempotent(db):
     fund(db)
-    ledger.start_mission(db, 1, PROVIDER_ID)
-    ledger.start_mission(db, 1, PROVIDER_ID)
-    ledger.finish_mission(db, 1, PROVIDER_ID)
-    assert ledger.finish_mission(db, 1, PROVIDER_ID).status == "awaiting_confirmation"
+    ledger.start_mission(db, 1, acc(db, PROVIDER_ID))
+    ledger.start_mission(db, 1, acc(db, PROVIDER_ID))
+    ledger.finish_mission(db, 1, acc(db, PROVIDER_ID))
+    assert ledger.finish_mission(db, 1, acc(db, PROVIDER_ID)).status == "awaiting_confirmation"
 
 
 # --- Libération -----------------------------------------------------------------
@@ -260,7 +265,7 @@ def test_start_and_finish_are_idempotent(db):
 def test_client_confirmation_pays_the_provider_net_and_the_platform_commission(db):
     finished(db, urgent=True)
 
-    mission = ledger.confirm_completion(db, 1, CLIENT_ID)
+    mission = ledger.confirm_completion(db, 1, acc(db, CLIENT_ID))
 
     assert (mission.status, mission.payment_status) == ("completed", "released")
     assert bal(db, ledger.WALLET, PROVIDER_ID) == money(85)
@@ -272,8 +277,8 @@ def test_client_confirmation_pays_the_provider_net_and_the_platform_commission(d
 
 def test_confirming_twice_pays_once(db):
     finished(db)
-    ledger.confirm_completion(db, 1, CLIENT_ID)
-    ledger.confirm_completion(db, 1, CLIENT_ID)
+    ledger.confirm_completion(db, 1, acc(db, CLIENT_ID))
+    ledger.confirm_completion(db, 1, acc(db, CLIENT_ID))
 
     assert bal(db, ledger.WALLET, PROVIDER_ID) == money(90)
     assert len(operations(db)) == 2
@@ -281,12 +286,12 @@ def test_confirming_twice_pays_once(db):
 
 def test_client_cannot_confirm_before_the_provider_finishes(db):
     fund(db)
-    refused("invalid_state", lambda: ledger.confirm_completion(db, 1, CLIENT_ID))
+    refused("invalid_state", lambda: ledger.confirm_completion(db, 1, acc(db, CLIENT_ID)))
 
 
 def test_only_the_mission_client_can_confirm(db):
     finished(db)
-    refused("not_mission_client", lambda: ledger.confirm_completion(db, 1, 999))
+    refused("not_mission_client", lambda: ledger.confirm_completion(db, 1, acc(db, 999)))
 
 
 def test_auto_release_waits_24_hours(db):
@@ -305,7 +310,7 @@ def test_auto_release_waits_24_hours(db):
 
 def test_dispute_freezes_the_escrow(db):
     finished(db)
-    mission = ledger.open_dispute(db, 1, CLIENT_ID, "  Travail non fait  ")
+    mission = ledger.open_dispute(db, 1, acc(db, CLIENT_ID), "  Travail non fait  ")
 
     assert mission.status == "disputed"
     assert mission.dispute_reason == "Travail non fait"
@@ -313,7 +318,7 @@ def test_dispute_freezes_the_escrow(db):
 
     mission.status_changed_at = mission.status_changed_at - timedelta(days=10)
     db.commit()
-    refused("mission_disputed", lambda: ledger.confirm_completion(db, 1, CLIENT_ID))
+    refused("mission_disputed", lambda: ledger.confirm_completion(db, 1, acc(db, CLIENT_ID)))
     refused("mission_disputed", lambda: ledger.auto_release(db, 1))
     assert bal(db, ledger.ESCROW, 1) == money(100)
     assert bal(db, ledger.WALLET, PROVIDER_ID) == money(0)
@@ -321,28 +326,28 @@ def test_dispute_freezes_the_escrow(db):
 
 def test_dispute_can_be_opened_from_any_unsettled_paid_state(db):
     fund(db, mission_id=1)
-    assert ledger.open_dispute(db, 1, CLIENT_ID, "x").status == "disputed"
+    assert ledger.open_dispute(db, 1, acc(db, CLIENT_ID), "x").status == "disputed"
     fund(db, mission_id=2, quote_ref=6)
-    ledger.start_mission(db, 2, PROVIDER_ID)
-    assert ledger.open_dispute(db, 2, CLIENT_ID, "x").status == "disputed"
+    ledger.start_mission(db, 2, acc(db, PROVIDER_ID))
+    assert ledger.open_dispute(db, 2, acc(db, CLIENT_ID), "x").status == "disputed"
     finished(db, mission_id=3, quote_ref=7)
-    assert ledger.open_dispute(db, 3, CLIENT_ID, "x").status == "disputed"
+    assert ledger.open_dispute(db, 3, acc(db, CLIENT_ID), "x").status == "disputed"
 
 
 def test_dispute_is_refused_before_payment_after_settlement_or_for_another_client(db):
     crud.create_mission(db, CLIENT_ID, 9, "service_plomberie", "Gombe")
-    refused("not_paid", lambda: ledger.open_dispute(db, 9, CLIENT_ID, "x"))
+    refused("not_paid", lambda: ledger.open_dispute(db, 9, acc(db, CLIENT_ID), "x"))
 
     finished(db)
-    refused("not_mission_client", lambda: ledger.open_dispute(db, 1, 999, "x"))
-    ledger.confirm_completion(db, 1, CLIENT_ID)
-    refused("already_settled", lambda: ledger.open_dispute(db, 1, CLIENT_ID, "x"))
+    refused("not_mission_client", lambda: ledger.open_dispute(db, 1, acc(db, 999), "x"))
+    ledger.confirm_completion(db, 1, acc(db, CLIENT_ID))
+    refused("already_settled", lambda: ledger.open_dispute(db, 1, acc(db, CLIENT_ID), "x"))
 
 
 @pytest.mark.parametrize("reason", ["", "   ", "x" * 1001])
 def test_dispute_needs_a_reason(db, reason):
     fund(db)
-    refused("invalid_reason", lambda: ledger.open_dispute(db, 1, CLIENT_ID, reason))
+    refused("invalid_reason", lambda: ledger.open_dispute(db, 1, acc(db, CLIENT_ID), reason))
 
 
 def test_full_refund_returns_everything_to_the_client_fees_included(db):
@@ -430,7 +435,7 @@ def test_wallets_belong_to_a_channel_neutral_nexis_account(db):
     db.add(ledger.ChannelIdentity(account_id=account_id, channel="whatsapp", external_id="+243810000000"))
     db.commit()
 
-    assert ledger.wallet_balances(db, "whatsapp", "+243810000000")["USD"] == money(100)
+    assert ledger.wallet_balances(db, ledger.account_id_for(db, "whatsapp", "+243810000000"))["USD"] == money(100)
     entries = db.query(LedgerEntry).filter(LedgerEntry.account_type == ledger.WALLET).all()
     assert {entry.account_id for entry in entries} == {account_id}
     assert db.get(BotMission, 1).client_account_id == account_id
@@ -440,7 +445,7 @@ def test_one_person_has_a_single_wallet_whether_client_or_provider(db):
     """Le prestataire 7 commande à son tour comme client : son wallet est le
     même, il peut payer avec ce qu'il a gagné."""
     finished(db)
-    ledger.confirm_completion(db, 1, CLIENT_ID)
+    ledger.confirm_completion(db, 1, acc(db, CLIENT_ID))
     db.add(BotUser(telegram_id=PROVIDER_ID, first_name="Prestataire"))
     db.commit()
 
@@ -448,8 +453,8 @@ def test_one_person_has_a_single_wallet_whether_client_or_provider(db):
         db,
         2,
         method="wallet",
-        client_telegram_id=PROVIDER_ID,
-        provider_telegram_id=CLIENT_ID,
+        client_account_id=acc(db, PROVIDER_ID),
+        provider_account_id=acc(db, CLIENT_ID),
         quote_ref=9,
         amount=40,
         currency="USD",
@@ -468,8 +473,8 @@ def test_a_provider_can_never_be_paid_for_their_own_mission(db):
             db,
             1,
             method="mobile_money",
-            client_telegram_id=CLIENT_ID,
-            provider_telegram_id=CLIENT_ID,
+            client_account_id=acc(db, CLIENT_ID),
+            provider_account_id=acc(db, CLIENT_ID),
             quote_ref=1,
             amount=10,
             currency="USD",
@@ -480,3 +485,72 @@ def test_a_provider_can_never_be_paid_for_their_own_mission(db):
     )
     db.rollback()
     assert db.query(MoneyOperation).count() == 0
+
+
+# --- Règles par compte Nexis ---------------------------------------------------
+
+
+def test_mission_rules_compare_accounts_not_telegram_ids(db):
+    """Seuls les comptes comptent : un autre compte est refusé même si la
+    mission garde l'ancien identifiant Telegram de la personne."""
+    fund(db)
+    intruder = acc(db, 999)
+    refused("not_mission_provider", lambda: ledger.start_mission(db, 1, intruder))
+    refused("not_mission_client", lambda: ledger.open_dispute(db, 1, intruder, "x"))
+    assert ledger.start_mission(db, 1, acc(db, PROVIDER_ID)).status == "in_progress"
+
+
+def test_a_mission_without_linked_accounts_is_refused_never_accepted(db):
+    """Historique mal rattaché : refus explicite, jamais d'action par défaut."""
+    finished(db)
+    mission = db.get(BotMission, 1)
+    mission.client_account_id = None
+    mission.provider_account_id = None
+    db.commit()
+
+    refused("mission_account_missing", lambda: ledger.confirm_completion(db, 1, acc(db, CLIENT_ID)))
+    refused("mission_account_missing", lambda: ledger.open_dispute(db, 1, acc(db, CLIENT_ID), "x"))
+    refused("mission_account_missing", lambda: ledger.finish_mission(db, 1, acc(db, PROVIDER_ID)))
+    assert db.get(BotMission, 1).payment_status == "paid_escrow"
+    assert_books_balanced(db)
+
+
+def test_a_provider_without_account_cannot_be_paid(db):
+    client_account = acc(db, CLIENT_ID)
+    unknown = ledger.NexisAccount()
+    db.add(unknown)
+    db.commit()  # compte sans identité Telegram : pas un prestataire
+    refused(
+        "provider_not_found",
+        lambda: ledger.fund_mission(
+            db, 1, method="mobile_money", client_account_id=client_account, provider_account_id=unknown.id,
+            quote_ref=1, amount=10, currency="USD", urgent=False, service="s", commune="c",
+        ),
+    )
+    assert db.get(BotMission, 1) is None
+    assert operations(db) == []
+
+
+def test_money_operations_record_the_acting_account(db):
+    finished(db)
+    ledger.confirm_completion(db, 1, acc(db, CLIENT_ID))
+    by_phase = {operation.phase: operation for operation in operations(db)}
+    assert by_phase["funding"].actor_account_id == acc(db, CLIENT_ID)
+    assert by_phase["settlement"].actor_account_id == acc(db, CLIENT_ID)
+    assert by_phase["funding"].actor_telegram_id == CLIENT_ID
+
+
+def test_a_payment_recorded_before_accounts_is_still_recognised_as_a_replay(db):
+    """Un paiement enregistré avec l'ancien format (prestataire nommé par son
+    identifiant Telegram) : le même paiement rejoué n'est ni refusé ni doublé."""
+    fund(db)
+    funding = next(operation for operation in operations(db) if operation.phase == "funding")
+    legacy = dict(funding.details)
+    legacy["provider_telegram_id"] = PROVIDER_ID
+    del legacy["provider_account_id"]
+    funding.details = legacy
+    db.commit()
+
+    assert fund(db).payment_status == "paid_escrow"
+    assert len(operations(db)) == 1
+    refused("already_paid", lambda: fund(db, amount=50))
