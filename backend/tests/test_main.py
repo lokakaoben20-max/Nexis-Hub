@@ -994,6 +994,13 @@ def test_actions_without_a_valid_actor_are_refused(tmp_path, monkeypatch):
             "/api/bot/missions/1/confirm", headers={"X-Actor-Channel": "sms", "X-Actor-Id": "42"}
         )
         assert unknown.json()["detail"] == {"code": "unknown_channel"}
+        # L'acteur `app` ne naît que d'une session vérifiée par l'API publique :
+        # l'API des canaux de confiance ne l'accepte jamais par en-têtes.
+        as_app = test_client.post(
+            "/api/bot/missions/1/confirm", headers={"X-Actor-Channel": "app", "X-Actor-Id": "x" * 32}
+        )
+        assert as_app.status_code == 400
+        assert as_app.json()["detail"] == {"code": "unknown_channel"}
         forged = test_client.post("/api/bot/missions/1/confirm", headers={"X-Actor-Channel": "telegram", "X-Actor-Id": "42 OR 1"})
         assert forged.json()["detail"] == {"code": "invalid_actor"}
 

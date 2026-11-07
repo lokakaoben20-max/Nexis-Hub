@@ -4,7 +4,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app import ledger
+from backend.app import app_auth, ledger
 from backend.app.models import (
     BotMission,
     BotProvider,
@@ -56,12 +56,32 @@ def _sync_account_role(db: Session, telegram_id: int, role: str, language: str) 
     return account
 
 
+def _record_proven_phone(db: Session, account_id: int, phone_number: str | None, phone_verified: bool) -> None:
+    """Numéro prouvé par le canal (bouton « Partager mon numéro » de
+    Telegram, contact de l'expéditeur) : enregistré sur le compte Nexis. Un
+    numéro tapé, ou illisible, n'est jamais enregistré comme prouvé. Un numéro
+    déjà prouvé sur un autre compte reste où il est (`app_auth.prove_phone`)."""
+    if not phone_verified or not phone_number:
+        return
+    try:
+        app_auth.prove_phone(db, account_id, phone_number)
+    except app_auth.AuthError:
+        return
+
+
 def _account_id_for_telegram(db: Session, telegram_id: int) -> int:
     """Compte canonique d'une identité Telegram vérifiée par le canal."""
     return ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
 
 
-def upsert_user(db: Session, telegram_id: int, first_name: str | None, phone_number: str | None, language: str = "fr") -> BotUser:
+def upsert_user(
+    db: Session,
+    telegram_id: int,
+    first_name: str | None,
+    phone_number: str | None,
+    language: str = "fr",
+    phone_verified: bool = False,
+) -> BotUser:
     user = db.get(BotUser, telegram_id)
     if user is None:
         user = BotUser(telegram_id=telegram_id)
@@ -69,7 +89,8 @@ def upsert_user(db: Session, telegram_id: int, first_name: str | None, phone_num
     user.first_name = first_name or "Client"
     user.phone_number = phone_number
     user.language = language
-    _sync_account_role(db, telegram_id, "client", language)
+    account = _sync_account_role(db, telegram_id, "client", language)
+    _record_proven_phone(db, account.id, phone_number, phone_verified)
     db.commit()
     db.refresh(user)
     return user
@@ -86,6 +107,7 @@ def upsert_provider(
     id_document_file_id: str | None = None,
     selfie_file_id: str | None = None,
     portfolio_file_ids: list[str] | None = None,
+    phone_verified: bool = False,
 ) -> BotProvider:
     provider = db.get(BotProvider, telegram_id)
     is_new = provider is None
@@ -98,7 +120,8 @@ def upsert_provider(
     provider.communes = communes
     provider.language = language
     provider.module = _compute_module(services)
-    _sync_account_role(db, telegram_id, "provider", language)
+    account = _sync_account_role(db, telegram_id, "provider", language)
+    _record_proven_phone(db, account.id, phone_number, phone_verified)
     # None = pas fourni sur cet appel (ex. mise à jour de profil) : ne pas écraser
     # des documents déjà soumis avec du vide.
     if id_document_file_id is not None:

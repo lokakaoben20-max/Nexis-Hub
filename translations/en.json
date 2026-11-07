@@ -236,5 +236,11 @@
   "money_error_provider_not_alerted": "This mission was not offered to you.",
   "money_error_creation_key_reused": "This request changed between two attempts. Please start the request again from the menu.",
   "media_video_note_added": "🎥 Video note added ({count}).",
-  "mission_video_note_caption": "🎥 Video note attached to mission NXH-{mission_id:04d}"
+  "mission_video_note_caption": "🎥 Video note attached to mission NXH-{mission_id:04d}",
+  "app_login_share_phone": "To sign in to the Nexis Hub app, tap the \"Share my number\" button at the bottom of the screen.",
+  "app_login_code": "Your Nexis Hub app sign-in code: <b>{code}</b>\n\nType it in the app. It is valid for 10 minutes.\n\n⚠️ Never give this code to anyone. Nexis Hub will never ask you for it.",
+  "app_login_link_invalid": "This sign-in link has expired or was already used. Request a new code in the Nexis Hub app.",
+  "app_login_phone_mismatch": "This number is not the one you typed in the app. Check your number in the app, then request a new code.",
+  "app_login_phone_conflict": "This number is linked to another Nexis Hub account. To protect that account, no code is sent. Please contact Nexis Hub support.",
+  "app_login_unavailable": "Signing in to the app is temporarily unavailable. Please try again in a few minutes."
 }

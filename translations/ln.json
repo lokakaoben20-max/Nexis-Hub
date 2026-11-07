@@ -238,5 +238,11 @@
   "money_error_provider_not_alerted": "Mosala oyo epesamaki yo te.",
   "money_error_creation_key_reused": "Bosenga oyo ebongwani kati na mimekano mibale. Banda bosenga lisusu na menu.",
   "media_video_note_added": "🎥 Note vidéo ebakisami ({count}).",
-  "mission_video_note_caption": "🎥 Note vidéo ya mission NXH-{mission_id:04d}"
+  "mission_video_note_caption": "🎥 Note vidéo ya mission NXH-{mission_id:04d}",
+  "app_login_share_phone": "Mpo na kokota na application Nexis Hub, fina bouton « Kotinda numéro na ngai » na se ya écran.",
+  "app_login_code": "Code na yo mpo na kokota na application Nexis Hub : <b>{code}</b>\n\nKoma yango na application. Ekosala kaka miniti 10.\n\n⚠️ Kopesa code oyo na moto moko te. Nexis Hub ekosenga yo yango soko moke te.",
+  "app_login_link_invalid": "Lien oyo ya kokota esili to esalelamaki déjà. Senga code ya sika na application Nexis Hub.",
+  "app_login_phone_mismatch": "Numéro oyo ezali te oyo okomaki na application. Tala malamu numéro na yo na application, sima senga code ya sika.",
+  "app_login_phone_conflict": "Numéro oyo ekangami na compte mosusu ya Nexis Hub. Mpo na kobatela compte yango, code etindami te. Benga support ya Nexis Hub.",
+  "app_login_unavailable": "Kokota na application ekoki te sikoyo. Meka lisusu sima ya miniti moke."
 }

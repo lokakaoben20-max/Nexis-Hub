@@ -198,6 +198,8 @@ async def enregistrer_client(message: Message, state: FSMContext):
         first_name=message.from_user.first_name or "",
         phone_number=phone_number,
         language=data.get("language", "fr"),
+        # Numéro reçu par « Partager mon numéro », contact de l'expéditeur.
+        phone_verified=True,
     )
     await state.clear()
     prenom = html.escape(message.from_user.first_name or "Client")
@@ -451,6 +453,8 @@ async def finaliser_inscription_prestataire(callback: CallbackQuery, state: FSMC
             id_document_file_id=data["provider_id_document_file_id"],
             selfie_file_id=data["provider_selfie_file_id"],
             portfolio_file_ids=portfolio_file_ids,
+            # Numéro reçu par « Partager mon numéro » (enregistrer_tel_prestataire).
+            phone_verified=True,
         )
     )
     await _safe_backend_call(sync_provider_status_to_backend(callback.from_user.id, "pending_verification"))

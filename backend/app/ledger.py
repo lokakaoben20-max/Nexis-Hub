@@ -55,6 +55,11 @@ DISPUTABLE_STATUSES = {"confirmed", "in_progress", "awaiting_confirmation"}
 
 # Canaux par lesquels une personne s'identifie (voir `account_id_for`).
 TELEGRAM = "telegram"
+# Application mobile Nexis : une seule identité `app` par compte, sous laquelle
+# sont rangés ses téléphones (`devices`). Jamais acceptée comme acteur déclaré
+# par en-têtes sur l'API des canaux de confiance : l'acteur `app` ne naît que
+# d'une session vérifiée (app-mobile/plan-etape1-connexion-api).
+APP = "app"
 
 # Comptes du registre. Une personne n'a qu'un wallet, qu'elle agisse en
 # cliente ou en prestataire.

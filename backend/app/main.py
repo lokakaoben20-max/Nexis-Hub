@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from backend.app import crud, ledger, mobile_money, payment_gateway
+from backend.app import app_auth, crud, ledger, mobile_money, payment_gateway
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotUser, PaymentIntent, Payout
 
@@ -94,6 +94,10 @@ class BotUserPayload(BaseModel):
     first_name: str | None = None
     phone_number: str | None = None
     language: str = "fr"
+    # Vrai seulement si le numéro vient du bouton « Partager mon numéro »
+    # (contact de l'expéditeur, vérifié par le bot) : il est alors enregistré
+    # comme numéro prouvé du compte.
+    phone_verified: bool = False
 
 
 class MissionMediaPayload(BaseModel):
@@ -128,6 +132,7 @@ class BotProviderPayload(BaseModel):
     id_document_file_id: str | None = None
     selfie_file_id: str | None = None
     portfolio_file_ids: list[str] | None = None
+    phone_verified: bool = False
 
 
 class ProviderServicesPayload(BaseModel):
@@ -341,8 +346,31 @@ def health():
 @router.post("/api/bot/users")
 def create_bot_user(payload: BotUserPayload):
     with SessionLocal() as db:
-        user = crud.upsert_user(db, payload.telegram_id, payload.first_name, payload.phone_number, payload.language)
+        user = crud.upsert_user(
+            db, payload.telegram_id, payload.first_name, payload.phone_number, payload.language, payload.phone_verified
+        )
         return {"status": "ok", "user": _user_to_dict(user, db)}
+
+
+class AppLoginTelegramContactPayload(BaseModel):
+    start_token: str = Field(min_length=1, max_length=64)
+    phone: str = Field(min_length=1, max_length=32)
+
+
+@router.post("/api/bot/app-login/telegram-contact")
+def app_login_telegram_contact(payload: AppLoginTelegramContactPayload, actor: Actor = Depends(current_actor)):
+    """Connexion à l'application par Telegram : la personne a ouvert le bot
+    par le lien de l'app et partagé son propre contact (vérifié par le bot).
+    Rend le code que le bot lui affiche. Voir `app_auth`."""
+    with SessionLocal() as db:
+        try:
+            issued = app_auth.issue_code_for_telegram_contact(
+                db, start_token=payload.start_token, telegram_id=actor.telegram_id, contact_phone=payload.phone
+            )
+        except app_auth.AuthError as error:
+            db.rollback()
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code})
+        return {"status": "ok", "code": issued.code, "expires_at": issued.expires_at.isoformat()}
 
 
 @router.post("/api/bot/missions")
@@ -403,6 +431,7 @@ def create_bot_provider(payload: BotProviderPayload):
             id_document_file_id=payload.id_document_file_id,
             selfie_file_id=payload.selfie_file_id,
             portfolio_file_ids=payload.portfolio_file_ids,
+            phone_verified=payload.phone_verified,
         )
         return {"status": "ok", "provider": _provider_to_dict(provider, db)}
 
