@@ -1,0 +1,23 @@
+# Seul le code nécessaire à l'exécution entre dans l'image.
+.git
+.github
+.env
+.env.*
+!.env.example
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+.venv
+venv
+*.db
+*.log
+*_anciennes_missions.json
+exchange_rate_cache.json
+tests
+backend/tests
+conftest.py
+graphify-out
+video-verticale
+.claude
+CLAUDE.md

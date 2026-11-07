@@ -103,6 +103,16 @@ directement sur le réseau. Voir la section démarrage du bot ci-dessous et
 le skill `demarrage-local` pour le détail du geste manuel (tunnel à relancer
 à chaque session, `WEBHOOK_URL` à mettre à jour dans `.env`).
 
+**Image Docker de production** (`Dockerfile`, `docker/lancer.sh`) : une seule
+image, un rôle par processus (`backend`, `miniapp`, `bot`, `webhook-setup`,
+`migration`, `tache <nom>`, `planificateur`, `calendrier`,
+`controle-registre`). Utilisateur non root, code en lecture seule,
+`APP_ENV=production` par défaut (donc configuration complète exigée).
+Derrière un répartiteur de charge, poser `FORWARDED_ALLOW_IPS` (lu par uvicorn)
+pour que l'adresse du client soit la bonne. Les rôles `bot` et `miniapp` ne
+tournent pas encore dans l'image : `db.py` écrit son SQLite à côté du code
+(chantier « profils au backend »).
+
 **Tâches planifiées : plus de Celery.** `backend/app/taches.py` porte le
 calendrier (UTC) et un verrou par tâche (verrou consultatif Postgres) : une
 tâche ne tourne jamais deux fois en même temps. Sur le PC, la commande

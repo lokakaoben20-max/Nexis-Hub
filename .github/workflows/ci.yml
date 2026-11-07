@@ -135,3 +135,64 @@ jobs:
         run: alembic check
       - name: Relancer la migration ne change rien
         run: alembic upgrade head && alembic check
+
+  image:
+    name: Image Docker
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nexis
+          POSTGRES_PASSWORD: nexis-ci-seulement
+          POSTGRES_DB: nexis_image
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U nexis -d nexis_image"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Construire l'image
+        run: docker build -t nexis:ci .
+      - name: Le processus ne tourne pas en root et ne peut pas écrire dans le code
+        run: |
+          test "$(docker run --rm --entrypoint id nexis:ci -u)" = "10001"
+          if docker run --rm --entrypoint sh nexis:ci -c 'touch /app/essai'; then exit 1; fi
+      - name: Un rôle inconnu est refusé
+        run: |
+          set +e
+          docker run --rm nexis:ci inconnu
+          test $? -eq 64
+      - name: Migration puis backend prêt, en configuration de production
+        env:
+          DATABASE_URL: postgresql+psycopg://nexis:nexis-ci-seulement@localhost:5432/nexis_image
+        run: |
+          cat > prod.env <<CONF
+          DATABASE_URL=${DATABASE_URL}
+          BACKEND_API_KEY=$(openssl rand -hex 32)
+          APP_CODE_HMAC_KEY=$(openssl rand -hex 32)
+          BOT_TOKEN=123456:jeton-factice-de-la-ci
+          ADMIN_TELEGRAM_ID=42
+          PAYMENT_GATEWAY=flexpay
+          COLLECTION_FEE_RATE=0.025
+          PAYOUT_FEE_RATE=0
+          PAYOUT_FEE_FIXED_USD=0
+          PAYOUT_FEE_FIXED_CDF=0
+          PAYOUT_MINIMUM_USD=5
+          PAYOUT_MINIMUM_CDF=10000
+          PAYOUT_AUTO_LIMIT_USD=0
+          PAYOUT_AUTO_LIMIT_CDF=0
+          PORT=8000
+          CONF
+          # Sans configuration, le backend refuse de démarrer.
+          if docker run --rm --network host -e DATABASE_URL="$DATABASE_URL" nexis:ci backend; then exit 1; fi
+          docker run --rm --network host --env-file prod.env nexis:ci migration
+          docker run -d --name backend --network host --env-file prod.env nexis:ci backend
+          for i in $(seq 1 30); do
+            if curl -sf localhost:8000/health/ready; then break; fi
+            sleep 1
+          done
+          curl -sf localhost:8000/health/ready
+          docker stop -t 10 backend
+          docker logs backend | tail -n 5
