@@ -191,7 +191,8 @@ class BotServiceRequest(Base):
     provider_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
     service_name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text, default="")
-    status: Mapped[str] = mapped_column(String(20), default="pending")
+    # Index créé dès la migration c1a9f0e2b345 ; le modèle l'avait oublié.
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

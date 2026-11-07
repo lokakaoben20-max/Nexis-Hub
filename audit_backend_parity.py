@@ -48,7 +48,7 @@ def audit_users(db) -> None:
     only_remote = sorted(set(remote_users) - set(local_users))
     common = sorted(set(local_users) & set(remote_users))
 
-    print(f"\n=== CLIENTS ===")
+    print("\n=== CLIENTS ===")
     print(f"db.py (SQLite)      : {len(local_users)}")
     print(f"backend (Postgres)  : {len(remote_users)}")
     print(f"présents seulement dans db.py      : {only_local or 'aucun'}")
@@ -80,7 +80,7 @@ def audit_providers(db) -> None:
     only_remote = sorted(set(remote_providers) - set(local_providers))
     common = sorted(set(local_providers) & set(remote_providers))
 
-    print(f"\n=== PRESTATAIRES ===")
+    print("\n=== PRESTATAIRES ===")
     print(f"db.py (SQLite)      : {len(local_providers)}")
     print(f"backend (Postgres)  : {len(remote_providers)}")
     print(f"présents seulement dans db.py      : {only_local or 'aucun'}")

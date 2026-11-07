@@ -28,14 +28,14 @@ def _create(test_client, client=CLIENT, key="demande-1", **fields):
     return test_client.post("/api/bot/missions", json=payload, headers=_as(client))
 
 
-def _backend(monkeypatch, tmp_path):
+def _backend(monkeypatch, backend_db_url):
     monkeypatch.setenv("ADMIN_TELEGRAM_ID", str(ADMIN))
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     return _authed_client(backend_main), database_module
 
 
-def test_the_backend_numbers_the_mission_and_records_media_and_alerts(tmp_path, monkeypatch):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_the_backend_numbers_the_mission_and_records_media_and_alerts(tmp_path, monkeypatch, backend_db_url):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
         first = _create(test_client, alert_provider_telegram_ids=[PROVIDER, CLIENT, PROVIDER])
         second = _create(test_client, key="demande-2")
@@ -64,8 +64,8 @@ def test_the_backend_numbers_the_mission_and_records_media_and_alerts(tmp_path, 
         assert stored.client_account_id == ledger.account_id_for(db, ledger.TELEGRAM, CLIENT)
 
 
-def test_a_replayed_creation_returns_the_same_mission_and_a_different_one_is_refused(tmp_path, monkeypatch):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_a_replayed_creation_returns_the_same_mission_and_a_different_one_is_refused(tmp_path, monkeypatch, backend_db_url):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
         first = _create(test_client).json()
         replay = _create(test_client)
@@ -89,8 +89,8 @@ def test_a_replayed_creation_returns_the_same_mission_and_a_different_one_is_ref
         assert db.query(MissionAlert).count() == 2
 
 
-def test_invalid_creation_requests_are_refused_and_write_nothing(tmp_path, monkeypatch):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_invalid_creation_requests_are_refused_and_write_nothing(tmp_path, monkeypatch, backend_db_url):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
         assert _create(test_client, currency="EUR").json()["detail"] == {"code": "invalid_currency"}
         assert _create(test_client, media=[{"kind": "video", "id": "x"}]).json()["detail"] == {"code": "invalid_media"}
@@ -114,8 +114,8 @@ def test_invalid_creation_requests_are_refused_and_write_nothing(tmp_path, monke
         assert db.query(BotMission).count() == 0
 
 
-def test_a_telegram_video_note_is_kept_with_the_mission(tmp_path, monkeypatch):
-    test_client, _ = _backend(monkeypatch, tmp_path)
+def test_a_telegram_video_note_is_kept_with_the_mission(tmp_path, monkeypatch, backend_db_url):
+    test_client, _ = _backend(monkeypatch, backend_db_url)
     with test_client:
         created = _create(test_client, media=[{"kind": "video_note", "id": "rond-1"}])
 
@@ -123,8 +123,8 @@ def test_a_telegram_video_note_is_kept_with_the_mission(tmp_path, monkeypatch):
     assert created.json()["mission"]["media"] == [{"channel": "telegram", "kind": "video_note", "id": "rond-1"}]
 
 
-def test_only_the_people_concerned_read_a_mission(tmp_path, monkeypatch):
-    test_client, _ = _backend(monkeypatch, tmp_path)
+def test_only_the_people_concerned_read_a_mission(tmp_path, monkeypatch, backend_db_url):
+    test_client, _ = _backend(monkeypatch, backend_db_url)
     with test_client:
         _register_provider(test_client, PROVIDER, ["service_plomberie"], ["Gombe"])
         mission_id = _create(test_client).json()["mission"]["mission_id"]
@@ -155,8 +155,8 @@ def test_only_the_people_concerned_read_a_mission(tmp_path, monkeypatch):
         assert read(PROVIDER).json()["viewer_role"] == "provider"
 
 
-def test_only_an_alerted_provider_can_quote(tmp_path, monkeypatch):
-    test_client, _ = _backend(monkeypatch, tmp_path)
+def test_only_an_alerted_provider_can_quote(tmp_path, monkeypatch, backend_db_url):
+    test_client, _ = _backend(monkeypatch, backend_db_url)
     with test_client:
         mission_id = _create(test_client).json()["mission"]["mission_id"]
         response = test_client.post(
@@ -169,8 +169,8 @@ def test_only_an_alerted_provider_can_quote(tmp_path, monkeypatch):
     assert response.json()["detail"] == {"code": "provider_not_alerted"}
 
 
-def test_my_missions_lists_only_what_is_mine(tmp_path, monkeypatch):
-    test_client, _ = _backend(monkeypatch, tmp_path)
+def test_my_missions_lists_only_what_is_mine(tmp_path, monkeypatch, backend_db_url):
+    test_client, _ = _backend(monkeypatch, backend_db_url)
     with test_client:
         mine = _create(test_client).json()["mission"]["mission_id"]
         _create(test_client, client=43, key="autre")
@@ -193,8 +193,8 @@ def test_my_missions_lists_only_what_is_mine(tmp_path, monkeypatch):
         assert test_client.get("/api/me/missions?role=admin", headers=_as(CLIENT)).status_code == 400
 
 
-def test_admin_lists_and_counts_missions(tmp_path, monkeypatch):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_admin_lists_and_counts_missions(tmp_path, monkeypatch, backend_db_url):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
         first = _create(test_client).json()["mission"]["mission_id"]
         second = _create(test_client, key="demande-2").json()["mission"]["mission_id"]
@@ -215,8 +215,8 @@ def test_admin_lists_and_counts_missions(tmp_path, monkeypatch):
         assert test_client.get("/api/admin/stats", headers=_as(ADMIN)).json()["stats"] == {"missions": 2, "disputes": 1}
 
 
-def test_api_key_is_still_required(tmp_path, monkeypatch):
-    test_client, _ = _backend(monkeypatch, tmp_path)
+def test_api_key_is_still_required(tmp_path, monkeypatch, backend_db_url):
+    test_client, _ = _backend(monkeypatch, backend_db_url)
     with test_client:
         del test_client.headers["X-API-Key"]
         assert _create(test_client).status_code == 401

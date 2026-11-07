@@ -15,9 +15,8 @@ client = TestClient(app)
 TEST_API_KEY = "test-backend-api-key-not-a-secret"
 
 
-def _reload_backend_with_db(monkeypatch, tmp_path, name="test_service_requests.db"):
-    db_path = tmp_path / name
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+def _reload_backend_with_db(monkeypatch, backend_db_url):
+    monkeypatch.setenv("DATABASE_URL", backend_db_url)
     monkeypatch.setenv("BACKEND_API_KEY", TEST_API_KEY)
 
     database_module = importlib.reload(importlib.import_module("backend.app.database"))
@@ -37,8 +36,8 @@ def _authed_client(backend_main):
     return test_client
 
 
-def test_create_service_request_nominal(tmp_path, monkeypatch):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_create_service_request_nominal(tmp_path, monkeypatch, backend_db_url):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     database_module.init_db()
     with _authed_client(backend_main) as test_client:
         # Créer le prestataire d'abord
@@ -73,8 +72,8 @@ def test_create_service_request_nominal(tmp_path, monkeypatch):
         assert data["service_request"]["status"] == "pending"
 
 
-def test_create_service_request_provider_not_found(tmp_path, monkeypatch):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_create_service_request_provider_not_found(tmp_path, monkeypatch, backend_db_url):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     database_module.init_db()
     with _authed_client(backend_main) as test_client:
         response = test_client.post(
@@ -88,8 +87,8 @@ def test_create_service_request_provider_not_found(tmp_path, monkeypatch):
         assert response.status_code == 404
 
 
-def test_get_pending_service_requests(tmp_path, monkeypatch):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_get_pending_service_requests(tmp_path, monkeypatch, backend_db_url):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     database_module.init_db()
     with _authed_client(backend_main) as test_client:
         # Créer deux prestataires
@@ -130,8 +129,8 @@ def test_get_pending_service_requests(tmp_path, monkeypatch):
         assert data["service_requests"][1]["provider_name"] == "Bob"
 
 
-def test_update_service_request_status_flow(tmp_path, monkeypatch):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_update_service_request_status_flow(tmp_path, monkeypatch, backend_db_url):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     database_module.init_db()
     with _authed_client(backend_main) as test_client:
         test_client.post(
@@ -185,8 +184,8 @@ def test_update_service_request_status_flow(tmp_path, monkeypatch):
         assert second_review_res.status_code == 400
 
 
-def test_profile_includes_service_requests(tmp_path, monkeypatch):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_profile_includes_service_requests(tmp_path, monkeypatch, backend_db_url):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     database_module.init_db()
     with _authed_client(backend_main) as test_client:
         test_client.post(

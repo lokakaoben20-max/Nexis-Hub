@@ -156,10 +156,19 @@ fonctionne pas).
 ## Avant toute modification
 
 1. Démarrer Postgres si besoin : `docker compose up -d` (voir `docker-compose.yml`).
-2. Lancer les tests : `c:/Users/Ben L/OneDrive/Desktop/Startup_Nexis_Hub/nexis_hub_bot/.venv/Scripts/python.exe -m pytest -q`
-   (les tests backend utilisent SQLite en mémoire, pas besoin de Postgres pour les faire passer).
-3. Vérifier la branche courante et le statut git (`git status`, `git branch`, `git remote -v`).
-4. Ne pas committer `.venv/`, `__pycache__/`, `*.db`, `.env` (voir `.gitignore`).
+2. Installer les dépendances figées : `pip install --require-hashes -r requirements.txt -r requirements-dev.txt`
+   (`requirements.in` liste les dépendances directes ; `requirements.txt` en est la version figée,
+   à régénérer avec la commande écrite en tête de `requirements.in`, jamais à la main).
+3. Lancer les tests : `c:/Users/Ben L/OneDrive/Desktop/Startup_Nexis_Hub/nexis_hub_bot/.venv/Scripts/python.exe -m pytest -q`
+   (les tests backend utilisent SQLite par défaut, pas besoin de Postgres pour les faire passer).
+   Pour les faire tourner sur un vrai Postgres, comme la CI : `NEXIS_TEST_BACKEND_DB=postgres` et
+   `NEXIS_TEST_POSTGRES_URL=postgresql+psycopg://<utilisateur>@localhost:5432/<base>_test`
+   (base jetable dont le nom finit par `_test` ; une base neuve est créée puis supprimée par test).
+4. La CI (`.github/workflows/ci.yml`) refait tout à chaque push : ruff, pip-audit, gitleaks,
+   tests sur Postgres 16 et sur SQLite (aucun test sauté), `alembic upgrade head` + `alembic check`
+   sur une base vide. Une PR ne se fusionne que si tout est vert.
+5. Vérifier la branche courante et le statut git (`git status`, `git branch`, `git remote -v`).
+6. Ne pas committer `.venv/`, `__pycache__/`, `*.db`, `.env` (voir `.gitignore`).
 
 ### Argent (règle de structure)
 
