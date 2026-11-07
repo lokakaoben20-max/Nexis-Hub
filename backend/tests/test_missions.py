@@ -113,6 +113,15 @@ def test_invalid_creation_requests_are_refused_and_write_nothing(tmp_path, monke
         assert db.query(BotMission).count() == 0
 
 
+def test_a_telegram_video_note_is_kept_with_the_mission(tmp_path, monkeypatch):
+    test_client, _ = _backend(monkeypatch, tmp_path)
+    with test_client:
+        created = _create(test_client, media=[{"kind": "video_note", "id": "rond-1"}])
+
+    assert created.status_code == 200
+    assert created.json()["mission"]["media"] == [{"channel": "telegram", "kind": "video_note", "id": "rond-1"}]
+
+
 def test_only_the_people_concerned_read_a_mission(tmp_path, monkeypatch):
     test_client, _ = _backend(monkeypatch, tmp_path)
     with test_client:

@@ -78,6 +78,7 @@ class DummyBot:
         self.messages = []
         self.photos = []
         self.voices = []
+        self.video_notes = []
 
     async def send_message(self, chat_id, text, **kwargs):
         self.messages.append(SentMessage(chat_id, text, **kwargs))
@@ -87,6 +88,10 @@ class DummyBot:
 
     async def send_voice(self, chat_id, voice, caption=None, **kwargs):
         self.voices.append(SentMessage(chat_id, caption))
+
+    async def send_video_note(self, chat_id, video_note, **kwargs):
+        self.video_notes.append(SentMessage(chat_id, video_note))
+        return SentMessage(chat_id, video_note)
 
 
 class DummyMessageObject:
@@ -124,6 +129,7 @@ class DummyMessage:
         self.text = text
         self.voice = None
         self.photo = None
+        self.video_note = None
         self.bot = bot or DummyBot()
         self.answers = []
 
@@ -390,3 +396,44 @@ def test_matching_falls_back_to_local_order_when_backend_down(tmp_path, monkeypa
     chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe", 1))
 
     assert _ids(chosen) == _ids(db.find_matching_providers("service_plomberie", "Gombe"))
+
+
+class _VideoNote:
+    def __init__(self, file_id):
+        self.file_id = file_id
+
+
+def test_a_video_note_is_kept_with_the_mission_and_sent_to_the_providers(monkeypatch, tmp_path, live_backend):
+    """Note vidéo ronde de Telegram : acceptée comme la note vocale, rangée
+    dans le backend avec la mission, et transmise aux prestataires prévenus."""
+    _init_db(tmp_path)
+    db.create_user(900, "+243800000900", "Cliente", language="fr")
+    db.create_provider(901, "+243800000901", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+    monkeypatch.setattr(mission, "get_provider_language", lambda tid: _async_return("fr"))
+
+    state = DummyState(data={**_mission_request(), "description_parts": [], "photo_file_ids": [], "voice_file_ids": []})
+    message = DummyMessage(telegram_id=900)
+    message.video_note = _VideoNote("video-note-1")
+    asyncio.run(mission.description_recue(message, state))
+    assert message.answers[0].startswith(get_message("media_video_note_added", "fr", count=1))
+
+    bot = DummyBot()
+    asyncio.run(mission.mission_confirmer(DummyCallback(900, data="mission_confirmer", bot=bot), state))
+
+    from backend.app.models import MissionMedia
+
+    with live_backend.database.SessionLocal() as session:
+        stored = [(media.kind, media.external_id) for media in session.query(MissionMedia).all()]
+    assert stored == [("video_note", "video-note-1")]
+    assert [(sent.chat_id, sent.text) for sent in bot.video_notes] == [(901, "video-note-1")]
+    assert get_message("mission_video_note_caption", "fr", mission_id=1) in [sent.text for sent in bot.messages]
+
+
+def test_an_unsupported_message_is_still_refused(monkeypatch, tmp_path):
+    _init_db(tmp_path)
+    state = DummyState(data={**_mission_request(), "description_parts": [], "photo_file_ids": [], "voice_file_ids": []})
+    message = DummyMessage(telegram_id=900)  # ni texte, ni photo, ni note vocale ou vidéo (un autocollant, par exemple)
+
+    asyncio.run(mission.description_recue(message, state))
+
+    assert message.answers == [get_message("media_invalid", "fr")]
