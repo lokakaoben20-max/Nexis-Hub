@@ -188,6 +188,7 @@ jobs:
           # Sans configuration, le backend refuse de démarrer.
           if docker run --rm --network host -e DATABASE_URL="$DATABASE_URL" nexis:ci backend; then exit 1; fi
           docker run --rm --network host --env-file prod.env nexis:ci migration
+          docker run --rm --network host --env-file prod.env nexis:ci controle-registre
           docker run -d --name backend --network host --env-file prod.env nexis:ci backend
           for i in $(seq 1 30); do
             if curl -sf localhost:8000/health/ready; then break; fi
