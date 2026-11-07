@@ -241,6 +241,7 @@ async def create_mission(client_telegram_id: int, data: dict, creation_key: str,
     la mission, avec `alerted_provider_telegram_ids` : les seuls à prévenir."""
     media = [{"kind": "photo", "id": file_id} for file_id in data.get("photo_file_ids") or []]
     media += [{"kind": "voice", "id": file_id} for file_id in data.get("voice_file_ids") or []]
+    media += [{"kind": "video_note", "id": file_id} for file_id in data.get("video_note_file_ids") or []]
     payload = {
         "creation_key": creation_key,
         "service": data["service"],

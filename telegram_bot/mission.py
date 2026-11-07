@@ -120,6 +120,7 @@ def format_recap(data: dict) -> str:
     voice_count = len(media_list(data, "voice_file_ids") or media_list(data, "voice_file_id"))
     photo = str(photo_count)
     voice = str(voice_count)
+    video_note = str(len(media_list(data, "video_note_file_ids")))
 
     base_summary = get_message(
         "mission_summary",
@@ -133,11 +134,11 @@ def format_recap(data: dict) -> str:
     if lang == "en":
         return base_summary.replace(
             f"Currency: <b>{currency}</b>\n",
-            f"Currency: <b>{currency}</b>\nPhoto: <b>{photo}</b>\nVoice note: <b>{voice}</b>\n",
+            f"Currency: <b>{currency}</b>\nPhoto: <b>{photo}</b>\nVoice note: <b>{voice}</b>\nVideo note: <b>{video_note}</b>\n",
         )
     return base_summary.replace(
         f"Devise : <b>{currency}</b>\n",
-        f"Devise : <b>{currency}</b>\nPhoto : <b>{photo}</b>\nNote vocale : <b>{voice}</b>\n",
+        f"Devise : <b>{currency}</b>\nPhoto : <b>{photo}</b>\nNote vocale : <b>{voice}</b>\nNote vidéo : <b>{video_note}</b>\n",
     )
 
 
@@ -225,7 +226,7 @@ async def devise_selectionnee(callback: CallbackQuery, state: FSMContext):
     await state.update_data(currency=CURRENCIES[callback.data])
     lang = await get_state_language(state)
     await state.set_state(MissionRequest.description)
-    await state.update_data(description_parts=[], photo_file_ids=[], voice_file_ids=[])
+    await state.update_data(description_parts=[], photo_file_ids=[], voice_file_ids=[], video_note_file_ids=[])
     await callback.message.edit_text(
         get_message("describe_problem", lang),
         parse_mode="HTML",
@@ -241,10 +242,15 @@ async def description_recue(message: Message, state: FSMContext):
     description_parts = data.get("description_parts", [])
     photo_file_ids = data.get("photo_file_ids", [])
     voice_file_ids = data.get("voice_file_ids", [])
+    video_note_file_ids = data.get("video_note_file_ids", [])
 
     if message.voice:
         voice_file_ids.append(message.voice.file_id)
         feedback = get_message("media_voice_added", lang, count=len(voice_file_ids))
+    elif message.video_note:
+        # Note vidéo ronde de Telegram (vidéo et son) : gardée telle quelle.
+        video_note_file_ids.append(message.video_note.file_id)
+        feedback = get_message("media_video_note_added", lang, count=len(video_note_file_ids))
     elif message.photo:
         photo_file_ids.append(message.photo[-1].file_id)
         feedback = get_message("media_photo_added", lang, count=len(photo_file_ids))
@@ -262,6 +268,7 @@ async def description_recue(message: Message, state: FSMContext):
         description_parts=description_parts,
         photo_file_ids=photo_file_ids,
         voice_file_ids=voice_file_ids,
+        video_note_file_ids=video_note_file_ids,
         description="\n".join(description_parts) if description_parts else "Explication envoyée en média par le client.",
         photo_file_id=json.dumps(photo_file_ids) if photo_file_ids else None,
         voice_file_id=json.dumps(voice_file_ids) if voice_file_ids else None,
@@ -278,8 +285,9 @@ async def explication_terminee(callback: CallbackQuery, state: FSMContext):
     description_parts = data.get("description_parts", [])
     photo_file_ids = data.get("photo_file_ids", [])
     voice_file_ids = data.get("voice_file_ids", [])
+    video_note_file_ids = data.get("video_note_file_ids", [])
 
-    if not description_parts and not photo_file_ids and not voice_file_ids:
+    if not description_parts and not photo_file_ids and not voice_file_ids and not video_note_file_ids:
         await callback.answer(
             get_message("media_required_alert", data.get("language", "fr")),
             show_alert=True,
@@ -353,6 +361,7 @@ async def mission_confirmer(callback: CallbackQuery, state: FSMContext):
 
     photo_file_ids = data["photo_file_ids"]
     voice_file_ids = data["voice_file_ids"]
+    video_note_file_ids = media_list(data, "video_note_file_ids")
 
     for provider in matching_providers:
         # Chaque prestataire est alerté dans SA langue. L'ancienne version figeait
@@ -384,6 +393,15 @@ async def mission_confirmer(callback: CallbackQuery, state: FSMContext):
                 provider["telegram_id"],
                 voice_file_id,
                 caption=get_message("mission_voice_caption", provider_lang, mission_id=mission_id),
+            )
+        for video_note_file_id in video_note_file_ids:
+            # Une note vidéo ne porte pas de légende : le numéro de mission
+            # suit, en réponse à la note.
+            sent = await callback.bot.send_video_note(provider["telegram_id"], video_note_file_id)
+            await callback.bot.send_message(
+                provider["telegram_id"],
+                get_message("mission_video_note_caption", provider_lang, mission_id=mission_id),
+                reply_to_message_id=getattr(sent, "message_id", None),
             )
 
     await state.clear()

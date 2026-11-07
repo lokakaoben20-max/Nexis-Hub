@@ -281,7 +281,7 @@ def rank_providers(db: Session, telegram_ids: list[int]) -> list[int]:
     return [provider.telegram_id for provider in providers]
 
 
-MEDIA_KINDS = ("photo", "voice")
+MEDIA_KINDS = ("photo", "voice", "video_note")  # 10 caractères au plus (mission_media.kind)
 # Une mission reçoit des devis tant qu'aucun n'est accepté.
 QUOTABLE_STATUSES = {"pending", "quoted"}
 MAX_MISSION_MEDIA = 20
