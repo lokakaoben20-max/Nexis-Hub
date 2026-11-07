@@ -15,6 +15,8 @@ import os
 from aiogram import Bot
 from dotenv import load_dotenv
 
+import nexis_config
+import nexis_logs
 from telegram_bot import webhook_server
 
 
@@ -30,6 +32,8 @@ async def register(bot: Bot) -> str:
 
 async def _main() -> None:
     load_dotenv()
+    nexis_config.verifier("bot")
+    nexis_logs.configurer("bot")
     token = os.getenv("BOT_TOKEN")
     if not token:
         raise RuntimeError("BOT_TOKEN manquant")

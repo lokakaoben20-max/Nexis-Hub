@@ -33,6 +33,8 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 
+import nexis_config
+import nexis_logs
 from backend.app import database, tasks
 
 logger = logging.getLogger("nexis.taches")
@@ -168,7 +170,7 @@ def planificateur(arret: threading.Event | None = None, horloge: Callable[[], da
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    nexis_logs.configurer("taches")
     parser = argparse.ArgumentParser(prog="python -m backend.app.taches")
     commandes = parser.add_subparsers(dest="commande", required=True)
     commande_lancer = commandes.add_parser("lancer", help="exécute une tâche une fois")
@@ -177,6 +179,9 @@ def main(argv: list[str] | None = None) -> int:
     commandes.add_parser("calendrier", help="affiche les tâches et leur expression cron (UTC)")
     args = parser.parse_args(argv)
 
+    if args.commande != "calendrier":
+        # Hors développement, une configuration incomplète empêche de lancer.
+        nexis_config.verifier("taches")
     if args.commande == "calendrier":
         for nom, tache in CALENDRIER.items():
             print(f"{nom}\t{tache.frequence.cron}")

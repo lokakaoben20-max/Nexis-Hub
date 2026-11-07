@@ -6,10 +6,13 @@ import os
 import time
 from urllib.parse import parse_qsl
 
+from contextlib import asynccontextmanager
+
+import httpx
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from db import (
@@ -23,6 +26,8 @@ from db import (
     update_provider_services,
     update_provider_status,
 )
+import nexis_config
+import nexis_logs
 from telegram_bot import backend_client
 from telegram_bot.backend_client import BackendUnavailable, MoneyRefused
 
@@ -31,7 +36,15 @@ BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR.parent / ".env")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-app = FastAPI(title="Nexis Hub Mini App")
+@asynccontextmanager
+async def _cycle_de_vie(_app):
+    # Hors développement, une configuration incomplète empêche le démarrage.
+    nexis_config.verifier("miniapp")
+    nexis_logs.configurer("miniapp")
+    yield
+
+
+app = FastAPI(title="Nexis Hub Mini App", lifespan=_cycle_de_vie)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 FALLBACK_SERVICES = {
@@ -96,6 +109,23 @@ def index():
 @app.get("/health")
 def health():
     return {"status": "ok", "app": "nexis-hub-mini-app"}
+
+
+@app.get("/health/live")
+def health_live():
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    """Prête si le backend, dont dépend chaque écran, répond."""
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            response = await client.get(f"{backend_client.BACKEND_BASE_URL}/health/live")
+        response.raise_for_status()
+    except httpx.HTTPError:
+        return JSONResponse({"status": "indisponible", "problemes": ["backend injoignable"]}, status_code=503)
+    return {"status": "ok"}
 
 
 def row_to_dict(row):

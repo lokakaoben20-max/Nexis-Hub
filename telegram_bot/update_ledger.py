@@ -65,6 +65,9 @@ class UpdateLedger:
                 return Claim.ACQUIRED
         return Claim.BUSY
 
+    async def ping(self) -> None:
+        await self._redis.ping()
+
     async def complete(self, update_id: int) -> None:
         await self._redis.set(self._key(update_id), DONE, ex=DONE_TTL)
 

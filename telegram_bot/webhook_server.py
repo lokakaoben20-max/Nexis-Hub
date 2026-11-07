@@ -135,15 +135,26 @@ def ledger_for(bot: Bot, dp: Dispatcher) -> UpdateLedger:
 def build_webhook_app(bot: Bot, dp: Dispatcher, ledger: UpdateLedger | None = None) -> web.Application:
     secret = _require_secret()
     app = web.Application()
-    ExactlyOnceRequestHandler(
-        dispatcher=dp, bot=bot, secret_token=secret, ledger=ledger or ledger_for(bot, dp)
-    ).register(app, path=WEBHOOK_PATH)
+    registre = ledger or ledger_for(bot, dp)
+    ExactlyOnceRequestHandler(dispatcher=dp, bot=bot, secret_token=secret, ledger=registre).register(
+        app, path=WEBHOOK_PATH
+    )
     setup_application(app, dp, bot=bot)
 
     async def health(request: web.Request) -> web.Response:
         return web.json_response({"status": "ok"})
 
+    async def health_ready(request: web.Request) -> web.Response:
+        # Sans Redis, aucune update ne peut être traitée (registre, étapes).
+        try:
+            await registre.ping()
+        except Exception:
+            return web.json_response({"status": "indisponible", "problemes": ["redis injoignable"]}, status=503)
+        return web.json_response({"status": "ok"})
+
     app.router.add_get("/health", health)
+    app.router.add_get("/health/live", health)
+    app.router.add_get("/health/ready", health_ready)
     return app
 
 
@@ -168,8 +179,8 @@ async def run_webhook(bot: Bot, dp: Dispatcher) -> None:
     await runner.setup()
     site = web.TCPSite(runner, WEBHOOK_LISTEN_HOST, WEBHOOK_LISTEN_PORT)
     await site.start()
-    print(f"✅ NEXIS HUB Bot démarré (webhook -> {expected_webhook_url()}).")
-    print(f"   Serveur local à l'écoute sur http://{WEBHOOK_LISTEN_HOST}:{WEBHOOK_LISTEN_PORT}{WEBHOOK_PATH}")
+    logger.info("NEXIS HUB Bot démarré (webhook -> %s)", expected_webhook_url())
+    logger.info("Serveur à l'écoute sur http://%s:%s%s", WEBHOOK_LISTEN_HOST, WEBHOOK_LISTEN_PORT, WEBHOOK_PATH)
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()

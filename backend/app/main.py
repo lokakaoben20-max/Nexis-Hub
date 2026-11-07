@@ -1,12 +1,16 @@
 import hmac
 import os
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from backend.app import app_auth, crud, ledger, mobile_money, payment_gateway
+import nexis_config
+import nexis_logs
+from backend.app import app_auth, crud, ledger, mobile_money, payment_gateway, sante
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotUser, PaymentIntent, Payout
 
@@ -17,7 +21,15 @@ BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
 # Le schéma est géré uniquement par Alembic (`alembic upgrade head` avant tout
 # démarrage). Plus de `create_all` au démarrage : il créait des tables hors
 # migrations, et la migration suivante échouait sur une table déjà là.
-app = FastAPI(title="Nexis Hub V5 Backend")
+@asynccontextmanager
+async def _cycle_de_vie(_app):
+    # Hors développement, une configuration incomplète empêche le démarrage.
+    nexis_config.verifier("backend")
+    nexis_logs.configurer("backend")
+    yield
+
+
+app = FastAPI(title="Nexis Hub V5 Backend", lifespan=_cycle_de_vie)
 
 
 def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
@@ -353,6 +365,20 @@ def _service_request_to_dict(req: BotServiceRequest, provider: BotProvider | Non
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "nexis-hub-v5"}
+
+
+@app.get("/health/live")
+def health_live():
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+def health_ready():
+    with SessionLocal() as db:
+        problemes = sante.problemes_base(db)
+    if problemes:
+        return JSONResponse({"status": "indisponible", "problemes": problemes}, status_code=503)
+    return {"status": "ok"}
 
 
 @router.post("/api/bot/users")
