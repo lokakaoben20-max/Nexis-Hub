@@ -23,6 +23,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import db
+from telegram_bot import backend_client
 from mini_app import app as mini_app_module
 
 TEST_TOKEN = "123456:TEST-TOKEN-NOT-A-REAL-BOT"
@@ -49,6 +50,7 @@ def client(tmp_path, monkeypatch):
     db.DB_PATH = tmp_path / "test_mini_app.db"
     db.init_db()
     monkeypatch.setattr(mini_app_module, "BOT_TOKEN", TEST_TOKEN)
+    monkeypatch.setattr(backend_client, "BACKEND_API_KEY", "test-backend-api-key-not-a-secret")
     with TestClient(mini_app_module.app) as test_client:
         yield test_client
 

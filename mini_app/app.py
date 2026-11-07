@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 import hashlib
 import hmac
@@ -31,7 +32,17 @@ BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR.parent / ".env")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-app = FastAPI(title="Nexis Hub Mini App")
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # Sans la clé du canal Telegram, la Mini App ne pourrait rien demander au
+    # backend : elle refuse de démarrer plutôt que de répondre « indisponible ».
+    backend_client.check_backend_key()
+    yield
+
+
+app = FastAPI(title="Nexis Hub Mini App", lifespan=_lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 FALLBACK_SERVICES = {

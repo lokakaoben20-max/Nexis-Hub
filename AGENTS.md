@@ -198,6 +198,19 @@ L'URL ngrok change à chaque relance du tunnel (offre gratuite) : à remettre
 n'existe encore pour ce projet — le webhook n'est utilisable qu'avec un
 tunnel local pour l'instant.
 
+### Clés de service du backend (une par canal)
+
+Le backend reconnaît le canal qui l'appelle à sa clé (`X-API-Key`) :
+`BACKEND_API_KEY_TELEGRAM` pour le bot et la Mini App (obligatoire, même valeur
+dans le `.env` des trois), `BACKEND_API_KEY_WHATSAPP` pour le futur service
+WhatsApp (vide tant qu'il ne tourne pas). L'ancienne clé unique
+`BACKEND_API_KEY` n'existe plus : si elle est encore dans le `.env`, la
+renommer en `BACKEND_API_KEY_TELEGRAM` (même valeur), sinon backend, bot et
+Mini App refusent de démarrer avec un message qui le dit. Une route du backend
+est fermée à WhatsApp sauf `@open_to(...)` ; une action de prestataire porte
+`@provider_action` et ne peut jamais être ouverte à WhatsApp (voir
+`backend/tests/test_whatsapp_channel.py` et le skill `securite-backend`).
+
 ### Lancer le backend V5 en local
 
 ```bash

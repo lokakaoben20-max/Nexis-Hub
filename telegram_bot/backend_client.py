@@ -22,8 +22,22 @@ from messages import MESSAGES, get_message
 
 load_dotenv()
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://127.0.0.1:8000")
-BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
+# Clé de service du canal Telegram (bot et Mini App), différente de celle du
+# service WhatsApp : le backend en déduit le canal qui appelle.
+BACKEND_API_KEY = os.getenv("BACKEND_API_KEY_TELEGRAM", "")
 BACKEND_AUTH_HEADERS = {"X-API-Key": BACKEND_API_KEY}
+
+
+def check_backend_key() -> None:
+    """Refus de démarrer le bot ou la Mini App sans la clé du canal Telegram,
+    ou avec l'ancienne clé unique encore dans le `.env` (renommée en
+    BACKEND_API_KEY_TELEGRAM, voir backend/app/service_keys.py)."""
+    if os.getenv("BACKEND_API_KEY", "").strip():
+        raise RuntimeError(
+            "BACKEND_API_KEY n'est plus utilisée : renomme-la en BACKEND_API_KEY_TELEGRAM dans le .env"
+        )
+    if not BACKEND_API_KEY.strip():
+        raise RuntimeError("BACKEND_API_KEY_TELEGRAM manquante dans le fichier .env")
 
 
 def actor_headers(telegram_id: int) -> dict:

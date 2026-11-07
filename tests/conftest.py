@@ -183,7 +183,7 @@ def live_backend(tmp_path, monkeypatch):
     # première fois juste avant redéfinirait ses tables deux fois.
     importlib.import_module("backend.app.main")
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'backend.db'}")
-    monkeypatch.setenv("BACKEND_API_KEY", TEST_BACKEND_API_KEY)
+    monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TEST_BACKEND_API_KEY)
     database_module = importlib.reload(importlib.import_module("backend.app.database"))
     importlib.reload(importlib.import_module("backend.app.models"))
     backend_main = importlib.reload(importlib.import_module("backend.app.main"))
