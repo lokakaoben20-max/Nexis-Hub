@@ -228,10 +228,12 @@ def _notify_provider_paid(db, provider_id: int, intent: PaymentIntent, funding: 
             mission_id=intent.mission_id, brut=float(funding["total"]), commission=float(funding["commission"]),
             net=float(funding["net"]), currency=intent.currency,
         ),
-        reply_markup={"inline_keyboard": [[{
-            "text": get_message("button_start_mission", provider_lang),
-            "callback_data": f"mission_start_{intent.mission_id}",
-        }]]},
+        reply_markup={"inline_keyboard": [
+            [{"text": get_message("button_start_mission", provider_lang), "callback_data": f"mission_start_{intent.mission_id}"}],
+            # Le lieu exact n'est pas dans la notification : le bot le lit
+            # dans le backend à l'appui, avec ses règles d'accès.
+            [{"text": get_message("button_view_place", provider_lang), "callback_data": f"mission_place_{intent.mission_id}"}],
+        ]},
     )
 
 

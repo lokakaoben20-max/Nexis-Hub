@@ -22,7 +22,7 @@ import uuid
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, KeyboardButton, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove
 
 from db import (
     get_provider_by_telegram_id,
@@ -69,7 +69,20 @@ router = Router()
 
 
 class MissionRequest(StatesGroup):
+    location = State()
+    landmark = State()
     description = State()
+
+
+# Repère du lieu exact : mêmes bornes que le backend (crud.MIN_LANDMARK_LENGTH,
+# crud.MAX_LANDMARK_LENGTH), qui reste seul juge à la création. Les vérifier
+# ici évite seulement de laisser la personne aller jusqu'au récapitulatif
+# avec un repère que le backend refusera.
+MIN_LANDMARK_LENGTH = 3
+MAX_LANDMARK_LENGTH = 300
+# Refus du backend qui portent sur le lieu : la personne renvoie le lieu,
+# le reste de la demande est gardé.
+DESTINATION_REFUSALS = {"destination_outside_service_area", "invalid_destination"}
 
 
 class QuoteCreation(StatesGroup):
@@ -128,6 +141,7 @@ def format_recap(data: dict) -> str:
         service=service,
         urgent=urgence,
         commune=commune,
+        landmark=html.escape(data.get("destination_landmark", "")),
         currency=currency,
         description=description,
     )
@@ -213,12 +227,90 @@ async def commune_selectionnee(callback: CallbackQuery, state: FSMContext):
     commune = next((label for label, data in COMMUNES if data == callback.data), "Autre commune")
     await state.update_data(commune=commune)
     lang = await get_state_language(state)
-    await callback.message.edit_text(
+    await callback.message.edit_text(f"📍 <b>{html.escape(commune)}</b>", parse_mode="HTML")
+    await ask_mission_location(callback.message, state, lang)
+    await callback.answer()
+
+
+def clavier_position(lang: str) -> ReplyKeyboardMarkup:
+    """Clavier du lieu exact : le bouton de Telegram qui envoie la position
+    du téléphone (un autre point se choisit par 📎 → Position), et l'abandon."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=get_message("button_send_location", lang), request_location=True)],
+            [KeyboardButton(text=get_message("button_cancel_request", lang))],
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
+async def ask_mission_location(
+    message: Message, state: FSMContext, lang: str, intro: str | None = None, back_to_recap: bool = False
+) -> None:
+    """Demande le lieu exact de l'intervention (point + repère), obligatoire :
+    sans lui, le prestataire ne sait pas où aller. `back_to_recap` : le lieu
+    est redemandé depuis le récapitulatif (refus du backend) ; une fois le
+    repère écrit, on y revient sans refaire devise ni description."""
+    await state.update_data(destination_back_to_recap=back_to_recap)
+    await state.set_state(MissionRequest.location)
+    text = get_message("ask_mission_location", lang)
+    await message.answer(f"{intro}\n\n{text}" if intro else text, parse_mode="HTML", reply_markup=clavier_position(lang))
+
+
+async def _cancel_with_keyboard_removed(message: Message, state: FSMContext, lang: str) -> None:
+    await state.clear()
+    await message.answer(get_message("request_cancelled", lang), reply_markup=ReplyKeyboardRemove())
+    await message.answer(
+        get_message("client_menu", lang, prenom=html.escape(message.from_user.first_name or "")),
+        parse_mode="HTML",
+        reply_markup=clavier_client(lang),
+    )
+
+
+@router.message(MissionRequest.location)
+async def position_recue(message: Message, state: FSMContext):
+    lang = await get_state_language(state)
+    if message.text and message.text == get_message("button_cancel_request", lang):
+        await _cancel_with_keyboard_removed(message, state, lang)
+        return
+    if message.location is None:
+        await message.answer(get_message("location_required", lang), reply_markup=clavier_position(lang))
+        return
+    # Seul le point envoyé compte : si c'est une position en direct, ses mises
+    # à jour suivantes ne sont pas suivies (le client n'est jamais localisé
+    # en continu).
+    await state.update_data(
+        destination_latitude=message.location.latitude,
+        destination_longitude=message.location.longitude,
+    )
+    await state.set_state(MissionRequest.landmark)
+    await message.answer(get_message("ask_mission_landmark", lang), parse_mode="HTML", reply_markup=ReplyKeyboardRemove())
+
+
+@router.message(MissionRequest.landmark)
+async def repere_recu(message: Message, state: FSMContext):
+    lang = await get_state_language(state)
+    landmark = " ".join((message.text or "").split())
+    if not MIN_LANDMARK_LENGTH <= len(landmark) <= MAX_LANDMARK_LENGTH:
+        await message.answer(get_message("landmark_invalid", lang))
+        return
+    await state.update_data(destination_landmark=landmark)
+    await state.set_state(None)
+    data = await state.get_data()
+    if data.get("destination_back_to_recap"):
+        await state.update_data(destination_back_to_recap=False)
+        await message.answer(
+            format_recap({**data, "destination_back_to_recap": False}),
+            parse_mode="HTML",
+            reply_markup=clavier_recapitulatif(lang),
+        )
+        return
+    await message.answer(
         get_message("choose_currency", lang),
         parse_mode="HTML",
         reply_markup=clavier_devises(lang),
     )
-    await callback.answer()
 
 
 @router.callback_query(F.data.in_(CURRENCY_CALLBACKS))
@@ -349,7 +441,23 @@ async def mission_confirmer(callback: CallbackQuery, state: FSMContext):
         result = await backend_client.create_mission(
             callback.from_user.id, data, data["creation_key"], [provider["telegram_id"] for provider in candidates]
         )
-    except (MoneyRefused, BackendUnavailable) as error:
+    except MoneyRefused as error:
+        if error.code in DESTINATION_REFUSALS:
+            # Rien n'est créé : le client renvoie le lieu, le reste de sa
+            # demande est gardé (la même clé sert, la demande corrigée n'ayant
+            # jamais été enregistrée).
+            await callback.answer()
+            await ask_mission_location(
+                callback.message,
+                state,
+                client_lang,
+                intro=get_message("destination_outside_service_area", client_lang),
+                back_to_recap=True,
+            )
+            return
+        await callback.answer(money_failure_text(0, error, client_lang, "service_unavailable"), show_alert=True)
+        return
+    except BackendUnavailable as error:
         # Rien n'est créé : la demande reste à l'écran, le client réessaie
         # (même clé, une seule mission même si le premier essai avait abouti).
         await callback.answer(money_failure_text(0, error, client_lang, "service_unavailable"), show_alert=True)
@@ -621,3 +729,35 @@ async def passer_mission_prestataire(callback: CallbackQuery):
         )
 
     await callback.answer(get_message("toast_mission_skipped", provider_lang))
+
+
+# ── Lieu exact de la mission (prestataire payé) ─────────────────────────────
+
+
+PLACE_REFUSAL_KEYS = {"destination_not_available": "place_not_available", "destination_unknown": "place_unknown"}
+
+
+@router.callback_query(F.data.startswith("mission_place_"))
+async def voir_lieu_mission(callback: CallbackQuery):
+    """Montre le lieu exact au prestataire. C'est le backend qui décide s'il
+    y a droit (mission payée, à démarrer ou en cours) ; le bot ne garde rien."""
+    mission_id = int(callback.data.removeprefix("mission_place_"))
+    lang = await get_provider_language(callback.from_user.id)
+    try:
+        result = await backend_client.get_mission_destination(mission_id, callback.from_user.id)
+    except MoneyRefused as error:
+        key = PLACE_REFUSAL_KEYS.get(error.code)
+        text = get_message(key, lang) if key else money_failure_text(mission_id, error, lang, "service_unavailable")
+        await callback.answer(text, show_alert=True)
+        return
+    except BackendUnavailable as error:
+        await callback.answer(money_failure_text(mission_id, error, lang, "service_unavailable"), show_alert=True)
+        return
+    destination = result["destination"]
+    await callback.bot.send_location(callback.from_user.id, destination["latitude"], destination["longitude"])
+    await callback.bot.send_message(
+        callback.from_user.id,
+        get_message("mission_place", lang, mission_id=mission_id, landmark=html.escape(destination["landmark"])),
+        parse_mode="HTML",
+    )
+    await callback.answer()

@@ -239,6 +239,7 @@ def _create_mission(test_client, client=42, alert=(7,), key=None, **fields):
         "description": "Peindre le salon",
         "urgent": False,
         "alert_provider_telegram_ids": list(alert),
+        "destination": {"latitude": -4.3076, "longitude": 15.3125, "landmark": "Portail bleu après la poste"},
         **fields,
     }
     response = test_client.post("/api/bot/missions", json=payload, headers=_as(client))

@@ -76,3 +76,40 @@ Plan complet : `/mnt/project-files/socle/plan-socle-missions-devis-2026-11-06.md
   ne répond pas.
 - Restent dans `db.py` : profils clients et prestataires, services, demandes
   de service (chantier profils, à faire ensuite).
+
+## Lieu exact de la mission
+
+Plan : `/mnt/project-files/localisation/plan-localisation-temps-reel-2026-11-07.md`
+(étape 1, prérequis du suivi du prestataire en route).
+
+- Création (`POST /api/bot/missions`) : `destination` obligatoire, avec
+  `latitude`, `longitude` et `landmark` (repère écrit). Le backend vérifie :
+  point réel dans un rectangle large autour de Kinshasa, seule zone servie
+  (`crud.SERVICE_AREA`, sinon `destination_outside_service_area`), repère de
+  3 à 300 caractères (`invalid_destination`). Coordonnées arrondies à
+  6 décimales, espaces du repère normalisés. Le lieu fait partie de la demande
+  idempotente : même `creation_key` avec un autre lieu, `creation_key_reused`.
+- En base : `bot_missions.destination_latitude`, `destination_longitude`,
+  `destination_landmark`, tous remplis ou tous vides (contrainte
+  `ck_bot_missions_destination_complete` ; vides = mission créée avant cette
+  étape).
+- Le lieu n'est **jamais** dans la vue de la mission, ni dans les alertes ou
+  les notifications. Il a sa propre route,
+  `GET /api/bot/missions/{id}/destination` (`crud.destination_access`) :
+  - client et admin : toujours ;
+  - prestataire choisi : seulement si la mission est payée (`paid_escrow`) et
+    `confirmed` ou `in_progress` (il doit s'y rendre ou y travailler) ;
+  - prestataire prévenu, auteur d'un devis, prestataire choisi avant paiement
+    ou après l'intervention, mission en litige : `destination_not_available`
+    (403), il garde la commune ;
+  - toute autre personne : `mission_not_found` (404), comme un numéro inconnu ;
+  - mission sans lieu enregistré : `destination_unknown` (404).
+- Bot Telegram : après la commune, le client envoie le point (bouton
+  « 📍 Envoyer ma position » de Telegram, ou 📎 → Position pour un autre
+  point ; une position en direct n'est lue qu'une fois, jamais suivie), puis
+  écrit le repère. Le repère apparaît dans le récapitulatif. Si le backend
+  refuse le lieu à la confirmation, rien n'est créé, personne n'est prévenu,
+  et le client renvoie seulement le lieu avant de revenir au récapitulatif.
+- Prestataire : bouton « 📍 Voir le lieu » sur les messages de paiement reçu,
+  de démarrage et de fin ; le bot lit le lieu dans le backend à l'appui et
+  l'envoie comme position Telegram avec le repère.

@@ -105,6 +105,15 @@ class MissionMediaPayload(BaseModel):
     id: str = Field(min_length=1, max_length=255)
 
 
+class MissionDestinationPayload(BaseModel):
+    """Lieu exact : point et repère. Le texte brut peut être plus long que le
+    repère gardé (espaces normalisés ensuite par crud.checked_destination)."""
+
+    latitude: float
+    longitude: float
+    landmark: str = Field(max_length=crud.MAX_LANDMARK_LENGTH * 2)
+
+
 class MissionCreatePayload(BaseModel):
     """Demande de création d'une mission. Le client est l'acteur (en-têtes),
     le numéro est attribué par le backend. `creation_key` : choisie par le
@@ -120,6 +129,9 @@ class MissionCreatePayload(BaseModel):
     # Prestataires à prévenir (choisis par le canal Telegram, seul canal des
     # prestataires) ; le backend écarte le client lui-même.
     alert_provider_telegram_ids: list[int] = Field(default_factory=list, max_length=crud.MAX_ALERTED_PROVIDERS)
+    # Lieu exact (obligatoire) : point partagé par le client et repère écrit.
+    # Vérifié par crud.checked_destination (zone servie, repère non vide).
+    destination: MissionDestinationPayload
 
 
 class BotProviderPayload(BaseModel):
@@ -389,6 +401,9 @@ def create_bot_mission(payload: MissionCreatePayload, actor: Actor = Depends(cur
                 urgent=payload.urgent,
                 media=[(item.kind, item.id) for item in payload.media],
                 alert_provider_telegram_ids=payload.alert_provider_telegram_ids,
+                destination_latitude=payload.destination.latitude,
+                destination_longitude=payload.destination.longitude,
+                destination_landmark=payload.destination.landmark,
             )
         except crud.MissionRefused as refusal:
             db.rollback()
@@ -929,6 +944,38 @@ def get_mission(mission_id: int, actor: Actor = Depends(current_actor)):
         if role is None:
             raise HTTPException(status_code=404, detail={"code": "mission_not_found"})
         return {"status": "ok", **_mission_view(db, mission, role)}
+
+
+@router.get("/api/bot/missions/{mission_id}/destination")
+def get_mission_destination(mission_id: int, actor: Actor = Depends(current_actor)):
+    """Lieu exact de la mission, à part du reste de la mission : le client et
+    l'admin le lisent toujours, le prestataire choisi seulement une fois la
+    mission payée et tant qu'il doit s'y rendre ou y travailler
+    (`crud.destination_access`). Pour qui ne lit pas la mission : 404, comme
+    un numéro inconnu ; pour qui la lit sans avoir encore droit au lieu :
+    `destination_not_available` (403)."""
+    with SessionLocal() as db:
+        mission = db.get(BotMission, mission_id)
+        access = "hidden"
+        if mission is not None:
+            account_id = None if _is_admin(actor) else ledger.account_id_for(db, actor.channel, actor.external_id)
+            access = crud.destination_access(db, mission, account_id, is_admin=_is_admin(actor))
+        if access == "hidden":
+            raise HTTPException(status_code=404, detail={"code": "mission_not_found"})
+        if access != "granted":
+            raise HTTPException(status_code=403, detail={"code": "destination_not_available"})
+        if mission.destination_latitude is None:
+            # Mission créée avant le lieu exact : seule la commune est connue.
+            raise HTTPException(status_code=404, detail={"code": "destination_unknown"})
+        return {
+            "status": "ok",
+            "mission_id": mission.mission_id,
+            "destination": {
+                "latitude": mission.destination_latitude,
+                "longitude": mission.destination_longitude,
+                "landmark": mission.destination_landmark,
+            },
+        }
 
 
 @router.get("/api/me/missions")

@@ -251,8 +251,20 @@ async def create_mission(client_telegram_id: int, data: dict, creation_key: str,
         "urgent": bool(data.get("urgent", False)),
         "media": media,
         "alert_provider_telegram_ids": alert_provider_telegram_ids,
+        "destination": {
+            "latitude": data["destination_latitude"],
+            "longitude": data["destination_longitude"],
+            "landmark": data["destination_landmark"],
+        },
     }
     return await _money_call("POST", "/api/bot/missions", payload, actor=client_telegram_id)
+
+
+async def get_mission_destination(mission_id: int, telegram_id: int) -> dict:
+    """Lieu exact de la mission, si cette personne a le droit de le lire
+    (sinon `destination_not_available`, `destination_unknown` ou
+    `mission_not_found`)."""
+    return await _money_call("GET", f"/api/bot/missions/{mission_id}/destination", actor=telegram_id, expect="destination")
 
 
 async def get_mission(mission_id: int, telegram_id: int) -> dict:
