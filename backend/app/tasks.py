@@ -2,10 +2,10 @@ import logging
 import os
 from datetime import datetime, timedelta
 
-from backend.app import crud, ledger, mobile_money, reconciliation
+from backend.app import app_sessions, crud, ledger, mobile_money, reconciliation
 from backend.app.celery_app import celery_app
 from backend.app.database import SessionLocal
-from backend.app.models import BotMission, BotProvider, BotUser, NexisAccount, PaymentIntent, Payout
+from backend.app.models import BotMission, BotProvider, BotUser, Device, NexisAccount, PaymentIntent, Payout
 from backend.app.notify import send_telegram_message
 from messages import get_message
 
@@ -303,5 +303,75 @@ def send_daily_reconciliation() -> bool:
             logger.warning("Rapprochement : %d écart(s) : %s", len(report.anomalies), report.anomalies)
         _alert_admin(reconciliation.format_admin_report(report))
         return report.ok
+    finally:
+        db.close()
+
+
+# --- Application mobile (étape 1, PR 4) -------------------------------------------
+
+# Heure de Kinshasa (UTC+1, sans heure d'été), pour les messages.
+KINSHASA_OFFSET = timedelta(hours=1)
+NEW_DEVICE_ALERT_RETRIES = 12
+
+
+def send_new_device_alert(db, device_id: int) -> bool:
+    """Prévient la personne, sur Telegram, qu'un téléphone vient d'être
+    ajouté à son compte, avec le bouton « Ce n'est pas moi ». Rend False
+    seulement si l'envoi a échoué (la tâche réessaie) ; True si c'est envoyé
+    ou s'il n'y a rien à envoyer (premier téléphone d'un compte tout neuf,
+    téléphone déjà coupé, compte sans Telegram)."""
+    device = db.get(Device, device_id)
+    if device is None or not app_sessions.needs_new_device_alert(device):
+        return True
+    telegram_id = ledger.telegram_id_of(db, device.account_id)
+    if telegram_id is None:
+        # Compte sans Telegram : l'alerte passera par WhatsApp (PR 6) et par
+        # les notifications de l'app (étape 2). Le délai de 72 h protège
+        # l'argent en attendant.
+        logger.warning("Nouvel appareil %s : compte sans Telegram, alerte non envoyée", device_id)
+        return True
+    account = db.get(NexisAccount, device.account_id)
+    lang = account.language if account is not None else "fr"
+    local = device.created_at + KINSHASA_OFFSET
+    text = get_message(
+        "app_new_device_alert",
+        lang,
+        device=device.label or get_message("app_device_unnamed", lang),
+        date=local.strftime("%d/%m/%Y"),
+        time=local.strftime("%H:%M"),
+    )
+    keyboard = {"inline_keyboard": [[{"text": get_message("button_app_not_me", lang), "callback_data": f"app_not_me_{device.id}"}]]}
+    return send_telegram_message(telegram_id, text, reply_markup=keyboard)
+
+
+@celery_app.task(name="backend.app.tasks.alert_new_app_device", bind=True, max_retries=NEW_DEVICE_ALERT_RETRIES)
+def alert_new_app_device(self, device_id: int) -> bool:
+    """Lancée par l'API publique après une connexion qui crée un téléphone.
+    Réessaie (1 min, 2 min, 4 min… jusqu'à 1 h d'écart) tant que Telegram
+    n'a pas accepté le message."""
+    db = SessionLocal()
+    try:
+        sent = send_new_device_alert(db, device_id)
+    finally:
+        db.close()
+    if not sent:
+        raise self.retry(countdown=min(60 * 2 ** self.request.retries, 3600))
+    return True
+
+
+def alert_admin_not_me(device_id: int, account_id: int) -> None:
+    """« Ce n'est pas moi » : l'admin est prévenu (compte peut-être visé)."""
+    _alert_admin(
+        f"🚨 « Ce n'est pas moi » : téléphone {device_id} du compte {account_id} coupé par la personne. "
+        "Vérifie le compte (connexions récentes, retraits)."
+    )
+
+
+@celery_app.task(name="backend.app.tasks.purge_request_nonces")
+def purge_request_nonces() -> int:
+    """Efface les nonces des demandes signées de plus de 24 heures."""
+    db = SessionLocal()
+    try:
+        return app_sessions.purge_request_nonces(db)
     finally:
         db.close()

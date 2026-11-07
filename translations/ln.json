@@ -255,5 +255,11 @@
   "button_view_place": "📍 Tala esika",
   "mission_place": "📍 <b>Esika ya mosala NXH-{mission_id:04d}</b>\nElembo : <b>{landmark}</b>",
   "place_not_available": "Esika ya sikisiki ekomonana soki mosala efutami, kino mosala esili.",
-  "place_unknown": "Esika ya sikisiki ekomamaki te mpo na mosala oyo : kaka commune eyebani."
+  "place_unknown": "Esika ya sikisiki ekomamaki te mpo na mosala oyo : kaka commune eyebani.",
+  "app_new_device_alert": "🔐 <b>Telefone ya sika</b> ekɔti na compte na yo ya Nexis : {device}, mokolo {date} na ngonga {time} (ngonga ya Kinshasa).\n\nMpo na bokengi, mbongo ekoki kobima na telefone oyo te mpo na ngonga 72.\n\nSoki ezali yo te, finá noki « Ezali ngai te ».",
+  "app_device_unnamed": "telefone moko",
+  "button_app_not_me": "🚫 Ezali ngai te",
+  "app_not_me_done": "✅ Telefone oyo ekatami : ekoki lisusu kosala eloko te na compte na yo. Ekipi na biso eyebisami mpe ezali kotala compte na yo. Kopesa code na yo ya kokɔta na moto te, ata soki alobi ete awuti na Nexis.",
+  "app_not_me_unknown": "Telefone oyo ekangami na compte na yo te. Eloko moko te ebongwani.",
+  "app_not_me_retry": "⚠️ Service ekoki te sikoyo : telefone ekatami naino te. Meka lisusu mwa moke na bouton « Ezali ngai te »."
 }

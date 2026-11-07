@@ -378,6 +378,13 @@ async def app_login_telegram_contact(telegram_id: int, start_token: str, phone: 
     return await _payout_call("POST", "/api/bot/app-login/telegram-contact", telegram_id, payload, keys=("code",))
 
 
+async def app_device_not_me(telegram_id: int, device_id: int) -> dict:
+    """« Ce n'est pas moi » : coupe ce téléphone du compte de la personne.
+    Rend `{"revoked": True, "already": bool}`, ou lève `MoneyRefused`
+    (`device_not_found`)."""
+    return await _payout_call("POST", f"/api/bot/app-devices/{device_id}/not-me", telegram_id, {}, keys=("revoked",))
+
+
 async def admin_revoke_app_devices(admin_telegram_id: int, telegram_id: int) -> dict:
     """L'admin coupe tous les téléphones de l'application de cette personne.
     Rend `{"revoked": n}`."""
