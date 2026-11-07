@@ -2,7 +2,7 @@ import asyncio
 import os
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -17,6 +17,7 @@ from db import init_db
 # main.py que le bootstrap (démarrage, /start, /app) et le code partagé entre
 # ces modules (aucun pour l'instant).
 from telegram_bot import admin
+from telegram_bot import app_login
 from telegram_bot import fallback
 from telegram_bot import dashboard
 from telegram_bot import mission as mission_flow
@@ -45,6 +46,8 @@ dp.include_router(mission_flow.router)
 dp.include_router(payment.router)
 dp.include_router(admin.router)
 dp.include_router(dashboard.router)
+# Connexion à l'application mobile (lien t.me/<bot>?start=app_...).
+dp.include_router(app_login.router)
 # Toujours en dernier : ne reçoit que ce qu'aucun autre handler n'a pris.
 dp.include_router(fallback.router)
 
@@ -73,7 +76,10 @@ def clavier_mini_app(lang: str = "fr"):
 
 
 @dp.message(Command("start"))
-async def cmd_start(message: Message, state: FSMContext):
+async def cmd_start(message: Message, state: FSMContext, command: CommandObject):
+    if app_login.is_app_login_start(command.args):
+        await app_login.start_app_login(message, state, command.args)
+        return
     await state.clear()
     await message.answer(
         get_message("welcome", "fr"),

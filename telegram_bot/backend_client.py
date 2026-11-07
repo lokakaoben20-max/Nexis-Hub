@@ -40,12 +40,23 @@ async def _safe_backend_call(coro):
         return None
 
 
-async def sync_user_to_backend(telegram_id: int, first_name: str | None = None, phone_number: str | None = None, language: str = "fr") -> dict:
+async def sync_user_to_backend(
+    telegram_id: int,
+    first_name: str | None = None,
+    phone_number: str | None = None,
+    language: str = "fr",
+    phone_verified: bool = False,
+) -> dict:
+    """`phone_verified` : seulement pour un numéro reçu par le bouton
+    « Partager mon numéro » et vérifié comme celui de l'expéditeur
+    (`registration._numero_partage`). Le backend l'enregistre alors comme
+    numéro prouvé du compte Nexis."""
     payload = {
         "telegram_id": telegram_id,
         "first_name": first_name or "Client",
         "phone_number": phone_number,
         "language": language,
+        "phone_verified": phone_verified,
     }
     async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/users", json=payload)
@@ -63,6 +74,7 @@ async def sync_provider_to_backend(
     id_document_file_id: str | None = None,
     selfie_file_id: str | None = None,
     portfolio_file_ids: list[str] | None = None,
+    phone_verified: bool = False,
 ) -> dict:
     payload = {
         "telegram_id": telegram_id,
@@ -74,6 +86,7 @@ async def sync_provider_to_backend(
         "id_document_file_id": id_document_file_id,
         "selfie_file_id": selfie_file_id,
         "portfolio_file_ids": portfolio_file_ids,
+        "phone_verified": phone_verified,
     }
     async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers", json=payload)
@@ -343,6 +356,15 @@ async def _payout_call(method: str, path: str, actor: int, payload: dict | None 
     return body
 
 
+async def app_login_telegram_contact(telegram_id: int, start_token: str, phone: str) -> dict:
+    """Connexion à l'application : contact partagé par l'expéditeur après le
+    lien de l'app. Rend `{"code": ..., "expires_at": ...}`, ou lève
+    `MoneyRefused` avec le code du refus (lien invalide, numéro différent,
+    numéro relié à un autre compte)."""
+    payload = {"start_token": start_token, "phone": phone}
+    return await _payout_call("POST", "/api/bot/app-login/telegram-contact", telegram_id, payload, keys=("code",))
+
+
 async def request_payout(telegram_id: int, amount: float, currency: str, phone: str, operator: str) -> dict:
     payload = {"amount": amount, "currency": currency, "phone": phone, "operator": operator}
     return (await _payout_call("POST", "/api/bot/payouts", telegram_id, payload))["payout"]
@@ -510,7 +532,13 @@ async def get_provider_language(telegram_id: int) -> str:
     return languages[0] if languages else "fr"
 
 
-async def persist_client_registration(telegram_id: int, first_name: str | None = None, phone_number: str | None = None, language: str = "fr") -> dict:
+async def persist_client_registration(
+    telegram_id: int,
+    first_name: str | None = None,
+    phone_number: str | None = None,
+    language: str = "fr",
+    phone_verified: bool = False,
+) -> dict:
     local_user = create_user(
         telegram_id=telegram_id,
         phone_number=phone_number,
@@ -523,6 +551,7 @@ async def persist_client_registration(telegram_id: int, first_name: str | None =
             first_name=first_name,
             phone_number=phone_number,
             language=language,
+            phone_verified=phone_verified,
         )
     )
     return {"local": local_user, "backend": backend_result}

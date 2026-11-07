@@ -242,5 +242,11 @@
   "money_error_quote_not_open": "Ce devis ne peut plus être accepté ni refusé.",
   "money_error_mission_not_open": "Cette mission a déjà un devis accepté : elle ne reçoit plus de devis.",
   "money_error_provider_not_alerted": "Cette mission ne vous a pas été proposée.",
-  "money_error_creation_key_reused": "Cette demande a changé entre deux essais. Recommencez la demande depuis le menu."
+  "money_error_creation_key_reused": "Cette demande a changé entre deux essais. Recommencez la demande depuis le menu.",
+  "app_login_share_phone": "Pour vous connecter à l'application Nexis Hub, appuyez sur le bouton « Partager mon numéro » en bas de l'écran.",
+  "app_login_code": "Votre code de connexion à l'application Nexis Hub : <b>{code}</b>\n\nTapez-le dans l'application. Il est valable 10 minutes.\n\n⚠️ Ne donnez jamais ce code à personne. Nexis Hub ne vous le demandera jamais.",
+  "app_login_link_invalid": "Ce lien de connexion a expiré ou a déjà servi. Demandez un nouveau code dans l'application Nexis Hub.",
+  "app_login_phone_mismatch": "Ce numéro n'est pas celui que vous avez tapé dans l'application. Vérifiez votre numéro dans l'application, puis demandez un nouveau code.",
+  "app_login_phone_conflict": "Ce numéro est relié à un autre compte Nexis Hub. Pour protéger ce compte, aucun code n'est envoyé. Contactez le support Nexis Hub.",
+  "app_login_unavailable": "La connexion à l'application est momentanément indisponible. Réessayez dans quelques minutes."
 }
