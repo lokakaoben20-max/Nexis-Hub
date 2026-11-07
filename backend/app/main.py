@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from backend.app import app_auth, crud, ledger, mobile_money, payment_gateway
+from backend.app import app_auth, app_sessions, crud, ledger, mobile_money, payment_gateway
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotUser, PaymentIntent, Payout
 
@@ -800,6 +800,24 @@ def _require_admin(actor: Actor) -> int:
 def _is_admin(actor: Actor) -> bool:
     configured = os.getenv("ADMIN_TELEGRAM_ID", "").strip()
     return actor.channel == ledger.TELEGRAM and bool(configured) and hmac.compare_digest(configured, actor.external_id)
+
+
+class AppDevicesRevokePayload(BaseModel):
+    telegram_id: int
+
+
+@router.post("/api/bot/admin/app-devices/revoke")
+def admin_revoke_app_devices(payload: AppDevicesRevokePayload, actor: Actor = Depends(current_actor)):
+    """L'admin coupe tous les téléphones de l'application d'une personne,
+    désignée par son identifiant Telegram (téléphone volé, compte suspect).
+    Elle devra se reconnecter par code ; son argent ne bouge pas."""
+    _require_admin(actor)
+    with SessionLocal() as db:
+        account_id = ledger.account_id_for(db, ledger.TELEGRAM, payload.telegram_id)
+        if account_id is None:
+            raise HTTPException(status_code=404, detail={"code": "account_not_found"})
+        revoked = app_sessions.revoke_all_devices(db, account_id)
+        return {"status": "ok", "revoked": revoked}
 
 
 @router.post("/api/bot/payouts/{payout_id}/approve")

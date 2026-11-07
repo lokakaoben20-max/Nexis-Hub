@@ -378,6 +378,14 @@ async def app_login_telegram_contact(telegram_id: int, start_token: str, phone: 
     return await _payout_call("POST", "/api/bot/app-login/telegram-contact", telegram_id, payload, keys=("code",))
 
 
+async def admin_revoke_app_devices(admin_telegram_id: int, telegram_id: int) -> dict:
+    """L'admin coupe tous les téléphones de l'application de cette personne.
+    Rend `{"revoked": n}`."""
+    return await _payout_call(
+        "POST", "/api/bot/admin/app-devices/revoke", admin_telegram_id, {"telegram_id": telegram_id}, keys=("revoked",)
+    )
+
+
 async def request_payout(telegram_id: int, amount: float, currency: str, phone: str, operator: str) -> dict:
     payload = {"amount": amount, "currency": currency, "phone": phone, "operator": operator}
     return (await _payout_call("POST", "/api/bot/payouts", telegram_id, payload))["payout"]
