@@ -179,6 +179,9 @@ def _mission_request(**fields):
         "urgent": True,
         "language": "fr",
         "creation_key": "demande-test-1",
+        "destination_latitude": -4.3076,
+        "destination_longitude": 15.3125,
+        "destination_landmark": "Portail bleu après la poste",
         **fields,
     }
 

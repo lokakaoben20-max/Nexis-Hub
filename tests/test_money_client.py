@@ -89,6 +89,8 @@ def test_mission_creation_is_numbered_by_the_backend_and_replayable(live_backend
     data = {
         "service": "service_plomberie", "commune": "Gombe", "currency": "USD", "description": "Fuite",
         "urgent": False, "photo_file_ids": ["photo-1"], "voice_file_ids": ["voix-1"],
+        "destination_latitude": -4.3076, "destination_longitude": 15.3125,
+        "destination_landmark": "Portail bleu après la poste",
     }
 
     first = asyncio.run(backend_client.create_mission(42, data, "demande-a", [7, 42]))

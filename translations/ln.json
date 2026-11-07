@@ -32,7 +32,7 @@
   "explanation_saved_photo_prompt": "✅ Ndimbola ebombami.\n\n📷 Okoki kotinda photo ya problème soki esengeli.\n\nSoki te, koba sans photo.",
   "photo_required_or_skip": "Tinda photo to koba sans photo.",
   "mission_saved": "✅ <b>Demande ebombami.</b>\n\nRéférence mission : <b>NXH-{mission_id:04d}</b>\n\n{matching_text}",
-  "mission_summary": "📋 <b>Na mokuse na yo</b>\n\nMosala : <b>{service}</b>\nUrgence : <b>{urgent}</b>\nCommune : <b>{commune}</b>\nDevise : <b>{currency}</b>\nDescription : <b>{description}</b>\n\nOndimi bosengi oyo ?",
+  "mission_summary": "📋 <b>Na mokuse na yo</b>\n\nMosala : <b>{service}</b>\nUrgence : <b>{urgent}</b>\nCommune : <b>{commune}</b>\nElembo : <b>{landmark}</b>\nDevise : <b>{currency}</b>\nDescription : <b>{description}</b>\n\nOndimi bosengi oyo ?",
   "no_providers": "😔 <b>Moto te oyo akoki kosalela yo</b>\n\nBenga biso : 📱 +243 852 638 209",
   "payment_summary": "💳 <b>Recap ya lisusu</b>\n\nMosali : <b>{prestataire}</b>\nMosala : <b>{service}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━\nDevis    : <b>{devis} {currency}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━\n💳 TOTAL : <b>{total} {currency}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━",
   "mission_started": "▶️ <b>Mosala ebandi !</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nMosali abandi mosala.",
@@ -244,5 +244,16 @@
   "app_login_link_invalid": "Lien oyo ya kokota esili to esalelamaki déjà. Senga code ya sika na application Nexis Hub.",
   "app_login_phone_mismatch": "Numéro oyo ezali te oyo okomaki na application. Tala malamu numéro na yo na application, sima senga code ya sika.",
   "app_login_phone_conflict": "Numéro oyo ekangami na compte mosusu ya Nexis Hub. Mpo na kobatela compte yango, code etindami te. Benga support ya Nexis Hub.",
-  "app_login_unavailable": "Kokota na application ekoki te sikoyo. Meka lisusu sima ya miniti moke."
+  "app_login_unavailable": "Kokota na application ekoki te sikoyo. Meka lisusu sima ya miniti moke.",
+  "ask_mission_location": "📍 <b>Esika nini ya sikisiki tosengeli kosala mosala ?</b>\n\nSoki ozali na esika yango, fina « 📍 Tinda esika na ngai ».\nSoki te, fina 📎 sima « Position » mpe tia elembo na karte.\n\nEsika oyo ekomonana na prestataire kaka sima ya kofuta na yo.",
+  "button_send_location": "📍 Tinda esika na ngai",
+  "button_cancel_request": "❌ Kanga bosengi",
+  "location_required": "📍 Tinda esika na bouton « 📍 Tinda esika na ngai », to fina 📎 sima « Position ».",
+  "ask_mission_landmark": "✅ Esika ekomi.\n\n🏠 Koma sikoyo <b>elembo</b> mpo na kozwa esika pete.\nNdakisa : « porte ya bule sima ya lingomba, étage ya 2 ».",
+  "landmark_invalid": "🏠 Elembo esengeli kozala na bilembo 3 kino 300. Koma yango lisusu.",
+  "destination_outside_service_area": "📍 Esika oyo ezali libanda ya Kinshasa, esika Nexis Hub esalaka. Tinda lisusu esika ya sikisiki ya mosala.",
+  "button_view_place": "📍 Tala esika",
+  "mission_place": "📍 <b>Esika ya mosala NXH-{mission_id:04d}</b>\nElembo : <b>{landmark}</b>",
+  "place_not_available": "Esika ya sikisiki ekomonana soki mosala efutami, kino mosala esili.",
+  "place_unknown": "Esika ya sikisiki ekomamaki te mpo na mosala oyo : kaka commune eyebani."
 }

@@ -1,3 +1,4 @@
+import math
 from datetime import datetime, timedelta
 
 from sqlalchemy import func, or_
@@ -287,6 +288,18 @@ QUOTABLE_STATUSES = {"pending", "quoted"}
 MAX_MISSION_MEDIA = 20
 MAX_ALERTED_PROVIDERS = 20
 
+# Lieu exact de la mission (CONCEPTION_MISSIONS.md, « Lieu exact de la mission »).
+# Rectangle large autour de la ville-province de Kinshasa, seule zone servie :
+# il écarte un point manifestement faux (0,0, une autre ville du pays), il ne
+# vérifie pas la commune choisie.
+SERVICE_AREA = {"min_latitude": -5.2, "max_latitude": -3.4, "min_longitude": 15.0, "max_longitude": 16.7}
+DESTINATION_DECIMALS = 6  # environ 11 cm : au-delà, la précision est fictive
+MIN_LANDMARK_LENGTH = 3
+MAX_LANDMARK_LENGTH = 300
+# Le prestataire lit le lieu seulement une fois la mission payée et tant qu'il
+# doit s'y rendre ou y travailler.
+DESTINATION_PROVIDER_STATUSES = {"confirmed", "in_progress"}
+
 
 class MissionRefused(ValueError):
     """Refus métier d'une demande sur une mission : code stable pour le canal."""
@@ -310,10 +323,16 @@ def create_mission(
     urgent: bool = False,
     media: list[tuple[str, str]] | None = None,
     alert_provider_telegram_ids: list[int] | None = None,
+    destination_latitude: float | None = None,
+    destination_longitude: float | None = None,
+    destination_landmark: str | None = None,
 ) -> tuple[BotMission, bool]:
     """Crée une mission : le backend lui donne son numéro, le client est la
     personne pour qui le canal agit. Mission, médias et prestataires prévenus
     sont écrits dans une seule transaction.
+
+    Le lieu exact (point et repère) est obligatoire : sans lui, le prestataire
+    ne sait pas où aller (`invalid_destination` sinon).
 
     Idempotent : la même `creation_key` pour le même client renvoie la mission
     déjà créée (second élément `False`), ou un refus si la demande diffère.
@@ -332,9 +351,17 @@ def create_mission(
         raise MissionRefused("invalid_media", 400)
     if len(alert_ids) > MAX_ALERTED_PROVIDERS:
         raise MissionRefused("too_many_alerts", 400)
+    latitude, longitude, landmark = checked_destination(destination_latitude, destination_longitude, destination_landmark)
 
     client_account_id = ledger.account_id_for(db, channel, client_external_id, create=True)
-    request = {"service": service, "commune": commune, "currency": currency, "description": description, "urgent": bool(urgent)}
+    request = {
+        "service": service,
+        "commune": commune,
+        "currency": currency,
+        "description": description,
+        "urgent": bool(urgent),
+        "destination": (latitude, longitude, landmark),
+    }
 
     def already_created() -> BotMission | None:
         existing = (
@@ -350,6 +377,7 @@ def create_mission(
             "currency": existing.currency,
             "description": existing.description,
             "urgent": bool(existing.urgent),
+            "destination": (existing.destination_latitude, existing.destination_longitude, existing.destination_landmark),
         } == request and [(item.kind, item.external_id) for item in mission_media(db, existing.mission_id)] == media
         if not same_request:
             raise MissionRefused("creation_key_reused")
@@ -374,6 +402,9 @@ def create_mission(
         currency=currency,
         description=description,
         urgent=bool(urgent),
+        destination_latitude=latitude,
+        destination_longitude=longitude,
+        destination_landmark=landmark,
         status="pending",
     )
     db.add(mission)
@@ -400,6 +431,51 @@ def create_mission(
         return existing, False
     db.refresh(mission)
     return mission, True
+
+
+def checked_destination(latitude, longitude, landmark) -> tuple[float, float, str]:
+    """Lieu exact d'une nouvelle mission, vérifié : point réel dans la zone
+    servie, repère écrit. Refus `invalid_destination` (400) sinon."""
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+    except (TypeError, ValueError):
+        raise MissionRefused("invalid_destination", 400) from None
+    if not (math.isfinite(latitude) and math.isfinite(longitude)):
+        raise MissionRefused("invalid_destination", 400)
+    area = SERVICE_AREA
+    if not (area["min_latitude"] <= latitude <= area["max_latitude"] and area["min_longitude"] <= longitude <= area["max_longitude"]):
+        raise MissionRefused("destination_outside_service_area", 400)
+    landmark = " ".join((landmark or "").split())
+    if not MIN_LANDMARK_LENGTH <= len(landmark) <= MAX_LANDMARK_LENGTH:
+        raise MissionRefused("invalid_destination", 400)
+    return round(latitude, DESTINATION_DECIMALS), round(longitude, DESTINATION_DECIMALS), landmark
+
+
+def destination_access(db: Session, mission: BotMission, account_id: int | None, *, is_admin: bool = False) -> str:
+    """Qui lit le lieu exact d'une mission.
+
+    - `granted` : l'admin ; le client ; le prestataire choisi d'une mission
+      payée (`paid_escrow`) tant qu'elle est `confirmed` ou `in_progress`.
+    - `not_yet` : la personne lit la mission mais pas encore son lieu
+      (prestataire prévenu, auteur d'un devis, mission pas encore payée,
+      terminée ou en litige). Elle garde la commune.
+    - `hidden` : la personne ne lit pas la mission (même réponse qu'un numéro
+      inconnu)."""
+    if is_admin:
+        return "granted"
+    role = mission_viewer_role(db, mission, account_id)
+    if role is None:
+        return "hidden"
+    if role == "client":
+        return "granted"
+    if (
+        mission.provider_account_id == account_id
+        and mission.payment_status == "paid_escrow"
+        and mission.status in DESTINATION_PROVIDER_STATUSES
+    ):
+        return "granted"
+    return "not_yet"
 
 
 def mission_media(db: Session, mission_id: int) -> list[MissionMedia]:
