@@ -2,7 +2,7 @@ from datetime import datetime
 
 from decimal import Decimal
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.database import Base
@@ -348,3 +348,165 @@ class Payout(Base):
     failure_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Application mobile : appareils, sessions, codes de connexion
+# (plan : app-mobile/plan-etape1-connexion-api-2026-11-07.md, section 4).
+#
+# Aucun secret n'est stocké en clair : jetons et codes sont hachés, seule la
+# clé publique d'un appareil est connue (la clé privée ne quitte jamais le
+# coffre matériel du téléphone). Les contraintes de base de données, et non le
+# seul code, garantissent les états impossibles.
+# ---------------------------------------------------------------------------
+
+DEVICE_PLATFORMS = ("android", "ios")
+# `verified` : Google (attestation de clé + Play Integrity) ou Apple (App
+# Attest) a confirmé l'app et le téléphone. `unverified` : lecture permise,
+# aucune action d'argent sortante (décision de Ben, 2026-11-07).
+DEVICE_ATTESTATIONS = ("verified", "unverified")
+LOGIN_PURPOSES = ("signup", "login")
+LOGIN_DELIVERIES = ("whatsapp", "telegram")
+MAX_CODE_ATTEMPTS = 5
+
+
+def _in(column: str, values: tuple[str, ...]) -> str:
+    return f"{column} IN ({', '.join(repr(value) for value in values)})"
+
+
+class Device(Base):
+    """Un téléphone relié à un compte Nexis par l'application.
+
+    Un appareil coupé (`revoked_at`) ne revit jamais : une reconnexion crée un
+    nouvel appareil, avec une nouvelle clé. `money_unlocked_at` porte le délai
+    de sécurité avant toute action d'argent sortante (72 h pour un appareil
+    ajouté à un compte existant)."""
+
+    __tablename__ = "devices"
+    __table_args__ = (
+        CheckConstraint(_in("platform", DEVICE_PLATFORMS), name="ck_devices_platform"),
+        CheckConstraint(_in("attestation", DEVICE_ATTESTATIONS), name="ck_devices_attestation"),
+        CheckConstraint(
+            "(revoked_at IS NULL AND revoked_reason IS NULL) OR (revoked_at IS NOT NULL AND revoked_reason IS NOT NULL)",
+            name="ck_devices_revocation_reason",
+        ),
+        CheckConstraint("money_unlocked_at >= created_at", name="ck_devices_money_unlock_after_creation"),
+        UniqueConstraint("key_thumbprint", name="uq_devices_key_thumbprint"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    platform: Mapped[str] = mapped_column(String(10))
+    # Clé publique P-256 (SubjectPublicKeyInfo, DER en base64) et son empreinte
+    # SHA-256 en hexadécimal, par laquelle l'appareil est retrouvé.
+    public_key: Mapped[str] = mapped_column(Text)
+    key_thumbprint: Mapped[str] = mapped_column(String(64))
+    attestation: Mapped[str] = mapped_column(String(12))
+    label: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    app_version: Mapped[str] = mapped_column(String(20))
+    money_unlocked_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_reason: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
+
+class AppSession(Base):
+    """Jetons d'une session d'appareil, hachés (SHA-256). Chaque renouvellement
+    crée une nouvelle ligne de la même famille et pointe l'ancienne vers elle
+    (`replaced_by_id`) : un ancien jeton présenté à nouveau trahit un vol, et
+    toute la famille est coupée."""
+
+    __tablename__ = "app_sessions"
+    __table_args__ = (
+        CheckConstraint("access_expires_at > created_at", name="ck_app_sessions_access_expiry"),
+        CheckConstraint("refresh_expires_at >= access_expires_at", name="ck_app_sessions_refresh_expiry"),
+        CheckConstraint(
+            "(revoked_at IS NULL AND revoked_reason IS NULL) OR (revoked_at IS NOT NULL AND revoked_reason IS NOT NULL)",
+            name="ck_app_sessions_revocation_reason",
+        ),
+        UniqueConstraint("access_hash", name="uq_app_sessions_access_hash"),
+        UniqueConstraint("refresh_hash", name="uq_app_sessions_refresh_hash"),
+        UniqueConstraint("replaced_by_id", name="uq_app_sessions_replaced_by_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"), index=True)
+    family_id: Mapped[str] = mapped_column(String(32), index=True)
+    access_hash: Mapped[str] = mapped_column(String(64))
+    access_expires_at: Mapped[datetime] = mapped_column(DateTime)
+    refresh_hash: Mapped[str] = mapped_column(String(64))
+    refresh_expires_at: Mapped[datetime] = mapped_column(DateTime)
+    replaced_by_id: Mapped[int | None] = mapped_column(ForeignKey("app_sessions.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_reason: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
+
+class LoginChallenge(Base):
+    """Une demande de code de connexion, liée à la clé de l'appareil qui l'a
+    faite : le code ne vaut que pour ce téléphone.
+
+    `public_id` est le seul identifiant montré à l'app (aléatoire, pour qu'on
+    ne puisse pas parcourir les demandes). `code_hash` (HMAC avec une clé
+    serveur) est vide tant que le code n'est pas parti, par exemple avant que
+    la personne ait partagé son numéro au bot Telegram. `telegram_start_hash`
+    est l'empreinte du lien de démarrage du bot, à usage unique."""
+
+    __tablename__ = "login_challenges"
+    __table_args__ = (
+        CheckConstraint(_in("purpose", LOGIN_PURPOSES), name="ck_login_challenges_purpose"),
+        CheckConstraint(_in("delivery", LOGIN_DELIVERIES), name="ck_login_challenges_delivery"),
+        CheckConstraint(f"attempts >= 0 AND attempts <= {MAX_CODE_ATTEMPTS}", name="ck_login_challenges_attempts"),
+        CheckConstraint("expires_at > created_at", name="ck_login_challenges_expiry"),
+        CheckConstraint("consumed_at IS NULL OR code_hash IS NOT NULL", name="ck_login_challenges_consumed_needs_code"),
+        Index("ix_login_challenges_phone_created", "phone_e164", "created_at"),
+        Index("ix_login_challenges_device_created", "device_key_thumbprint", "created_at"),
+        UniqueConstraint("public_id", name="uq_login_challenges_public_id"),
+        UniqueConstraint("telegram_start_hash", name="uq_login_challenges_telegram_start_hash"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    public_id: Mapped[str] = mapped_column(String(32))
+    phone_e164: Mapped[str] = mapped_column(String(32))
+    purpose: Mapped[str] = mapped_column(String(10))
+    delivery: Mapped[str] = mapped_column(String(10))
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    device_key_thumbprint: Mapped[str] = mapped_column(String(64))
+    code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    telegram_start_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class RequestNonce(Base):
+    """Nonce d'une demande signée par un appareil : la base refuse de voir
+    deux fois le même, même sous demandes simultanées (anti-rejeu)."""
+
+    __tablename__ = "request_nonces"
+    __table_args__ = (UniqueConstraint("device_id", "nonce", name="uq_request_nonces_device_nonce"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"))
+    nonce: Mapped[str] = mapped_column(String(64))
+    seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class AuthEvent(Base):
+    """Journal d'audit des connexions, en ajout seul : aucune fonction du
+    backend ne le modifie ni ne l'efface. Ni numéro en clair, ni code, ni
+    jeton : seulement le compte, l'appareil, le type, le résultat et une
+    empreinte de l'adresse réseau."""
+
+    __tablename__ = "auth_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    device_id: Mapped[int | None] = mapped_column(ForeignKey("devices.id"), nullable=True, index=True)
+    type: Mapped[str] = mapped_column(String(40))
+    result: Mapped[str] = mapped_column(String(20))
+    ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
