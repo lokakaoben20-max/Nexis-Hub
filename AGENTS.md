@@ -91,9 +91,8 @@ Ce couplage disparaîtra le jour où la Mini App passera par le backend V5 au li
 | Mini App | 8001 | `.venv\Scripts\python.exe -m uvicorn mini_app.app:app --reload --host 127.0.0.1 --port 8001` |
 | Bot Telegram (polling, défaut) | — | `.venv\Scripts\python.exe main.py` |
 | Bot Telegram (webhook, optionnel) | 8002 | `BOT_RUN_MODE=webhook` dans `.env` + `.venv\Scripts\python.exe main.py` |
-| Redis (étapes en cours du bot + broker Celery) | 6379 | `docker compose up -d redis` |
-| Worker Celery | — | `.venv\Scripts\python.exe -m celery -A backend.app.celery_app worker --loglevel=info --pool=solo` |
-| Beat Celery (planificateur) | — | `.venv\Scripts\python.exe -m celery -A backend.app.celery_app beat --loglevel=info` |
+| Redis (étapes en cours du bot + registre des updates du webhook) | 6379 | `docker compose up -d redis` |
+| Tâches planifiées (relances, devis expirés, libérations, Mobile Money, rapports) | — | `.venv\Scripts\python.exe -m backend.app.taches planificateur` |
 
 Ne remets pas la Mini App sur le port 8000 : il appartient au backend V5
 (`BACKEND_BASE_URL`). Voir [mini_app/README.md](mini_app/README.md).
@@ -104,13 +103,13 @@ directement sur le réseau. Voir la section démarrage du bot ci-dessous et
 le skill `demarrage-local` pour le détail du geste manuel (tunnel à relancer
 à chaque session, `WEBHOOK_URL` à mettre à jour dans `.env`).
 
-**Worker Celery : toujours `python -m celery`, jamais `celery` seul.** Invoqué
-directement, l'exécutable `celery` place son propre dossier (`Scripts/`) en
-tête de `sys.path` au lieu de la racine du projet — `backend/app/tasks.py`
-(qui importe `messages` à la racine) échoue alors avec `ModuleNotFoundError`.
-`python -m celery`, lancé depuis la racine du dépôt, résout ce problème.
-`--pool=solo` est nécessaire sous Windows (le pool par défaut, `prefork`, n'y
-fonctionne pas).
+**Tâches planifiées : plus de Celery.** `backend/app/taches.py` porte le
+calendrier (UTC) et un verrou par tâche (verrou consultatif Postgres) : une
+tâche ne tourne jamais deux fois en même temps. Sur le PC, la commande
+`planificateur` ci-dessus ; en production, Cloud Scheduler lance
+`python -m backend.app.taches lancer <nom>` aux mêmes heures
+(`python -m backend.app.taches calendrier` affiche les expressions cron).
+Toujours lancer depuis la racine du dépôt (`messages` y est importé).
 
 ## Structure du projet
 

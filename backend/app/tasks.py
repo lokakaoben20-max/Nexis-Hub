@@ -1,9 +1,11 @@
+"""Tâches périodiques du backend. Le calendrier et le verrou qui empêche
+deux exécutions simultanées sont dans `taches.py`."""
+
 import logging
 import os
 from datetime import datetime, timedelta
 
 from backend.app import crud, ledger, mobile_money, reconciliation
-from backend.app.celery_app import celery_app
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, BotProvider, BotUser, NexisAccount, PaymentIntent, Payout
 from backend.app.notify import send_telegram_message
@@ -14,7 +16,6 @@ ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID")
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="backend.app.tasks.check_expired_quotes")
 def check_expired_quotes() -> int:
     """Devis `pending` depuis plus de 24h → `expired` (crud.expire_stale_quotes)."""
     db = SessionLocal()
@@ -25,7 +26,6 @@ def check_expired_quotes() -> int:
         db.close()
 
 
-@celery_app.task(name="backend.app.tasks.release_auto_confirmed_missions")
 def release_auto_confirmed_missions() -> int:
     """Auto-libère l'escrow des missions en `awaiting_confirmation` depuis 24h+.
 
@@ -73,7 +73,6 @@ def release_auto_confirmed_missions() -> int:
         db.close()
 
 
-@celery_app.task(name="backend.app.tasks.send_provider_reminders")
 def send_provider_reminders() -> int:
     """Relance les prestataires matchés si une mission reste `pending` (sans
     devis) après 10 min, puis après 20 min.
@@ -111,7 +110,6 @@ def send_provider_reminders() -> int:
         db.close()
 
 
-@celery_app.task(name="backend.app.tasks.send_daily_analytics")
 def send_daily_analytics() -> bool:
     """Rapport quotidien à `ADMIN_TELEGRAM_ID` : missions créées/terminées,
     volume et commission des dernières 24h, groupés par devise.
@@ -274,7 +272,6 @@ def notify_payout(db, payout: Payout) -> None:
     )
 
 
-@celery_app.task(name="backend.app.tasks.check_pending_mobile_money")
 def check_pending_mobile_money() -> int:
     """Vérification de secours : relit chez l'agrégateur les paiements
     (`mobile_money.intents_to_refresh`) et retraits en attente (webhook perdu,
@@ -292,7 +289,6 @@ def check_pending_mobile_money() -> int:
         db.close()
 
 
-@celery_app.task(name="backend.app.tasks.send_daily_reconciliation")
 def send_daily_reconciliation() -> bool:
     """Rapprochement interne quotidien (backend/app/reconciliation.py), envoyé
     à l'admin même sans écart : un rapport qui n'arrive pas se remarque."""

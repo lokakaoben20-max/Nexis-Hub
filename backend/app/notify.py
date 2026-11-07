@@ -12,14 +12,14 @@ logger = logging.getLogger(__name__)
 
 
 def send_telegram_message(telegram_id: int, text: str, reply_markup: dict | None = None) -> None:
-    """Envoie un message Telegram depuis un worker Celery.
+    """Envoie un message Telegram depuis une tâche planifiée (`taches.py`).
 
-    Un worker Celery est un process séparé, sans boucle asyncio/aiogram comme
+    Une tâche tourne dans un process séparé, sans boucle asyncio/aiogram comme
     `main.py` — plutôt que d'y instancier un `aiogram.Bot` pour un seul appel
     synchrone, on appelle directement l'API HTTP Telegram (`httpx.post`).
 
     Ne lève jamais : une notification ratée ne doit pas faire échouer la tâche
-    Celery qui l'a déclenchée (même philosophie que `_safe_backend_call` dans
+    qui l'a déclenchée (même philosophie que `_safe_backend_call` dans
     `main.py` pour les appels bot → backend).
     """
     if not BOT_TOKEN:
