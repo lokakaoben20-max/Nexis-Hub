@@ -7,7 +7,7 @@
   "choose_commune": "📍 Which <b>commune</b> are you in?",
   "choose_currency": "💵 Which payment currency do you prefer?",
   "describe_problem": "✏️ Describe your issue.\n\nYou can send <b>text</b>, a <b>voice note</b>, a <b>video note</b> or one/more <b>photos</b>.\n\nWhen everything is added, press <b>Finish</b>.",
-  "mission_summary": "📋 <b>Request summary</b>\n\nService: <b>{service}</b>\nUrgent: <b>{urgent}</b>\nCommune: <b>{commune}</b>\nCurrency: <b>{currency}</b>\nDescription: <b>{description}</b>\n\nDo you confirm this request?",
+  "mission_summary": "📋 <b>Request summary</b>\n\nService: <b>{service}</b>\nUrgent: <b>{urgent}</b>\nCommune: <b>{commune}</b>\nLandmark: <b>{landmark}</b>\nCurrency: <b>{currency}</b>\nDescription: <b>{description}</b>\n\nDo you confirm this request?",
   "no_providers": "😔 <b>No provider available</b>\n\nNo provider is available in your area for this service.\n\nContact us: 📱 +243 852 638 209",
   "payment_summary": "💳 <b>Payment Summary</b>\n\nProvider: <b>{prestataire}</b>\nService: <b>{service}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━\nQuote     : <b>{devis} {currency}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━\n💳 TOTAL  : <b>{total} {currency}</b>\n━━━━━━━━━━━━━━━━━━━━━━━━",
   "mission_started": "▶️ <b>Mission started!</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\nThe provider has started the work.",
@@ -242,5 +242,16 @@
   "app_login_link_invalid": "This sign-in link has expired or was already used. Request a new code in the Nexis Hub app.",
   "app_login_phone_mismatch": "This number is not the one you typed in the app. Check your number in the app, then request a new code.",
   "app_login_phone_conflict": "This number is linked to another Nexis Hub account. To protect that account, no code is sent. Please contact Nexis Hub support.",
-  "app_login_unavailable": "Signing in to the app is temporarily unavailable. Please try again in a few minutes."
+  "app_login_unavailable": "Signing in to the app is temporarily unavailable. Please try again in a few minutes.",
+  "ask_mission_location": "📍 <b>Where exactly is the job?</b>\n\nIf you are there now, tap « 📍 Send my location ».\nOtherwise, tap 📎 then « Location » and place the pin on the map.\n\nThe provider only sees this point after you pay.",
+  "button_send_location": "📍 Send my location",
+  "button_cancel_request": "❌ Cancel the request",
+  "location_required": "📍 Send the place with the « 📍 Send my location » button, or tap 📎 then « Location ».",
+  "ask_mission_landmark": "✅ Location received.\n\n🏠 Now write a <b>landmark</b> to find the place easily.\nExample: « blue gate after the church, 2nd floor ».",
+  "landmark_invalid": "🏠 The landmark must be 3 to 300 characters long. Please write it again.",
+  "destination_outside_service_area": "📍 This point is outside Kinshasa, where Nexis Hub works. Please send the exact place of the job again.",
+  "button_view_place": "📍 See the place",
+  "mission_place": "📍 <b>Place of mission NXH-{mission_id:04d}</b>\nLandmark: <b>{landmark}</b>",
+  "place_not_available": "The exact place is visible once the mission is paid, until the job is done.",
+  "place_unknown": "No exact place was recorded for this mission: only the commune is known."
 }

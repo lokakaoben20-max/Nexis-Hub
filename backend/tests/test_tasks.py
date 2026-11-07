@@ -57,6 +57,7 @@ def _new_mission(db, crud, client_id, alert=()):
     mission, _ = crud.create_mission(
         db, channel=ledger.TELEGRAM, client_external_id=str(client_id), creation_key=f"demande-{next(_KEYS)}",
         service="service_menage", commune="Gombe", alert_provider_telegram_ids=list(alert),
+        destination_latitude=-4.3076, destination_longitude=15.3125, destination_landmark="Portail bleu après la poste",
     )
     return mission
 

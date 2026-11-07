@@ -22,6 +22,7 @@ def _create(test_client, client=CLIENT, key="demande-1", **fields):
         "urgent": False,
         "media": [{"kind": "photo", "id": "photo-a"}, {"kind": "voice", "id": "voix-a"}],
         "alert_provider_telegram_ids": [PROVIDER],
+        "destination": {"latitude": -4.3076, "longitude": 15.3125, "landmark": "Portail bleu après la poste"},
         **fields,
     }
     return test_client.post("/api/bot/missions", json=payload, headers=_as(client))

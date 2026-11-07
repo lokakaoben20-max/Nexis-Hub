@@ -10,7 +10,7 @@ la colonne si un identifiant plus long que 64 caractères existe déjà : il
 échouerait au milieu, ou tronquerait une identité.
 
 Revision ID: 1b2c3d4e5f6a
-Revises: 0a1b2c3d4e5f
+Revises: b7c8d9e0f1a2
 Create Date: 2026-11-07
 """
 
@@ -20,7 +20,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "1b2c3d4e5f6a"
-down_revision: Union[str, Sequence[str], None] = "0a1b2c3d4e5f"
+down_revision: Union[str, Sequence[str], None] = "b7c8d9e0f1a2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

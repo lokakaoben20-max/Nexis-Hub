@@ -19,7 +19,7 @@ from sqlalchemy.engine import make_url
 ROOT = Path(__file__).resolve().parents[2]
 URL = os.getenv("NEXIS_TEST_POSTGRES_URL", "")
 REVISION = "1b2c3d4e5f6a"
-PREVIOUS = "0a1b2c3d4e5f"
+PREVIOUS = "b7c8d9e0f1a2"
 TELEGRAM_KEY = "test-telegram-service-key-not-a-secret-0001"
 WHATSAPP_KEY = "test-whatsapp-service-key-not-a-secret-0002"
 

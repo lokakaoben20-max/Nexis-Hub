@@ -265,8 +265,20 @@ async def create_mission(client_telegram_id: int, data: dict, creation_key: str,
         "urgent": bool(data.get("urgent", False)),
         "media": media,
         "alert_provider_telegram_ids": alert_provider_telegram_ids,
+        "destination": {
+            "latitude": data["destination_latitude"],
+            "longitude": data["destination_longitude"],
+            "landmark": data["destination_landmark"],
+        },
     }
     return await _money_call("POST", "/api/bot/missions", payload, actor=client_telegram_id)
+
+
+async def get_mission_destination(mission_id: int, telegram_id: int) -> dict:
+    """Lieu exact de la mission, si cette personne a le droit de le lire
+    (sinon `destination_not_available`, `destination_unknown` ou
+    `mission_not_found`)."""
+    return await _money_call("GET", f"/api/bot/missions/{mission_id}/destination", actor=telegram_id, expect="destination")
 
 
 async def get_mission(mission_id: int, telegram_id: int) -> dict:
@@ -378,6 +390,14 @@ async def app_login_telegram_contact(telegram_id: int, start_token: str, phone: 
     numéro relié à un autre compte)."""
     payload = {"start_token": start_token, "phone": phone}
     return await _payout_call("POST", "/api/bot/app-login/telegram-contact", telegram_id, payload, keys=("code",))
+
+
+async def admin_revoke_app_devices(admin_telegram_id: int, telegram_id: int) -> dict:
+    """L'admin coupe tous les téléphones de l'application de cette personne.
+    Rend `{"revoked": n}`."""
+    return await _payout_call(
+        "POST", "/api/bot/admin/app-devices/revoke", admin_telegram_id, {"telegram_id": telegram_id}, keys=("revoked",)
+    )
 
 
 async def request_payout(telegram_id: int, amount: float, currency: str, phone: str, operator: str) -> dict:

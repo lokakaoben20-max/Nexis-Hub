@@ -105,6 +105,9 @@ class LiveBackend:
                 description=description,
                 urgent=urgent,
                 alert_provider_telegram_ids=list(alert),
+                destination_latitude=-4.3076,
+                destination_longitude=15.3125,
+                destination_landmark="Portail bleu après la poste",
             )
             return mission.mission_id
 

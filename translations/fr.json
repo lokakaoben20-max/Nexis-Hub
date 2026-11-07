@@ -7,7 +7,7 @@
   "choose_commune": "📍 Dans quelle <b>commune</b> êtes-vous ?",
   "choose_currency": "💵 Quelle devise préférez-vous pour le paiement ?",
   "describe_problem": "✏️ Décrivez votre problème.\n\nVous pouvez envoyer un <b>texte</b>, une <b>note vocale</b>, une <b>note vidéo</b> ou une/des <b>photos</b>.\n\nQuand tout est ajouté, appuyez sur <b>Terminer</b>.",
-  "mission_summary": "📋 <b>Récapitulatif de votre demande</b>\n\nService : <b>{service}</b>\nUrgence : <b>{urgent}</b>\nCommune : <b>{commune}</b>\nDevise : <b>{currency}</b>\nDescription : <b>{description}</b>\n\nConfirmez-vous cette demande ?",
+  "mission_summary": "📋 <b>Récapitulatif de votre demande</b>\n\nService : <b>{service}</b>\nUrgence : <b>{urgent}</b>\nCommune : <b>{commune}</b>\nRepère : <b>{landmark}</b>\nDevise : <b>{currency}</b>\nDescription : <b>{description}</b>\n\nConfirmez-vous cette demande ?",
   "searching_providers": "🔍 Recherche des meilleurs prestataires disponibles dans votre zone...\n\n⏳ Veuillez patienter.",
   "no_providers": "😔 <b>Aucun prestataire disponible</b>\n\nAucun prestataire n'est disponible dans votre commune pour ce service actuellement.\n\nRéessayez plus tard ou contactez-nous :\n📱 +243 852 638 209",
   "providers_found": "✅ <b>{count} prestataire(s) disponible(s) !</b>\n\nComparez les profils et choisissez :",
@@ -250,5 +250,16 @@
   "app_login_link_invalid": "Ce lien de connexion a expiré ou a déjà servi. Demandez un nouveau code dans l'application Nexis Hub.",
   "app_login_phone_mismatch": "Ce numéro n'est pas celui que vous avez tapé dans l'application. Vérifiez votre numéro dans l'application, puis demandez un nouveau code.",
   "app_login_phone_conflict": "Ce numéro est relié à un autre compte Nexis Hub. Pour protéger ce compte, aucun code n'est envoyé. Contactez le support Nexis Hub.",
-  "app_login_unavailable": "La connexion à l'application est momentanément indisponible. Réessayez dans quelques minutes."
+  "app_login_unavailable": "La connexion à l'application est momentanément indisponible. Réessayez dans quelques minutes.",
+  "ask_mission_location": "📍 <b>Où faut-il intervenir exactement ?</b>\n\nSi vous êtes sur place, appuyez sur « 📍 Envoyer ma position ».\nSinon, touchez 📎 puis « Position » et placez le point sur la carte.\n\nCe point ne sera montré au prestataire qu'après votre paiement.",
+  "button_send_location": "📍 Envoyer ma position",
+  "button_cancel_request": "❌ Annuler la demande",
+  "location_required": "📍 Envoyez le lieu avec le bouton « 📍 Envoyer ma position », ou touchez 📎 puis « Position ».",
+  "ask_mission_landmark": "✅ Position reçue.\n\n🏠 Écrivez maintenant un <b>repère</b> pour trouver l'endroit facilement.\nExemple : « portail bleu après l'église, 2e étage ».",
+  "landmark_invalid": "🏠 Le repère doit faire entre 3 et 300 caractères. Réécrivez-le.",
+  "destination_outside_service_area": "📍 Ce point est en dehors de Kinshasa, où Nexis Hub intervient. Renvoyez le lieu exact de l'intervention.",
+  "button_view_place": "📍 Voir le lieu",
+  "mission_place": "📍 <b>Lieu de la mission NXH-{mission_id:04d}</b>\nRepère : <b>{landmark}</b>",
+  "place_not_available": "Le lieu exact est visible une fois la mission payée, et jusqu'à la fin de l'intervention.",
+  "place_unknown": "Le lieu exact n'a pas été enregistré pour cette mission : seule la commune est connue."
 }

@@ -52,6 +52,13 @@ class BotMission(Base):
         # Une demande de création rejouée (réseau coupé, double clic) retrouve
         # la mission déjà créée au lieu d'en créer une seconde.
         UniqueConstraint("client_account_id", "creation_key", name="uq_bot_missions_client_creation_key"),
+        # Lieu exact : les trois champs ensemble, ou aucun (missions créées
+        # avant le lieu exact).
+        CheckConstraint(
+            "(destination_latitude IS NULL AND destination_longitude IS NULL AND destination_landmark IS NULL)"
+            " OR (destination_latitude IS NOT NULL AND destination_longitude IS NOT NULL AND destination_landmark IS NOT NULL)",
+            name="ck_bot_missions_destination_complete",
+        ),
     )
 
     # Numéro attribué par le backend, seule mémoire des missions : aucun canal
@@ -63,6 +70,12 @@ class BotMission(Base):
     commune: Mapped[str] = mapped_column(String(255))
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     description: Mapped[str] = mapped_column(Text, default="")
+    # Lieu exact où le service est rendu, et repère écrit par le client. Jamais
+    # renvoyé avec la mission : route à part, réservée au client, à l'admin et
+    # au prestataire d'une mission payée (crud.destination_access).
+    destination_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    destination_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    destination_landmark: Mapped[str | None] = mapped_column(String(300), nullable=True)
     urgent: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str | None] = mapped_column(String(30), nullable=True)
     payment_status: Mapped[str | None] = mapped_column(String(30), nullable=True)

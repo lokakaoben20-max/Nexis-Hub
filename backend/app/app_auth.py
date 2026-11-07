@@ -326,11 +326,17 @@ def verify_code(
     code: str,
     device_key_thumbprint: str,
     now: datetime | None = None,
+    commit: bool = True,
 ) -> VerifiedChallenge:
     """Vérifie un code. Chaque échec compte un essai, enregistré même quand
     la demande est refusée. Un code juste consomme la demande : il ne sert
     qu'une fois. Les refus ne disent pas pourquoi le code est faux (demande
-    inconnue, autre appareil, mauvais chiffres : même réponse)."""
+    inconnue, autre appareil, mauvais chiffres : même réponse).
+
+    `commit=False` : un code juste n'est pas encore validé en base, pour que
+    l'appelant consomme le code et ouvre la session dans la même transaction
+    (`app_sessions.sign_in`) : jamais de code consommé sans session, ni
+    l'inverse. Les échecs, eux, sont toujours enregistrés."""
     now = now or _utcnow()
     _code_key()  # clé requise avant tout
     challenge = (
@@ -364,7 +370,8 @@ def verify_code(
         raise AuthError("invalid_code")
     challenge.consumed_at = now
     _event(db, "code_verified", "accepted", account_id=challenge.account_id, now=now)
-    db.commit()
+    if commit:
+        db.commit()
     return VerifiedChallenge(challenge.account_id, existing_account=challenge.purpose == "login")
 
 

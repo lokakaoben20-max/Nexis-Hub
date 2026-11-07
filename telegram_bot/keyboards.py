@@ -492,6 +492,10 @@ def clavier_mission_prestataire(mission_id: int, action: str, lang: str = "fr"):
         builder.button(text=get_message("button_start_mission", lang), callback_data=f"mission_start_{mission_id}")
     elif action == "finish":
         builder.button(text=get_message("button_finish_mission", lang), callback_data=f"mission_finish_{mission_id}")
+    if action in ("start", "finish"):
+        # Le lieu exact, lu dans le backend au moment de l'appui : il ne
+        # répond qu'au prestataire d'une mission payée, en cours ou à démarrer.
+        builder.button(text=get_message("button_view_place", lang), callback_data=f"mission_place_{mission_id}")
     builder.button(text=get_message("button_provider_menu", lang), callback_data="profil_prestataire")
     builder.adjust(1)
     return builder.as_markup()
