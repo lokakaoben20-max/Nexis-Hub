@@ -201,11 +201,13 @@ classique, aucun tunnel nécessaire. Pour tester le mode webhook (voir
 lancer un tunnel local (`ngrok http 8002` ou équivalent), copier son URL
 HTTPS dans `WEBHOOK_URL`, générer un `WEBHOOK_SECRET_TOKEN`
 (`python -c "import secrets; print(secrets.token_hex(32))"`), passer
-`BOT_RUN_MODE=webhook` dans `.env`, puis relancer la commande ci-dessus.
-L'URL ngrok change à chaque relance du tunnel (offre gratuite) : à remettre
-à jour dans `.env` à chaque session. Aucun hébergement de production
-n'existe encore pour ce projet — le webhook n'est utilisable qu'avec un
-tunnel local pour l'instant.
+`BOT_RUN_MODE=webhook` dans `.env`, enregistrer l'adresse chez Telegram
+**une fois** avec `python -m telegram_bot.webhook_setup` (à refaire
+seulement si l'adresse ou le secret changent), puis relancer la commande
+ci-dessus. Le serveur n'enregistre jamais le webhook lui-même : il vérifie
+au démarrage que Telegram envoie bien chez lui et refuse de démarrer sinon.
+Il traite chaque update avant de répondre à Telegram, une seule fois
+(registre Redis `telegram_bot/update_ledger.py`) : Redis est obligatoire.
 
 ### Lancer le backend V5 en local
 
