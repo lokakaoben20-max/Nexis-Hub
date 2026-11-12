@@ -6,6 +6,7 @@ du client WhatsApp (docs/ARCHITECTURE_WHATSAPP.md, plan d'implémentation du
 
 import importlib
 import re
+import uuid
 
 import pytest
 from fastapi.routing import APIRoute
@@ -67,11 +68,13 @@ def as_telegram(telegram_id=42):
     return {"X-API-Key": TELEGRAM_KEY, "X-Actor-Channel": "telegram", "X-Actor-Id": str(telegram_id)}
 
 
-def register(client, bsuid=BSUID, phone="243810000001", name="Mado", language="ln"):
+def register(client, bsuid=BSUID, phone="243810000001", name="Mado", language="ln", key=None):
+    """Un message WhatsApp distinct à chaque appel (clé neuve), sauf `key`."""
     body = {"display_name": name, "language": language}
     if phone is not None:
         body["phone"] = phone
-    return client.post("/api/whatsapp/client", json=body, headers=as_whatsapp(bsuid))
+    headers = {**as_whatsapp(bsuid), "Idempotency-Key": key or f"wamid.{uuid.uuid4().hex}"}
+    return client.post("/api/whatsapp/client", json=body, headers=headers)
 
 
 def api_routes(backend):

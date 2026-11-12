@@ -2,7 +2,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 
-from backend.app import app_sessions, crud, ledger, mobile_money, reconciliation
+from backend.app import app_sessions, crud, idempotency, ledger, mobile_money, reconciliation
 from backend.app.celery_app import celery_app
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, BotProvider, BotUser, Device, NexisAccount, PaymentIntent, Payout
@@ -373,5 +373,15 @@ def purge_request_nonces() -> int:
     db = SessionLocal()
     try:
         return app_sessions.purge_request_nonces(db)
+    finally:
+        db.close()
+
+
+@celery_app.task(name="backend.app.tasks.purge_idempotency_keys")
+def purge_idempotency_keys() -> int:
+    """Efface les clés d'idempotence de plus de 30 jours (idempotency.RETENTION)."""
+    db = SessionLocal()
+    try:
+        return idempotency.purge(db)
     finally:
         db.close()

@@ -47,6 +47,10 @@ celery_app.conf.beat_schedule = {
         "task": "backend.app.tasks.purge_request_nonces",
         "schedule": crontab(minute=30),
     },
+    "purge-idempotency-keys": {
+        "task": "backend.app.tasks.purge_idempotency_keys",
+        "schedule": crontab(hour=3, minute=15),
+    },
     "send-daily-analytics": {
         "task": "backend.app.tasks.send_daily_analytics",
         "schedule": crontab(hour=8, minute=0),

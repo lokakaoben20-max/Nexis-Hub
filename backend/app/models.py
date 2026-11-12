@@ -528,3 +528,28 @@ class AuthEvent(Base):
     result: Mapped[str] = mapped_column(String(20))
     ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class IdempotencyKey(Base):
+    """Une action d'écriture déjà faite pour un canal, sous la clé choisie par
+    ce canal (WhatsApp : l'identifiant du message, `wamid`). Écrite dans la
+    **même transaction** que l'action : si l'action est annulée, la clé l'est
+    aussi ; si elle est validée, un même message reçu de nouveau rend la même
+    réponse sans rien refaire (backend/app/idempotency.py).
+
+    `fingerprint` : empreinte de la demande (route, acteur, paramètres, corps).
+    Une même clé avec une autre demande est refusée."""
+
+    __tablename__ = "idempotency_keys"
+    __table_args__ = (
+        UniqueConstraint("channel", "key", name="uq_idempotency_keys_channel_key"),
+        CheckConstraint("response_status >= 200 AND response_status < 300", name="ck_idempotency_keys_success_only"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    channel: Mapped[str] = mapped_column(String(20))
+    key: Mapped[str] = mapped_column(String(200))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    response_status: Mapped[int] = mapped_column(Integer)
+    response_body: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
