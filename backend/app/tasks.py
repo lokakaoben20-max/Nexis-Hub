@@ -5,9 +5,9 @@ import logging
 import os
 from datetime import datetime, timedelta
 
-from backend.app import crud, ledger, mobile_money, reconciliation
+from backend.app import app_sessions, crud, ledger, mobile_money, reconciliation
 from backend.app.database import SessionLocal
-from backend.app.models import BotMission, BotProvider, BotUser, NexisAccount, PaymentIntent, Payout
+from backend.app.models import BotMission, BotProvider, BotUser, Device, NexisAccount, PaymentIntent, Payout
 from backend.app.notify import send_telegram_message
 from messages import get_message
 
@@ -299,5 +299,128 @@ def send_daily_reconciliation() -> bool:
             logger.warning("Rapprochement : %d écart(s) : %s", len(report.anomalies), report.anomalies)
         _alert_admin(reconciliation.format_admin_report(report))
         return report.ok
+    finally:
+        db.close()
+
+
+# --- Application mobile (étape 1, PR 4) -------------------------------------------
+
+# Heure de Kinshasa (UTC+1, sans heure d'été), pour les messages.
+KINSHASA_OFFSET = timedelta(hours=1)
+NEW_DEVICE_ALERT_RETRIES = 12
+
+
+def send_new_device_alert(db, device_id: int) -> bool:
+    """Prévient la personne, sur Telegram, qu'un téléphone vient d'être
+    ajouté à son compte, avec le bouton « Ce n'est pas moi ». Rend False
+    seulement si l'envoi a échoué (la tâche réessaie) ; True si c'est envoyé
+    ou s'il n'y a rien à envoyer (premier téléphone d'un compte tout neuf,
+    téléphone déjà coupé, compte sans Telegram)."""
+    device = db.get(Device, device_id)
+    if device is None or not app_sessions.needs_new_device_alert(device):
+        return True
+    telegram_id = ledger.telegram_id_of(db, device.account_id)
+    if telegram_id is None:
+        # Compte sans Telegram : l'alerte passera par WhatsApp (PR 6) et par
+        # les notifications de l'app (étape 2). Le délai de 72 h protège
+        # l'argent en attendant.
+        logger.warning("Nouvel appareil %s : compte sans Telegram, alerte non envoyée", device_id)
+        return True
+    account = db.get(NexisAccount, device.account_id)
+    lang = account.language if account is not None else "fr"
+    local = device.created_at + KINSHASA_OFFSET
+    text = get_message(
+        "app_new_device_alert",
+        lang,
+        device=device.label or get_message("app_device_unnamed", lang),
+        date=local.strftime("%d/%m/%Y"),
+        time=local.strftime("%H:%M"),
+    )
+    keyboard = {"inline_keyboard": [[{"text": get_message("button_app_not_me", lang), "callback_data": f"app_not_me_{device.id}"}]]}
+    return send_telegram_message(telegram_id, text, reply_markup=keyboard)
+
+
+def _next_device_alert_delay(attempts: int) -> timedelta:
+    """1 min, 2 min, 4 min… plafonné à 1 h entre deux essais."""
+    return timedelta(seconds=min(60 * 2 ** (attempts - 1), 3600))
+
+
+def send_pending_device_alerts(now: datetime | None = None) -> int:
+    """Envoie les alertes « Nouvel appareil » dues (boîte d'envoi sur
+    `Device.alert_due_at`, posée à la connexion dans la même transaction que
+    le téléphone). Un échec repousse l'essai suivant ; après
+    `NEW_DEVICE_ALERT_RETRIES` échecs, l'admin est prévenu et on s'arrête.
+    Chaque téléphone est traité sous verrou de ligne et validé à part :
+    une ligne en échec n'arrête pas les autres. Rend le nombre d'alertes
+    envoyées."""
+    now = now or datetime.utcnow()
+    db = SessionLocal()
+    try:
+        due_ids = [
+            device_id
+            for (device_id,) in db.query(Device.id)
+            .filter(Device.alert_due_at.is_not(None), Device.alert_due_at <= now)
+            .order_by(Device.alert_due_at)
+        ]
+        sent = 0
+        for device_id in due_ids:
+            device = (
+                db.query(Device)
+                .filter(Device.id == device_id, Device.alert_due_at.is_not(None), Device.alert_due_at <= now)
+                .with_for_update(skip_locked=True)
+                .one_or_none()
+            )
+            if device is None:
+                db.rollback()
+                continue
+            try:
+                delivered = send_new_device_alert(db, device.id)
+                reached = (
+                    app_sessions.needs_new_device_alert(device)
+                    and ledger.telegram_id_of(db, device.account_id) is not None
+                )
+            except Exception:
+                # Erreur inattendue (base, réseau) : on repart d'une transaction
+                # propre et l'essai compte comme un échec.
+                logger.exception("Alerte « Nouvel appareil » : erreur pour le téléphone %s", device_id)
+                db.rollback()
+                device = db.query(Device).filter(Device.id == device_id).with_for_update().one()
+                delivered = reached = False
+            if delivered:
+                device.alert_due_at = None
+                if reached:
+                    device.alert_sent_at = now
+                    sent += 1
+            else:
+                device.alert_attempts += 1
+                if device.alert_attempts >= NEW_DEVICE_ALERT_RETRIES:
+                    device.alert_due_at = None
+                    logger.error("Alerte « Nouvel appareil » abandonnée pour le téléphone %s", device.id)
+                    _alert_admin(
+                        f"⚠️ Alerte « Nouvel appareil » non envoyée après {device.alert_attempts} essais : "
+                        f"téléphone {device.id} du compte {device.account_id}. Le délai de 72 h protège l'argent ; "
+                        "préviens la personne autrement."
+                    )
+                else:
+                    device.alert_due_at = now + _next_device_alert_delay(device.alert_attempts)
+            db.commit()
+        return sent
+    finally:
+        db.close()
+
+
+def alert_admin_not_me(device_id: int, account_id: int) -> None:
+    """« Ce n'est pas moi » : l'admin est prévenu (compte peut-être visé)."""
+    _alert_admin(
+        f"🚨 « Ce n'est pas moi » : téléphone {device_id} du compte {account_id} coupé par la personne. "
+        "Vérifie le compte (connexions récentes, retraits)."
+    )
+
+
+def purge_request_nonces() -> int:
+    """Efface les nonces des demandes signées de plus de 24 heures."""
+    db = SessionLocal()
+    try:
+        return app_sessions.purge_request_nonces(db)
     finally:
         db.close()

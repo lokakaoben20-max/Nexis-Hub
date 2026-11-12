@@ -423,6 +423,13 @@ class Device(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     revoked_reason: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Alerte « Nouvel appareil » (boîte d'envoi) : `alert_due_at` est posé dans
+    # la même transaction que la création du téléphone, puis la tâche planifiée
+    # `alertes-nouvel-appareil` l'envoie et réessaie en cas d'échec. NULL : rien
+    # à envoyer (premier téléphone d'un compte neuf, alerte envoyée ou abandonnée).
+    alert_due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    alert_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    alert_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class AppSession(Base):

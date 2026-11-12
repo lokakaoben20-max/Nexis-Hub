@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 import nexis_config
 import nexis_logs
-from backend.app import app_auth, crud, ledger, mobile_money, payment_gateway, sante
+from backend.app import app_auth, app_sessions, crud, ledger, mobile_money, payment_gateway, sante
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotUser, PaymentIntent, Payout
 
@@ -409,6 +409,32 @@ def app_login_telegram_contact(payload: AppLoginTelegramContactPayload, actor: A
             db.rollback()
             raise HTTPException(status_code=error.http_status, detail={"code": error.code})
         return {"status": "ok", "code": issued.code, "expires_at": issued.expires_at.isoformat()}
+
+
+def _alert_admin_not_me(device_id: int, account_id: int) -> None:
+    from backend.app.tasks import alert_admin_not_me
+
+    alert_admin_not_me(device_id, account_id)
+
+
+@router.post("/api/bot/app-devices/{device_id}/not-me")
+def app_device_not_me(device_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
+    """« Ce n'est pas moi », appuyé sous l'alerte « Nouvel appareil » : le
+    téléphone est coupé tout de suite, avec toutes ses sessions, et l'admin
+    est prévenu. Seul le compte du téléphone peut le faire ; un second appui
+    ne change rien. Voir `app_sessions.report_not_me`."""
+    with SessionLocal() as db:
+        account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
+        if account_id is None:
+            raise HTTPException(status_code=404, detail={"code": "device_not_found"})
+        try:
+            device, revoked_now = app_sessions.report_not_me(db, account_id=account_id, device_id=device_id)
+        except app_auth.AuthError as error:
+            db.rollback()
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code})
+        if revoked_now:
+            background_tasks.add_task(_alert_admin_not_me, device.id, account_id)
+        return {"status": "ok", "revoked": True, "already": not revoked_now}
 
 
 @router.post("/api/bot/missions")
@@ -826,6 +852,24 @@ def _require_admin(actor: Actor) -> int:
 def _is_admin(actor: Actor) -> bool:
     configured = os.getenv("ADMIN_TELEGRAM_ID", "").strip()
     return actor.channel == ledger.TELEGRAM and bool(configured) and hmac.compare_digest(configured, actor.external_id)
+
+
+class AppDevicesRevokePayload(BaseModel):
+    telegram_id: int
+
+
+@router.post("/api/bot/admin/app-devices/revoke")
+def admin_revoke_app_devices(payload: AppDevicesRevokePayload, actor: Actor = Depends(current_actor)):
+    """L'admin coupe tous les téléphones de l'application d'une personne,
+    désignée par son identifiant Telegram (téléphone volé, compte suspect).
+    Elle devra se reconnecter par code ; son argent ne bouge pas."""
+    _require_admin(actor)
+    with SessionLocal() as db:
+        account_id = ledger.account_id_for(db, ledger.TELEGRAM, payload.telegram_id)
+        if account_id is None:
+            raise HTTPException(status_code=404, detail={"code": "account_not_found"})
+        revoked = app_sessions.revoke_all_devices(db, account_id)
+        return {"status": "ok", "revoked": revoked}
 
 
 @router.post("/api/bot/payouts/{payout_id}/approve")

@@ -253,5 +253,11 @@
   "button_view_place": "📍 See the place",
   "mission_place": "📍 <b>Place of mission NXH-{mission_id:04d}</b>\nLandmark: <b>{landmark}</b>",
   "place_not_available": "The exact place is visible once the mission is paid, until the job is done.",
-  "place_unknown": "No exact place was recorded for this mission: only the commune is known."
+  "place_unknown": "No exact place was recorded for this mission: only the commune is known.",
+  "app_new_device_alert": "🔐 <b>New device</b> signed in to your Nexis account: {device}, on {date} at {time} (Kinshasa time).\n\nFor your safety, no money can leave from this phone for 72 hours.\n\nIf this wasn't you, tap \"This wasn't me\" right away.",
+  "app_device_unnamed": "a phone",
+  "button_app_not_me": "🚫 This wasn't me",
+  "app_not_me_done": "✅ This phone has been cut off: it can no longer do anything on your account. Our team has been alerted and is checking your account. Never give your sign-in code to anyone, even someone who says they are from Nexis.",
+  "app_not_me_unknown": "This phone is not linked to your account. Nothing was changed.",
+  "app_not_me_retry": "⚠️ The service is temporarily unavailable: the phone has not been cut off yet. Try again in a moment with the \"This wasn't me\" button."
 }

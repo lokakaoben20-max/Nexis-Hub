@@ -1,7 +1,9 @@
 """Tâches planifiées du backend : quand elles tournent, et jamais deux fois en même temps.
 
-Remplace Celery (worker + beat), qui ne servait qu'à ces six tâches
-périodiques : aucun appel `.delay()` nulle part. Une seule définition du
+Remplace Celery (worker + beat). L'alerte « Nouvel appareil », seul envoi
+qui passait par `.delay()`, est une boîte d'envoi en base (`Device.alert_due_at`)
+vidée chaque minute par la tâche `alertes-nouvel-appareil` : elle ne se perd
+pas si un courtier tombe. Une seule définition du
 calendrier, ici, sert partout :
 
 - en production, Cloud Scheduler lance `python -m backend.app.taches lancer <nom>`
@@ -85,7 +87,8 @@ class Tache:
     frequence: Frequence
 
 
-# Mêmes fréquences que l'ancien `celery_app.beat_schedule`.
+# Mêmes fréquences que l'ancien `celery_app.beat_schedule`, plus l'alerte
+# « Nouvel appareil » (boîte d'envoi, chaque minute).
 CALENDRIER: dict[str, Tache] = {
     "relances-prestataires": Tache(tasks.send_provider_reminders, Frequence(toutes_les_minutes=10)),
     "devis-expires": Tache(tasks.check_expired_quotes, Frequence(minute=0)),
@@ -93,6 +96,8 @@ CALENDRIER: dict[str, Tache] = {
     "verification-mobile-money": Tache(tasks.check_pending_mobile_money, Frequence(toutes_les_minutes=2)),
     "rapprochement-quotidien": Tache(tasks.send_daily_reconciliation, Frequence(heure=6, minute=0)),
     "analytics-quotidiennes": Tache(tasks.send_daily_analytics, Frequence(heure=8, minute=0)),
+    "alertes-nouvel-appareil": Tache(tasks.send_pending_device_alerts, Frequence(toutes_les_minutes=1)),
+    "purge-nonces": Tache(tasks.purge_request_nonces, Frequence(minute=30)),
 }
 
 

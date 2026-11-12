@@ -119,6 +119,9 @@ tâche ne tourne jamais deux fois en même temps. Sur le PC, la commande
 `planificateur` ci-dessus ; en production, Cloud Scheduler lance
 `python -m backend.app.taches lancer <nom>` aux mêmes heures
 (`python -m backend.app.taches calendrier` affiche les expressions cron).
+Pas de `.delay()` : un envoi qui doit survivre à une panne passe par une
+boîte d'envoi en base vidée par une tâche (exemple : l'alerte « Nouvel
+appareil », `Device.alert_due_at`, tâche `alertes-nouvel-appareil`).
 Toujours lancer depuis la racine du dépôt (`messages` y est importé).
 
 ## Structure du projet

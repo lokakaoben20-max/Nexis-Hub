@@ -125,6 +125,33 @@ async def cmd_admin(message: Message):
     )
 
 
+@router.message(Command("couper_app"))
+async def cmd_couper_app(message: Message):
+    """`/couper_app <identifiant Telegram>` : coupe tous les téléphones de
+    l'application de cette personne (téléphone volé, compte suspect). Elle
+    devra se reconnecter par code ; son argent ne bouge pas. Le backend
+    revérifie que l'auteur est l'admin."""
+    if not is_admin(message.from_user.id):
+        await message.answer("Accès admin refusé.")
+        return
+    parts = (message.text or "").split()
+    if len(parts) != 2 or not parts[1].isdigit():
+        await message.answer("Usage : /couper_app <identifiant Telegram de la personne>")
+        return
+    try:
+        body = await backend_client.admin_revoke_app_devices(message.from_user.id, int(parts[1]))
+    except MoneyRefused as refusal:
+        if refusal.code == "account_not_found":
+            await message.answer("Aucun compte Nexis pour cet identifiant Telegram.")
+        else:
+            await message.answer(f"Refusé par le backend : {html.escape(refusal.code)}")
+        return
+    except BackendUnavailable:
+        await message.answer("Backend injoignable : aucun téléphone n'a été coupé. Réessaie plus tard.")
+        return
+    await message.answer(f"📵 Téléphones de l'application coupés : <b>{body['revoked']}</b>.", parse_mode="HTML")
+
+
 @router.callback_query(F.data == "admin_home")
 async def admin_home(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
