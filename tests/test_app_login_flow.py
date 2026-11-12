@@ -190,3 +190,87 @@ def test_the_code_message_exists_in_every_language_and_warns(lang):
     text = get_message("app_login_code", lang, code="123456")
 
     assert "123456" in text and "⚠️" in text
+
+
+# --- « Ce n'est pas moi » (PR 4) ---------------------------------------------
+
+
+class CallbackMessage:
+    def __init__(self):
+        self.answers = []
+        self.markup_removed = False
+
+    async def answer(self, text, parse_mode=None, reply_markup=None):
+        self.answers.append(text)
+
+    async def edit_reply_markup(self, reply_markup=None):
+        self.markup_removed = reply_markup is None
+
+
+class Callback:
+    def __init__(self, telegram_id, data):
+        self.from_user = User(telegram_id)
+        self.data = data
+        self.message = CallbackMessage()
+        self.answered = False
+
+    async def answer(self, *args, **kwargs):
+        self.answered = True
+
+
+@pytest.fixture
+def not_me(monkeypatch):
+    calls = []
+    outcome = {"result": {"status": "ok", "revoked": True, "already": False}}
+
+    async def fake(telegram_id, device_id):
+        calls.append((telegram_id, device_id))
+        result = outcome["result"]
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(backend_client, "app_device_not_me", fake)
+    return calls, outcome
+
+
+def test_not_me_asks_the_backend_to_cut_that_phone(not_me):
+    calls, _ = not_me
+    callback = Callback(601, "app_not_me_42")
+
+    asyncio.run(app_login.pas_moi(callback))
+
+    assert calls == [(601, 42)]
+    assert callback.message.answers == [get_message("app_not_me_done", "fr")]
+    assert callback.message.markup_removed and callback.answered
+
+
+def test_not_me_on_a_phone_that_is_not_mine_says_so(not_me):
+    _, outcome = not_me
+    outcome["result"] = backend_client.MoneyRefused("device_not_found")
+    callback = Callback(601, "app_not_me_42")
+
+    asyncio.run(app_login.pas_moi(callback))
+
+    assert callback.message.answers == [get_message("app_not_me_unknown", "fr")]
+    assert not callback.message.markup_removed
+
+
+def test_not_me_keeps_its_button_when_the_backend_is_down(not_me):
+    _, outcome = not_me
+    outcome["result"] = backend_client.BackendUnavailable("down")
+    callback = Callback(601, "app_not_me_42")
+
+    asyncio.run(app_login.pas_moi(callback))
+
+    assert callback.message.answers == [get_message("app_not_me_retry", "fr")]
+    assert not callback.message.markup_removed
+
+
+def test_a_malformed_not_me_button_does_nothing(not_me):
+    calls, _ = not_me
+    callback = Callback(601, "app_not_me_abc")
+
+    asyncio.run(app_login.pas_moi(callback))
+
+    assert calls == [] and callback.message.answers == [] and callback.answered
