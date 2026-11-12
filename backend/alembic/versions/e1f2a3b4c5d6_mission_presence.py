@@ -11,7 +11,7 @@ Le code de présence n'est jamais enregistré : il est recalculé par le backend
 
 Conception : localisation/confirmation-arrivee-et-devis-sur-place-2026-11-08.md.
 
-Revision ID: c8d9e0f1a2b3
+Revision ID: e1f2a3b4c5d6
 Revises: b7c8d9e0f1a2
 Create Date: 2026-11-08
 """
@@ -21,7 +21,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "c8d9e0f1a2b3"
+revision: str = "e1f2a3b4c5d6"
 down_revision: Union[str, Sequence[str], None] = "b7c8d9e0f1a2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

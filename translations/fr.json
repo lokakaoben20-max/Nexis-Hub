@@ -283,5 +283,11 @@
   "money_error_invalid_presence_code": "Le code de présence a 4 chiffres.",
   "button_presence_wrong_confirm": "🚫 Confirmer : ce n'est pas lui",
   "button_presence_back": "↩️ Retour",
-  "presence_wrong_confirm_prompt": "La personne devant vous n'est pas celle de la photo ? Confirmez : la mission sera gelée et l'équipe Nexis prévenue."
+  "presence_wrong_confirm_prompt": "La personne devant vous n'est pas celle de la photo ? Confirmez : la mission sera gelée et l'équipe Nexis prévenue.",
+  "app_new_device_alert": "🔐 <b>Nouvel appareil</b> connecté à votre compte Nexis : {device}, le {date} à {time} (heure de Kinshasa).\n\nPar sécurité, aucun argent ne pourra sortir depuis ce téléphone pendant 72 heures.\n\nSi ce n'est pas vous, appuyez tout de suite sur « Ce n'est pas moi ».",
+  "app_device_unnamed": "un téléphone",
+  "button_app_not_me": "🚫 Ce n'est pas moi",
+  "app_not_me_done": "✅ Ce téléphone est coupé : il ne peut plus rien faire sur votre compte. Notre équipe est prévenue et vérifie votre compte. Ne donnez jamais votre code de connexion à personne, même à quelqu'un qui dit venir de Nexis.",
+  "app_not_me_unknown": "Ce téléphone n'est pas relié à votre compte. Rien n'a été changé.",
+  "app_not_me_retry": "⚠️ Le service est momentanément indisponible : le téléphone n'est pas encore coupé. Réessayez dans un instant avec le bouton « Ce n'est pas moi »."
 }

@@ -1,4 +1,4 @@
-"""Migration c8d9e0f1a2b3 (arrivée confirmée) sur un vrai Postgres.
+"""Migration e1f2a3b4c5d6 (arrivée confirmée) sur un vrai Postgres.
 
 Comme test_app_devices_migration.py : ne s'exécute que si
 `NEXIS_TEST_POSTGRES_URL` désigne une base Postgres jetable dont le nom finit
@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from backend.tests.test_app_devices_migration import alembic
 from backend.tests.test_mission_destination_migration import URL, _insert_mission, engine  # noqa: F401 (fixture)
 
-REVISION = "c8d9e0f1a2b3"
+REVISION = "e1f2a3b4c5d6"
 PREVIOUS = "b7c8d9e0f1a2"
 
 pytestmark = pytest.mark.skipif(not URL, reason="NEXIS_TEST_POSTGRES_URL absent : pas de Postgres de test")
