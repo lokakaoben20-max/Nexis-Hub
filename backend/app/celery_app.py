@@ -43,6 +43,10 @@ celery_app.conf.beat_schedule = {
         "task": "backend.app.tasks.send_daily_reconciliation",
         "schedule": crontab(hour=6, minute=0),
     },
+    "purge-request-nonces": {
+        "task": "backend.app.tasks.purge_request_nonces",
+        "schedule": crontab(minute=30),
+    },
     "send-daily-analytics": {
         "task": "backend.app.tasks.send_daily_analytics",
         "schedule": crontab(hour=8, minute=0),

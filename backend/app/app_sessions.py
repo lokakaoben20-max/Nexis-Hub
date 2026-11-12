@@ -21,6 +21,18 @@ Plan : app-mobile/plan-etape1-connexion-api-2026-11-07.md, sections 5.5 et 5.6.
   code.
 - **Appareil coupé** : définitivement, avec toutes ses sessions. Sa clé ne
   pourra plus jamais servir.
+
+PR 4 (section 5.7) :
+
+- **Demandes signées** (`verify_signed_request`) : la clé de l'appareil signe
+  méthode, chemin, empreinte du corps, horodatage, nonce et empreinte du
+  jeton de session. Refus : signature fausse, horodatage à plus de 5 minutes,
+  nonce déjà vu (la base le refuse, même sous demandes simultanées).
+- **Argent sortant** (`verify_money_request`) : en plus, l'appareil doit être
+  vérifié par Google ou Apple (`attestation == "verified"`) et son délai de
+  72 heures écoulé. En cas de doute, on refuse.
+- **« Ce n'est pas moi »** (`report_not_me`) : la personne coupe, depuis un
+  autre canal de son compte, un téléphone qu'elle ne reconnaît pas.
 """
 
 from __future__ import annotations
@@ -28,6 +40,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -35,11 +48,12 @@ from datetime import datetime, timedelta
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app import app_auth, ledger
 from backend.app.app_auth import AuthError
-from backend.app.models import DEVICE_PLATFORMS, AppSession, AuthEvent, ChannelIdentity, Device
+from backend.app.models import DEVICE_PLATFORMS, AppSession, AuthEvent, ChannelIdentity, Device, RequestNonce
 
 ACCESS_TTL = timedelta(minutes=15)
 REFRESH_TTL = timedelta(days=30)
@@ -51,6 +65,16 @@ MAX_APP_VERSION = 20
 # étape ne peut pas servir à une autre.
 LOGIN_CONTEXT = "nexis-app-login-v1"
 REFRESH_CONTEXT = "nexis-app-refresh-v1"
+REQUEST_CONTEXT = "nexis-app-request-v1"
+
+# Demandes signées : écart d'horloge toléré, et durée pendant laquelle un
+# nonce est gardé. Elle dépasse largement l'écart toléré : une demande assez
+# vieille pour que son nonce soit effacé est déjà refusée par son horodatage.
+REQUEST_MAX_SKEW = timedelta(minutes=5)
+NONCE_RETENTION = timedelta(hours=24)
+_NONCE = re.compile(r"[A-Za-z0-9_-]{22,64}")
+_TIMESTAMP = re.compile(r"[0-9]{1,12}")
+_EPOCH = datetime(1970, 1, 1)
 
 
 @dataclass(frozen=True)
@@ -64,6 +88,9 @@ class SessionTokens:
     refresh_expires_at: datetime
     device_id: int
     account_id: int
+    # Téléphone créé par cette connexion : l'API publique lance alors
+    # l'alerte « Nouvel appareil » (tasks.alert_new_app_device).
+    new_device: bool = False
 
 
 @dataclass(frozen=True)
@@ -165,8 +192,10 @@ def _new_session(db: Session, device: Device, family_id: str, now: datetime) -> 
     return session, access, refresh
 
 
-def _tokens(session: AppSession, access: str, refresh: str, device: Device) -> SessionTokens:
-    return SessionTokens(access, session.access_expires_at, refresh, session.refresh_expires_at, device.id, device.account_id)
+def _tokens(session: AppSession, access: str, refresh: str, device: Device, new_device: bool = False) -> SessionTokens:
+    return SessionTokens(
+        access, session.access_expires_at, refresh, session.refresh_expires_at, device.id, device.account_id, new_device
+    )
 
 
 def sign_in(
@@ -205,13 +234,15 @@ def sign_in(
         raise AuthError("device_key_in_use", 409)
 
     _ensure_app_identity(db, verified.account_id, now)
-    if device is None:
+    new_device = device is None
+    if new_device:
         device = Device(
             account_id=verified.account_id,
             platform=platform,
             public_key=public_key,
             key_thumbprint=thumbprint,
-            # Vérification d'intégrité Google / Apple : PR 4. D'ici là, aucun
+            # Vérification d'intégrité Google / Apple : elle arrive avec l'app
+            # (attestations réelles de vrais téléphones). D'ici là, aucun
             # appareil n'est « verified » : aucune action d'argent sortante.
             attestation="unverified",
             label=(label or "")[:MAX_LABEL] or None,
@@ -227,7 +258,7 @@ def sign_in(
     session, access, refresh = _new_session(db, device, secrets.token_hex(16), now)
     _event(db, "signed_in", "accepted", account_id=device.account_id, device_id=device.id, now=now)
     db.commit()
-    return _tokens(session, access, refresh, device)
+    return _tokens(session, access, refresh, device, new_device)
 
 
 def authenticate(db: Session, access_token: str | None, *, now: datetime | None = None) -> AppPrincipal:
@@ -350,3 +381,133 @@ def revoke_all_devices(db: Session, account_id: int, *, reason: str = "revoked_b
         _event(db, "device_revoked", reason, account_id=account_id, device_id=device.id, now=now)
     db.commit()
     return len(devices)
+
+
+# --- Demandes signées et argent sortant (PR 4, section 5.7) ----------------------
+
+
+def request_message(*, method: str, path: str, body: bytes, timestamp: str, nonce: str, access_token: str) -> str:
+    """Ce que l'appareil signe pour une demande. Le corps et le jeton n'y
+    figurent que par leur empreinte."""
+    return "\n".join(
+        [
+            REQUEST_CONTEXT,
+            method.upper(),
+            path,
+            hashlib.sha256(body).hexdigest(),
+            timestamp,
+            nonce,
+            _sha256(access_token),
+        ]
+    )
+
+
+def verify_signed_request(
+    db: Session,
+    *,
+    access_token: str | None,
+    method: str,
+    path: str,
+    body: bytes,
+    timestamp: str | None,
+    nonce: str | None,
+    signature: str | None,
+    now: datetime | None = None,
+) -> AppPrincipal:
+    """Vérifie une demande signée par la clé de l'appareil de la session.
+
+    Le nonce est enregistré (et validé en base) avant que l'action ne
+    commence : une demande ne passe qu'une fois, même si l'action échoue
+    ensuite. L'app en crée un nouveau à chaque essai. L'action garde sa propre
+    clé d'idempotence : la signature prouve qui demande, la clé empêche de le
+    faire deux fois."""
+    now = now or _utcnow()
+    principal = authenticate(db, access_token, now=now)
+    if not _TIMESTAMP.fullmatch(timestamp or ""):
+        raise AuthError("invalid_timestamp")
+    if not _NONCE.fullmatch(nonce or ""):
+        raise AuthError("invalid_nonce")
+    device = db.get(Device, principal.device_id)
+    key, _ = load_public_key(device.public_key)
+    message = request_message(
+        method=method, path=path, body=body, timestamp=timestamp, nonce=nonce, access_token=access_token
+    )
+    if not signature_is_valid(key, message, signature):
+        _event(db, "signed_request", "bad_signature", account_id=device.account_id, device_id=device.id, now=now)
+        db.commit()
+        raise AuthError("invalid_signature", 401)
+    sent_at = _EPOCH + timedelta(seconds=int(timestamp))
+    if abs(now - sent_at) > REQUEST_MAX_SKEW:
+        raise AuthError("stale_request", 401)
+    db.add(RequestNonce(device_id=device.id, nonce=nonce, seen_at=now))
+    device.last_seen_at = now
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        _event(db, "signed_request", "replayed", account_id=principal.account_id, device_id=principal.device_id, now=now)
+        db.commit()
+        raise AuthError("replayed_request", 409)
+    return principal
+
+
+def money_allowed(device: Device, now: datetime) -> str | None:
+    """Pourquoi ce téléphone ne peut pas faire sortir d'argent, ou None.
+    Même règle pour l'API et pour l'écran de l'app qui l'explique."""
+    if device.revoked_at is not None:
+        return "unauthorized"
+    if device.attestation != "verified":
+        return "device_not_attested"
+    if now < device.money_unlocked_at:
+        return "new_device_locked"
+    return None
+
+
+def verify_money_request(db: Session, *, now: datetime | None = None, **request) -> AppPrincipal:
+    """Demande signée d'une action d'argent sortante (retrait, changement du
+    numéro de retrait, paiement par portefeuille) : en plus de la signature,
+    le téléphone doit être vérifié par Google ou Apple et son délai de
+    72 heures écoulé."""
+    now = now or _utcnow()
+    principal = verify_signed_request(db, now=now, **request)
+    device = db.get(Device, principal.device_id)
+    refusal = money_allowed(device, now)
+    if refusal is not None:
+        _event(db, "money_request", refusal, account_id=principal.account_id, device_id=principal.device_id, now=now)
+        db.commit()
+        raise AuthError(refusal, 401 if refusal == "unauthorized" else 403)
+    return principal
+
+
+def purge_request_nonces(db: Session, *, now: datetime | None = None) -> int:
+    """Efface les nonces de plus de 24 heures (tâche planifiée)."""
+    now = now or _utcnow()
+    deleted = db.query(RequestNonce).filter(RequestNonce.seen_at < now - NONCE_RETENTION).delete(synchronize_session=False)
+    db.commit()
+    return deleted
+
+
+# --- « Ce n'est pas moi » (PR 4, section 5.5) -------------------------------------
+
+
+def needs_new_device_alert(device: Device) -> bool:
+    """Un téléphone ajouté à un compte qui existait déjà : les autres canaux
+    du compte sont prévenus. Le premier téléphone d'un compte tout neuf, non."""
+    return device.revoked_at is None and device.money_unlocked_at > device.created_at
+
+
+def report_not_me(db: Session, *, account_id: int, device_id: int, now: datetime | None = None) -> tuple[Device, bool]:
+    """La personne ne reconnaît pas ce téléphone : il est coupé tout de suite,
+    avec toutes ses sessions. Rend `(appareil, coupé_maintenant)` ; un second
+    appui ne change rien. Un téléphone d'un autre compte « n'existe pas »."""
+    now = now or _utcnow()
+    device = db.query(Device).filter(Device.id == device_id).with_for_update().one_or_none()
+    if device is None or device.account_id != account_id:
+        raise AuthError("device_not_found", 404)
+    if device.revoked_at is not None:
+        db.rollback()
+        return device, False
+    _revoke_device(db, device, "not_me", now)
+    _event(db, "device_revoked", "not_me", account_id=account_id, device_id=device.id, now=now)
+    db.commit()
+    return device, True

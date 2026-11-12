@@ -14,10 +14,10 @@ Toutes les règles sont dans le backend (`backend/app/app_auth.py`) : le bot ne
 décide de rien et ne garde rien, sauf le jeton le temps de l'étape.
 """
 
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, ReplyKeyboardRemove
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 
 from messages import get_message
 from telegram_bot import backend_client
@@ -25,6 +25,7 @@ from telegram_bot.keyboards import clavier_contact
 from telegram_bot.registration import _numero_partage
 
 START_PREFIX = "app_"
+NOT_ME_PREFIX = "app_not_me_"
 
 router = Router()
 
@@ -79,3 +80,29 @@ async def contact_pour_app(message: Message, state: FSMContext) -> None:
         parse_mode="HTML",
         reply_markup=ReplyKeyboardRemove(),
     )
+
+
+@router.callback_query(F.data.startswith(NOT_ME_PREFIX))
+async def pas_moi(callback: CallbackQuery) -> None:
+    """Bouton « Ce n'est pas moi » sous l'alerte « Nouvel appareil » (envoyée
+    par le backend). Le backend coupe le téléphone s'il est bien sur le compte
+    de cette personne."""
+    lang = await backend_client.get_user_language(callback.from_user.id)
+    raw_id = callback.data[len(NOT_ME_PREFIX):]
+    if not raw_id.isdigit():
+        await callback.answer()
+        return
+    try:
+        await backend_client.app_device_not_me(callback.from_user.id, int(raw_id))
+    except backend_client.MoneyRefused:
+        await callback.message.answer(get_message("app_not_me_unknown", lang))
+        await callback.answer()
+        return
+    except backend_client.BackendUnavailable:
+        # Rien n'est coupé : le bouton reste, la personne peut réessayer.
+        await callback.message.answer(get_message("app_not_me_retry", lang))
+        await callback.answer()
+        return
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer(get_message("app_not_me_done", lang))
+    await callback.answer()

@@ -261,5 +261,11 @@
   "button_view_place": "📍 Voir le lieu",
   "mission_place": "📍 <b>Lieu de la mission NXH-{mission_id:04d}</b>\nRepère : <b>{landmark}</b>",
   "place_not_available": "Le lieu exact est visible une fois la mission payée, et jusqu'à la fin de l'intervention.",
-  "place_unknown": "Le lieu exact n'a pas été enregistré pour cette mission : seule la commune est connue."
+  "place_unknown": "Le lieu exact n'a pas été enregistré pour cette mission : seule la commune est connue.",
+  "app_new_device_alert": "🔐 <b>Nouvel appareil</b> connecté à votre compte Nexis : {device}, le {date} à {time} (heure de Kinshasa).\n\nPar sécurité, aucun argent ne pourra sortir depuis ce téléphone pendant 72 heures.\n\nSi ce n'est pas vous, appuyez tout de suite sur « Ce n'est pas moi ».",
+  "app_device_unnamed": "un téléphone",
+  "button_app_not_me": "🚫 Ce n'est pas moi",
+  "app_not_me_done": "✅ Ce téléphone est coupé : il ne peut plus rien faire sur votre compte. Notre équipe est prévenue et vérifie votre compte. Ne donnez jamais votre code de connexion à personne, même à quelqu'un qui dit venir de Nexis.",
+  "app_not_me_unknown": "Ce téléphone n'est pas relié à votre compte. Rien n'a été changé.",
+  "app_not_me_retry": "⚠️ Le service est momentanément indisponible : le téléphone n'est pas encore coupé. Réessayez dans un instant avec le bouton « Ce n'est pas moi »."
 }
