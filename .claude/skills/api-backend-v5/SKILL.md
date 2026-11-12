@@ -50,9 +50,11 @@ def create_quote(payload: QuoteCreatePayload):
 
 ## Sécurité — voir le skill `securite-backend`
 
-Toutes les routes `/api/*` sont protégées par une clé partagée (`X-API-Key`),
-via `@router.` et non `@app.` — un nouvel endpoint déclaré avec `@app.` au
-lieu de `@router.` serait accessible sans authentification par erreur. Voir
+Toutes les routes `/api/*` sont protégées par une clé de service par canal
+(`X-API-Key`), via `@router.` et non `@app.` — un nouvel endpoint déclaré avec
+`@app.` au lieu de `@router.` serait accessible sans authentification par
+erreur. Une route est fermée à WhatsApp par défaut (`@open_to` pour l'ouvrir,
+`@provider_action` pour une action de prestataire, jamais sur WhatsApp). Voir
 `securite-backend` pour le détail, en particulier avant un endpoint qui touche
 à l'argent (paiement, escrow, wallet) ou à des données personnelles.
 

@@ -75,6 +75,91 @@ def _account_id_for_telegram(db: Session, telegram_id: int) -> int:
     return ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
 
 
+CLIENT_LANGUAGES = ("fr", "ln", "en")
+MAX_DISPLAY_NAME_LENGTH = 100
+
+
+class ClientRefused(ValueError):
+    """Refus d'inscription d'un client : code stable pour le canal."""
+
+    def __init__(self, code: str, http_status: int = 409):
+        super().__init__(code)
+        self.code = code
+        self.http_status = http_status
+
+
+def register_whatsapp_client(
+    db: Session, *, bsuid: str, display_name: str, language: str, phone: str | None
+) -> tuple[NexisAccount, bool]:
+    """Inscrit (ou met à jour) le client qui écrit depuis WhatsApp.
+
+    `bsuid` : identité WhatsApp de l'expéditeur, garantie par Meta (le service
+    WhatsApp ne la lit que dans un webhook signé). `phone` : le numéro que
+    Meta donne avec le message (`wa_id`), absent si l'utilisateur a masqué son
+    numéro derrière un nom d'utilisateur. Il est prouvé par WhatsApp.
+
+    Règles (docs/ARCHITECTURE_WHATSAPP.md, « Règles de liaison ») :
+
+    - identité inconnue, numéro libre ou absent : nouveau compte client, son
+      identité `whatsapp` vérifiée, et le numéro prouvé s'il y en a un ;
+    - identité inconnue, numéro déjà prouvé sur un autre compte : **refus**
+      (`phone_owned_by_account`), rien n'est créé. Le numéro seul ne rattache
+      jamais un compte existant ni son argent : la liaison passera par un code
+      envoyé sur l'autre canal (étape 9) ;
+    - identité connue : nom et langue mis à jour. Le compte reçoit le rôle
+      client, jamais le rôle prestataire (aucun parcours prestataire sur
+      WhatsApp).
+
+    Tout ou rien : un refus annule la transaction. Renvoie (compte, créé)."""
+    if language not in CLIENT_LANGUAGES:
+        raise ClientRefused("invalid_language", 400)
+    display_name = (display_name or "").strip()
+    if not display_name or len(display_name) > MAX_DISPLAY_NAME_LENGTH:
+        raise ClientRefused("invalid_name", 400)
+    try:
+        normalized_phone = app_auth.normalize_phone(phone) if phone else None
+    except app_auth.AuthError as error:
+        raise ClientRefused("invalid_phone", 400) from error
+
+    try:
+        account_id = ledger.account_id_for(db, ledger.WHATSAPP, bsuid)
+        created = account_id is None
+        if created:
+            if normalized_phone and app_auth.account_with_proven_phone(db, normalized_phone) is not None:
+                _refuse_whatsapp_phone_conflict(db, normalized_phone)
+            account_id = ledger.account_id_for(db, ledger.WHATSAPP, bsuid, create=True)
+        account = db.get(NexisAccount, account_id, with_for_update=True)
+        if account is None:  # défense contre une identité orpheline en base
+            raise RuntimeError("Compte Nexis introuvable pour une identité WhatsApp")
+        account.roles = sorted(set(account.roles or []) | {"client"})
+        account.language = language
+        account.display_name = display_name
+        if normalized_phone and not app_auth.prove_phone(db, account_id, normalized_phone):
+            if created:
+                # Numéro prouvé par un autre compte entre la première lecture
+                # et maintenant : même refus, rien n'est créé.
+                _refuse_whatsapp_phone_conflict(db, normalized_phone)
+            # Compte déjà connu, mais ce numéro est le numéro prouvé d'un autre
+            # compte : on ne déplace rien (événement journalisé par prove_phone).
+        db.commit()
+        db.refresh(account)
+        return account, created
+    except IntegrityError:
+        # Course : même numéro prouvé au même instant par un autre compte
+        # (index unique des numéros prouvés).
+        _refuse_whatsapp_phone_conflict(db, normalized_phone)
+
+
+def _refuse_whatsapp_phone_conflict(db: Session, phone: str | None):
+    """Annule tout ce que la demande a écrit, journalise le conflit (sans le
+    numéro, seulement le compte qui le détient) et refuse."""
+    db.rollback()
+    holder = app_auth.account_with_proven_phone(db, phone) if phone else None
+    app_auth.record_event(db, "whatsapp_phone_conflict", "refused", account_id=holder.id if holder else None)
+    db.commit()
+    raise ClientRefused("phone_owned_by_account")
+
+
 def upsert_user(
     db: Session,
     telegram_id: int,

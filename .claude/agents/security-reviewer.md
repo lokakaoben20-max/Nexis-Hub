@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: Utiliser avant de committer tout changement à backend/app/main.py (nouvel endpoint, modification de route), à la logique de paiement/escrow/wallet (db.py ou backend/app/crud.py), à verify_telegram_init_data ou verify_api_key, ou à tout ce qui manipule BOT_TOKEN/BACKEND_API_KEY. Ce backend a réellement tourné sans authentification jusqu'au 2026-08-06 (26 endpoints ouverts) — cet agent existe pour que ça ne se reproduise plus jamais sans qu'on s'en aperçoive.
+description: Utiliser avant de committer tout changement à backend/app/main.py (nouvel endpoint, modification de route), à la logique de paiement/escrow/wallet (db.py ou backend/app/crud.py), à verify_telegram_init_data ou verify_service_key, ou à tout ce qui manipule BOT_TOKEN/les clés BACKEND_API_KEY_*. Ce backend a réellement tourné sans authentification jusqu'au 2026-08-06 (26 endpoints ouverts) — cet agent existe pour que ça ne se reproduise plus jamais sans qu'on s'en aperçoive.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -14,7 +14,7 @@ tout ce qui y déroge, avant que ça n'atteigne un commit.
 
 1. **Tout nouvel endpoint backend est-il protégé ?** Vérifier qu'il est
    déclaré via `@router.` et non `@app.` dans `backend/app/main.py` — un
-   endpoint sous `@app.` échappe à `Depends(verify_api_key)` et serait
+   endpoint sous `@app.` échappe à `Depends(verify_service_key)` et serait
    accessible sans authentification, l'exact problème qui existait sur les
    26 endpoints avant le 2026-08-06.
 2. **Tout nouvel appel du bot vers le backend envoie-t-il la clé ?** Un
@@ -25,13 +25,13 @@ tout ce qui y déroge, avant que ça n'atteigne un commit.
 3. **Toute comparaison de secret est-elle en temps constant ?** `==` sur un
    token/clé/hash est une régression à signaler immédiatement — le projet
    utilise `hmac.compare_digest` partout (`verify_telegram_init_data` dans
-   `mini_app/app.py`, `verify_api_key` dans `backend/app/main.py`).
+   `mini_app/app.py`, `verify_service_key` dans `backend/app/main.py`).
 4. **Un secret fuit-il ?** Chercher un token, une clé API ou un mot de
    passe écrit en dur dans le code, un test, un message de commit ou un
    fichier de documentation — jamais uniquement dans `.env` (non suivi par
    Git).
 5. **Un test de sécurité a-t-il vraiment du mordant ?** Pour toute
-   modification de `verify_telegram_init_data` ou `verify_api_key`, vérifier
+   modification de `verify_telegram_init_data` ou `verify_service_key`, vérifier
    qu'un test échoue si la vérification est cassée (test de mutation) — pas
    seulement qu'un test existe et passe. Voir la pratique déjà appliquée
    dans `tests/test_mini_app.py` et `backend/tests/test_main.py`.

@@ -8,7 +8,7 @@ la CI lance désormais à chaque modification.
 Migration additive : l'ancien code tourne sur le nouveau schéma.
 
 Revision ID: c8d9e0f1a2b3
-Revises: b7c8d9e0f1a2
+Revises: 1b2c3d4e5f6a
 Create Date: 2026-11-07
 """
 from typing import Sequence, Union
@@ -17,7 +17,7 @@ from alembic import op
 
 
 revision: str = "c8d9e0f1a2b3"
-down_revision: Union[str, Sequence[str], None] = "b7c8d9e0f1a2"
+down_revision: Union[str, Sequence[str], None] = "1b2c3d4e5f6a"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

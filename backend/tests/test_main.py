@@ -14,13 +14,13 @@ from backend.app.main import app
 client = TestClient(app)
 
 # Clé factice utilisée par tous les tests authentifiés - jamais la vraie
-# BACKEND_API_KEY de .env, qui n'est ni lue ni nécessaire ici.
+# BACKEND_API_KEY_TELEGRAM de .env, qui n'est ni lue ni nécessaire ici.
 TEST_API_KEY = "test-backend-api-key-not-a-secret"
 
 
 def _reload_backend_with_db(monkeypatch, backend_db_url):
     monkeypatch.setenv("DATABASE_URL", backend_db_url)
-    monkeypatch.setenv("BACKEND_API_KEY", TEST_API_KEY)
+    monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TEST_API_KEY)
 
     database_module = importlib.reload(importlib.import_module("backend.app.database"))
     importlib.reload(importlib.import_module("backend.app.models"))

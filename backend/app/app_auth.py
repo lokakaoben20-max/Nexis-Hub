@@ -137,6 +137,12 @@ def _event(db: Session, type_: str, result: str, *, account_id=None, ip_hash=Non
     db.add(AuthEvent(account_id=account_id, type=type_, result=result, ip_hash=ip_hash, created_at=now or _utcnow()))
 
 
+def record_event(db: Session, type_: str, result: str, *, account_id=None) -> None:
+    """Ajoute une ligne au journal d'audit (sans numéro, code ni jeton). Ne
+    valide pas la transaction."""
+    _event(db, type_, result, account_id=account_id)
+
+
 def _lock_phone(db: Session, phone: str) -> None:
     """Verrou de transaction par numéro (Postgres) : les comptages de limite
     et la création de la demande se font sans qu'une demande simultanée pour

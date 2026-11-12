@@ -221,6 +221,19 @@ au démarrage que Telegram envoie bien chez lui et refuse de démarrer sinon.
 Il traite chaque update avant de répondre à Telegram, une seule fois
 (registre Redis `telegram_bot/update_ledger.py`) : Redis est obligatoire.
 
+### Clés de service du backend (une par canal)
+
+Le backend reconnaît le canal qui l'appelle à sa clé (`X-API-Key`) :
+`BACKEND_API_KEY_TELEGRAM` pour le bot et la Mini App (obligatoire, même valeur
+dans le `.env` des trois), `BACKEND_API_KEY_WHATSAPP` pour le futur service
+WhatsApp (vide tant qu'il ne tourne pas). L'ancienne clé unique
+`BACKEND_API_KEY` n'existe plus : si elle est encore dans le `.env`, la
+renommer en `BACKEND_API_KEY_TELEGRAM` (même valeur), sinon backend, bot et
+Mini App refusent de démarrer avec un message qui le dit. Une route du backend
+est fermée à WhatsApp sauf `@open_to(...)` ; une action de prestataire porte
+`@provider_action` et ne peut jamais être ouverte à WhatsApp (voir
+`backend/tests/test_whatsapp_channel.py` et le skill `securite-backend`).
+
 ### Lancer le backend V5 en local
 
 ```bash

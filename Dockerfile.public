@@ -1,0 +1,17 @@
+# API publique de l'application mobile (backend/app/public.py).
+# Image distincte de l'API du bot : elle ne contient que ce qu'il faut pour
+# le backend, et ne démarre ni le bot Telegram ni les workers Celery.
+FROM python:3.13-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY backend ./backend
+
+USER nobody
+EXPOSE 8080
+CMD ["uvicorn", "backend.app.public:app", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers"]

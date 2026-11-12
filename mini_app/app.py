@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 import hashlib
 import hmac
@@ -6,7 +7,6 @@ import os
 import time
 from urllib.parse import parse_qsl
 
-from contextlib import asynccontextmanager
 
 import httpx
 from dotenv import load_dotenv
@@ -37,14 +37,17 @@ load_dotenv(BASE_DIR.parent / ".env")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 @asynccontextmanager
-async def _cycle_de_vie(_app):
+async def _lifespan(_app: FastAPI):
     # Hors développement, une configuration incomplète empêche le démarrage.
     nexis_config.verifier("miniapp")
     nexis_logs.configurer("miniapp")
+    # Sans la clé du canal Telegram, la Mini App ne pourrait rien demander au
+    # backend : elle refuse de démarrer plutôt que de répondre « indisponible ».
+    backend_client.check_backend_key()
     yield
 
 
-app = FastAPI(title="Nexis Hub Mini App", lifespan=_cycle_de_vie)
+app = FastAPI(title="Nexis Hub Mini App", lifespan=_lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 
 FALLBACK_SERVICES = {

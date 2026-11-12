@@ -54,7 +54,7 @@ def test_le_backend_n_est_pret_que_sur_une_base_a_la_derniere_migration(backend)
 def test_le_backend_refuse_de_demarrer_en_production_sans_configuration(backend, monkeypatch):
     main, _ = backend
     monkeypatch.setenv("APP_ENV", "production")
-    for nom in ("BACKEND_API_KEY", "APP_CODE_HMAC_KEY", "PAYMENT_GATEWAY", "COLLECTION_FEE_RATE"):
+    for nom in ("BACKEND_API_KEY_TELEGRAM", "APP_CODE_HMAC_KEY", "PAYMENT_GATEWAY", "COLLECTION_FEE_RATE"):
         monkeypatch.delenv(nom, raising=False)
     import nexis_config
 

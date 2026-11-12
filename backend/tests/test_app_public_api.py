@@ -26,7 +26,7 @@ BOT_KEY = "test-backend-api-key-not-a-secret"
 @pytest.fixture
 def env(monkeypatch, backend_db_url):
     monkeypatch.setenv("DATABASE_URL", backend_db_url)
-    monkeypatch.setenv("BACKEND_API_KEY", BOT_KEY)
+    monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", BOT_KEY)
     monkeypatch.setenv("APP_CODE_HMAC_KEY", "test-hmac-key-not-a-secret-0123456789abcdef")
     monkeypatch.setenv("NEXIS_BOT_USERNAME", "@NexisHubTestBot")
     monkeypatch.delenv("NEXIS_APP_MIN_VERSION", raising=False)

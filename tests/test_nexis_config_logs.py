@@ -37,7 +37,7 @@ def _backend_complet(env, app_env="production", passerelle="flexpay"):
     env(
         APP_ENV=app_env,
         DATABASE_URL="postgresql+psycopg://u@h/nexis",
-        BACKEND_API_KEY=SECRET,
+        BACKEND_API_KEY_TELEGRAM=SECRET,
         APP_CODE_HMAC_KEY=SECRET,
         BOT_TOKEN="123:abc",
         ADMIN_TELEGRAM_ID="42",
@@ -72,11 +72,11 @@ def test_en_production_aucun_reglage_d_argent_ne_prend_de_valeur_par_defaut(env)
 
 
 def test_toutes_les_erreurs_sont_donnees_d_un_coup_sans_les_valeurs(env):
-    env(APP_ENV="production", BACKEND_API_KEY="court-et-secret", DATABASE_URL="sqlite:///x.db")
+    env(APP_ENV="production", BACKEND_API_KEY_TELEGRAM="court-et-secret", DATABASE_URL="sqlite:///x.db")
     with pytest.raises(nexis_config.ConfigurationInvalide) as erreur:
         nexis_config.verifier("backend")
     texte = str(erreur.value)
-    assert "BACKEND_API_KEY trop court" in texte
+    assert "BACKEND_API_KEY_TELEGRAM trop court" in texte
     assert "DATABASE_URL doit viser Postgres" in texte
     assert "BOT_TOKEN manquant" in texte
     assert "court-et-secret" not in texte and "x.db" not in texte
@@ -93,7 +93,7 @@ def test_paiement_simule_interdit_en_production_et_obligatoire_en_test(env):
 
 def test_le_bot_heberge_est_en_webhook_https_avec_secret(env):
     env(
-        APP_ENV="test", BOT_TOKEN="123:abc", BACKEND_BASE_URL="http://backend.interne", BACKEND_API_KEY=SECRET,
+        APP_ENV="test", BOT_TOKEN="123:abc", BACKEND_BASE_URL="http://backend.interne", BACKEND_API_KEY_TELEGRAM=SECRET,
         REDIS_URL="rediss://r", MINI_APP_URL="https://app.example.org", ADMIN_TELEGRAM_ID="42", BOT_RUN_MODE="polling",
     )
     assert "BOT_RUN_MODE doit valoir webhook hors développement" in nexis_config.problemes("bot")

@@ -79,3 +79,12 @@ def backend_db_url(tmp_path):
         with admin.connect() as conn:
             conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
         admin.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _service_keys_from_tests_only(monkeypatch):
+    """Les clés de service viennent des tests, jamais du `.env` du poste
+    (que `load_dotenv` charge à l'import) : l'ancienne clé unique ou une
+    vraie clé WhatsApp locale changerait le résultat des tests."""
+    for variable in ("BACKEND_API_KEY", "BACKEND_API_KEY_WHATSAPP"):
+        monkeypatch.delenv(variable, raising=False)

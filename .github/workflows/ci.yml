@@ -170,7 +170,7 @@ jobs:
         run: |
           cat > prod.env <<CONF
           DATABASE_URL=${DATABASE_URL}
-          BACKEND_API_KEY=$(openssl rand -hex 32)
+          BACKEND_API_KEY_TELEGRAM=$(openssl rand -hex 32)
           APP_CODE_HMAC_KEY=$(openssl rand -hex 32)
           BOT_TOKEN=123456:jeton-factice-de-la-ci
           ADMIN_TELEGRAM_ID=42
