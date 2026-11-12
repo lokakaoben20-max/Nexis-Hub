@@ -12,13 +12,16 @@ logger = logging.getLogger(__name__)
 
 
 def send_telegram_message(telegram_id: int, text: str, reply_markup: dict | None = None) -> bool:
-    """Envoie un message Telegram depuis le backend (API HTTP Telegram, appel
-    synchrone : pas de boucle aiogram ici).
+    """Envoie un message Telegram depuis une tâche planifiée (`taches.py`).
 
-    Ne lève jamais : une notification ratée ne doit pas faire échouer
-    l'opération qui l'a déclenchée (même philosophie que `_safe_backend_call`
-    dans `main.py` pour les appels bot → backend). Renvoie False si le
-    message n'est pas parti.
+    Une tâche tourne dans un process séparé, sans boucle asyncio/aiogram comme
+    `main.py` — plutôt que d'y instancier un `aiogram.Bot` pour un seul appel
+    synchrone, on appelle directement l'API HTTP Telegram (`httpx.post`).
+
+    Ne lève jamais : une notification ratée ne doit pas faire échouer la tâche
+    qui l'a déclenchée (même philosophie que `_safe_backend_call` dans
+    `main.py` pour les appels bot → backend). Rend True si Telegram a accepté
+    le message, pour les tâches qui doivent réessayer.
     """
     return _send("sendMessage", telegram_id, {"text": text}, reply_markup)
 

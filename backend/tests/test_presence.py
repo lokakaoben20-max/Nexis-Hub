@@ -91,8 +91,8 @@ def test_the_presence_code_is_four_digits_stable_and_needs_a_key(monkeypatch):
     assert (refusal.value.code, refusal.value.http_status) == ("presence_not_configured", 503)
 
 
-def test_the_arrival_alone_starts_nothing_and_asks_the_client(tmp_path, monkeypatch, sent):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_the_arrival_alone_starts_nothing_and_asks_the_client(backend_db_url, monkeypatch, sent):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     from backend.app import presence
 
     with test_client:
@@ -117,8 +117,8 @@ def test_the_arrival_alone_starts_nothing_and_asks_the_client(tmp_path, monkeypa
     assert _to(sent, PROVIDER) == [], "le prestataire voit la réponse dans son canal"
 
 
-def test_the_question_shows_the_provider_photo_when_there_is_one(tmp_path, monkeypatch, sent):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_the_question_shows_the_provider_photo_when_there_is_one(backend_db_url, monkeypatch, sent):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     from backend.app.models import BotProvider
 
     with test_client:
@@ -132,8 +132,8 @@ def test_the_question_shows_the_provider_photo_when_there_is_one(tmp_path, monke
     assert _to(sent, CLIENT)[0].startswith("[photo selfie-file-id] ")
 
 
-def test_the_question_still_leaves_when_telegram_refuses_the_photo(tmp_path, monkeypatch, sent):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_the_question_still_leaves_when_telegram_refuses_the_photo(backend_db_url, monkeypatch, sent):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     from backend.app import notify
     from backend.app.models import BotProvider
 
@@ -149,8 +149,8 @@ def test_the_question_still_leaves_when_telegram_refuses_the_photo(tmp_path, mon
     assert len(_to(sent, CLIENT)) == 1
 
 
-def test_the_question_is_asked_again_only_after_a_while_or_a_not_yet(tmp_path, monkeypatch, sent):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_the_question_is_asked_again_only_after_a_while_or_a_not_yet(backend_db_url, monkeypatch, sent):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     from backend.app.models import MissionPresence
 
     with test_client:
@@ -177,8 +177,8 @@ def test_the_question_is_asked_again_only_after_a_while_or_a_not_yet(tmp_path, m
     assert len(_to(sent, CLIENT)) == 3
 
 
-def test_the_client_tap_confirms_and_starts_the_mission_once(tmp_path, monkeypatch, sent):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_the_client_tap_confirms_and_starts_the_mission_once(backend_db_url, monkeypatch, sent):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
         mission_id = _paid_mission(test_client, database_module)
         _post(test_client, mission_id, "arrived", PROVIDER)
@@ -199,8 +199,8 @@ def test_the_client_tap_confirms_and_starts_the_mission_once(tmp_path, monkeypat
     assert _to(sent, CLIENT) == [], "le client voit la réponse dans son canal"
 
 
-def test_the_presence_code_confirms_and_starts_the_mission(tmp_path, monkeypatch, sent):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_the_presence_code_confirms_and_starts_the_mission(backend_db_url, monkeypatch, sent):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     from backend.app import presence
 
     with test_client:
@@ -224,8 +224,8 @@ def test_the_presence_code_confirms_and_starts_the_mission(tmp_path, monkeypatch
     assert _to(sent, PROVIDER) == []
 
 
-def test_only_the_chosen_provider_can_use_the_code(tmp_path, monkeypatch, sent):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_only_the_chosen_provider_can_use_the_code(backend_db_url, monkeypatch, sent):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     from backend.app import presence
 
     with test_client:
@@ -243,8 +243,8 @@ def test_only_the_chosen_provider_can_use_the_code(tmp_path, monkeypatch, sent):
     assert _status(database_module, mission_id) == "confirmed"
 
 
-def test_five_wrong_codes_lock_the_code_and_alert_the_admin(tmp_path, monkeypatch, sent):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_five_wrong_codes_lock_the_code_and_alert_the_admin(backend_db_url, monkeypatch, sent):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     from backend.app import presence
 
     with test_client:
@@ -266,8 +266,8 @@ def test_five_wrong_codes_lock_the_code_and_alert_the_admin(tmp_path, monkeypatc
     assert _presence_row(database_module, mission_id).failed_code_attempts == 5
 
 
-def test_client_and_code_at_the_same_time_record_one_presence(tmp_path, monkeypatch, sent):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_client_and_code_at_the_same_time_record_one_presence(backend_db_url, monkeypatch, sent):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     from backend.app import presence
 
     with test_client:
@@ -283,8 +283,8 @@ def test_client_and_code_at_the_same_time_record_one_presence(tmp_path, monkeypa
     assert len(_to(sent, PROVIDER)) == 1 and _to(sent, CLIENT) == []
 
 
-def test_that_is_not_him_freezes_the_mission(tmp_path, monkeypatch, sent):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_that_is_not_him_freezes_the_mission(backend_db_url, monkeypatch, sent):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     from backend.app import ledger, presence
 
     with test_client:
@@ -313,8 +313,8 @@ def test_that_is_not_him_freezes_the_mission(tmp_path, monkeypatch, sent):
         assert "signalé par le client à l'arrivée" in db.get(ledger.BotMission, mission_id).dispute_reason
 
 
-def test_another_client_cannot_answer(tmp_path, monkeypatch, sent):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_another_client_cannot_answer(backend_db_url, monkeypatch, sent):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
         mission_id = _paid_mission(test_client, database_module)
         answers = [_post(test_client, mission_id, action, STRANGER) for action in ("confirm", "not-yet", "wrong-person")]
@@ -324,8 +324,8 @@ def test_another_client_cannot_answer(tmp_path, monkeypatch, sent):
     assert _presence_row(database_module, mission_id) == []
 
 
-def test_nothing_happens_before_payment(tmp_path, monkeypatch, sent):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_nothing_happens_before_payment(backend_db_url, monkeypatch, sent):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
         _register_provider(test_client, PROVIDER, ["service_plomberie"], ["Gombe"])
         mission_id = _create(test_client).json()["mission"]["mission_id"]
@@ -346,8 +346,8 @@ def test_nothing_happens_before_payment(tmp_path, monkeypatch, sent):
     assert _presence_row(database_module, mission_id) == [], "un refus n'enregistre rien"
 
 
-def test_who_reads_the_presence_and_the_code(tmp_path, monkeypatch, sent):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_who_reads_the_presence_and_the_code(backend_db_url, monkeypatch, sent):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     from backend.app import presence
 
     with test_client:
@@ -365,8 +365,8 @@ def test_who_reads_the_presence_and_the_code(tmp_path, monkeypatch, sent):
     assert other_view.status_code == stranger_view.status_code == 404
 
 
-def test_without_the_key_nothing_is_counted(tmp_path, monkeypatch, sent):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_without_the_key_nothing_is_counted(backend_db_url, monkeypatch, sent):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
         mission_id = _paid_mission(test_client, database_module)
         monkeypatch.setenv("PRESENCE_CODE_KEY", "")
@@ -376,8 +376,8 @@ def test_without_the_key_nothing_is_counted(tmp_path, monkeypatch, sent):
     assert _presence_row(database_module, mission_id) == []
 
 
-def test_the_code_never_reaches_the_logs(tmp_path, monkeypatch, sent, caplog):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_the_code_never_reaches_the_logs(backend_db_url, monkeypatch, sent, caplog):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     from backend.app import presence
 
     caplog.set_level(logging.DEBUG)
@@ -393,12 +393,12 @@ def test_the_code_never_reaches_the_logs(tmp_path, monkeypatch, sent, caplog):
     assert code not in caplog.text
 
 
-def test_the_presence_table_refuses_inconsistent_rows(tmp_path, monkeypatch, sent):
+def test_the_presence_table_refuses_inconsistent_rows(backend_db_url, monkeypatch, sent):
     from sqlalchemy.exc import IntegrityError
 
     from backend.app.models import MissionPresence
 
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
         mission_id = _paid_mission(test_client, database_module)
 

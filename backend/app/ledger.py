@@ -55,6 +55,13 @@ DISPUTABLE_STATUSES = {"confirmed", "in_progress", "awaiting_confirmation"}
 
 # Canaux par lesquels une personne s'identifie (voir `account_id_for`).
 TELEGRAM = "telegram"
+# WhatsApp, clients seulement (docs/ARCHITECTURE_WHATSAPP.md). L'identifiant
+# est le BSUID que Meta attribue à chaque utilisateur pour l'entreprise
+# (« business-scoped user ID », par exemple `CD.13491208655302741918`), et non
+# le numéro : depuis 2026, Meta peut masquer le numéro d'un utilisateur qui a
+# un nom d'utilisateur WhatsApp. Le numéro, quand Meta le donne, n'est que le
+# numéro prouvé du compte.
+WHATSAPP = "whatsapp"
 # Application mobile Nexis : une seule identité `app` par compte, sous laquelle
 # sont rangés ses téléphones (`devices`). Jamais acceptée comme acteur déclaré
 # par en-têtes sur l'API des canaux de confiance : l'acteur `app` ne naît que

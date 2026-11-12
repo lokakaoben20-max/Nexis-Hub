@@ -24,8 +24,8 @@ NOW = datetime(2026, 11, 7, 8, 0, 0)
 
 
 @pytest.fixture
-def db(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'app_devices.db'}", future=True)
+def db(backend_db_url):
+    engine = create_engine(backend_db_url, future=True)
     models.Base.metadata.create_all(bind=engine)
     session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
     yield session

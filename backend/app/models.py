@@ -229,7 +229,8 @@ class BotServiceRequest(Base):
     provider_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
     service_name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text, default="")
-    status: Mapped[str] = mapped_column(String(20), default="pending")
+    # Index créé dès la migration c1a9f0e2b345 ; le modèle l'avait oublié.
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -262,12 +263,15 @@ class NexisAccount(Base):
     phone_e164: Mapped[str | None] = mapped_column(String(32), nullable=True)
     phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     language: Mapped[str] = mapped_column(String(5), default="fr")
+    # Nom choisi par la personne sur un canal sans profil historique
+    # (WhatsApp). Les comptes Telegram gardent le leur dans `bot_users`.
+    display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class ChannelIdentity(Base):
-    """Rattache un identifiant de canal (`telegram` + telegram_id, plus tard
-    `whatsapp` + numéro) à un compte Nexis. Un même canal + identifiant ne
+    """Rattache un identifiant de canal (`telegram` + telegram_id,
+    `whatsapp` + BSUID) à un compte Nexis. Un même canal + identifiant ne
     désigne qu'un seul compte."""
 
     __tablename__ = "channel_identities"
@@ -279,7 +283,9 @@ class ChannelIdentity(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     channel: Mapped[str] = mapped_column(String(20))
-    external_id: Mapped[str] = mapped_column(String(64))
+    # Telegram : l'identifiant numérique. WhatsApp : le BSUID de Meta (code
+    # pays de 2 lettres, un point, puis jusqu'à 128 caractères).
+    external_id: Mapped[str] = mapped_column(String(160))
     # Telegram et WhatsApp garantissent eux-mêmes l'identifiant de
     # l'expéditeur : une identité créée depuis un message reçu est vérifiée.
     verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -460,6 +466,13 @@ class Device(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     revoked_reason: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Alerte « Nouvel appareil » (boîte d'envoi) : `alert_due_at` est posé dans
+    # la même transaction que la création du téléphone, puis la tâche planifiée
+    # `alertes-nouvel-appareil` l'envoie et réessaie en cas d'échec. NULL : rien
+    # à envoyer (premier téléphone d'un compte neuf, alerte envoyée ou abandonnée).
+    alert_due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    alert_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    alert_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class AppSession(Base):

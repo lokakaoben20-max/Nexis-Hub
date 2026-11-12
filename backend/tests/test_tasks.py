@@ -18,7 +18,7 @@ from backend.app import database as _database_module  # noqa: F401
 from backend.app import models as _models_module  # noqa: F401
 from backend.app import tasks as _tasks_module  # noqa: F401
 
-# Clé factice, jamais la vraie BACKEND_API_KEY de .env — même convention que
+# Clé factice, jamais la vraie BACKEND_API_KEY_TELEGRAM de .env — même convention que
 # backend/tests/test_main.py.
 TEST_API_KEY = "test-backend-api-key-not-a-secret"
 
@@ -30,17 +30,16 @@ def acc(db, telegram_id):
 
 
 
-def _reload_backend_with_db(monkeypatch, tmp_path, name="test_tasks.db"):
-    """Recharge database/models/tasks contre une SQLite jetable par test.
+def _reload_backend_with_db(monkeypatch, backend_db_url):
+    """Recharge database/models/tasks contre une base jetable par test (SQLite, ou Postgres en CI).
 
     `tasks` doit être rechargé explicitement (contrairement à `crud`, qui
     reçoit sa session en paramètre) : ses tâches ouvrent leur propre session
     via `SessionLocal` importé au niveau module — sans ce rechargement, elles
     resteraient connectées au moteur de la base par défaut.
     """
-    db_path = tmp_path / name
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
-    monkeypatch.setenv("BACKEND_API_KEY", TEST_API_KEY)
+    monkeypatch.setenv("DATABASE_URL", backend_db_url)
+    monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TEST_API_KEY)
     monkeypatch.setenv("ADMIN_TELEGRAM_ID", "999")
 
     database_module = importlib.reload(importlib.import_module("backend.app.database"))
@@ -80,8 +79,8 @@ def _seed_mission_with_quote(db, crud, models, mission_id, quote_created_at, pro
     return mission, quote
 
 
-def test_expire_stale_quotes_expires_only_quotes_older_than_24h(monkeypatch, tmp_path):
-    database_module, tasks_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_expire_stale_quotes_expires_only_quotes_older_than_24h(monkeypatch, tmp_path, backend_db_url):
+    database_module, tasks_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     from backend.app import crud
     from backend.app import models
 
@@ -112,8 +111,8 @@ def _paid_and_finished_mission(db, ledger, crud, mission_id, provider_id=7, clie
     ledger.finish_mission(db, mission_id, acc(db, provider_id))
 
 
-def test_release_auto_confirmed_missions_only_after_24h(monkeypatch, tmp_path):
-    database_module, tasks_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_release_auto_confirmed_missions_only_after_24h(monkeypatch, tmp_path, backend_db_url):
+    database_module, tasks_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     from backend.app import crud, ledger
     from backend.app import models
 
@@ -144,8 +143,8 @@ def test_release_auto_confirmed_missions_only_after_24h(monkeypatch, tmp_path):
     assert len(sent) == 2
 
 
-def test_auto_release_never_pays_a_disputed_mission(monkeypatch, tmp_path):
-    database_module, tasks_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_auto_release_never_pays_a_disputed_mission(monkeypatch, tmp_path, backend_db_url):
+    database_module, tasks_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     from backend.app import crud, ledger
     from backend.app import models
 
@@ -168,8 +167,8 @@ def test_auto_release_never_pays_a_disputed_mission(monkeypatch, tmp_path):
         assert ledger.balance(db, ledger.ESCROW, 1, "USD") == ledger.to_money("10.00")
 
 
-def test_send_provider_reminders_does_not_duplicate_within_same_tier(monkeypatch, tmp_path):
-    database_module, tasks_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_send_provider_reminders_does_not_duplicate_within_same_tier(monkeypatch, tmp_path, backend_db_url):
+    database_module, tasks_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     from backend.app import models
 
     sent = []

@@ -73,8 +73,8 @@ def gateway(monkeypatch):
 
 
 @pytest.fixture
-def db(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'mm.db'}", future=True)
+def db(backend_db_url):
+    engine = create_engine(backend_db_url, future=True)
     LedgerEntry.metadata.create_all(bind=engine)
     session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
     session.add(crud.BotUser(telegram_id=CLIENT_ID, first_name="Client"))

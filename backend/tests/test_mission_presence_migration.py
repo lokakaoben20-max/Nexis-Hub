@@ -13,7 +13,7 @@ from backend.tests.test_app_devices_migration import alembic
 from backend.tests.test_mission_destination_migration import URL, _insert_mission, engine  # noqa: F401 (fixture)
 
 REVISION = "e1f2a3b4c5d6"
-PREVIOUS = "b7c8d9e0f1a2"
+PREVIOUS = "d9e0f1a2b3c4"
 
 pytestmark = pytest.mark.skipif(not URL, reason="NEXIS_TEST_POSTGRES_URL absent : pas de Postgres de test")
 
@@ -92,7 +92,7 @@ def test_client_and_code_at_the_same_instant_record_one_presence_on_postgres(eng
     from backend.tests.test_presence import CLIENT, PROVIDER, _paid_mission
 
     alembic("upgrade", "head")
-    monkeypatch.setenv("BACKEND_API_KEY", TEST_API_KEY)
+    monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TEST_API_KEY)
     database_module = importlib.reload(importlib.import_module("backend.app.database"))
     importlib.reload(importlib.import_module("backend.app.models"))
     backend_main = importlib.reload(importlib.import_module("backend.app.main"))

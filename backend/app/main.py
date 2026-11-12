@@ -1,51 +1,127 @@
 import hmac
 import os
+import re
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
-from backend.app import app_auth, app_sessions, crud, ledger, mobile_money, payment_gateway, presence
+import nexis_config
+import nexis_logs
+from backend.app import app_auth, app_sessions, crud, ledger, mobile_money, payment_gateway, presence, sante, service_keys
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotUser, PaymentIntent, Payout
 
 load_dotenv()
-BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # Hors développement, une configuration incomplète empêche le démarrage.
+    nexis_config.verifier("backend")
+    nexis_logs.configurer("backend")
+    # Refus de démarrer avec des clés de service douteuses (ancienne clé
+    # unique encore présente, clé Telegram absente, clés trop courtes ou
+    # partagées entre deux canaux) : voir backend/app/service_keys.py.
+    service_keys.check_configuration()
+    yield
 
 
 # Le schéma est géré uniquement par Alembic (`alembic upgrade head` avant tout
 # démarrage). Plus de `create_all` au démarrage : il créait des tables hors
 # migrations, et la migration suivante échouait sur une table déjà là.
-app = FastAPI(title="Nexis Hub V5 Backend")
+app = FastAPI(title="Nexis Hub V5 Backend", lifespan=_lifespan)
 
 
-def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
-    """Authentifie le bot (seul client légitime) sur toutes les routes /api/*.
+# --- Canaux autorisés par route ----------------------------------------------
+# Une route n'est ouverte qu'au bot Telegram (et à la Mini App, même canal)
+# tant qu'elle n'est pas explicitement ouverte à un autre canal par
+# `@open_to(...)`. Une route nouvelle est donc fermée à WhatsApp par défaut.
+# `@provider_action` marque une action de prestataire : jamais ouverte à
+# WhatsApp, quoi qu'on écrive dans `open_to` (vérifié ici à l'import, et par
+# backend/tests/test_whatsapp_channel.py qui énumère toutes les routes).
 
-    Ce backend n'a aucune authentification par utilisateur final : le bot est
-    censé être le seul appelant, via une clé partagée envoyée dans l'en-tête
-    X-API-Key. Voir le skill `securite-backend` avant d'exposer ce service
-    au-delà de 127.0.0.1.
-    """
-    if not BACKEND_API_KEY:
-        raise HTTPException(status_code=500, detail="BACKEND_API_KEY manquant côté serveur")
-    if not x_api_key or not hmac.compare_digest(x_api_key, BACKEND_API_KEY):
+DEFAULT_CHANNELS = frozenset({ledger.TELEGRAM})
+PROVIDER_CHANNELS = frozenset({ledger.TELEGRAM})
+_CHANNELS_ATTR = "__nexis_channels__"
+_PROVIDER_ATTR = "__nexis_provider_action__"
+
+
+def open_to(*channels: str):
+    """Ouvre une route à ces canaux (en plus de rien : la liste est complète)."""
+    allowed = frozenset(channels)
+    unknown = allowed - set(service_keys.KEY_VARIABLES)
+    if unknown:
+        raise RuntimeError(f"Canal inconnu : {sorted(unknown)}")
+
+    def decorate(endpoint):
+        if getattr(endpoint, _PROVIDER_ATTR, False) and not allowed <= PROVIDER_CHANNELS:
+            raise RuntimeError(f"{endpoint.__name__} : une action de prestataire n'est jamais ouverte à WhatsApp")
+        setattr(endpoint, _CHANNELS_ATTR, allowed)
+        return endpoint
+
+    return decorate
+
+
+def provider_action(endpoint):
+    """Action de prestataire : canaux des prestataires seulement (Telegram,
+    Mini App, plus tard l'app). Refus explicite `provider_channel_forbidden`
+    pour tout autre canal."""
+    if not getattr(endpoint, _CHANNELS_ATTR, DEFAULT_CHANNELS) <= PROVIDER_CHANNELS:
+        raise RuntimeError(f"{endpoint.__name__} : une action de prestataire n'est jamais ouverte à WhatsApp")
+    setattr(endpoint, _PROVIDER_ATTR, True)
+    return endpoint
+
+
+def route_channels(endpoint) -> frozenset:
+    return getattr(endpoint, _CHANNELS_ATTR, DEFAULT_CHANNELS)
+
+
+def is_provider_action(endpoint) -> bool:
+    return getattr(endpoint, _PROVIDER_ATTR, False)
+
+
+def verify_service_key(request: Request, x_api_key: str | None = Header(default=None)) -> str:
+    """Authentifie le canal appelant sur toutes les routes /api/* et vérifie
+    que la route lui est ouverte. Rend le canal, que `current_actor` exige
+    identique à celui déclaré pour l'acteur.
+
+    Ce backend n'authentifie pas l'utilisateur final : chaque canal (bot
+    Telegram et Mini App, service WhatsApp) a sa propre clé, envoyée dans
+    `X-API-Key`. Voir le skill `securite-backend` avant d'exposer ce service
+    au-delà de 127.0.0.1."""
+    try:
+        service_keys.check_configuration()
+    except service_keys.ConfigurationError as error:
+        raise HTTPException(status_code=500, detail="Clés de service du backend mal configurées") from error
+    channel = service_keys.channel_for_key(x_api_key)
+    if channel is None:
         raise HTTPException(status_code=401, detail="Clé API invalide ou manquante")
+    endpoint = request.scope.get("endpoint")
+    if channel not in route_channels(endpoint):
+        code = "provider_channel_forbidden" if is_provider_action(endpoint) else "channel_forbidden"
+        raise HTTPException(status_code=403, detail={"code": code})
+    return channel
 
 
 # Toutes les routes /api/* passent par ce router protégé. /health reste sur
 # `app` directement, sans authentification, pour rester utilisable par un
 # outil de supervision externe.
-router = APIRouter(dependencies=[Depends(verify_api_key)])
+router = APIRouter(dependencies=[Depends(verify_service_key)])
 
 
-# Canaux dont le backend sait résoudre l'identité d'un acteur. WhatsApp s'y
-# ajoutera avec sa propre clé de service (docs/ARCHITECTURE_WHATSAPP.md).
-ACTOR_CHANNELS = (ledger.TELEGRAM,)
+# Canaux dont le backend sait résoudre l'identité d'un acteur déclaré par
+# en-têtes. Jamais `app` : l'acteur de l'application ne naît que d'une session
+# vérifiée.
+ACTOR_CHANNELS = (ledger.TELEGRAM, ledger.WHATSAPP)
+# BSUID de Meta : code pays de 2 lettres, un point, jusqu'à 128 caractères
+# alphanumériques. Tout autre format est refusé.
+_WHATSAPP_ACTOR = re.compile(r"[A-Z]{2}\.[A-Za-z0-9]{1,128}")
 
 
 @dataclass(frozen=True)
@@ -65,16 +141,22 @@ class Actor:
 
 
 def current_actor(
+    service_channel: str = Depends(verify_service_key),
     x_actor_channel: str | None = Header(default=None),
     x_actor_id: str | None = Header(default=None),
 ) -> Actor:
     """En-têtes `X-Actor-Channel` / `X-Actor-Id`, obligatoires sur toute
-    action faite au nom d'une personne."""
+    action faite au nom d'une personne. Le canal déclaré doit être celui de
+    la clé : un canal n'agit jamais au nom d'une personne d'un autre canal."""
     if not x_actor_channel or not x_actor_id:
         raise HTTPException(status_code=400, detail={"code": "actor_required"})
     if x_actor_channel not in ACTOR_CHANNELS:
         raise HTTPException(status_code=400, detail={"code": "unknown_channel"})
+    if x_actor_channel != service_channel:
+        raise HTTPException(status_code=403, detail={"code": "actor_channel_mismatch"})
     if x_actor_channel == ledger.TELEGRAM and not x_actor_id.isdigit():
+        raise HTTPException(status_code=400, detail={"code": "invalid_actor"})
+    if x_actor_channel == ledger.WHATSAPP and not _WHATSAPP_ACTOR.fullmatch(x_actor_id):
         raise HTTPException(status_code=400, detail={"code": "invalid_actor"})
     return Actor(channel=x_actor_channel, external_id=x_actor_id)
 
@@ -358,6 +440,20 @@ def health():
     return {"status": "ok", "service": "nexis-hub-v5"}
 
 
+@app.get("/health/live")
+def health_live():
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+def health_ready():
+    with SessionLocal() as db:
+        problemes = sante.problemes_base(db)
+    if problemes:
+        return JSONResponse({"status": "indisponible", "problemes": problemes}, status_code=503)
+    return {"status": "ok"}
+
+
 @router.post("/api/bot/users")
 def create_bot_user(payload: BotUserPayload):
     with SessionLocal() as db:
@@ -365,6 +461,49 @@ def create_bot_user(payload: BotUserPayload):
             db, payload.telegram_id, payload.first_name, payload.phone_number, payload.language, payload.phone_verified
         )
         return {"status": "ok", "user": _user_to_dict(user, db)}
+
+
+class WhatsAppClientPayload(BaseModel):
+    """Inscription d'un client WhatsApp. L'identité est l'acteur (BSUID, en
+    en-têtes). `phone` : le numéro que Meta joint au message (`wa_id`), à
+    omettre quand Meta ne le donne pas."""
+
+    display_name: str = Field(min_length=1, max_length=crud.MAX_DISPLAY_NAME_LENGTH)
+    language: str = Field(min_length=2, max_length=5)
+    phone: str | None = Field(default=None, max_length=32)
+
+
+@router.post("/api/whatsapp/client")
+@open_to(ledger.WHATSAPP)
+def register_whatsapp_client(payload: WhatsAppClientPayload, actor: Actor = Depends(current_actor)):
+    """Inscrit ou met à jour le client qui écrit depuis WhatsApp. Jamais de
+    rôle prestataire. Un numéro déjà prouvé sur un autre compte est refusé
+    (`phone_owned_by_account`) : aucun compte n'est rattaché par le numéro
+    seul. Voir `crud.register_whatsapp_client`."""
+    with SessionLocal() as db:
+        try:
+            account, created = crud.register_whatsapp_client(
+                db,
+                bsuid=actor.external_id,
+                display_name=payload.display_name,
+                language=payload.language,
+                phone=payload.phone,
+            )
+        except crud.ClientRefused as refusal:
+            db.rollback()
+            raise HTTPException(status_code=refusal.http_status, detail={"code": refusal.code}) from refusal
+        return {
+            "status": "ok",
+            "created": created,
+            "account": {
+                "account_id": account.id,
+                "display_name": account.display_name,
+                "language": account.language,
+                "roles": account.roles,
+                # Jamais le numéro lui-même : seulement s'il est prouvé.
+                "phone_proven": account.phone_verified_at is not None,
+            },
+        }
 
 
 class AppLoginTelegramContactPayload(BaseModel):
@@ -462,6 +601,7 @@ def _mission_view(db, mission: BotMission, role: str) -> dict:
 
 
 @router.post("/api/bot/providers")
+@provider_action
 def create_bot_provider(payload: BotProviderPayload):
     with SessionLocal() as db:
         provider = crud.upsert_provider(
@@ -499,6 +639,7 @@ def update_user_name(telegram_id: int, payload: NamePayload):
 
 
 @router.patch("/api/bot/providers/{telegram_id}/language")
+@provider_action
 def update_provider_language(telegram_id: int, payload: LanguagePayload):
     with SessionLocal() as db:
         provider = crud.update_provider_language(db, telegram_id, payload.language)
@@ -508,6 +649,7 @@ def update_provider_language(telegram_id: int, payload: LanguagePayload):
 
 
 @router.patch("/api/bot/providers/{telegram_id}/services")
+@provider_action
 def update_provider_services(telegram_id: int, payload: ProviderServicesPayload):
     with SessionLocal() as db:
         provider = crud.update_provider_services(db, telegram_id, payload.services)
@@ -517,6 +659,7 @@ def update_provider_services(telegram_id: int, payload: ProviderServicesPayload)
 
 
 @router.patch("/api/bot/providers/{telegram_id}/status")
+@provider_action
 def update_provider_status(telegram_id: int, payload: ProviderStatusPayload):
     with SessionLocal() as db:
         provider = crud.update_provider_status(db, telegram_id, payload.status)
@@ -586,6 +729,7 @@ def rank_providers(payload: ProviderRankPayload):
 
 
 @router.post("/api/bot/quotes")
+@provider_action
 def create_quote(payload: QuoteCreatePayload, actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
         try:
@@ -771,6 +915,9 @@ def create_payment_intent(mission_id: int, payload: PaymentIntentPayload, actor:
 def refresh_payment_intent(intent_id: int):
     with SessionLocal() as db:
         from backend.app.tasks import refresh_and_notify_intent
+
+        if db.get(PaymentIntent, intent_id) is None:
+            raise HTTPException(status_code=404, detail={"code": "intent_not_found"})
 
         try:
             # Même chemin que le webhook et la vérification de secours : celui
@@ -998,11 +1145,13 @@ def _client_account(db, actor: Actor) -> int:
 
 
 @router.post("/api/bot/missions/{mission_id}/presence/arrived")
+@provider_action
 def declare_arrival(mission_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
     return _presence_call(lambda db: presence.declare_arrival(db, mission_id, _provider_account(db, actor)), background_tasks, "provider")
 
 
 @router.post("/api/bot/missions/{mission_id}/presence/code")
+@provider_action
 def confirm_presence_by_code(
     mission_id: int, payload: PresenceCodePayload, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)
 ):
@@ -1047,6 +1196,7 @@ def get_presence(mission_id: int, actor: Actor = Depends(current_actor)):
 
 
 @router.post("/api/bot/missions/{mission_id}/finish")
+@provider_action
 def finish_mission(mission_id: int, actor: Actor = Depends(current_actor)):
     return _money_call(
         lambda db: ledger.finish_mission(db, mission_id, _actor_account(db, actor, missing="not_mission_provider", http_status=403))
@@ -1135,11 +1285,14 @@ def get_mission_destination(mission_id: int, actor: Actor = Depends(current_acto
 
 
 @router.get("/api/me/missions")
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
 def my_missions(role: str = "client", limit: int = 20, actor: Actor = Depends(current_actor)):
     """Missions de l'acteur : celles qu'il a commandées (`client`) ou qui lui
     sont confiées (`provider`)."""
     if role not in ("client", "provider"):
         raise HTTPException(status_code=400, detail={"code": "invalid_role"})
+    if role == "provider" and actor.channel not in PROVIDER_CHANNELS:
+        raise HTTPException(status_code=403, detail={"code": "provider_channel_forbidden"})
     limit = max(1, min(limit, 50))
     with SessionLocal() as db:
         account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
@@ -1176,6 +1329,7 @@ def admin_stats(actor: Actor = Depends(current_actor)):
 
 
 @router.get("/api/me/wallet")
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
 def get_my_wallet(actor: Actor = Depends(current_actor)):
     """Wallet de l'acteur, et de lui seul : un canal ne lit jamais le solde
     d'une autre personne par cette route."""
@@ -1193,6 +1347,7 @@ def get_my_wallet(actor: Actor = Depends(current_actor)):
 
 
 @router.post("/api/bot/service-requests")
+@provider_action
 def create_service_request(payload: ServiceRequestPayload, actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
         try:

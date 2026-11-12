@@ -182,12 +182,12 @@ class LiveBackend:
 
 
 @pytest.fixture
-def live_backend(tmp_path, monkeypatch):
+def live_backend(monkeypatch, backend_db_url):
     # Charge d'abord tout le backend : recharger un module importé pour la
     # première fois juste avant redéfinirait ses tables deux fois.
     importlib.import_module("backend.app.main")
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'backend.db'}")
-    monkeypatch.setenv("BACKEND_API_KEY", TEST_BACKEND_API_KEY)
+    monkeypatch.setenv("DATABASE_URL", backend_db_url)
+    monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TEST_BACKEND_API_KEY)
     database_module = importlib.reload(importlib.import_module("backend.app.database"))
     importlib.reload(importlib.import_module("backend.app.models"))
     backend_main = importlib.reload(importlib.import_module("backend.app.main"))
