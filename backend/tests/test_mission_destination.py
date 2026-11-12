@@ -179,7 +179,7 @@ def test_who_reads_the_destination_along_the_mission(tmp_path, monkeypatch):
         assert status(PROVIDER) == 200, "mission payée : le prestataire choisi sait où aller"
         assert status(OTHER_PROVIDER) == 403, "l'autre prestataire n'a jamais le lieu"
 
-        assert test_client.post(f"/api/bot/missions/{mission_id}/start", headers=_as(PROVIDER)).status_code == 200
+        assert test_client.post(f"/api/bot/missions/{mission_id}/presence/confirm", headers=_as(CLIENT)).status_code == 200
         assert status(PROVIDER) == 200, "en cours d'intervention"
 
         assert test_client.post(f"/api/bot/missions/{mission_id}/finish", headers=_as(PROVIDER)).status_code == 200

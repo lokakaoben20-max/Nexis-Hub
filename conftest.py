@@ -31,3 +31,25 @@ def _sqlite_for_tests(dbapi_connection, connection_record):
 def _sqlite_explicit_begin(connection):
     if connection.dialect.name == "sqlite":
         connection.exec_driver_sql("BEGIN")
+
+
+import pytest  # noqa: E402
+
+# Clé de test du code de présence (backend.app.presence) : sans elle, le
+# backend refuse de donner ou de vérifier un code. Jamais une vraie clé.
+TEST_PRESENCE_CODE_KEY = "test-presence-key-not-a-secret-0123456789abcdef"
+
+
+@pytest.fixture(autouse=True)
+def _presence_code_key(monkeypatch):
+    monkeypatch.setenv("PRESENCE_CODE_KEY", TEST_PRESENCE_CODE_KEY)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_telegram(monkeypatch):
+    """Aucun test n'écrit à Telegram, même avec un vrai BOT_TOKEN dans le .env
+    du poste : les messages du backend partent dans le vide (un test qui veut
+    les lire remplace backend.app.notify.send_telegram_message)."""
+    from backend.app import notify
+
+    monkeypatch.setattr(notify, "BOT_TOKEN", "")

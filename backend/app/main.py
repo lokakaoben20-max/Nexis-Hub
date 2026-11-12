@@ -4,9 +4,12 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 
-from backend.app import app_auth, app_sessions, crud, ledger, mobile_money, payment_gateway
+from backend.app import app_auth, app_sessions, crud, ledger, mobile_money, payment_gateway, presence
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotUser, PaymentIntent, Payout
 
@@ -901,11 +904,120 @@ async def payment_webhook(gateway_name: str, request: Request):
     return {"status": "ok"}
 
 
-@router.post("/api/bot/missions/{mission_id}/start")
-def start_mission(mission_id: int, actor: Actor = Depends(current_actor)):
-    return _money_call(
-        lambda db: ledger.start_mission(db, mission_id, _actor_account(db, actor, missing="not_mission_provider", http_status=403))
+# --- Arrivée confirmée (backend.app.presence) ---------------------------------
+# Plus de route « démarrer » : une mission démarre quand l'arrivée du
+# prestataire est confirmée par le client ou par le code de présence.
+
+
+class PresenceCodePayload(BaseModel):
+    code: str = Field(max_length=20)
+
+
+def _presence_after_commit(mission_id: int, events: list[str], *, actor_role: str, client_asked: bool) -> None:
+    """Messages de l'arrivée, après validation et après la réponse : celui qui
+    vient d'agir voit la réponse dans son canal, l'autre partie est prévenue
+    ici."""
+    with SessionLocal() as db:
+        if client_asked:
+            presence.notify_client_question(db, mission_id)
+        if "confirmed" in events:
+            presence.notify_confirmed(db, mission_id, tell_client=actor_role != "client", tell_provider=actor_role != "provider")
+        if "not_yet" in events:
+            presence.notify_not_yet(db, mission_id)
+        if "wrong_person" in events:
+            presence.notify_wrong_person(db, mission_id)
+
+
+def _code_locked_after_commit(mission_id: int) -> None:
+    with SessionLocal() as db:
+        presence.notify_code_locked(db, mission_id)
+
+
+def _presence_call(operation, background_tasks: BackgroundTasks, actor_role: str):
+    with SessionLocal() as db:
+        try:
+            result = operation(db)
+        except presence.PresenceCodeRefused as error:
+            refusal = _money_refusal(db, error)
+            refusal.detail["attempts_left"] = error.attempts_left
+            if not error.just_locked:
+                raise refusal from error
+            # Un refus levé abandonne les tâches d'après réponse : la réponse
+            # est construite ici pour que l'admin et le client soient prévenus.
+            return JSONResponse(
+                status_code=refusal.status_code,
+                content=jsonable_encoder({"detail": refusal.detail}),
+                background=BackgroundTask(_code_locked_after_commit, error.mission.mission_id),
+            )
+        except ledger.MoneyError as error:
+            raise _money_refusal(db, error) from error
+        if result.events or result.client_asked:
+            background_tasks.add_task(
+                _presence_after_commit, result.mission.mission_id, result.events, actor_role=actor_role, client_asked=result.client_asked
+            )
+        mission = db.get(BotMission, result.mission.mission_id)
+        return {
+            **_money_response(db, mission),
+            "presence": presence.presence_state(db, mission, actor_role),
+            "client_asked": result.client_asked,
+        }
+
+
+def _provider_account(db, actor: Actor) -> int:
+    return _actor_account(db, actor, missing="not_mission_provider", http_status=403)
+
+
+def _client_account(db, actor: Actor) -> int:
+    return _actor_account(db, actor, missing="not_mission_client", http_status=403)
+
+
+@router.post("/api/bot/missions/{mission_id}/presence/arrived")
+def declare_arrival(mission_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
+    return _presence_call(lambda db: presence.declare_arrival(db, mission_id, _provider_account(db, actor)), background_tasks, "provider")
+
+
+@router.post("/api/bot/missions/{mission_id}/presence/code")
+def confirm_presence_by_code(
+    mission_id: int, payload: PresenceCodePayload, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)
+):
+    return _presence_call(
+        lambda db: presence.confirm_by_code(db, mission_id, _provider_account(db, actor), payload.code), background_tasks, "provider"
     )
+
+
+@router.post("/api/bot/missions/{mission_id}/presence/confirm")
+def confirm_presence_by_client(mission_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
+    return _presence_call(lambda db: presence.confirm_by_client(db, mission_id, _client_account(db, actor)), background_tasks, "client")
+
+
+@router.post("/api/bot/missions/{mission_id}/presence/not-yet")
+def presence_not_yet(mission_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
+    return _presence_call(lambda db: presence.answer_not_yet(db, mission_id, _client_account(db, actor)), background_tasks, "client")
+
+
+@router.post("/api/bot/missions/{mission_id}/presence/wrong-person")
+def presence_wrong_person(mission_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
+    return _presence_call(lambda db: presence.report_wrong_person(db, mission_id, _client_account(db, actor)), background_tasks, "client")
+
+
+@router.get("/api/bot/missions/{mission_id}/presence")
+def get_presence(mission_id: int, actor: Actor = Depends(current_actor)):
+    """État de l'arrivée. Le code de présence n'est donné qu'au client de la
+    mission ; pour qui n'est ni client, ni prestataire choisi, ni admin : 404,
+    comme un numéro inconnu."""
+    with SessionLocal() as db:
+        mission = db.get(BotMission, mission_id)
+        role = None
+        if mission is not None:
+            account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
+            role = presence.viewer_role(db, mission, account_id, _is_admin(actor))
+        if role is None:
+            raise HTTPException(status_code=404, detail={"code": "mission_not_found"})
+        try:
+            state = presence.presence_state(db, mission, role)
+        except ledger.MoneyError as error:
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+        return {"status": "ok", "mission_id": mission_id, "presence": state}
 
 
 @router.post("/api/bot/missions/{mission_id}/finish")

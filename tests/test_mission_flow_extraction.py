@@ -104,6 +104,9 @@ class DummyMessageObject:
     async def answer(self, text, parse_mode=None, reply_markup=None):
         self.edited_text = text
 
+    async def edit_reply_markup(self, reply_markup=None):
+        self.reply_markup = reply_markup
+
 
 class DummyUser:
     def __init__(self, telegram_id, first_name="Test"):

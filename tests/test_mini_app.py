@@ -306,10 +306,23 @@ def _paid_mission_for_provider(live, provider_id: int = CLIENT_ID) -> int:
     return mission_id
 
 
-def test_provider_starts_and_finishes_a_paid_mission_through_the_registry(client, live_backend):
+def test_provider_arrives_enters_the_code_and_finishes_through_the_registry(client, live_backend):
+    from backend.app import presence
+
     mission_id = _paid_mission_for_provider(live_backend)
 
-    started = client.post(f"/api/provider/{CLIENT_ID}/missions/{mission_id}/start", headers=_auth())
+    arrived = client.post(f"/api/provider/{CLIENT_ID}/missions/{mission_id}/arrived", headers=_auth())
+    assert arrived.status_code == 200
+    assert arrived.json()["mission"]["status"] == "confirmed", "« je suis arrivé » seul ne démarre rien"
+    assert arrived.json()["presence"] == {"confirmed": False, "client_asked": True}
+    assert "code" not in str(arrived.json()), "jamais le code au prestataire"
+
+    wrong = client.post(f"/api/provider/{CLIENT_ID}/missions/{mission_id}/presence-code", json={"code": "0000" if presence.presence_code(mission_id) != "0000" else "1111"}, headers=_auth())
+    assert wrong.status_code == 409 and wrong.json()["detail"] == {"code": "wrong_presence_code", "attempts_left": 4}
+
+    started = client.post(
+        f"/api/provider/{CLIENT_ID}/missions/{mission_id}/presence-code", json={"code": presence.presence_code(mission_id)}, headers=_auth()
+    )
     finished = client.post(f"/api/provider/{CLIENT_ID}/missions/{mission_id}/finish", headers=_auth())
 
     assert started.status_code == 200 and started.json()["mission"]["status"] == "in_progress"
@@ -329,7 +342,7 @@ def test_mission_actions_are_refused_with_a_code(client, live_backend):
 def test_mission_actions_fail_safe_when_the_backend_is_down(client):
     db.create_provider(CLIENT_ID, "+243800004242", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
 
-    response = client.post(f"/api/provider/{CLIENT_ID}/missions/1/start", headers=_auth())
+    response = client.post(f"/api/provider/{CLIENT_ID}/missions/1/arrived", headers=_auth())
 
     assert response.status_code == 503
     assert response.json()["detail"] == {"code": "backend_unavailable"}
