@@ -160,8 +160,9 @@ def _register(app, bsuid, phone, key=None, with_headers=False):
 
 
 def test_the_same_webhook_received_ten_times_in_parallel_acts_once(backend, engine):
+    key = f"wamid.{uuid.uuid4().hex}"
     results = _parallel(
-        10, lambda _index: _register(backend.app, "CD.555666777", "+243810000005", key="wamid.HBgMMjQzODEwMDAwMDA1FQIAEhg", with_headers=True)
+        10, lambda _index: _register(backend.app, "CD.555666777", "+243810000005", key=key, with_headers=True)
     )
 
     assert {status for status, _body, _replayed in results} == {200}

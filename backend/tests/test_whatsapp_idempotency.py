@@ -4,6 +4,7 @@ sur un vrai Postgres dans test_whatsapp_postgres.py.
 """
 
 import importlib
+import uuid
 from datetime import datetime, timedelta
 
 import pytest
@@ -18,7 +19,8 @@ from test_whatsapp_channel import (
     as_whatsapp,
 )
 
-KEY = "wamid.HBgMMjQzODEwMDAwMDAxFQIAEhgUM0E"
+# Clé générée à chaque exécution : jamais de faux identifiant figé dans le code.
+KEY = f"wamid.{uuid.uuid4().hex}"
 
 
 @pytest.fixture
