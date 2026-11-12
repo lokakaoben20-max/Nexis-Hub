@@ -1,9 +1,11 @@
+"""Tâches périodiques du backend. Le calendrier et le verrou qui empêche
+deux exécutions simultanées sont dans `taches.py`."""
+
 import logging
 import os
 from datetime import datetime, timedelta
 
 from backend.app import app_sessions, crud, ledger, mobile_money, reconciliation
-from backend.app.celery_app import celery_app
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, BotProvider, BotUser, Device, NexisAccount, PaymentIntent, Payout
 from backend.app.notify import send_telegram_message
@@ -14,7 +16,6 @@ ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID")
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="backend.app.tasks.check_expired_quotes")
 def check_expired_quotes() -> int:
     """Devis `pending` depuis plus de 24h → `expired` (crud.expire_stale_quotes)."""
     db = SessionLocal()
@@ -25,7 +26,6 @@ def check_expired_quotes() -> int:
         db.close()
 
 
-@celery_app.task(name="backend.app.tasks.release_auto_confirmed_missions")
 def release_auto_confirmed_missions() -> int:
     """Auto-libère l'escrow des missions en `awaiting_confirmation` depuis 24h+.
 
@@ -73,7 +73,6 @@ def release_auto_confirmed_missions() -> int:
         db.close()
 
 
-@celery_app.task(name="backend.app.tasks.send_provider_reminders")
 def send_provider_reminders() -> int:
     """Relance les prestataires matchés si une mission reste `pending` (sans
     devis) après 10 min, puis après 20 min.
@@ -111,7 +110,6 @@ def send_provider_reminders() -> int:
         db.close()
 
 
-@celery_app.task(name="backend.app.tasks.send_daily_analytics")
 def send_daily_analytics() -> bool:
     """Rapport quotidien à `ADMIN_TELEGRAM_ID` : missions créées/terminées,
     volume et commission des dernières 24h, groupés par devise.
@@ -274,7 +272,6 @@ def notify_payout(db, payout: Payout) -> None:
     )
 
 
-@celery_app.task(name="backend.app.tasks.check_pending_mobile_money")
 def check_pending_mobile_money() -> int:
     """Vérification de secours : relit chez l'agrégateur les paiements
     (`mobile_money.intents_to_refresh`) et retraits en attente (webhook perdu,
@@ -292,7 +289,6 @@ def check_pending_mobile_money() -> int:
         db.close()
 
 
-@celery_app.task(name="backend.app.tasks.send_daily_reconciliation")
 def send_daily_reconciliation() -> bool:
     """Rapprochement interne quotidien (backend/app/reconciliation.py), envoyé
     à l'admin même sans écart : un rapport qui n'arrive pas se remarque."""
@@ -344,19 +340,73 @@ def send_new_device_alert(db, device_id: int) -> bool:
     return send_telegram_message(telegram_id, text, reply_markup=keyboard)
 
 
-@celery_app.task(name="backend.app.tasks.alert_new_app_device", bind=True, max_retries=NEW_DEVICE_ALERT_RETRIES)
-def alert_new_app_device(self, device_id: int) -> bool:
-    """Lancée par l'API publique après une connexion qui crée un téléphone.
-    Réessaie (1 min, 2 min, 4 min… jusqu'à 1 h d'écart) tant que Telegram
-    n'a pas accepté le message."""
+def _next_device_alert_delay(attempts: int) -> timedelta:
+    """1 min, 2 min, 4 min… plafonné à 1 h entre deux essais."""
+    return timedelta(seconds=min(60 * 2 ** (attempts - 1), 3600))
+
+
+def send_pending_device_alerts(now: datetime | None = None) -> int:
+    """Envoie les alertes « Nouvel appareil » dues (boîte d'envoi sur
+    `Device.alert_due_at`, posée à la connexion dans la même transaction que
+    le téléphone). Un échec repousse l'essai suivant ; après
+    `NEW_DEVICE_ALERT_RETRIES` échecs, l'admin est prévenu et on s'arrête.
+    Chaque téléphone est traité sous verrou de ligne et validé à part :
+    une ligne en échec n'arrête pas les autres. Rend le nombre d'alertes
+    envoyées."""
+    now = now or datetime.utcnow()
     db = SessionLocal()
     try:
-        sent = send_new_device_alert(db, device_id)
+        due_ids = [
+            device_id
+            for (device_id,) in db.query(Device.id)
+            .filter(Device.alert_due_at.is_not(None), Device.alert_due_at <= now)
+            .order_by(Device.alert_due_at)
+        ]
+        sent = 0
+        for device_id in due_ids:
+            device = (
+                db.query(Device)
+                .filter(Device.id == device_id, Device.alert_due_at.is_not(None), Device.alert_due_at <= now)
+                .with_for_update(skip_locked=True)
+                .one_or_none()
+            )
+            if device is None:
+                db.rollback()
+                continue
+            try:
+                delivered = send_new_device_alert(db, device.id)
+                reached = (
+                    app_sessions.needs_new_device_alert(device)
+                    and ledger.telegram_id_of(db, device.account_id) is not None
+                )
+            except Exception:
+                # Erreur inattendue (base, réseau) : on repart d'une transaction
+                # propre et l'essai compte comme un échec.
+                logger.exception("Alerte « Nouvel appareil » : erreur pour le téléphone %s", device_id)
+                db.rollback()
+                device = db.query(Device).filter(Device.id == device_id).with_for_update().one()
+                delivered = reached = False
+            if delivered:
+                device.alert_due_at = None
+                if reached:
+                    device.alert_sent_at = now
+                    sent += 1
+            else:
+                device.alert_attempts += 1
+                if device.alert_attempts >= NEW_DEVICE_ALERT_RETRIES:
+                    device.alert_due_at = None
+                    logger.error("Alerte « Nouvel appareil » abandonnée pour le téléphone %s", device.id)
+                    _alert_admin(
+                        f"⚠️ Alerte « Nouvel appareil » non envoyée après {device.alert_attempts} essais : "
+                        f"téléphone {device.id} du compte {device.account_id}. Le délai de 72 h protège l'argent ; "
+                        "préviens la personne autrement."
+                    )
+                else:
+                    device.alert_due_at = now + _next_device_alert_delay(device.alert_attempts)
+            db.commit()
+        return sent
     finally:
         db.close()
-    if not sent:
-        raise self.retry(countdown=min(60 * 2 ** self.request.retries, 3600))
-    return True
 
 
 def alert_admin_not_me(device_id: int, account_id: int) -> None:
@@ -367,7 +417,6 @@ def alert_admin_not_me(device_id: int, account_id: int) -> None:
     )
 
 
-@celery_app.task(name="backend.app.tasks.purge_request_nonces")
 def purge_request_nonces() -> int:
     """Efface les nonces des demandes signées de plus de 24 heures."""
     db = SessionLocal()

@@ -1,0 +1,14 @@
+# Contrôle automatique du code (CI). Seules les erreurs réelles sont
+# vérifiées : noms inconnus, imports ou variables inutiles, erreurs de syntaxe.
+# Le style n'est pas imposé.
+target-version = "py311"
+
+[lint]
+select = ["F", "E9"]
+
+[lint.per-file-ignores]
+# Les fixtures `db`, `gateway` et `backend` sont importées d'un autre fichier de test et
+# reçues en paramètre : pytest les retrouve par leur nom, ruff y voit une
+# redéfinition.
+"backend/tests/test_payment_mismatch.py" = ["F811"]
+"backend/tests/test_app_signed_requests.py" = ["F811"]

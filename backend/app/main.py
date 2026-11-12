@@ -6,9 +6,12 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from backend.app import app_auth, app_sessions, crud, ledger, mobile_money, payment_gateway, service_keys
+import nexis_config
+import nexis_logs
+from backend.app import app_auth, app_sessions, crud, ledger, mobile_money, payment_gateway, sante, service_keys
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, BotProvider, BotQuote, BotReview, BotServiceRequest, BotUser, PaymentIntent, Payout
 
@@ -17,6 +20,9 @@ load_dotenv()
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    # Hors développement, une configuration incomplète empêche le démarrage.
+    nexis_config.verifier("backend")
+    nexis_logs.configurer("backend")
     # Refus de démarrer avec des clés de service douteuses (ancienne clé
     # unique encore présente, clé Telegram absente, clés trop courtes ou
     # partagées entre deux canaux) : voir backend/app/service_keys.py.
@@ -430,6 +436,20 @@ def _service_request_to_dict(req: BotServiceRequest, provider: BotProvider | Non
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "nexis-hub-v5"}
+
+
+@app.get("/health/live")
+def health_live():
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+def health_ready():
+    with SessionLocal() as db:
+        problemes = sante.problemes_base(db)
+    if problemes:
+        return JSONResponse({"status": "indisponible", "problemes": problemes}, status_code=503)
+    return {"status": "ok"}
 
 
 @router.post("/api/bot/users")

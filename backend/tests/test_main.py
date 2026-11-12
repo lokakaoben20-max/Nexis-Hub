@@ -18,9 +18,8 @@ client = TestClient(app)
 TEST_API_KEY = "test-backend-api-key-not-a-secret"
 
 
-def _reload_backend_with_db(monkeypatch, tmp_path, name="test_backend.db"):
-    db_path = tmp_path / name
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+def _reload_backend_with_db(monkeypatch, backend_db_url):
+    monkeypatch.setenv("DATABASE_URL", backend_db_url)
     monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TEST_API_KEY)
 
     database_module = importlib.reload(importlib.import_module("backend.app.database"))
@@ -72,8 +71,8 @@ def test_health_endpoint():
     assert response.json()["status"] == "ok"
 
 
-def test_profile_endpoint_returns_payload_for_telegram_id(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_profile_endpoint_returns_payload_for_telegram_id(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         response = test_client.get("/api/profile/12345")
@@ -84,8 +83,8 @@ def test_profile_endpoint_returns_payload_for_telegram_id(tmp_path, monkeypatch)
         assert "provider" in payload
 
 
-def test_backend_state_persists_to_db(tmp_path, monkeypatch):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_backend_state_persists_to_db(tmp_path, monkeypatch, backend_db_url):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         response = test_client.post(
@@ -109,8 +108,8 @@ def test_backend_state_persists_to_db(tmp_path, monkeypatch):
         assert user.phone_number == "+243800000777"
 
 
-def test_mission_lifecycle_round_trip(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_mission_lifecycle_round_trip(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         mission_id, quote_id = _setup_mission_with_quote(test_client, urgent=True)
@@ -146,8 +145,8 @@ def _register_provider(test_client, telegram_id, services, communes, **overrides
     return response.json()["provider"]
 
 
-def test_provider_module_is_computed_from_services(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_provider_module_is_computed_from_services(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         plumbing = _register_provider(test_client, 1, ["service_plomberie"], ["Gombe"])
@@ -157,8 +156,8 @@ def test_provider_module_is_computed_from_services(tmp_path, monkeypatch):
         assert painting["module"] == "A"
 
 
-def test_provider_registration_resets_status_on_update(tmp_path, monkeypatch):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_provider_registration_resets_status_on_update(tmp_path, monkeypatch, backend_db_url):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])
@@ -174,8 +173,8 @@ def test_provider_registration_resets_status_on_update(tmp_path, monkeypatch):
         assert updated["status"] == "available"
 
 
-def test_matching_filters_by_service_commune_and_ranks_by_score(tmp_path, monkeypatch):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_matching_filters_by_service_commune_and_ranks_by_score(tmp_path, monkeypatch, backend_db_url):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])  # matches, default score
@@ -203,9 +202,9 @@ def test_matching_filters_by_service_commune_and_ranks_by_score(tmp_path, monkey
         assert [p["telegram_id"] for p in matches] == [5, 4, 1]
 
 
-def test_perfect_success_rate_gives_no_bonus_without_enough_missions(tmp_path, monkeypatch):
+def test_perfect_success_rate_gives_no_bonus_without_enough_missions(tmp_path, monkeypatch, backend_db_url):
     """Un prestataire sans historique ne doit pas être classé comme un vétéran irréprochable."""
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])  # neuf, success_rate 100 par défaut
@@ -265,8 +264,8 @@ def _setup_mission_with_quote(test_client, amount=100.0, currency="USD", urgent=
     return mission_id, quote_response.json()["quote"]["id"]
 
 
-def test_accepting_a_quote_rejects_the_others_and_confirms_mission(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_accepting_a_quote_rejects_the_others_and_confirms_mission(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         mission_id, quote_id = _setup_mission_with_quote(test_client)
@@ -315,8 +314,8 @@ def test_client_pays_exactly_the_quote_amount_in_both_currencies():
     assert payment_amounts(250000.0, urgent=False)["total"] == Decimal("250000.00")
 
 
-def test_mission_cannot_start_before_escrow_payment(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_mission_cannot_start_before_escrow_payment(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         mission_id, quote_id = _setup_mission_with_quote(test_client)
@@ -328,8 +327,8 @@ def test_mission_cannot_start_before_escrow_payment(tmp_path, monkeypatch):
         assert response.json()["detail"]["mission"]["status"] == "confirmed"
 
 
-def test_full_escrow_and_release_flow(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_full_escrow_and_release_flow(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
@@ -360,8 +359,8 @@ def test_full_escrow_and_release_flow(tmp_path, monkeypatch):
         assert test_client.get("/api/me/wallet", headers=_as(7)).json()["wallet"]["wallet_balance_usd"] == 90.0
 
 
-def test_wallet_payment_fails_when_balance_insufficient(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_wallet_payment_fails_when_balance_insufficient(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
@@ -373,8 +372,8 @@ def test_wallet_payment_fails_when_balance_insufficient(tmp_path, monkeypatch):
         assert response.json()["detail"]["mission"]["payment_status"] is None
 
 
-def test_wallet_payment_succeeds_and_debits_balance(tmp_path, monkeypatch):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_wallet_payment_succeeds_and_debits_balance(tmp_path, monkeypatch, backend_db_url):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
@@ -389,8 +388,8 @@ def test_wallet_payment_succeeds_and_debits_balance(tmp_path, monkeypatch):
         assert profile["client"]["wallet_balance_usd"] == 100.0  # 200 - 100 (devis seul, plus de frais Tola)
 
 
-def test_money_endpoints_return_a_stable_code_and_the_current_mission_on_refusal(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_money_endpoints_return_a_stable_code_and_the_current_mission_on_refusal(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
@@ -410,9 +409,9 @@ def test_money_endpoints_return_a_stable_code_and_the_current_mission_on_refusal
         assert missing.json()["detail"] == {"code": "mission_not_found"}
 
 
-def test_dispute_freezes_funds_and_admin_split_pays_both_parties(tmp_path, monkeypatch):
+def test_dispute_freezes_funds_and_admin_split_pays_both_parties(tmp_path, monkeypatch, backend_db_url):
     monkeypatch.setenv("ADMIN_TELEGRAM_ID", "1")
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
@@ -457,12 +456,12 @@ def test_dispute_freezes_funds_and_admin_split_pays_both_parties(tmp_path, monke
         assert again.json()["detail"]["code"] == "already_settled"
 
 
-def test_profile_provider_missions_are_filtered_by_provider_not_client(tmp_path, monkeypatch):
+def test_profile_provider_missions_are_filtered_by_provider_not_client(tmp_path, monkeypatch, backend_db_url):
     """Régression backend-parity-auditor : provider_missions réutilisait le
     même filtre que client_missions (BotMission.telegram_id) au lieu de
     filtrer sur provider_telegram_id — un prestataire ne voyait jamais ses
     missions assignées (ou, pire, celles d'un client au même telegram_id)."""
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         mission_id, quote_id = _setup_mission_with_quote(test_client)
@@ -478,8 +477,8 @@ def test_profile_provider_missions_are_filtered_by_provider_not_client(tmp_path,
         assert provider_profile["client_missions"] == [], "7 n'est pas client de cette mission"
 
 
-def test_consecutive_ignored_auto_pauses_provider_after_three(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_consecutive_ignored_auto_pauses_provider_after_three(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         _register_provider(test_client, 9, ["service_peinture"], ["Gombe"])
@@ -496,8 +495,8 @@ def test_consecutive_ignored_auto_pauses_provider_after_three(tmp_path, monkeypa
         assert reset_response.json()["provider"]["consecutive_ignored"] == 0
 
 
-def test_update_user_language(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_update_user_language(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         test_client.post(
@@ -524,8 +523,8 @@ def _complete_mission_flow(test_client, amount=100.0, currency="USD", provider_t
     return mission_id
 
 
-def test_review_creation_updates_provider_average_and_total_reviews(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_review_creation_updates_provider_average_and_total_reviews(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         mission_id = _complete_mission_flow(test_client)
@@ -550,8 +549,8 @@ def test_review_creation_updates_provider_average_and_total_reviews(tmp_path, mo
         assert provider_profile["provider"]["total_reviews"] == 2
 
 
-def test_review_rejected_for_duplicate_mission(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_review_rejected_for_duplicate_mission(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         mission_id = _complete_mission_flow(test_client)
@@ -566,8 +565,8 @@ def test_review_rejected_for_duplicate_mission(tmp_path, monkeypatch):
         assert "déjà été évaluée" in duplicate.json()["detail"]
 
 
-def test_review_rejected_for_rating_out_of_range(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_review_rejected_for_rating_out_of_range(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         mission_id = _complete_mission_flow(test_client)
@@ -581,8 +580,8 @@ def test_review_rejected_for_rating_out_of_range(tmp_path, monkeypatch):
         assert "1 et 5" in too_high.json()["detail"]
 
 
-def test_review_rejected_for_mismatched_client(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_review_rejected_for_mismatched_client(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         mission_id = _complete_mission_flow(test_client)
@@ -596,8 +595,8 @@ def test_review_rejected_for_mismatched_client(tmp_path, monkeypatch):
         assert "associé" in response.json()["detail"]
 
 
-def test_update_provider_language(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_update_provider_language(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])
@@ -625,27 +624,27 @@ def _provider_stats(test_client, provider_telegram_id=7):
     return test_client.get(f"/api/profile/{provider_telegram_id}").json()["provider"]
 
 
-def test_completing_a_mission_counts_towards_total_missions(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_completing_a_mission_counts_towards_total_missions(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
-        mission_id = _complete_mission_flow(test_client)
+        _complete_mission_flow(test_client)
         assert _provider_stats(test_client)["total_missions"] == 1
 
         _complete_mission_flow(test_client)
         assert _provider_stats(test_client)["total_missions"] == 2
 
 
-def test_success_rate_is_100_when_nothing_has_failed(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_success_rate_is_100_when_nothing_has_failed(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
-        mission_id = _complete_mission_flow(test_client)
+        _complete_mission_flow(test_client)
         assert _provider_stats(test_client)["success_rate"] == 100.0
 
 
-def test_a_disputed_mission_lowers_the_success_rate(tmp_path, monkeypatch):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_a_disputed_mission_lowers_the_success_rate(tmp_path, monkeypatch, backend_db_url):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         _complete_mission_flow(test_client)
@@ -666,8 +665,8 @@ def test_a_disputed_mission_lowers_the_success_rate(tmp_path, monkeypatch):
         assert stats["success_rate"] == round(2 / 3 * 100, 2)
 
 
-def test_provider_earns_premium_badge_at_five_missions_and_good_rating(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_provider_earns_premium_badge_at_five_missions_and_good_rating(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         for index in range(5):
@@ -680,8 +679,8 @@ def test_provider_earns_premium_badge_at_five_missions_and_good_rating(tmp_path,
         assert stats["badge"] == "premium"
 
 
-def test_badge_stays_below_premium_when_rating_is_too_low(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_badge_stays_below_premium_when_rating_is_too_low(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         for index in range(5):
@@ -693,8 +692,8 @@ def test_badge_stays_below_premium_when_rating_is_too_low(tmp_path, monkeypatch)
         assert stats["badge"] == "pending"
 
 
-def test_badge_falls_back_to_verified_when_no_tier_is_earned(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_badge_falls_back_to_verified_when_no_tier_is_earned(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         _register_provider(test_client, 7, ["service_plomberie"], ["Gombe"])
@@ -708,8 +707,8 @@ def test_badge_falls_back_to_verified_when_no_tier_is_earned(tmp_path, monkeypat
         assert stats["badge"] == "verified"
 
 
-def test_a_new_provider_has_no_badge_tier(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_a_new_provider_has_no_badge_tier(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         _register_provider(test_client, 7, ["service_plomberie"], ["Gombe"])
@@ -721,16 +720,16 @@ def test_a_new_provider_has_no_badge_tier(tmp_path, monkeypatch):
 # ── Authentification backend (X-API-Key) ────────────────────────
 
 
-def test_request_without_api_key_is_rejected(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_request_without_api_key_is_rejected(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with TestClient(backend_main.app) as test_client:
         response = test_client.get("/api/profile/12345")
         assert response.status_code == 401
 
 
-def test_request_with_wrong_api_key_is_rejected(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_request_with_wrong_api_key_is_rejected(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with TestClient(backend_main.app) as test_client:
         response = test_client.get(
@@ -740,16 +739,16 @@ def test_request_with_wrong_api_key_is_rejected(tmp_path, monkeypatch):
         assert response.status_code == 401
 
 
-def test_request_with_correct_api_key_is_accepted(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_request_with_correct_api_key_is_accepted(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         response = test_client.get("/api/profile/12345")
         assert response.status_code == 200
 
 
-def test_health_endpoint_needs_no_api_key(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_health_endpoint_needs_no_api_key(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with TestClient(backend_main.app) as test_client:
         response = test_client.get("/health")
@@ -759,8 +758,8 @@ def test_health_endpoint_needs_no_api_key(tmp_path, monkeypatch):
 # ── Vérification / suspension prestataire ───────────────────────
 
 
-def test_verify_provider_endpoint_sets_is_verified(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_verify_provider_endpoint_sets_is_verified(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])
@@ -770,8 +769,8 @@ def test_verify_provider_endpoint_sets_is_verified(tmp_path, monkeypatch):
         assert response.json()["provider"]["is_verified"] is True
 
 
-def test_suspend_then_unsuspend_provider(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_suspend_then_unsuspend_provider(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])
@@ -787,19 +786,19 @@ def test_suspend_then_unsuspend_provider(tmp_path, monkeypatch):
         assert unsuspend_response.json()["provider"]["status"] == "available"
 
 
-def test_verify_unknown_provider_returns_404(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_verify_unknown_provider_returns_404(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         response = test_client.post("/api/bot/providers/999999/verify")
         assert response.status_code == 404
 
 
-def test_rank_providers_orders_given_ids_by_score_without_availability_filter(tmp_path, monkeypatch):
+def test_rank_providers_orders_given_ids_by_score_without_availability_filter(tmp_path, monkeypatch, backend_db_url):
     """Matching "mélange" : le bot envoie les prestataires disponibles selon
     db.py ; le backend ne fait que les classer, même s'il les croit
     indisponibles ou sans ce service (changements faits via la Mini App)."""
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         for telegram_id in (1, 2, 3):
@@ -822,10 +821,10 @@ def test_rank_providers_orders_given_ids_by_score_without_availability_filter(tm
         assert too_many.status_code == 422
 
 
-def test_a_payment_never_creates_a_mission(tmp_path, monkeypatch):
+def test_a_payment_never_creates_a_mission(tmp_path, monkeypatch, backend_db_url):
     """Payer une mission que le backend ne connaît pas : refus propre, rien
     n'est créé (avant, la demande de paiement créait la mission)."""
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     _credit_client_wallet(database_module, 42, 500.0)
 
     with _authed_client(backend_main) as test_client:
@@ -841,10 +840,10 @@ def test_a_payment_never_creates_a_mission(tmp_path, monkeypatch):
         assert test_client.get("/api/bot/missions/555", headers=_as(42)).status_code == 404
 
 
-def test_the_channel_cannot_choose_the_amount_or_the_provider(tmp_path, monkeypatch):
+def test_the_channel_cannot_choose_the_amount_or_the_provider(tmp_path, monkeypatch, backend_db_url):
     """Les anciens champs (montant, prestataire, devis du bot) sont ignorés :
     le montant payé est celui du devis accepté."""
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     _credit_client_wallet(database_module, 42, 500.0)
 
     with _authed_client(backend_main) as test_client:
@@ -861,8 +860,8 @@ def test_the_channel_cannot_choose_the_amount_or_the_provider(tmp_path, monkeypa
         assert response.json()["mission"]["provider_telegram_id"] == 7
 
 
-def test_a_quote_must_be_accepted_before_payment(tmp_path, monkeypatch):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_a_quote_must_be_accepted_before_payment(tmp_path, monkeypatch, backend_db_url):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     _credit_client_wallet(database_module, 42, 500.0)
 
     with _authed_client(backend_main) as test_client:
@@ -874,8 +873,8 @@ def test_a_quote_must_be_accepted_before_payment(tmp_path, monkeypatch):
         assert response.json()["detail"]["code"] == "quote_not_accepted"
 
 
-def test_only_one_quote_is_accepted_and_it_cannot_be_withdrawn(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_only_one_quote_is_accepted_and_it_cannot_be_withdrawn(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         mission_id, first = _setup_mission_with_quote(test_client)
@@ -898,8 +897,8 @@ def test_only_one_quote_is_accepted_and_it_cannot_be_withdrawn(tmp_path, monkeyp
         assert late.json()["detail"] == {"code": "mission_not_open"}
 
 
-def test_backend_refuses_a_quote_from_the_mission_client(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_backend_refuses_a_quote_from_the_mission_client(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         mission_id, _ = _setup_mission_with_quote(test_client)
@@ -914,9 +913,9 @@ def test_backend_refuses_a_quote_from_the_mission_client(tmp_path, monkeypatch):
         assert response.json()["detail"] == {"code": "provider_is_client"}
 
 
-def test_mobile_money_cannot_be_declared_paid_by_the_bot(tmp_path, monkeypatch):
+def test_mobile_money_cannot_be_declared_paid_by_the_bot(tmp_path, monkeypatch, backend_db_url):
     """Seul l'agrégateur confirme un paiement Mobile Money : /fund le refuse."""
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         response = test_client.post(
@@ -928,9 +927,9 @@ def test_mobile_money_cannot_be_declared_paid_by_the_bot(tmp_path, monkeypatch):
         assert response.json()["detail"] == {"code": "use_payment_intent"}
 
 
-def test_payout_endpoints_hold_then_pay_after_admin_approval(tmp_path, monkeypatch):
+def test_payout_endpoints_hold_then_pay_after_admin_approval(tmp_path, monkeypatch, backend_db_url):
     monkeypatch.setenv("ADMIN_TELEGRAM_ID", "1")
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         _complete_mission_flow(test_client)  # le prestataire 7 gagne 90 USD
@@ -955,8 +954,8 @@ def test_payout_endpoints_hold_then_pay_after_admin_approval(tmp_path, monkeypat
         assert too_much.json()["detail"] == {"code": "insufficient_balance"}
 
 
-def test_webhook_without_a_valid_signature_is_refused(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_webhook_without_a_valid_signature_is_refused(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         response = test_client.post("/api/payments/webhook/simulation", content=b'{"reference": "SIM-PAY-000001"}')
@@ -964,8 +963,8 @@ def test_webhook_without_a_valid_signature_is_refused(tmp_path, monkeypatch):
         assert test_client.post("/api/payments/webhook/flexpay", content=b"{}").status_code == 404
 
 
-def test_payment_intents_name_the_parties_by_account(tmp_path, monkeypatch):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_payment_intents_name_the_parties_by_account(tmp_path, monkeypatch, backend_db_url):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     from backend.app import ledger
     from backend.app.models import PaymentIntent
 
@@ -984,8 +983,8 @@ def test_payment_intents_name_the_parties_by_account(tmp_path, monkeypatch):
 # ── Acteur : identité de canal résolue par le backend ───────────
 
 
-def test_actions_without_a_valid_actor_are_refused(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_actions_without_a_valid_actor_are_refused(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         missing = test_client.post("/api/bot/missions/1/confirm")
@@ -1006,8 +1005,8 @@ def test_actions_without_a_valid_actor_are_refused(tmp_path, monkeypatch):
         assert forged.json()["detail"] == {"code": "invalid_actor"}
 
 
-def test_only_the_mission_client_accepts_or_rejects_its_quotes(tmp_path, monkeypatch):
-    backend_main, _ = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_only_the_mission_client_accepts_or_rejects_its_quotes(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
         mission_id = _create_mission(test_client, service="s")
@@ -1024,8 +1023,8 @@ def test_only_the_mission_client_accepts_or_rejects_its_quotes(tmp_path, monkeyp
         assert test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42)).json()["quote"]["status"] == "accepted"
 
 
-def test_a_wallet_is_only_read_by_its_owner(tmp_path, monkeypatch):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+def test_a_wallet_is_only_read_by_its_owner(tmp_path, monkeypatch, backend_db_url):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     _credit_client_wallet(database_module, 42, 30.0)
 
     with _authed_client(backend_main) as test_client:

@@ -91,9 +91,8 @@ Ce couplage disparaîtra le jour où la Mini App passera par le backend V5 au li
 | Mini App | 8001 | `.venv\Scripts\python.exe -m uvicorn mini_app.app:app --reload --host 127.0.0.1 --port 8001` |
 | Bot Telegram (polling, défaut) | — | `.venv\Scripts\python.exe main.py` |
 | Bot Telegram (webhook, optionnel) | 8002 | `BOT_RUN_MODE=webhook` dans `.env` + `.venv\Scripts\python.exe main.py` |
-| Redis (étapes en cours du bot + broker Celery) | 6379 | `docker compose up -d redis` |
-| Worker Celery | — | `.venv\Scripts\python.exe -m celery -A backend.app.celery_app worker --loglevel=info --pool=solo` |
-| Beat Celery (planificateur) | — | `.venv\Scripts\python.exe -m celery -A backend.app.celery_app beat --loglevel=info` |
+| Redis (étapes en cours du bot + registre des updates du webhook) | 6379 | `docker compose up -d redis` |
+| Tâches planifiées (relances, devis expirés, libérations, Mobile Money, rapports) | — | `.venv\Scripts\python.exe -m backend.app.taches planificateur` |
 
 Ne remets pas la Mini App sur le port 8000 : il appartient au backend V5
 (`BACKEND_BASE_URL`). Voir [mini_app/README.md](mini_app/README.md).
@@ -104,13 +103,26 @@ directement sur le réseau. Voir la section démarrage du bot ci-dessous et
 le skill `demarrage-local` pour le détail du geste manuel (tunnel à relancer
 à chaque session, `WEBHOOK_URL` à mettre à jour dans `.env`).
 
-**Worker Celery : toujours `python -m celery`, jamais `celery` seul.** Invoqué
-directement, l'exécutable `celery` place son propre dossier (`Scripts/`) en
-tête de `sys.path` au lieu de la racine du projet — `backend/app/tasks.py`
-(qui importe `messages` à la racine) échoue alors avec `ModuleNotFoundError`.
-`python -m celery`, lancé depuis la racine du dépôt, résout ce problème.
-`--pool=solo` est nécessaire sous Windows (le pool par défaut, `prefork`, n'y
-fonctionne pas).
+**Image Docker de production** (`Dockerfile`, `docker/lancer.sh`) : une seule
+image, un rôle par processus (`backend`, `miniapp`, `bot`, `webhook-setup`,
+`migration`, `tache <nom>`, `planificateur`, `calendrier`,
+`controle-registre`). Utilisateur non root, code en lecture seule,
+`APP_ENV=production` par défaut (donc configuration complète exigée).
+Derrière un répartiteur de charge, poser `FORWARDED_ALLOW_IPS` (lu par uvicorn)
+pour que l'adresse du client soit la bonne. Les rôles `bot` et `miniapp` ne
+tournent pas encore dans l'image : `db.py` écrit son SQLite à côté du code
+(chantier « profils au backend »).
+
+**Tâches planifiées : plus de Celery.** `backend/app/taches.py` porte le
+calendrier (UTC) et un verrou par tâche (verrou consultatif Postgres) : une
+tâche ne tourne jamais deux fois en même temps. Sur le PC, la commande
+`planificateur` ci-dessus ; en production, Cloud Scheduler lance
+`python -m backend.app.taches lancer <nom>` aux mêmes heures
+(`python -m backend.app.taches calendrier` affiche les expressions cron).
+Pas de `.delay()` : un envoi qui doit survivre à une panne passe par une
+boîte d'envoi en base vidée par une tâche (exemple : l'alerte « Nouvel
+appareil », `Device.alert_due_at`, tâche `alertes-nouvel-appareil`).
+Toujours lancer depuis la racine du dépôt (`messages` y est importé).
 
 ## Structure du projet
 
@@ -156,10 +168,19 @@ fonctionne pas).
 ## Avant toute modification
 
 1. Démarrer Postgres si besoin : `docker compose up -d` (voir `docker-compose.yml`).
-2. Lancer les tests : `c:/Users/Ben L/OneDrive/Desktop/Startup_Nexis_Hub/nexis_hub_bot/.venv/Scripts/python.exe -m pytest -q`
-   (les tests backend utilisent SQLite en mémoire, pas besoin de Postgres pour les faire passer).
-3. Vérifier la branche courante et le statut git (`git status`, `git branch`, `git remote -v`).
-4. Ne pas committer `.venv/`, `__pycache__/`, `*.db`, `.env` (voir `.gitignore`).
+2. Installer les dépendances figées : `pip install --require-hashes -r requirements.txt -r requirements-dev.txt`
+   (`requirements.in` liste les dépendances directes ; `requirements.txt` en est la version figée,
+   à régénérer avec la commande écrite en tête de `requirements.in`, jamais à la main).
+3. Lancer les tests : `c:/Users/Ben L/OneDrive/Desktop/Startup_Nexis_Hub/nexis_hub_bot/.venv/Scripts/python.exe -m pytest -q`
+   (les tests backend utilisent SQLite par défaut, pas besoin de Postgres pour les faire passer).
+   Pour les faire tourner sur un vrai Postgres, comme la CI : `NEXIS_TEST_BACKEND_DB=postgres` et
+   `NEXIS_TEST_POSTGRES_URL=postgresql+psycopg://<utilisateur>@localhost:5432/<base>_test`
+   (base jetable dont le nom finit par `_test` ; une base neuve est créée puis supprimée par test).
+4. La CI (`.github/workflows/ci.yml`) refait tout à chaque push : ruff, pip-audit, gitleaks,
+   tests sur Postgres 16 et sur SQLite (aucun test sauté), `alembic upgrade head` + `alembic check`
+   sur une base vide. Une PR ne se fusionne que si tout est vert.
+5. Vérifier la branche courante et le statut git (`git status`, `git branch`, `git remote -v`).
+6. Ne pas committer `.venv/`, `__pycache__/`, `*.db`, `.env` (voir `.gitignore`).
 
 ### Argent (règle de structure)
 
@@ -192,11 +213,13 @@ classique, aucun tunnel nécessaire. Pour tester le mode webhook (voir
 lancer un tunnel local (`ngrok http 8002` ou équivalent), copier son URL
 HTTPS dans `WEBHOOK_URL`, générer un `WEBHOOK_SECRET_TOKEN`
 (`python -c "import secrets; print(secrets.token_hex(32))"`), passer
-`BOT_RUN_MODE=webhook` dans `.env`, puis relancer la commande ci-dessus.
-L'URL ngrok change à chaque relance du tunnel (offre gratuite) : à remettre
-à jour dans `.env` à chaque session. Aucun hébergement de production
-n'existe encore pour ce projet — le webhook n'est utilisable qu'avec un
-tunnel local pour l'instant.
+`BOT_RUN_MODE=webhook` dans `.env`, enregistrer l'adresse chez Telegram
+**une fois** avec `python -m telegram_bot.webhook_setup` (à refaire
+seulement si l'adresse ou le secret changent), puis relancer la commande
+ci-dessus. Le serveur n'enregistre jamais le webhook lui-même : il vérifie
+au démarrage que Telegram envoie bien chez lui et refuse de démarrer sinon.
+Il traite chaque update avant de répondre à Telegram, une seule fois
+(registre Redis `telegram_bot/update_ledger.py`) : Redis est obligatoire.
 
 ### Clés de service du backend (une par canal)
 

@@ -17,8 +17,8 @@ NexisAccount = crud.NexisAccount
 
 
 @pytest.fixture
-def db(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'identity.db'}", future=True)
+def db(backend_db_url):
+    engine = create_engine(backend_db_url, future=True)
     NexisAccount.metadata.create_all(bind=engine)
     session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
     yield session

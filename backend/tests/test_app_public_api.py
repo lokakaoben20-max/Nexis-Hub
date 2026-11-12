@@ -9,15 +9,13 @@ une mission ou un portefeuille d'un autre compte n'est jamais lu ; aucune
 réponse ne contient d'identifiant Telegram.
 """
 
-import base64
 import importlib
-import json
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app import app_auth, app_sessions, models
+from backend.app import app_auth, app_sessions
 from test_app_sessions import PHONE, Phone
 
 API = "/api/app/v1"
@@ -26,8 +24,8 @@ BOT_KEY = "test-backend-api-key-not-a-secret"
 
 
 @pytest.fixture
-def env(monkeypatch, tmp_path):
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'public.db'}")
+def env(monkeypatch, backend_db_url):
+    monkeypatch.setenv("DATABASE_URL", backend_db_url)
     monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", BOT_KEY)
     monkeypatch.setenv("APP_CODE_HMAC_KEY", "test-hmac-key-not-a-secret-0123456789abcdef")
     monkeypatch.setenv("NEXIS_BOT_USERNAME", "@NexisHubTestBot")
@@ -46,11 +44,19 @@ def client(env):
 
 
 @pytest.fixture
-def alerts(monkeypatch, env):
-    _, public = env
-    scheduled = []
-    monkeypatch.setattr(public, "_schedule_new_device_alert", scheduled.append)
-    return scheduled
+def alerts(env):
+    """Téléphones dont l'alerte « Nouvel appareil » attend dans la boîte
+    d'envoi (envoyée ensuite par la tâche planifiée)."""
+    database, _ = env
+
+    Device = importlib.import_module("backend.app.models").Device  # modèle rechargé par `env`
+
+    def queued():
+        with database.SessionLocal() as session:
+            rows = session.query(Device.id).filter(Device.alert_due_at.is_not(None)).order_by(Device.id)
+            return [device_id for (device_id,) in rows]
+
+    return queued
 
 
 def _public_key(phone):
@@ -151,7 +157,7 @@ def test_a_full_login_gives_tokens_and_no_telegram_identifier(client, env, alert
 
     assert set(tokens) == {"access_token", "access_expires_at", "refresh_token", "refresh_expires_at", "device_id", "new_device"}
     assert tokens["new_device"] is True
-    assert alerts == [tokens["device_id"]]
+    assert alerts() == []  # premier téléphone d'un compte tout neuf : aucune alerte
     assert not any("telegram" in key.lower() for key in walk_keys(tokens))
 
 
@@ -171,7 +177,7 @@ def test_a_known_phone_on_the_same_account_is_not_a_new_device(client, env, aler
     again = login(client, database, Phone())
 
     assert again["new_device"] is True  # nouveau téléphone (nouvelle clé) : alerte
-    assert len(alerts) == 2
+    assert alerts() == [again["device_id"]]
 
 
 def test_a_wrong_code_gives_no_session(client, env, alerts):
@@ -193,7 +199,7 @@ def test_a_wrong_code_gives_no_session(client, env, alerts):
     )
 
     assert response.status_code == 400
-    assert alerts == []
+    assert alerts() == []
 
 
 def test_whatsapp_codes_are_not_offered_yet(client):

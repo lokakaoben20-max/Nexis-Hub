@@ -191,7 +191,8 @@ class BotServiceRequest(Base):
     provider_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
     service_name: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text, default="")
-    status: Mapped[str] = mapped_column(String(20), default="pending")
+    # Index créé dès la migration c1a9f0e2b345 ; le modèle l'avait oublié.
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -427,6 +428,13 @@ class Device(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     revoked_reason: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Alerte « Nouvel appareil » (boîte d'envoi) : `alert_due_at` est posé dans
+    # la même transaction que la création du téléphone, puis la tâche planifiée
+    # `alertes-nouvel-appareil` l'envoie et réessaie en cas d'échec. NULL : rien
+    # à envoyer (premier téléphone d'un compte neuf, alerte envoyée ou abandonnée).
+    alert_due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    alert_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    alert_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class AppSession(Base):

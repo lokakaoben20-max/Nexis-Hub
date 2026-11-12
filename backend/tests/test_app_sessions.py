@@ -29,8 +29,8 @@ def code_key(monkeypatch):
 
 
 @pytest.fixture
-def db(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'app_sessions.db'}", future=True)
+def db(backend_db_url):
+    engine = create_engine(backend_db_url, future=True)
     models.Base.metadata.create_all(bind=engine)
     session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
     yield session
@@ -458,8 +458,8 @@ TEST_API_KEY = "test-backend-api-key-not-a-secret"
 
 
 @pytest.fixture
-def backend(monkeypatch, tmp_path):
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'route.db'}")
+def backend(monkeypatch, backend_db_url):
+    monkeypatch.setenv("DATABASE_URL", backend_db_url)
     monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TEST_API_KEY)
     monkeypatch.setenv("ADMIN_TELEGRAM_ID", "999")
     database_module = importlib.reload(importlib.import_module("backend.app.database"))
