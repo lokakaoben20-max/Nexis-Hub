@@ -215,6 +215,7 @@ jobs:
           archive="terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
           curl -sSfL -o "$archive" "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/${archive}"
           echo "${TERRAFORM_SHA256}  ${archive}" | sha256sum --check --strict
+          mkdir -p "$HOME/.local/bin"
           unzip -o "$archive" terraform -d "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Format
