@@ -435,7 +435,7 @@ TEST_API_KEY = "test-backend-api-key-not-a-secret"
 @pytest.fixture
 def backend(monkeypatch, tmp_path):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'route.db'}")
-    monkeypatch.setenv("BACKEND_API_KEY", TEST_API_KEY)
+    monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TEST_API_KEY)
     database_module = importlib.reload(importlib.import_module("backend.app.database"))
     importlib.reload(importlib.import_module("backend.app.models"))
     backend_main = importlib.reload(importlib.import_module("backend.app.main"))

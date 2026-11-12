@@ -18,20 +18,39 @@ Décisions prises par Ben le 2 octobre 2026 :
 3. **Un seul compte client** : un même client peut relier Telegram et WhatsApp à un seul compte et un seul wallet. La liaison est vérifiée par le numéro de téléphone.
 4. **Refus explicite** : une personne qui demande à s'inscrire comme prestataire sur WhatsApp reçoit un refus clair et un lien vers Telegram ou la Mini App.
 
-## État actuel vérifié dans le dépôt — 7 octobre 2026
+## État actuel vérifié dans le dépôt
 
-Aucun code WhatsApp n'existe encore. Le document décrit une architecture cible, pas un bot déjà opérationnel. Depuis sa première rédaction, le chantier financier a été fusionné dans `feature/v5-migration` (`aa15372`) et la conception des paiements Mobile Money réels a été ajoutée (`be2c2c7`).
+Aucun code WhatsApp n'existe, et le backend est entièrement construit autour de l'identifiant Telegram. Vérifié sur `feature/v5-migration`, commit `d3f3b1b`.
 
-La base multicanal progresse : `accounts` et `channel_identities` existent ; le registre utilise les comptes Nexis pour les wallets ; missions, devis, avis et demandes de service portent maintenant des références `account_id`. La migration `a1b2c3d4e5f6` rattache l'historique aux identités Telegram existantes ; les nouvelles écritures renseignent ces références, et les réponses API exposent maintenant les IDs de compte en plus des anciens IDs Telegram. Les identifiants Telegram restent présents pour les adaptateurs existants. Les rôles, la langue commune et les champs du téléphone vérifié sont également en place. Les numéros historiques ne sont pas considérés vérifiés, car leur provenance n'est pas enregistrée. Les routes API restent indexées par `telegram_id` : leur authentification et leur adaptation à `account_id` sont à faire avant tout flux WhatsApp.
+| Constat | Preuve |
+| --- | --- |
+| Le plan prévoit un canal WhatsApp en 4 lignes, conditionné à un backend indépendant du canal | `V5_MIGRATION_PLAN.md:503-509` (avant cette mise à jour) |
+| Le client est identifié par son `telegram_id`, clé primaire de la table, et son wallet y est accroché | `backend/app/models.py:11-17` |
+| Le prestataire aussi, avec son propre wallet | `backend/app/models.py:24-43` |
+| Missions, devis, avis et demandes de service référencent client et prestataire par `telegram_id` | `backend/app/models.py:55-127` |
+| Toutes les routes du backend prennent un `telegram_id` dans l'URL | `backend/app/main.py:276-745` |
+| Les notifications du backend ne partent que par l'API Telegram | `backend/app/notify.py:14`, appelé depuis `backend/app/tasks.py:53-149` |
+| La Mini App authentifie par la signature Telegram (`initData`) | `mini_app/app.py:119` |
+| Le paiement mobile money est simulé | `telegram_bot/payment.py:142` (`operator="mobile_money_simulation"`) |
+| Le mot « WhatsApp » n'apparaît que pour demander le numéro de téléphone à l'inscription Telegram | `translations/fr.json:155`, `telegram_bot/keyboards.py:184` |
 
-Autres dépendances encore ouvertes :
+En plus, `db.py` (SQLite) porte encore une partie de la vérité métier. Le canal WhatsApp ne peut pas s'appuyer sur `db.py` : il ne parle qu'au backend.
 
-- les notifications sont envoyées directement par Telegram ; la table `notifications` multi-canal n'est pas implémentée ;
-- les paiements Mobile Money sont simulés ; l'agrégateur n'est pas encore choisi ;
-- la Mini App authentifie toujours via Telegram `initData` et utilise encore `db.py` pour ses opérations de profil.
-- (6 novembre 2026) missions et devis : le backend est la seule mémoire (`CONCEPTION_MISSIONS.md`). Il numérote les missions, enregistre les prestataires prévenus et relit le devis accepté au paiement ; `db.py` n'en garde aucune copie. Les profils (clients, prestataires, demandes de service) sont encore dans `db.py`.
+**Mise à jour du 2 octobre au soir.** Le chantier « backend seule source de vérité de l'argent » (branche `feature/argent-backend`, commit `0002b7e`, pas encore fusionnée) a déjà posé la base d'identité (`CONCEPTION_ARGENT.md`, section « Comptes Nexis ») :
 
-Le service WhatsApp reste conditionné à la migration des entités métier vers `account_id`, à la liaison sûre des identités, aux notifications fiables et à la fin du chantier des paiements.
+- tables `accounts` et `channel_identities` ; un compte par `telegram_id` connu, avec son identité `telegram` (commit `298ce9e`) ;
+- registre en partie double qui ne connaît que le compte, jamais un identifiant de canal ; un seul wallet par personne (soldes client et prestataire additionnés à la migration) ;
+- missions payées liées à `client_account_id` et `provider_account_id` ;
+- refus d'un prestataire sur sa propre mission (`provider_is_client`).
+
+Restent pour le chantier d'identité WhatsApp : rôles et numéro vérifié du compte, passage des autres tables (missions, devis, avis) à `account_id`, liaison entre canaux, notifications.
+
+**Mise à jour du 7 novembre 2026 (étape 1 du plan d'implémentation).**
+
+- Comptes, registre, missions, devis et avis sont sur `account_id` ; l'acteur est résolu par le backend depuis son identité de canal ; le bouton « Partager mon numéro » est obligatoire (chantiers argent, identité et socle).
+- **Identifiant WhatsApp : le BSUID, pas le numéro.** Depuis 2026, Meta attribue à chaque utilisateur un identifiant propre à l'entreprise (« business-scoped user ID », par exemple `CD.13491208655302741918`) et peut masquer le numéro d'un utilisateur qui a pris un nom d'utilisateur WhatsApp : `wa_id` devient facultatif dans les webhooks. L'identité `whatsapp` de `channel_identities` porte donc le BSUID ; le numéro, quand Meta le donne, est enregistré comme numéro prouvé du compte (`accounts.phone_e164`). Le BSUID change quand l'utilisateur change de numéro (message système `user_changed_user_id`) : c'est un cas de l'étape 9 (« Numéro changé »).
+- Une clé de service par canal (`BACKEND_API_KEY_TELEGRAM`, `BACKEND_API_KEY_WHATSAPP`) ; la clé fixe le canal de l'acteur. Toute route est fermée à WhatsApp sauf ouverture explicite (`@open_to`) ; les actions de prestataire (`@provider_action`) ne peuvent jamais l'être.
+- Inscription du client WhatsApp : `POST /api/whatsapp/client`. Numéro déjà prouvé sur un autre compte : refus `phone_owned_by_account`, rien n'est créé ni rattaché (la liaison par code arrive à l'étape 9).
 
 ## Principes non négociables
 
@@ -66,7 +85,7 @@ Le service WhatsApp et le bot Telegram ne décident rien : ils transmettent au b
 | Table | Rôle | Champs clés | Contraintes |
 | --- | --- | --- | --- |
 | `accounts` | La personne. Clients et prestataires. | `account_id`, `roles` (client, provider, ou les deux), `phone_e164`, `language`, `created_at` | `phone_e164` unique pour les comptes vérifiés |
-| `channel_identities` | Une porte d'entrée vers un compte | `account_id`, `channel` (telegram, whatsapp, miniapp, app), `external_id` (id Telegram ou `wa_id`), `verified_at` | Unique sur (`channel`, `external_id`) ; un seul canal de chaque type par compte |
+| `channel_identities` | Une porte d'entrée vers un compte | `account_id`, `channel` (telegram, whatsapp, miniapp, app), `external_id` (id Telegram, ou BSUID WhatsApp), `verified_at` | Unique sur (`channel`, `external_id`) ; un seul canal de chaque type par compte |
 | Wallet et grand livre | Définis par le chantier argent | Rattachés à `account_id`, jamais à un canal | Voir le chantier argent |
 
 Missions, devis, transactions, avis et litiges référencent `account_id` au lieu de `telegram_id`. Le prestataire utilise le même modèle. C'est ce qui permettra plus tard l'application Nexis sans nouvelle migration.
@@ -128,7 +147,7 @@ La saisie se fait en conversation pas à pas (décision de Ben) : listes, texte,
 
 | Parcours | Sur WhatsApp | Notification hors fenêtre (modèle utilité à faire valider) |
 | --- | --- | --- |
-| Inscription | Choix de la langue (3 boutons), nom ; le numéro est le `wa_id`, déjà vérifié par WhatsApp | Aucune |
+| Inscription | Choix de la langue (3 boutons), nom ; le numéro est le `wa_id` quand Meta le donne, déjà vérifié par WhatsApp | Aucune |
 | Créer une mission | Service (liste), commune (liste en deux niveaux), description (texte), localisation (partage de position WhatsApp) | Aucune |
 | Recevoir et choisir un devis | Devis affiché avec boutons Accepter / Refuser | « Nouveau devis pour votre mission » |
 | Payer | Lien ou demande de paiement mobile money émise par le backend ; confirmation par le backend uniquement | « Paiement reçu » |
@@ -172,7 +191,7 @@ Principe : aucune base de données n'est jamais modifiée à la main, et aucun w
 | Cas | Règle |
 | --- | --- |
 | **Plus d'accès à Telegram** (téléphone perdu, compte supprimé) et la personne veut retrouver son compte depuis WhatsApp | Pas de code possible. Procédure de récupération admin (ci-dessous). En attendant, la personne peut utiliser WhatsApp avec un nouveau compte sans solde |
-| **Numéro changé** (nouvelle carte SIM) | Nouveau `wa_id`, donc nouvelle identité. Rattachement par code envoyé sur l'autre canal encore actif. Si aucun canal n'est actif : procédure de récupération admin. L'ancienne identité WhatsApp est désactivée au rattachement de la nouvelle |
+| **Numéro changé** (nouvelle carte SIM) | Nouveau `wa_id` et nouveau BSUID, donc nouvelle identité. Rattachement par code envoyé sur l'autre canal encore actif. Si aucun canal n'est actif : procédure de récupération admin. L'ancienne identité WhatsApp est désactivée au rattachement de la nouvelle |
 | **Numéro WhatsApp déjà prouvé sur un autre compte, sans liaison possible** (numéro réattribué, ou personne qui ne peut pas recevoir le code) | Le backend crée un nouveau compte pour le titulaire actuel du numéro. Le numéro de l'ancien compte passe à « à revérifier » ; l'ancien compte garde son wallet et son historique. Alerte admin. Aucun argent ne bouge |
 | **Deux comptes avec solde appartenant à la même personne** (par exemple un compte Telegram ancien et un compte WhatsApp créé ensuite) | Opération de regroupement (ci-dessous). Jamais de fusion automatique |
 | **Liaison contestée** (la personne dit ne pas avoir lié son compte) | Pendant 30 jours après une liaison, l'autre canal du compte peut la contester par un bouton. L'identité ajoutée est suspendue aussitôt (plus aucune action, ni lecture du solde), l'admin tranche avec le journal d'audit |
@@ -229,7 +248,7 @@ Nexis ne garde d'un message WhatsApp que ce dont une mission ou un litige a beso
 
 | Donnée | Où | Durée | Remarque |
 | --- | --- | --- | --- |
-| `wa_id` (le numéro) | `channel_identities` | Durée de vie du compte | Supprimé à la clôture du compte ; le registre ne garde que `account_id` |
+| BSUID (identité WhatsApp) et numéro prouvé | `channel_identities`, `accounts` | Durée de vie du compte | Supprimés à la clôture du compte ; le registre ne garde que `account_id` |
 | Corps brut des webhooks | Nulle part | Jamais stocké | Le service extrait les champs utiles puis jette le reste |
 | Identifiant de message reçu, pour la déduplication | Redis | 7 jours | Seul l'identifiant, sans contenu |
 | État de conversation (étape en cours) | Redis | 24 heures sans activité | Aucune donnée d'argent ; perdu, le client recommence l'étape |

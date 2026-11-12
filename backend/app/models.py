@@ -224,12 +224,15 @@ class NexisAccount(Base):
     phone_e164: Mapped[str | None] = mapped_column(String(32), nullable=True)
     phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     language: Mapped[str] = mapped_column(String(5), default="fr")
+    # Nom choisi par la personne sur un canal sans profil historique
+    # (WhatsApp). Les comptes Telegram gardent le leur dans `bot_users`.
+    display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class ChannelIdentity(Base):
-    """Rattache un identifiant de canal (`telegram` + telegram_id, plus tard
-    `whatsapp` + numéro) à un compte Nexis. Un même canal + identifiant ne
+    """Rattache un identifiant de canal (`telegram` + telegram_id,
+    `whatsapp` + BSUID) à un compte Nexis. Un même canal + identifiant ne
     désigne qu'un seul compte."""
 
     __tablename__ = "channel_identities"
@@ -241,7 +244,9 @@ class ChannelIdentity(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     channel: Mapped[str] = mapped_column(String(20))
-    external_id: Mapped[str] = mapped_column(String(64))
+    # Telegram : l'identifiant numérique. WhatsApp : le BSUID de Meta (code
+    # pays de 2 lettres, un point, puis jusqu'à 128 caractères).
+    external_id: Mapped[str] = mapped_column(String(160))
     # Telegram et WhatsApp garantissent eux-mêmes l'identifiant de
     # l'expéditeur : une identité créée depuis un message reçu est vérifiée.
     verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

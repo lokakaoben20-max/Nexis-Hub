@@ -18,7 +18,7 @@ TEST_API_KEY = "test-backend-api-key-not-a-secret"
 def _reload_backend_with_db(monkeypatch, tmp_path, name="test_service_requests.db"):
     db_path = tmp_path / name
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
-    monkeypatch.setenv("BACKEND_API_KEY", TEST_API_KEY)
+    monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TEST_API_KEY)
 
     database_module = importlib.reload(importlib.import_module("backend.app.database"))
     importlib.reload(importlib.import_module("backend.app.models"))

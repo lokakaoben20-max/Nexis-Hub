@@ -18,7 +18,7 @@ from backend.app import database as _database_module  # noqa: F401
 from backend.app import models as _models_module  # noqa: F401
 from backend.app import tasks as _tasks_module  # noqa: F401
 
-# Clé factice, jamais la vraie BACKEND_API_KEY de .env — même convention que
+# Clé factice, jamais la vraie BACKEND_API_KEY_TELEGRAM de .env — même convention que
 # backend/tests/test_main.py.
 TEST_API_KEY = "test-backend-api-key-not-a-secret"
 
@@ -40,7 +40,7 @@ def _reload_backend_with_db(monkeypatch, tmp_path, name="test_tasks.db"):
     """
     db_path = tmp_path / name
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
-    monkeypatch.setenv("BACKEND_API_KEY", TEST_API_KEY)
+    monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TEST_API_KEY)
     monkeypatch.setenv("ADMIN_TELEGRAM_ID", "999")
 
     database_module = importlib.reload(importlib.import_module("backend.app.database"))
