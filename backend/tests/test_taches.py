@@ -31,6 +31,7 @@ def test_le_calendrier_reprend_les_frequences_de_celery(taches):
         "relances-prestataires": "*/10 * * * *",
         "devis-expires": "0 * * * *",
         "liberations-automatiques": "0 * * * *",
+        "litiges-en-retard": "15 * * * *",
         "verification-mobile-money": "*/2 * * * *",
         "rapprochement-quotidien": "0 6 * * *",
         "analytics-quotidiennes": "0 8 * * *",
@@ -50,6 +51,7 @@ def test_les_taches_dues_suivent_l_heure_utc(taches):
     assert taches.taches_dues(a(6, 2)) == ["verification-mobile-money", "alertes-nouvel-appareil"]
     assert taches.taches_dues(a(6, 3)) == ["alertes-nouvel-appareil"]
     assert "purge-nonces" in taches.taches_dues(a(6, 30))
+    assert "litiges-en-retard" in taches.taches_dues(a(6, 15))
     # 9 h à Kinshasa (UTC+1) = 8 h UTC : l'heure d'un fuseau ne trompe pas le calendrier.
     kinshasa = timezone(timedelta(hours=1))
     assert "analytics-quotidiennes" in taches.taches_dues(datetime(2026, 11, 7, 9, 0, tzinfo=kinshasa))

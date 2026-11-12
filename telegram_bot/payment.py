@@ -474,7 +474,7 @@ async def litige_motif_recu(message: Message, state: FSMContext):
     except MoneyRefused as error:
         await state.clear()
         if error.code == "already_settled" and (error.mission or {}).get("payment_status") == "released":
-            # Libérée entre-temps (confirmation ou délai de 24 h dépassé).
+            # Libérée entre-temps (confirmation ou délai de 48 h dépassé).
             text = get_message("dispute_already_released", lang, mission_id=mission_id)
         else:
             text = money_failure_text(mission_id, error, lang)
