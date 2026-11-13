@@ -1,0 +1,5 @@
+# Faux identifiants de message WhatsApp (wamid) dans des tests, vérifiés :
+# ce ne sont pas des secrets. Ils ont été remplacés par des clés générées
+# (commit 6e7649d) mais restent dans l'historique de la PR #17.
+f62d43b680a7b301bb35506ac7451738ffa93ceb:backend/tests/test_whatsapp_postgres.py:generic-api-key:164
+f62d43b680a7b301bb35506ac7451738ffa93ceb:backend/tests/test_whatsapp_idempotency.py:generic-api-key:21

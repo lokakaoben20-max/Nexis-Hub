@@ -6,7 +6,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 
-from backend.app import app_sessions, crud, ledger, mobile_money, profils, reconciliation
+from backend.app import app_sessions, crud, idempotency, ledger, mobile_money, profils, reconciliation
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, Device, NexisAccount, PaymentIntent, Payout
 from backend.app.notify import send_telegram_message
@@ -623,5 +623,14 @@ def purge_request_nonces() -> int:
     db = SessionLocal()
     try:
         return app_sessions.purge_request_nonces(db)
+    finally:
+        db.close()
+
+
+def purge_idempotency_keys() -> int:
+    """Efface les clés d'idempotence de plus de 30 jours (idempotency.RETENTION)."""
+    db = SessionLocal()
+    try:
+        return idempotency.purge(db)
     finally:
         db.close()

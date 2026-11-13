@@ -54,6 +54,17 @@ vérifiées par le registre (propriétaire, état, montant).
 Si on demande de le déployer ou de le rendre accessible depuis l'extérieur, le
 signaler avant de le faire.
 
+## Toute écriture ouverte à WhatsApp est idempotente
+
+Meta renvoie ses webhooks : un même message peut arriver plusieurs fois, même
+en parallèle. Une route d'écriture ouverte à un autre canal que Telegram doit
+porter `@idempotent` (`backend/app/main.py`), sinon le backend refuse de
+démarrer (`check_route_policies`). Elle exige l'en-tête `Idempotency-Key` et
+passe par `_run_idempotent`, qui appelle `idempotency.run` : verrou Postgres par
+(canal, clé), action **sans commit**, puis clé + réponse validées dans la même
+transaction. L'action ne doit donc jamais faire `db.commit()` elle-même sur le
+chemin de succès. Ne pas remplacer cette garantie par Redis.
+
 ## L'implémentation de référence existe déjà dans le projet
 
 `mini_app/app.py` fait les choses correctement — s'en inspirer plutôt que
