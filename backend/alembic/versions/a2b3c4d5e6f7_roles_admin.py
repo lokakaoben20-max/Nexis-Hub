@@ -8,7 +8,7 @@ Table nouvelle et vide : après la migration, personne n'est admin tant
 qu'aucun rôle n'a été donné avec `python -m backend.app.admins ajouter`.
 
 Revision ID: a2b3c4d5e6f7
-Revises: a3b4c5d6e7f8
+Revises: 2c3d4e5f6a7b
 Create Date: 2026-11-13
 """
 from typing import Sequence, Union
@@ -18,7 +18,7 @@ from alembic import op
 
 
 revision: str = "a2b3c4d5e6f7"
-down_revision: Union[str, Sequence[str], None] = "a3b4c5d6e7f8"
+down_revision: Union[str, Sequence[str], None] = "2c3d4e5f6a7b"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

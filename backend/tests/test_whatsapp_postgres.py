@@ -9,6 +9,7 @@ par `_test` (son schéma `public` est entièrement effacé).
 import importlib
 import os
 import threading
+import uuid
 from pathlib import Path
 
 import pytest
@@ -143,17 +144,41 @@ def _parallel(count, call):
     return results
 
 
-def _register(app, bsuid, phone):
+def _register(app, bsuid, phone, key=None, with_headers=False):
     with TestClient(app) as test_client:
         response = test_client.post(
             "/api/whatsapp/client",
             json={"display_name": "Mado", "language": "ln", "phone": phone},
-            headers={"X-API-Key": WHATSAPP_KEY, "X-Actor-Channel": "whatsapp", "X-Actor-Id": bsuid},
+            headers={
+                "X-API-Key": WHATSAPP_KEY,
+                "X-Actor-Channel": "whatsapp",
+                "X-Actor-Id": bsuid,
+                "Idempotency-Key": key or f"wamid.{uuid.uuid4().hex}",
+            },
         )
+        if with_headers:
+            return response.status_code, response.json(), response.headers.get("Idempotent-Replayed")
         return response.status_code, response.json()
 
 
+def test_the_same_webhook_received_ten_times_in_parallel_acts_once(backend, engine):
+    key = f"wamid.{uuid.uuid4().hex}"
+    results = _parallel(
+        10, lambda _index: _register(backend.app, "CD.555666777", "+243810000005", key=key, with_headers=True)
+    )
+
+    assert {status for status, _body, _replayed in results} == {200}
+    # Une seule exécution, neuf réponses rejouées, toutes identiques.
+    assert sorted(replayed or "false" for _status, _body, replayed in results) == ["false"] + ["true"] * 9
+    assert len({repr(body) for _status, body, _replayed in results}) == 1
+    assert results[0][1]["created"] is True
+    with engine.connect() as connection:
+        assert connection.execute(text("SELECT COUNT(*) FROM accounts")).scalar_one() == 1
+        assert connection.execute(text("SELECT COUNT(*) FROM idempotency_keys")).scalar_one() == 1
+
+
 def test_the_same_first_message_received_in_parallel_creates_one_account(backend, engine):
+    # Messages différents (clés différentes) de la même personne au même instant.
     results = _parallel(8, lambda _index: _register(backend.app, "CD.111222333", "+243810000001"))
 
     assert {status for status, _body in results} == {200}

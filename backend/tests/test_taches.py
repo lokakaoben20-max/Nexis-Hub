@@ -38,6 +38,7 @@ def test_le_calendrier_reprend_les_frequences_de_celery(taches):
         "analytics-quotidiennes": "0 8 * * *",
         "alertes-nouvel-appareil": "*/1 * * * *",
         "purge-nonces": "30 * * * *",
+        "purge-cles-idempotence": "15 3 * * *",
     }
 
 

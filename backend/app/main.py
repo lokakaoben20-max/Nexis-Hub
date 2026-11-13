@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -16,6 +16,7 @@ from backend.app import (
     app_auth,
     app_sessions,
     crud,
+    idempotency,
     ledger,
     mobile_money,
     payment_gateway,
@@ -39,6 +40,7 @@ async def _lifespan(_app: FastAPI):
     # unique encore présente, clé Telegram absente, clés trop courtes ou
     # partagées entre deux canaux) : voir backend/app/service_keys.py.
     service_keys.check_configuration()
+    check_route_policies()
     yield
 
 
@@ -94,6 +96,32 @@ def route_channels(endpoint) -> frozenset:
 
 def is_provider_action(endpoint) -> bool:
     return getattr(endpoint, _PROVIDER_ATTR, False)
+
+
+_IDEMPOTENT_ATTR = "__nexis_idempotent__"
+WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def idempotent(endpoint):
+    """Écriture qui passe par `_run_idempotent` : la clé `Idempotency-Key` est
+    enregistrée dans la transaction de l'action (backend/app/idempotency.py).
+    Obligatoire sur toute écriture ouverte à un autre canal que Telegram."""
+    setattr(endpoint, _IDEMPOTENT_ATTR, True)
+    return endpoint
+
+
+def is_idempotent(endpoint) -> bool:
+    return getattr(endpoint, _IDEMPOTENT_ATTR, False)
+
+
+def check_route_policies() -> None:
+    """Refus de démarrer si une écriture est ouverte à WhatsApp sans
+    idempotence : un message reçu deux fois agirait deux fois."""
+    for route in router.routes:
+        methods = set(getattr(route, "methods", ()) or ()) & WRITE_METHODS
+        channels = route_channels(getattr(route, "endpoint", None))
+        if methods and channels - {ledger.TELEGRAM} and not is_idempotent(route.endpoint):
+            raise RuntimeError(f"{sorted(methods)} {route.path} : écriture ouverte à {sorted(channels)} sans @idempotent")
 
 
 def verify_service_key(request: Request, x_api_key: str | None = Header(default=None)) -> str:
@@ -169,6 +197,50 @@ def current_actor(
     if x_actor_channel == ledger.WHATSAPP and not _WHATSAPP_ACTOR.fullmatch(x_actor_id):
         raise HTTPException(status_code=400, detail={"code": "invalid_actor"})
     return Actor(channel=x_actor_channel, external_id=x_actor_id)
+
+
+def _run_idempotent(
+    request: Request,
+    response: Response,
+    actor: "Actor",
+    key: str | None,
+    body: dict,
+    action,
+) -> dict:
+    """Exécute une écriture une seule fois pour (canal, clé) et valide la
+    transaction (action + clé ensemble). Clé obligatoire pour WhatsApp,
+    facultative pour Telegram. Une réponse rejouée porte
+    `Idempotent-Replayed: true`. `action(db)` écrit sans valider et rend le
+    corps de la réponse ; une `HTTPException` qu'elle lève annule tout."""
+    try:
+        key = idempotency.check_key(key, required=actor.channel != ledger.TELEGRAM)
+    except idempotency.IdempotencyError as error:
+        raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+    with SessionLocal() as db:
+        if key is None:
+            result = action(db)
+            db.commit()
+            return result
+        request_fingerprint = idempotency.fingerprint(
+            route=f"{request.method} {request.scope['route'].path}",
+            channel=actor.channel,
+            actor_id=actor.external_id,
+            path_params=dict(request.path_params),
+            body=body,
+        )
+        try:
+            outcome = idempotency.run(
+                db, channel=actor.channel, key=key, request_fingerprint=request_fingerprint, action=lambda: action(db)
+            )
+        except idempotency.IdempotencyError as error:
+            db.rollback()
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+        except BaseException:
+            db.rollback()
+            raise
+        if outcome.replayed:
+            response.headers["Idempotent-Replayed"] = "true"
+        return outcome.body
 
 
 def _actor_account(
@@ -529,12 +601,21 @@ class WhatsAppClientPayload(BaseModel):
 
 @router.post("/api/whatsapp/client")
 @open_to(ledger.WHATSAPP)
-def register_whatsapp_client(payload: WhatsAppClientPayload, actor: Actor = Depends(current_actor)):
+@idempotent
+def register_whatsapp_client(
+    payload: WhatsAppClientPayload,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
     """Inscrit ou met à jour le client qui écrit depuis WhatsApp. Jamais de
     rôle prestataire. Un numéro déjà prouvé sur un autre compte est refusé
     (`phone_owned_by_account`) : aucun compte n'est rattaché par le numéro
-    seul. Voir `crud.register_whatsapp_client`."""
-    with SessionLocal() as db:
+    seul. Voir `crud.register_whatsapp_client`. Le même message rejoué rend
+    la même réponse sans rien refaire."""
+
+    def action(db) -> dict:
         try:
             account, created = crud.register_whatsapp_client(
                 db,
@@ -544,7 +625,6 @@ def register_whatsapp_client(payload: WhatsAppClientPayload, actor: Actor = Depe
                 phone=payload.phone,
             )
         except crud.ClientRefused as refusal:
-            db.rollback()
             raise HTTPException(status_code=refusal.http_status, detail={"code": refusal.code}) from refusal
         return {
             "status": "ok",
@@ -553,11 +633,13 @@ def register_whatsapp_client(payload: WhatsAppClientPayload, actor: Actor = Depe
                 "account_id": account.id,
                 "display_name": profils.client_profile(db, account.id).first_name,
                 "language": account.language,
-                "roles": account.roles,
+                "roles": list(account.roles or []),
                 # Jamais le numéro lui-même : seulement s'il est prouvé.
                 "phone_proven": account.phone_verified_at is not None,
             },
         }
+
+    return _run_idempotent(request, response, actor, idempotency_key, payload.model_dump(mode="json"), action)
 
 
 class AppLoginTelegramContactPayload(BaseModel):
@@ -1736,30 +1818,53 @@ def save_my_client_profile(payload: ClientProfilePayload, actor: Actor = Depends
 
 @router.patch("/api/me/language")
 @open_to(ledger.TELEGRAM, ledger.WHATSAPP)
-def set_my_language(payload: LanguagePayload, actor: Actor = Depends(current_actor)):
-    with SessionLocal() as db:
+@idempotent
+def set_my_language(
+    payload: LanguagePayload,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    """Langue du compte. Le même message WhatsApp rejoué rend la même réponse
+    sans rien refaire (clé d'idempotence obligatoire pour WhatsApp)."""
+
+    def action(db) -> dict:
         try:
             account_id = _actor_account(db, actor)
             profils.set_language(db, account_id, payload.language)
-            db.commit()
+            db.flush()
         except profils.ProfileRefused as refusal:
             raise _profile_refused(db, refusal) from refusal
         except ledger.MoneyError as error:
             raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
-        return _me(db, actor, account_id)
+        return jsonable_encoder(_me(db, actor, account_id))
+
+    return _run_idempotent(request, response, actor, idempotency_key, payload.model_dump(mode="json"), action)
 
 
 @router.patch("/api/me/name")
 @open_to(ledger.TELEGRAM, ledger.WHATSAPP)
-def set_my_name(payload: NamePayload, actor: Actor = Depends(current_actor)):
-    with SessionLocal() as db:
+@idempotent
+def set_my_name(
+    payload: NamePayload,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    """Prénom du profil client. Idempotent comme `set_my_language`."""
+
+    def action(db) -> dict:
         account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
         try:
             profils.rename_client(db, account_id, payload.first_name)
-            db.commit()
+            db.flush()
         except profils.ProfileRefused as refusal:
             raise _profile_refused(db, refusal) from refusal
-        return _me(db, actor, account_id)
+        return jsonable_encoder(_me(db, actor, account_id))
+
+    return _run_idempotent(request, response, actor, idempotency_key, payload.model_dump(mode="json"), action)
 
 
 @router.put("/api/me/provider-profile")

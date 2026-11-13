@@ -60,6 +60,7 @@ Le canal WhatsApp est un affichage et une prise de commande, jamais un endroit o
 2. **Le service WhatsApp n'importe jamais `db.py`.** Il ne parle au backend que par son API authentifiée.
 3. **Backend injoignable, aucune action d'argent.** Le client reçoit un message d'indisponibilité et réessaie. Aucune file locale ne rejoue une action d'argent à sa place.
 4. **Chaque action est idempotente.** Un message WhatsApp peut arriver deux fois (Meta réessaie ses webhooks). Chaque appel au backend porte une clé d'idempotence dérivée de l'identifiant du message WhatsApp.
+   *Mise en œuvre (étape 2, `backend/app/idempotency.py`)* : toute écriture ouverte à WhatsApp exige l'en-tête `Idempotency-Key` (le `wamid`) ; le backend refuse de démarrer si une telle route n'est pas marquée `@idempotent`. La clé et sa réponse sont enregistrées dans la table Postgres `idempotency_keys` **dans la même transaction que l'action**, sous un verrou par (canal, clé) : dix envois simultanés du même message donnent une seule action et neuf réponses rejouées (en-tête `Idempotent-Replayed: true`). Même clé avec une autre demande : refus 409 `idempotency_key_reused`. Une action refusée ou interrompue n'enregistre rien et sera réévaluée au rejeu. La déduplication Redis du service WhatsApp n'est qu'un filtre rapide ; la garantie est dans Postgres. Clés gardées 30 jours (purge quotidienne).
 5. **Les règles métier sont écrites une seule fois.** Commissions, statuts, délais et droits sont dans le backend. Telegram et WhatsApp appellent les mêmes endpoints et obtiennent les mêmes résultats au centime.
 6. **Tout webhook entrant est authentifié.** Signature `X-Hub-Signature-256` vérifiée en temps constant, sinon rejet, comme le webhook Telegram aujourd'hui (`telegram_bot/webhook_server.py`).
 7. **Les textes passent par les fichiers de traduction** (fr, ln, en), jamais écrits en dur.
@@ -250,7 +251,8 @@ Nexis ne garde d'un message WhatsApp que ce dont une mission ou un litige a beso
 | --- | --- | --- | --- |
 | BSUID (identité WhatsApp) et numéro prouvé | `channel_identities`, `accounts` | Durée de vie du compte | Supprimés à la clôture du compte ; le registre ne garde que `account_id` |
 | Corps brut des webhooks | Nulle part | Jamais stocké | Le service extrait les champs utiles puis jette le reste |
-| Identifiant de message reçu, pour la déduplication | Redis | 7 jours | Seul l'identifiant, sans contenu |
+| Identifiant de message reçu, pour la déduplication rapide | Redis | 7 jours | Seul l'identifiant, sans contenu |
+| Clé d'idempotence et réponse enregistrée (`idempotency_keys`) | Postgres | 30 jours | La garantie « un message agit une fois » ; purge quotidienne |
 | État de conversation (étape en cours) | Redis | 24 heures sans activité | Aucune donnée d'argent ; perdu, le client recommence l'étape |
 | Description de mission, commune, localisation | Mission (backend) | Comme les missions Telegram aujourd'hui | Même règle quel que soit le canal |
 | Motif et texte de litige | Litige (backend) | Comme les litiges Telegram aujourd'hui | Même règle quel que soit le canal |

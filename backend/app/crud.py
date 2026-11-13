@@ -71,7 +71,9 @@ def register_whatsapp_client(
       client, jamais le rôle prestataire (aucun parcours prestataire sur
       WhatsApp).
 
-    Tout ou rien : un refus annule la transaction. Renvoie (compte, créé)."""
+    Ne valide pas : l'appelant valide une seule fois, avec la clé
+    d'idempotence (backend/app/idempotency.py). Un refus annule tout ce que la
+    demande a écrit. Renvoie (compte, créé)."""
     if language not in CLIENT_LANGUAGES:
         raise ClientRefused("invalid_language", 400)
     display_name = (display_name or "").strip()
@@ -102,8 +104,7 @@ def register_whatsapp_client(
                 _refuse_whatsapp_phone_conflict(db, normalized_phone)
             # Compte déjà connu, mais ce numéro est le numéro prouvé d'un autre
             # compte : on ne déplace rien (événement journalisé par prove_phone).
-        db.commit()
-        db.refresh(account)
+        db.flush()
         return account, created
     except IntegrityError:
         # Course : même numéro prouvé au même instant par un autre compte

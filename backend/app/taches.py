@@ -100,6 +100,7 @@ CALENDRIER: dict[str, Tache] = {
     "analytics-quotidiennes": Tache(tasks.send_daily_analytics, Frequence(heure=8, minute=0)),
     "alertes-nouvel-appareil": Tache(tasks.send_pending_device_alerts, Frequence(toutes_les_minutes=1)),
     "purge-nonces": Tache(tasks.purge_request_nonces, Frequence(minute=30)),
+    "purge-cles-idempotence": Tache(tasks.purge_idempotency_keys, Frequence(heure=3, minute=15)),
 }
 
 
