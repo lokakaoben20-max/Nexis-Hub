@@ -352,15 +352,48 @@ def test_only_the_mission_client_can_confirm(db):
     refused("not_mission_client", lambda: ledger.confirm_completion(db, 1, acc(db, 999)))
 
 
-def test_auto_release_waits_24_hours(db):
+def test_auto_release_waits_48_hours_after_the_end(db):
     finished(db)
-    refused("invalid_state", lambda: ledger.auto_release(db, 1))
-
     mission = db.get(BotMission, 1)
-    mission.status_changed_at = mission.status_changed_at - timedelta(hours=25)
-    db.commit()
-    assert ledger.auto_release(db, 1).payment_status == "released"
+    assert mission.release_after == mission.status_changed_at + timedelta(hours=48)
+    ended_at = mission.status_changed_at
+
+    refused("invalid_state", lambda: ledger.auto_release(db, 1, now=ended_at + timedelta(hours=47, minutes=59)))
+    assert bal(db, ledger.ESCROW, 1) == money(100)
+
+    assert ledger.auto_release(db, 1, now=ended_at + timedelta(hours=48)).payment_status == "released"
     assert bal(db, ledger.WALLET, PROVIDER_ID) == money(90)
+    assert bal(db, ledger.ESCROW, 1) == money(0)
+
+
+def test_auto_release_follows_the_recorded_deadline_not_the_current_rule(db):
+    """Une mission terminée sous l'ancienne règle (échéance à 24 h, posée par
+    la migration) est versée à son échéance, pas 48 h après."""
+    finished(db)
+    mission = db.get(BotMission, 1)
+    mission.release_after = mission.status_changed_at + timedelta(hours=24)
+    db.commit()
+
+    assert ledger.auto_release(db, 1, now=mission.status_changed_at + timedelta(hours=24)).payment_status == "released"
+
+
+def test_auto_release_never_pays_without_a_recorded_deadline(db):
+    finished(db)
+    mission = db.get(BotMission, 1)
+    mission.release_after = None
+    db.commit()
+
+    refused("invalid_state", lambda: ledger.auto_release(db, 1, now=mission.status_changed_at + timedelta(days=30)))
+    assert bal(db, ledger.ESCROW, 1) == money(100)
+
+
+def test_a_repeated_finish_keeps_the_first_deadline(db):
+    finished(db)
+    deadline = db.get(BotMission, 1).release_after
+
+    ledger.finish_mission(db, 1, acc(db, PROVIDER_ID))
+
+    assert db.get(BotMission, 1).release_after == deadline
 
 
 # --- Litige ---------------------------------------------------------------------
@@ -377,7 +410,7 @@ def test_dispute_freezes_the_escrow(db):
     mission.status_changed_at = mission.status_changed_at - timedelta(days=10)
     db.commit()
     refused("mission_disputed", lambda: ledger.confirm_completion(db, 1, acc(db, CLIENT_ID)))
-    refused("mission_disputed", lambda: ledger.auto_release(db, 1))
+    refused("mission_disputed", lambda: ledger.auto_release(db, 1, now=mission.release_after + timedelta(days=10)))
     assert bal(db, ledger.ESCROW, 1) == money(100)
     assert bal(db, ledger.WALLET, PROVIDER_ID) == money(0)
 

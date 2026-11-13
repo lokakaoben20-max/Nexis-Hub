@@ -141,6 +141,7 @@ def _public(value: Any) -> Any:
 def _mission(mission: BotMission) -> dict[str, Any]:
     data = {field: getattr(mission, field) for field in _MISSION_FIELDS}
     data["dispute_deadline"] = _iso(mission.dispute_deadline)
+    data["release_after"] = _iso(mission.release_after)
     return data
 
 
