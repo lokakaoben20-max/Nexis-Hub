@@ -443,3 +443,66 @@ def test_send_provider_reminders_does_not_duplicate_within_same_tier(monkeypatch
 
     assert len(sent) == 1
     assert sent[0][0] == 7
+
+
+def test_an_unanswered_agreement_expires_once_and_the_client_is_told(monkeypatch, tmp_path, backend_db_url):
+    database_module, tasks_module = _reload_backend_with_db(monkeypatch, backend_db_url)
+    from backend.app import crud, ledger
+
+    sent = []
+    monkeypatch.setattr(
+        tasks_module, "send_telegram_message", lambda telegram_id, text, markup=None: sent.append((telegram_id, text, markup)) or True
+    )
+
+    with database_module.SessionLocal() as db:
+        profils_de_test.client(db, 1)
+        profils_de_test.provider(db, 7, full_name="Prestataire Test")
+        _paid_and_finished_mission(db, ledger, crud, 1)
+        ledger.open_dispute(db, 1, acc(db, 1), "Travail bâclé")
+        ledger.propose_dispute_settlement(db, 1, acc(db, 1), kind="refund")
+        expires_at = ledger.settlement_offers(db, 1)[0].expires_at
+
+    assert tasks_module.expire_settlement_offers(expires_at - timedelta(seconds=1)) == 0
+    assert tasks_module.expire_settlement_offers(expires_at) == 1
+    assert tasks_module.expire_settlement_offers(expires_at + timedelta(hours=1)) == 0
+
+    assert [(telegram_id, "NXH-0001" in text) for telegram_id, text, _ in sent] == [(1, True)]
+    # Le client peut faire une autre proposition depuis le message.
+    assert sent[0][2]["inline_keyboard"][0][0]["callback_data"] == "doffer_new_1"
+    with database_module.SessionLocal() as db:
+        assert ledger.settlement_offers(db, 1)[0].status == "expired"
+        assert db.get(ledger.BotMission, 1).status == "disputed"
+        assert ledger.balance(db, ledger.ESCROW, 1, "USD") == ledger.to_money("10.00")
+
+
+def test_agreement_notices_carry_amounts_buttons_and_tell_nexis_hub(monkeypatch, tmp_path, backend_db_url):
+    database_module, tasks_module = _reload_backend_with_db(monkeypatch, backend_db_url)
+    from backend.app import crud, ledger
+
+    sent = []
+    monkeypatch.setattr(
+        tasks_module, "send_telegram_message", lambda telegram_id, text, markup=None: sent.append((telegram_id, text, markup)) or True
+    )
+
+    with database_module.SessionLocal() as db:
+        profils_de_test.admin(db, 900)
+        profils_de_test.client(db, 1)
+        profils_de_test.provider(db, 7, full_name="Prestataire Test")
+        _paid_and_finished_mission(db, ledger, crud, 1)
+        ledger.open_dispute(db, 1, acc(db, 1), "Travail bâclé")
+        ledger.propose_dispute_settlement(db, 1, acc(db, 1), kind="split", provider_percentage=50)
+        offer_id = ledger.settlement_offers(db, 1)[0].id
+
+        tasks_module.notify_settlement_offer(db, offer_id, "proposed")
+        [(provider, text, markup)] = sent
+        assert provider == 7
+        assert "4.50 USD" in text and "5.00 USD" in text and "50 %" in text
+        buttons = [button["callback_data"] for button in markup["inline_keyboard"][0]]
+        assert buttons == [f"doffer_ok_1_{offer_id}", f"doffer_no_1_{offer_id}"]
+
+        sent.clear()
+        ledger.accept_dispute_settlement(db, 1, offer_id, acc(db, 7))
+        tasks_module.notify_settlement_offer(db, offer_id, "accepted")
+        assert sorted(telegram_id for telegram_id, _, _ in sent) == [1, 900]
+        client_text = next(text for telegram_id, text, _ in sent if telegram_id == 1)
+        assert "5.00 USD" in client_text and "4.50 USD" in client_text

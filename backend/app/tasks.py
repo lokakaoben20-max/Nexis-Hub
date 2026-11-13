@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from backend.app import admins, app_sessions, crud, idempotency, ledger, mobile_money, profils, reconciliation
 from backend.app.database import SessionLocal
-from backend.app.models import BotMission, Device, NexisAccount, PaymentIntent, Payout
+from backend.app.models import BotMission, Device, DisputeSettlementOffer, NexisAccount, PaymentIntent, Payout
 from backend.app.notify import send_telegram_message
 from backend.app.presence import provider_arrival_keyboard
 from messages import get_message
@@ -274,6 +274,98 @@ def notify_dispute_settled(db, mission: BotMission) -> None:
                 currency=currency,
             )
         send_telegram_message(mission.provider_telegram_id, provider_text)
+
+
+def expire_settlement_offers(now: datetime | None = None) -> int:
+    """Note expirées les propositions d'accord amiable restées sans réponse
+    48 h et prévient le client une fois. Ne déplace jamais d'argent : le
+    litige continue, l'argent reste bloqué."""
+    now = now or ledger._utcnow()
+    db = SessionLocal()
+    try:
+        expired = 0
+        for due in crud.find_settlement_offers_expired(db, now):
+            offer_id = due.id
+            if ledger.expire_dispute_settlement(db, offer_id, now=now):
+                expired += 1
+                notify_settlement_offer(db, offer_id, "expired")
+        return expired
+    finally:
+        db.close()
+
+
+def _offer_amounts(offer: DisputeSettlementOffer, role: str) -> dict:
+    """Montants d'une proposition vus par le client ou le prestataire."""
+    mine = offer.client_amount if role == "client" else offer.provider_amount
+    theirs = offer.provider_amount if role == "client" else offer.client_amount
+    if mine is None:
+        return {}
+    mine_text, currency = _amount_text(mine, offer.currency)
+    theirs_text, _ = _amount_text(theirs, offer.currency)
+    return {"mine": mine_text, "theirs": theirs_text, "currency": currency}
+
+
+def notify_settlement_offer(db, offer_id: int, event: str) -> None:
+    """Accord amiable : le prestataire reçoit la proposition avec les boutons
+    pour répondre ; le client apprend la réponse ou l'expiration ; Nexis Hub
+    est prévenu d'un accord conclu (le litige n'attend plus sa décision)."""
+    offer = db.get(DisputeSettlementOffer, offer_id)
+    if offer is None:
+        return
+    mission = db.get(BotMission, offer.mission_id)
+    mission_id = mission.mission_id
+    if event == "proposed":
+        lang = _party_language(db, mission, "provider")
+        if lang is None:
+            return
+        text = get_message(
+            f"dispute_offer_received_{offer.kind}",
+            lang,
+            mission_id=mission_id,
+            deadline=_kinshasa_time(offer.expires_at),
+            percentage=_percentage_text(offer),
+            **_offer_amounts(offer, "provider"),
+        )
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {"text": get_message("button_offer_accept", lang), "callback_data": f"doffer_ok_{mission_id}_{offer.id}"},
+                    {"text": get_message("button_offer_decline", lang), "callback_data": f"doffer_no_{mission_id}_{offer.id}"},
+                ]
+            ]
+        }
+        send_telegram_message(mission.provider_telegram_id, text, keyboard)
+        return
+
+    lang = _party_language(db, mission, "client")
+    if event == "accepted":
+        if lang is not None:
+            key = "dispute_offer_accepted_client_redo" if offer.kind == "redo" else "dispute_offer_accepted_client"
+            send_telegram_message(
+                mission.telegram_id, get_message(key, lang, mission_id=mission_id, **_offer_amounts(offer, "client"))
+            )
+        what = {
+            "redo": "le prestataire repasse (mission reprise, argent toujours bloqué)",
+            "release": "prestataire payé en entier",
+            "refund": "client remboursé en entier",
+            "split": f"partage, {_percentage_text(offer)} % au prestataire",
+        }[offer.kind]
+        _alert_admin(f"🤝 Accord amiable conclu : mission NXH-{mission_id:04d}, {what}. Le litige n'attend plus de décision.")
+    elif event in ("declined", "expired") and lang is not None:
+        keyboard = {
+            "inline_keyboard": [
+                [{"text": get_message("button_propose_agreement", lang), "callback_data": f"doffer_new_{mission_id}"}]
+            ]
+        }
+        send_telegram_message(
+            mission.telegram_id, get_message(f"dispute_offer_{event}_client", lang, mission_id=mission_id), keyboard
+        )
+
+
+def _percentage_text(offer: DisputeSettlementOffer) -> str:
+    if offer.provider_percentage is None:
+        return ""
+    return f"{offer.provider_percentage.normalize():f}"
 
 
 def send_provider_reminders() -> int:

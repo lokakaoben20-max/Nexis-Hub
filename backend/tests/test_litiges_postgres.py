@@ -129,3 +129,65 @@ def test_a_contest_and_the_execution_at_the_same_time_only_one_wins(db, pg_url):
     else:
         assert (executed, contested) == ("decision_contested", "ok")
         assert bal(db, ledger.ESCROW, 1) == money(100)
+
+
+# --- Accord amiable ----------------------------------------------------------------
+
+
+def _offer(db):
+    return ledger.settlement_offers(db, 1)[-1]
+
+
+def test_two_simultaneous_acceptances_settle_once(db, pg_url):
+    disputed(db)
+    ledger.propose_dispute_settlement(db, 1, acc(db, CLIENT_ID), kind="split", provider_percentage=50)
+    offer_id, provider = _offer(db).id, acc(db, PROVIDER_ID)
+
+    def accept(session):
+        ledger.accept_dispute_settlement(session, 1, offer_id, provider)
+
+    assert _in_parallel(pg_url, accept, accept) == ["ok", "ok"]
+    db.expire_all()
+    assert db.query(MoneyOperation).filter(MoneyOperation.phase == ledger.SETTLEMENT).count() == 1
+    assert bal(db, ledger.WALLET, PROVIDER_ID) == money(45)
+    assert_books_balanced(db)
+
+
+def test_an_acceptance_and_a_decision_at_the_same_time_only_one_wins(db, pg_url):
+    disputed(db)
+    ledger.propose_dispute_settlement(db, 1, acc(db, CLIENT_ID), kind="release")
+    offer_id, provider, admin = _offer(db).id, acc(db, PROVIDER_ID), acc(db, 900)
+    db.commit()  # le compte de l'admin doit exister pour les autres sessions
+
+    def accept(session):
+        ledger.accept_dispute_settlement(session, 1, offer_id, provider)
+
+    def decide_now(session):
+        ledger.decide_dispute(session, 1, decision="refund", admin_account_id=admin, admin_telegram_id=900)
+
+    results = _in_parallel(pg_url, accept, decide_now)
+    db.expire_all()
+    if results[0] == "ok":
+        # L'accord gagne : la décision arrive sur un litige réglé.
+        assert results[1] == "already_settled"
+        assert bal(db, ledger.WALLET, PROVIDER_ID) == money(90)
+        assert ledger.dispute_decisions(db, 1) == []
+    else:
+        # La décision gagne : la proposition est annulée, rien n'est versé.
+        assert results == ["offer_closed", "ok"]
+        assert _offer(db).status == "cancelled"
+        assert db.query(MoneyOperation).filter(MoneyOperation.phase == ledger.SETTLEMENT).count() == 0
+    assert_books_balanced(db)
+
+
+def test_two_simultaneous_proposals_record_one(db, pg_url):
+    disputed(db)
+    client = acc(db, CLIENT_ID)
+
+    def propose(kind):
+        return lambda session: ledger.propose_dispute_settlement(session, 1, client, kind=kind)
+
+    results = _in_parallel(pg_url, propose("release"), propose("refund"))
+    db.expire_all()
+    assert sorted(results) == ["offer_pending", "ok"]
+    assert [row.status for row in ledger.settlement_offers(db, 1)] == ["pending"]

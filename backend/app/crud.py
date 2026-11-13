@@ -10,6 +10,7 @@ from backend.app.models import (
     SERVICE_REQUEST_STATUSES,
     BotMission,
     BotQuote,
+    DisputeSettlementOffer,
     BotReview,
     DisputeDecision,
     MissionAlert,
@@ -747,6 +748,17 @@ def find_dispute_decisions_due(db: Session, now: datetime) -> list[DisputeDecisi
             DisputeDecision.execute_after <= now,
         )
         .order_by(DisputeDecision.execute_after)
+        .all()
+    )
+
+
+def find_settlement_offers_expired(db: Session, now: datetime) -> list[DisputeSettlementOffer]:
+    """Propositions d'accord amiable encore notées en attente dont
+    l'échéance de 48 h est passée."""
+    return (
+        db.query(DisputeSettlementOffer)
+        .filter(DisputeSettlementOffer.status == "pending", DisputeSettlementOffer.expires_at <= now)
+        .order_by(DisputeSettlementOffer.expires_at)
         .all()
     )
 

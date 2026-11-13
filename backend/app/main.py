@@ -26,7 +26,7 @@ from backend.app import (
     service_keys,
 )
 from backend.app.database import SessionLocal
-from backend.app.models import BotMission, BotQuote, BotReview, PaymentIntent, Payout, ProviderProfile, ProviderServiceRequest
+from backend.app.models import BotMission, BotQuote, BotReview, DisputeSettlementOffer, PaymentIntent, Payout, ProviderProfile, ProviderServiceRequest
 
 load_dotenv()
 
@@ -378,6 +378,11 @@ class DisputeDecidePayload(BaseModel):
 
 class DisputeContestPayload(BaseModel):
     reason: str
+
+
+class DisputeOfferPayload(BaseModel):
+    kind: str
+    provider_percentage: float | None = None
 
 
 class ReviewCreatePayload(BaseModel):
@@ -1469,6 +1474,72 @@ def contest_dispute(
     if recorded.get("new"):
         background_tasks.add_task(_notify_dispute, mission_id, "contested")
     return response
+
+
+@router.post("/api/bot/missions/{mission_id}/dispute/offers")
+def propose_dispute_settlement(
+    mission_id: int, payload: DisputeOfferPayload, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)
+):
+    """Le client propose un accord amiable (ledger.propose_dispute_settlement).
+    Le prestataire est prévenu une fois, avec les boutons pour répondre."""
+    recorded = {}
+
+    def propose(db):
+        before = ledger.pending_settlement_offer(db, mission_id)
+        before_id = before.id if before is not None else None
+        mission = ledger.propose_dispute_settlement(
+            db,
+            mission_id,
+            _actor_account(db, actor, missing="not_mission_client", http_status=403),
+            kind=payload.kind,
+            provider_percentage=payload.provider_percentage,
+        )
+        after = ledger.pending_settlement_offer(db, mission_id)
+        recorded["offer_id"] = after.id if after is not None and after.id != before_id else None
+        return mission
+
+    response = _money_call(propose)
+    if recorded.get("offer_id") is not None:
+        background_tasks.add_task(_notify_offer, recorded["offer_id"], "proposed")
+    return response
+
+
+@router.post("/api/bot/missions/{mission_id}/dispute/offers/{offer_id}/accept")
+@provider_action
+def accept_dispute_settlement(mission_id: int, offer_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
+    """Le prestataire accepte : le prestataire repasse, ou le règlement est
+    écrit tout de suite. Le client et Nexis Hub sont prévenus une fois."""
+    return _offer_answer(mission_id, offer_id, "accepted", ledger.accept_dispute_settlement, background_tasks, actor)
+
+
+@router.post("/api/bot/missions/{mission_id}/dispute/offers/{offer_id}/decline")
+@provider_action
+def decline_dispute_settlement(mission_id: int, offer_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
+    """Le prestataire refuse : le litige continue. Le client est prévenu une fois."""
+    return _offer_answer(mission_id, offer_id, "declined", ledger.decline_dispute_settlement, background_tasks, actor)
+
+
+def _offer_answer(mission_id: int, offer_id: int, status: str, answer, background_tasks: BackgroundTasks, actor: Actor):
+    recorded = {}
+
+    def respond(db):
+        offer = db.get(DisputeSettlementOffer, offer_id)
+        already = offer is not None and offer.status == status
+        mission = answer(db, mission_id, offer_id, _actor_account(db, actor, missing="offer_not_for_you", http_status=403))
+        recorded["new"] = not already
+        return mission
+
+    response = _money_call(respond)
+    if recorded.get("new"):
+        background_tasks.add_task(_notify_offer, offer_id, status)
+    return response
+
+
+def _notify_offer(offer_id: int, event: str) -> None:
+    from backend.app import tasks
+
+    with SessionLocal() as db:
+        tasks.notify_settlement_offer(db, offer_id, event)
 
 
 def _notify_dispute(mission_id: int, event: str) -> None:
