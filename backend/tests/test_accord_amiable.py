@@ -8,16 +8,18 @@ pour répondre, plus rien une fois que Nexis Hub a décidé."""
 from datetime import timedelta
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from backend.app import ledger
-from backend.app.models import DisputeSettlementOffer
-from backend.tests.test_ledger import (  # noqa: F401  (fixture db)
+from backend.app.models import DisputeSettlementOffer, LedgerEntry
+from backend.tests import profils_de_test
+from backend.tests.test_ledger import (
     CLIENT_ID,
     PROVIDER_ID,
     acc,
     assert_books_balanced,
     bal,
-    db,
     decide,
     disputed,
     fund,
@@ -25,6 +27,18 @@ from backend.tests.test_ledger import (  # noqa: F401  (fixture db)
     operations,
     refused,
 )
+
+
+@pytest.fixture
+def db(backend_db_url):
+    engine = create_engine(backend_db_url, future=True)
+    LedgerEntry.metadata.create_all(bind=engine)
+    session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
+    profils_de_test.client(session, CLIENT_ID)
+    profils_de_test.provider(session, PROVIDER_ID)
+    yield session
+    session.close()
+    engine.dispose()
 
 
 def propose(db, kind="split", percentage=None, who=CLIENT_ID, mission_id=1, now=None):
