@@ -48,15 +48,6 @@ variable "app_env" {
   }
 }
 
-variable "admin_telegram_id" {
-  description = "Identifiant Telegram numérique de l'administrateur."
-  type        = string
-  validation {
-    condition     = can(regex("^[0-9]+$", var.admin_telegram_id))
-    error_message = "Identifiant Telegram numérique attendu."
-  }
-}
-
 variable "nom_bot_telegram" {
   description = "Nom du bot Telegram de l'environnement (@...)."
   type        = string

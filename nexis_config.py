@@ -27,10 +27,10 @@ TAUX = ("COLLECTION_FEE_RATE", "PAYOUT_FEE_RATE")
 MONTANTS_PAR_DEVISE = ("PAYOUT_FEE_FIXED", "PAYOUT_MINIMUM", "PAYOUT_AUTO_LIMIT")
 
 ROLES = {
-    "backend": ("DATABASE_URL", "BACKEND_API_KEY_TELEGRAM", "APP_CODE_HMAC_KEY", "BOT_TOKEN", "ADMIN_TELEGRAM_ID", "PAYMENT_GATEWAY"),
-    "taches": ("DATABASE_URL", "BOT_TOKEN", "ADMIN_TELEGRAM_ID", "PAYMENT_GATEWAY"),
+    "backend": ("DATABASE_URL", "BACKEND_API_KEY_TELEGRAM", "APP_CODE_HMAC_KEY", "BOT_TOKEN", "PAYMENT_GATEWAY"),
+    "taches": ("DATABASE_URL", "BOT_TOKEN", "PAYMENT_GATEWAY"),
     "migration": ("DATABASE_URL",),
-    "bot": ("BOT_TOKEN", "BACKEND_BASE_URL", "BACKEND_API_KEY_TELEGRAM", "REDIS_URL", "MINI_APP_URL", "ADMIN_TELEGRAM_ID", "BOT_RUN_MODE"),
+    "bot": ("BOT_TOKEN", "BACKEND_BASE_URL", "BACKEND_API_KEY_TELEGRAM", "REDIS_URL", "MINI_APP_URL", "BOT_RUN_MODE"),
     "miniapp": ("BOT_TOKEN", "BACKEND_BASE_URL", "BACKEND_API_KEY_TELEGRAM"),
 }
 SECRETS = ("BACKEND_API_KEY_TELEGRAM", "APP_CODE_HMAC_KEY", "WEBHOOK_SECRET_TOKEN")
@@ -88,9 +88,10 @@ def problemes(role: str) -> list[str]:
     if "DATABASE_URL" in requises and url_base and not url_base.startswith("postgresql"):
         erreurs.append("DATABASE_URL doit viser Postgres")
 
-    admin = os.getenv("ADMIN_TELEGRAM_ID", "").strip()
-    if "ADMIN_TELEGRAM_ID" in requises and admin and not admin.isdigit():
-        erreurs.append("ADMIN_TELEGRAM_ID doit être un identifiant Telegram numérique")
+    if os.getenv("ADMIN_TELEGRAM_ID", "").strip():
+        # Plus lu nulle part : laissé en place, il ferait croire que cette
+        # personne est admin. Les admins sont enregistrés en base.
+        erreurs.append("ADMIN_TELEGRAM_ID n'est plus utilisé : retire-le, les admins se gèrent avec python -m backend.app.admins")
 
     if role == "bot":
         mode = os.getenv("BOT_RUN_MODE", "").strip()

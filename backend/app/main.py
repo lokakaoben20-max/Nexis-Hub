@@ -1,5 +1,3 @@
-import hmac
-import os
 import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -14,6 +12,7 @@ from starlette.background import BackgroundTask
 import nexis_config
 import nexis_logs
 from backend.app import (
+    admins,
     app_auth,
     app_sessions,
     crud,
@@ -1062,19 +1061,37 @@ def list_payouts(status: str = "awaiting_approval", limit: int = 20, actor: Acto
 
 
 def _require_admin(actor: Actor) -> int:
-    """Décisions d'argent réservées à l'admin configuré, qui agit depuis
+    """Décisions d'argent et de vérification réservées aux admins de Nexis
+    Hub (rôle enregistré en base, `backend.app.admins`), qui agissent depuis
     Telegram. Le bot le vérifie déjà ; le backend le revérifie pour qu'une
     erreur côté bot ne suffise jamais à valider un retrait ou trancher un
-    litige. Sans ADMIN_TELEGRAM_ID, personne n'est admin (même règle que le
-    bot). Renvoie l'identifiant Telegram de l'admin, pour l'audit."""
+    litige. Sans rôle donné, personne n'est admin. Renvoie l'identifiant
+    Telegram de l'admin, pour l'audit."""
     if not _is_admin(actor):
         raise HTTPException(status_code=403, detail={"code": "not_admin"})
     return actor.telegram_id
 
 
 def _is_admin(actor: Actor) -> bool:
-    configured = os.getenv("ADMIN_TELEGRAM_ID", "").strip()
-    return actor.channel == ledger.TELEGRAM and bool(configured) and hmac.compare_digest(configured, actor.external_id)
+    if actor.channel != ledger.TELEGRAM:
+        return False
+    with SessionLocal() as db:
+        return admins.is_admin_telegram(db, actor.external_id)
+
+
+@router.get("/api/bot/admin/me")
+def admin_me(actor: Actor = Depends(current_actor)):
+    """La personne qui écrit au bot est-elle admin ? Le bot n'a aucune liste
+    locale : il demande au backend à chaque écran admin."""
+    return {"status": "ok", "admin": _is_admin(actor)}
+
+
+@router.get("/api/bot/admins")
+def admin_list():
+    """Identifiants Telegram des admins, pour que le bot les prévienne (nouveau
+    prestataire à vérifier). Route réservée au canal Telegram."""
+    with SessionLocal() as db:
+        return {"status": "ok", "admins": admins.admin_telegram_ids(db)}
 
 
 class AppDevicesRevokePayload(BaseModel):

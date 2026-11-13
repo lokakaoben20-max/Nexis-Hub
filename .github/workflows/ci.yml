@@ -175,7 +175,6 @@ jobs:
           BACKEND_API_KEY_TELEGRAM=$(openssl rand -hex 32)
           APP_CODE_HMAC_KEY=$(openssl rand -hex 32)
           BOT_TOKEN=123456:jeton-factice-de-la-ci
-          ADMIN_TELEGRAM_ID=42
           PAYMENT_GATEWAY=flexpay
           COLLECTION_FEE_RATE=0.025
           PAYOUT_FEE_RATE=0

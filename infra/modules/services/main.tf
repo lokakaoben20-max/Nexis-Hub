@@ -22,9 +22,10 @@ locals {
 
   # Processus qui touchent à l'argent (backend, tâches) : nexis_config refuse
   # de démarrer hors développement s'il manque un de ces réglages.
+  # Les admins ne sont pas un réglage : ils sont enregistrés en base
+  # (python -m backend.app.admins), plusieurs personnes possibles.
   env_argent = merge(var.reglages_argent, {
-    APP_ENV           = var.app_env
-    ADMIN_TELEGRAM_ID = var.admin_telegram_id
+    APP_ENV = var.app_env
   })
 
   secret = var.secrets
@@ -36,12 +37,11 @@ locals {
   # Le bot et le Job qui enregistre son webhook vérifient la même configuration
   # (nexis_config, rôle « bot ») : mêmes variables.
   env_bot = {
-    APP_ENV           = var.app_env
-    ADMIN_TELEGRAM_ID = var.admin_telegram_id
-    BACKEND_BASE_URL  = local.url_backend
-    MINI_APP_URL      = local.url_site
-    WEBHOOK_URL       = local.url_site
-    BOT_RUN_MODE      = "webhook"
+    APP_ENV          = var.app_env
+    BACKEND_BASE_URL = local.url_backend
+    MINI_APP_URL     = local.url_site
+    WEBHOOK_URL      = local.url_site
+    BOT_RUN_MODE     = "webhook"
   }
   secrets_bot = {
     BOT_TOKEN                = local.secret["BOT_TOKEN"]

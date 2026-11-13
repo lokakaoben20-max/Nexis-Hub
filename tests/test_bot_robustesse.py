@@ -238,7 +238,7 @@ def test_invalid_provider_name_error_follows_language(local_db):
 def test_new_provider_admin_notification_uses_admin_language(local_db, monkeypatch):
     admin_id = 700
     db.create_user(admin_id, "+243810000700", "Admin", language="en")
-    monkeypatch.setattr(registration, "ADMIN_TELEGRAM_ID", str(admin_id))
+    monkeypatch.setattr(backend_client, "admin_telegram_ids", lambda: _async_return([admin_id]))
     provider = {
         "telegram_id": 611,
         "full_name": "Alice <Plombier>",
@@ -259,6 +259,51 @@ def test_new_provider_admin_notification_uses_admin_language(local_db, monkeypat
         get_message("admin_new_provider_portfolio_caption", "en"),
     ]
     assert bot.sent[-1][2] == get_message("admin_new_provider_approve_prompt", "en")
+
+
+class FailingFirstBot(RecordingBot):
+    """Telegram refuse tout envoi au premier admin (bot bloqué, par exemple)."""
+
+    def __init__(self, blocked):
+        super().__init__()
+        self.blocked = blocked
+
+    async def send_message(self, chat_id, text, parse_mode=None, reply_markup=None):
+        if chat_id == self.blocked:
+            raise RuntimeError("Forbidden: bot was blocked by the user")
+        await super().send_message(chat_id, text, parse_mode, reply_markup)
+
+
+def test_new_provider_reaches_every_admin_even_if_one_send_fails(local_db, monkeypatch):
+    monkeypatch.setattr(backend_client, "admin_telegram_ids", lambda: _async_return([701, 702]))
+    provider = {
+        "telegram_id": 612,
+        "full_name": "Bob",
+        "phone_number": "+243810000612",
+        "services": '["service_plomberie"]',
+        "communes": '["Gombe"]',
+    }
+    bot = FailingFirstBot(blocked=701)
+
+    asyncio.run(registration._notifier_admin_nouveau_prestataire(Callback(612, bot=bot), provider, "id_doc", "selfie", []))
+
+    assert {chat_id for _, chat_id, _ in bot.sent} == {702}
+    assert bot.sent[-1][2] == get_message("admin_new_provider_approve_prompt", "fr")
+
+
+class _UnreachableBackend(RecordingAsyncClient):
+    async def get(self, url, params=None):
+        raise backend_client.httpx.ConnectError("backend injoignable")
+
+
+def test_without_backend_answer_no_admin_is_notified(local_db, monkeypatch):
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", _UnreachableBackend)
+    bot = RecordingBot()
+    provider = {"telegram_id": 613, "full_name": "C", "phone_number": "", "services": "[]", "communes": "[]"}
+
+    asyncio.run(registration._notifier_admin_nouveau_prestataire(Callback(613, bot=bot), provider, "id_doc", "selfie", []))
+
+    assert bot.sent == []
 
 
 # --- Langue envoyée au backend seulement pour un profil existant -------------
@@ -371,3 +416,38 @@ def test_steps_survive_a_restart_when_redis_is_available():
     state, data = asyncio.run(scenario())
     assert state == "ProviderRegistration:id_document"
     assert data["provider_phone"] == "+243810000640"
+
+
+# --- Qui est admin : seul le backend le dit ----------------------------------
+
+
+class _AdminAnswer(RecordingAsyncClient):
+    status_code = 200
+    payload = None
+
+    async def get(self, url, params=None):
+        response = _Response(self.payload)
+        response.status_code = self.status_code
+        return response
+
+
+@pytest.mark.parametrize(
+    "status_code, payload, expected",
+    [
+        (200, {"status": "ok", "admin": True}, True),
+        (200, {"status": "ok", "admin": False}, False),
+        (200, {"status": "ok", "admin": "oui"}, None),
+        (200, {"status": "ok"}, None),
+        (403, {"detail": {"code": "channel_forbidden"}}, None),
+        (500, {"admin": True}, None),
+    ],
+)
+def test_admin_status_trusts_only_a_clear_backend_answer(monkeypatch, status_code, payload, expected):
+    answer = type("Answer", (_AdminAnswer,), {"status_code": status_code, "payload": payload})
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", answer)
+    assert asyncio.run(backend_client.admin_status(999)) is expected
+
+
+def test_admin_status_is_unknown_when_the_backend_is_unreachable(monkeypatch):
+    monkeypatch.setattr(backend_client.httpx, "AsyncClient", _UnreachableBackend)
+    assert asyncio.run(backend_client.admin_status(999)) is None

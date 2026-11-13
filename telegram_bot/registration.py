@@ -15,7 +15,7 @@ Lecture déjà backend-first (héritée de la Phase 1), sauf pour `profil_presta
 
 import html
 import json
-import os
+import logging
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -37,6 +37,7 @@ from db import (
     update_user_name,
 )
 from messages import get_message
+from telegram_bot import backend_client
 from telegram_bot.backend_client import (
     _safe_backend_call,
     fetch_backend_profile,
@@ -71,7 +72,7 @@ from telegram_bot.keyboards import (
 )
 
 load_dotenv()
-ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID")
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -476,38 +477,39 @@ async def finaliser_inscription_prestataire(callback: CallbackQuery, state: FSMC
 
 
 async def _notifier_admin_nouveau_prestataire(callback: CallbackQuery, provider, id_document_file_id: str, selfie_file_id: str, portfolio_file_ids: list[str]) -> None:
-    """Push proactif vers l'admin — nouveau pattern pour le bot synchrone (main.py
-    n'en avait aucun), mais déjà éprouvé côté Celery
-    (backend/app/tasks.py:send_daily_analytics). Erreurs réseau/Telegram avalées :
-    un push raté ne doit jamais faire échouer l'inscription elle-même, l'admin peut
-    toujours retrouver le prestataire via la liste `admin_providers`.
+    """Prévient chaque admin (liste tenue par le backend) qu'un prestataire
+    attend sa vérification. Un envoi raté ne fait jamais échouer l'inscription,
+    et n'empêche pas les autres admins d'être prévenus : le prestataire reste
+    de toute façon dans la liste `admin_providers`.
     """
-    if not ADMIN_TELEGRAM_ID:
-        return
-    try:
-        admin_id = int(ADMIN_TELEGRAM_ID)
-        # Langue de l'admin, pas celle du prestataire : c'est l'admin qui lit.
-        admin_lang = await get_user_language(admin_id)
-        summary = get_message(
-            "admin_new_provider_summary",
-            admin_lang,
-            nom=html.escape(provider["full_name"]),
-            telephone=html.escape(provider["phone_number"] or ""),
-            services=html.escape(", ".join(json.loads(provider["services"] or "[]"))),
-            communes=html.escape(", ".join(json.loads(provider["communes"] or "[]"))),
-        )
-        await callback.bot.send_message(admin_id, summary, parse_mode="HTML")
-        await callback.bot.send_photo(admin_id, id_document_file_id, caption=get_message("admin_new_provider_id_caption", admin_lang))
-        await callback.bot.send_photo(admin_id, selfie_file_id, caption=get_message("admin_new_provider_selfie_caption", admin_lang))
-        for photo_file_id in portfolio_file_ids:
-            await callback.bot.send_photo(admin_id, photo_file_id, caption=get_message("admin_new_provider_portfolio_caption", admin_lang))
-        await callback.bot.send_message(
-            admin_id,
-            get_message("admin_new_provider_approve_prompt", admin_lang),
-            reply_markup=clavier_admin_new_provider(provider["telegram_id"]),
-        )
-    except Exception:
-        pass
+    for admin_id in await backend_client.admin_telegram_ids():
+        try:
+            await _envoyer_dossier_prestataire(callback, admin_id, provider, id_document_file_id, selfie_file_id, portfolio_file_ids)
+        except Exception:
+            logger.warning("Dossier du nouveau prestataire non envoyé à un admin", exc_info=True)
+
+
+async def _envoyer_dossier_prestataire(callback: CallbackQuery, admin_id: int, provider, id_document_file_id: str, selfie_file_id: str, portfolio_file_ids: list[str]) -> None:
+    # Langue de l'admin, pas celle du prestataire : c'est l'admin qui lit.
+    admin_lang = await get_user_language(admin_id)
+    summary = get_message(
+        "admin_new_provider_summary",
+        admin_lang,
+        nom=html.escape(provider["full_name"]),
+        telephone=html.escape(provider["phone_number"] or ""),
+        services=html.escape(", ".join(json.loads(provider["services"] or "[]"))),
+        communes=html.escape(", ".join(json.loads(provider["communes"] or "[]"))),
+    )
+    await callback.bot.send_message(admin_id, summary, parse_mode="HTML")
+    await callback.bot.send_photo(admin_id, id_document_file_id, caption=get_message("admin_new_provider_id_caption", admin_lang))
+    await callback.bot.send_photo(admin_id, selfie_file_id, caption=get_message("admin_new_provider_selfie_caption", admin_lang))
+    for photo_file_id in portfolio_file_ids:
+        await callback.bot.send_photo(admin_id, photo_file_id, caption=get_message("admin_new_provider_portfolio_caption", admin_lang))
+    await callback.bot.send_message(
+        admin_id,
+        get_message("admin_new_provider_approve_prompt", admin_lang),
+        reply_markup=clavier_admin_new_provider(provider["telegram_id"]),
+    )
 
 
 @router.callback_query(F.data == "prest_dispo")

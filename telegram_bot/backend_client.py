@@ -47,6 +47,33 @@ def actor_headers(telegram_id: int) -> dict:
     return {**BACKEND_AUTH_HEADERS, "X-Actor-Channel": "telegram", "X-Actor-Id": str(int(telegram_id))}
 
 
+async def admin_status(telegram_id: int) -> bool | None:
+    """Le backend seul sait qui est admin (rôles en base). Vrai ou faux selon
+    sa réponse ; None s'il ne répond pas clairement, ce qui ne donne jamais
+    accès aux écrans admin (ils déplacent de l'argent)."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0, headers=actor_headers(telegram_id)) as client:
+            response = await client.get(f"{BACKEND_BASE_URL}/api/bot/admin/me")
+            body = response.json() if response.status_code == 200 else None
+    except Exception:
+        return None
+    answer = body.get("admin") if isinstance(body, dict) else None
+    return answer if isinstance(answer, bool) else None
+
+
+async def admin_telegram_ids() -> list[int]:
+    """Admins à prévenir (nouveau prestataire à vérifier). Liste vide si le
+    backend ne répond pas."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
+            response = await client.get(f"{BACKEND_BASE_URL}/api/bot/admins")
+            response.raise_for_status()
+            ids = response.json().get("admins")
+    except Exception:
+        return []
+    return [int(value) for value in ids] if isinstance(ids, list) else []
+
+
 async def _safe_backend_call(coro):
     try:
         return await coro

@@ -17,14 +17,12 @@ validation des propositions de
 service, et vérification/suspension des prestataires (V5_MIGRATION_PLAN.md,
 vérification obligatoire).
 
-`is_admin`/`ADMIN_TELEGRAM_ID` sont dupliqués ici plutôt que réimportés depuis
-`main.py`, comme `telegram_bot/registration.py` le fait déjà pour la
-notification admin à l'inscription — même limitation, pas une régression.
-Sans `ADMIN_TELEGRAM_ID`, personne n'est admin (avant, tout le monde l'était).
+Qui est admin : le backend le dit (`is_admin`, rôles enregistrés en base par
+`python -m backend.app.admins`). Plusieurs personnes peuvent l'être ; sans
+réponse du backend, personne ne l'est.
 """
 
 import html
-import os
 
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -77,17 +75,29 @@ from telegram_bot.keyboards import (
 )
 
 load_dotenv()
-ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID")
 
 router = Router()
 
 
-def is_admin(telegram_id: int) -> bool:
-    # Sans admin configuré, personne n'a accès : ces écrans déplacent de
-    # l'argent (litiges) et valident des prestataires.
-    if not ADMIN_TELEGRAM_ID:
-        return False
-    return str(telegram_id) == ADMIN_TELEGRAM_ID
+ACCESS_REFUSED = "Accès admin refusé."
+
+
+async def admin_status(telegram_id: int) -> bool | None:
+    # Le backend dit qui est admin (rôles en base, plusieurs personnes
+    # possibles). Sans réponse (None), personne n'a accès : ces écrans
+    # déplacent de l'argent (litiges) et valident des prestataires.
+    return await backend_client.admin_status(telegram_id)
+
+
+async def _access_refusal(telegram_id: int) -> str | None:
+    """None si la personne est admin, sinon le texte du refus : le backend
+    injoignable n'est pas présenté comme un refus de droit."""
+    status = await admin_status(telegram_id)
+    if status is True:
+        return None
+    if status is None:
+        return get_message("money_backend_unavailable", "fr")
+    return ACCESS_REFUSED
 
 
 class AdminDisputeSplit(StatesGroup):
@@ -108,8 +118,8 @@ async def _admin_stats(admin_telegram_id: int) -> dict:
 
 @router.message(Command("admin"))
 async def cmd_admin(message: Message):
-    if not is_admin(message.from_user.id):
-        await message.answer("Accès admin refusé.")
+    if refusal := await _access_refusal(message.from_user.id):
+        await message.answer(refusal)
         return
 
     stats = await _admin_stats(message.from_user.id)
@@ -131,8 +141,8 @@ async def cmd_couper_app(message: Message):
     l'application de cette personne (téléphone volé, compte suspect). Elle
     devra se reconnecter par code ; son argent ne bouge pas. Le backend
     revérifie que l'auteur est l'admin."""
-    if not is_admin(message.from_user.id):
-        await message.answer("Accès admin refusé.")
+    if refusal := await _access_refusal(message.from_user.id):
+        await message.answer(refusal)
         return
     parts = (message.text or "").split()
     if len(parts) != 2 or not parts[1].isdigit():
@@ -154,8 +164,8 @@ async def cmd_couper_app(message: Message):
 
 @router.callback_query(F.data == "admin_home")
 async def admin_home(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
 
     stats = await _admin_stats(callback.from_user.id)
@@ -174,8 +184,8 @@ async def admin_home(callback: CallbackQuery):
 
 @router.callback_query(F.data == "admin_stats")
 async def admin_stats(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
 
     stats = await _admin_stats(callback.from_user.id)
@@ -194,8 +204,8 @@ async def admin_stats(callback: CallbackQuery):
 
 @router.callback_query(F.data == "admin_providers")
 async def admin_providers(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
 
     providers = get_all_providers()
@@ -220,8 +230,8 @@ async def admin_providers(callback: CallbackQuery):
 
 @router.callback_query(F.data == "admin_missions")
 async def admin_missions(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
 
     try:
@@ -251,8 +261,8 @@ async def admin_missions(callback: CallbackQuery):
 
 @router.callback_query(F.data == "admin_clients")
 async def admin_clients(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
 
     users = get_all_users()
@@ -275,8 +285,8 @@ async def admin_clients(callback: CallbackQuery):
 
 @router.callback_query(F.data == "admin_disputes")
 async def admin_disputes(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
 
     try:
@@ -364,8 +374,8 @@ async def _admin_decision(admin_telegram_id: int, mission_id: int, decision: str
 
 
 async def _admin_decision_button(callback: CallbackQuery, prefix: str, decision: str) -> None:
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
     mission_id = int(callback.data.replace(prefix, "", 1))
     recorded, text, _ = await _admin_decision(callback.from_user.id, mission_id, decision)
@@ -388,8 +398,8 @@ async def admin_litige_payer_prestataire(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("admin_dispute_split_"))
 async def admin_litige_demarrer_partage(callback: CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
 
     mission_id = int(callback.data.replace("admin_dispute_split_", "", 1))
@@ -406,7 +416,12 @@ async def admin_litige_demarrer_partage(callback: CallbackQuery, state: FSMConte
 
 @router.message(AdminDisputeSplit.percentage)
 async def admin_litige_partage_recu(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
+    status = await admin_status(message.from_user.id)
+    if status is None:
+        # Panne : on garde l'état, l'admin renvoie le même pourcentage.
+        await message.answer(get_message("money_backend_unavailable", "fr"))
+        return
+    if not status:
         await state.clear()
         return
 
@@ -434,8 +449,8 @@ REVIEW_REASONS = {
 
 @router.callback_query(F.data == "admin_payouts")
 async def admin_payouts(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
     try:
         payouts = await list_payouts_awaiting_approval(callback.from_user.id)
@@ -462,8 +477,8 @@ async def admin_payouts(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("admin_payout_ok_") | F.data.startswith("admin_payout_no_"))
 async def admin_decider_retrait(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
     approve = callback.data.startswith("admin_payout_ok_")
     payout_id = int(callback.data.rsplit("_", 1)[1])
@@ -491,7 +506,7 @@ MISMATCH_REFUSALS = {
     "already_paid": "La mission est déjà payée : créditez le wallet du client.",
     "invalid_state": "La mission ne peut plus être payée : créditez le wallet du client.",
     "already_resolved": "Ce paiement a déjà été réglé autrement.",
-    "not_admin": "Le backend ne reconnaît pas cet admin (ADMIN_TELEGRAM_ID).",
+    "not_admin": "Le backend ne reconnaît pas cet admin (python -m backend.app.admins liste).",
 }
 
 
@@ -510,8 +525,8 @@ def _can_pay_mission(intent: dict) -> bool:
 
 @router.callback_query(F.data == "admin_mismatches")
 async def admin_montants_differents(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
     try:
         intents = await list_payment_mismatches(callback.from_user.id)
@@ -542,8 +557,8 @@ async def admin_montants_differents(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("admin_mismatch_pay_") | F.data.startswith("admin_mismatch_wallet_"))
 async def admin_regler_montant_different(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
     decision = "pay_mission" if callback.data.startswith("admin_mismatch_pay_") else "credit_wallet"
     intent_id = int(callback.data.rsplit("_", 1)[1])
@@ -565,8 +580,8 @@ async def admin_regler_montant_different(callback: CallbackQuery):
 
 @router.callback_query(F.data == "admin_service_requests")
 async def admin_service_requests(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
 
     requests = get_pending_service_requests()
@@ -617,8 +632,8 @@ async def _decide_service_request(callback: CallbackQuery, request_id: int, stat
 
 @router.callback_query(F.data.startswith("admin_accept_service_"))
 async def admin_accept_service(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
 
     request_id = int(callback.data.replace("admin_accept_service_", "", 1))
@@ -657,8 +672,8 @@ def _provider_from_callback(data: str, prefix: str):
 
 @router.callback_query(F.data.startswith("admin_verify_provider_"))
 async def admin_verify_provider(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
 
     provider = _provider_from_callback(callback.data, "admin_verify_provider_")
@@ -703,8 +718,8 @@ async def admin_reject_provider(callback: CallbackQuery):
     ne correspond à aucune valeur filtrée par find_matching_providers, donc le
     prestataire reste invisible du matching comme s'il était toujours en attente.
     """
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
 
     provider = _provider_from_callback(callback.data, "admin_reject_provider_")
@@ -731,8 +746,8 @@ async def admin_reject_provider(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("admin_suspend_provider_"))
 async def admin_suspend_provider(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
 
     provider = _provider_from_callback(callback.data, "admin_suspend_provider_")
@@ -762,8 +777,8 @@ async def admin_suspend_provider(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("admin_unsuspend_provider_"))
 async def admin_unsuspend_provider(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
 
     provider = _provider_from_callback(callback.data, "admin_unsuspend_provider_")
@@ -791,8 +806,8 @@ async def admin_unsuspend_provider(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("admin_reject_service_"))
 async def admin_reject_service(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Accès admin refusé.", show_alert=True)
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
         return
 
     request_id = int(callback.data.replace("admin_reject_service_", "", 1))

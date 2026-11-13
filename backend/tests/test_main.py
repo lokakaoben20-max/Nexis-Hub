@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.app.main import app
+from backend.app.main import app  # noqa: E402
+from backend.tests import profils_de_test  # noqa: E402
 
 client = TestClient(app)
 
@@ -27,7 +28,19 @@ def _reload_backend_with_db(monkeypatch, backend_db_url):
     backend_main = importlib.reload(importlib.import_module("backend.app.main"))
     # Base jetable : tables créées d'un coup (une vraie base passe par Alembic).
     database_module.init_db()
+    # Les tâches (alertes aux admins, notifications) ouvrent leur propre
+    # session : elles doivent viser la même base jetable.
+    from backend.app import tasks
+
+    monkeypatch.setattr(tasks, "SessionLocal", database_module.SessionLocal)
     return backend_main, database_module
+
+
+def _grant_admin(database_module, *telegram_ids):
+    """Rôle admin en base, comme `python -m backend.app.admins ajouter`."""
+    with database_module.SessionLocal() as db:
+        for telegram_id in telegram_ids:
+            profils_de_test.admin(db, telegram_id)
 
 
 def _fund(test_client, mission_id, quote_id, method="mobile_money", client=42):
@@ -422,12 +435,11 @@ def test_money_endpoints_return_a_stable_code_and_the_current_mission_on_refusal
 
 
 def test_dispute_decision_waits_can_be_contested_and_is_reviewed_by_someone_else(tmp_path, monkeypatch, backend_db_url):
-    monkeypatch.setenv("ADMIN_TELEGRAM_ID", "1")
-    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
+    _grant_admin(database_module, 1)
     from backend.app import tasks
 
     sent = []
-    monkeypatch.setattr(tasks, "ADMIN_TELEGRAM_ID", "1")
     monkeypatch.setattr(tasks, "send_telegram_message", lambda telegram_id, text, markup=None: sent.append((telegram_id, markup)) or True)
 
     with _authed_client(backend_main) as test_client:
@@ -493,7 +505,7 @@ def test_dispute_decision_waits_can_be_contested_and_is_reviewed_by_someone_else
         assert same_person.json()["detail"]["code"] == "same_reviewer"
 
         # Une autre personne de Nexis Hub revoit : décision finale, exécutée tout de suite.
-        monkeypatch.setenv("ADMIN_TELEGRAM_ID", "2")
+        _grant_admin(database_module, 2)
         sent.clear()
         reviewed = test_client.post(
             f"/api/bot/missions/{mission_id}/dispute/decide",
@@ -999,8 +1011,8 @@ def test_mobile_money_cannot_be_declared_paid_by_the_bot(tmp_path, monkeypatch, 
 
 
 def test_payout_endpoints_hold_then_pay_after_admin_approval(tmp_path, monkeypatch, backend_db_url):
-    monkeypatch.setenv("ADMIN_TELEGRAM_ID", "1")
-    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
+    _grant_admin(database_module, 1)
 
     with _authed_client(backend_main) as test_client:
         _complete_mission_flow(test_client)  # le prestataire 7 gagne 90 USD

@@ -197,7 +197,7 @@ def test_admin_verify_provider_uses_telegram_id_for_backend_sync(monkeypatch, tm
     _init_db(tmp_path)
     _use_dummy_backend(monkeypatch)
     dummy_bot = DummyBot()
-    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
     monkeypatch.setattr(admin, "get_provider_language", lambda telegram_id: _async_return("fr"))
 
     telegram_id = 1020
@@ -223,7 +223,7 @@ def test_admin_reject_provider_keeps_provider_excluded(monkeypatch, tmp_path):
     _init_db(tmp_path)
     _use_dummy_backend(monkeypatch)
     dummy_bot = DummyBot()
-    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
     monkeypatch.setattr(admin, "get_provider_language", lambda telegram_id: _async_return("fr"))
 
     telegram_id = 1030

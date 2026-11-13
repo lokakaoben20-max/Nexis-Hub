@@ -55,11 +55,6 @@ variable "pool_identite_github" {
   type = string
 }
 
-variable "admin_telegram_id" {
-  description = "Identifiant Telegram numérique de l'administrateur (test)."
-  type        = string
-}
-
 variable "plages_cloudflare" {
   type = object({ ipv4 = list(string), ipv6 = list(string) })
 }
@@ -129,9 +124,8 @@ module "services" {
   reseau_id          = module.reseau.reseau_id
   sous_reseau_id     = module.reseau.sous_reseau_id
 
-  app_env           = "test"
-  admin_telegram_id = var.admin_telegram_id
-  nom_bot_telegram  = "@NexisHubTestBot"
+  app_env          = "test"
+  nom_bot_telegram = "@NexisHubTestBot"
 
   reglages_argent = {
     PAYMENT_GATEWAY       = "simulation"
