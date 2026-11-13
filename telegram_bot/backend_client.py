@@ -514,6 +514,23 @@ async def contest_dispute(mission_id: int, telegram_id: int, reason: str) -> dic
     return await _money_call("POST", f"/api/bot/missions/{mission_id}/dispute/contest", {"reason": reason}, actor=telegram_id)
 
 
+async def propose_dispute_settlement(mission_id: int, client_telegram_id: int, kind: str, provider_percentage: float | None = None) -> dict:
+    """Le client propose un accord amiable. Le backend prévient lui-même le
+    prestataire, avec les boutons pour répondre."""
+    return await _money_call(
+        "POST",
+        f"/api/bot/missions/{mission_id}/dispute/offers",
+        {"kind": kind, "provider_percentage": provider_percentage},
+        actor=client_telegram_id,
+    )
+
+
+async def answer_dispute_settlement(mission_id: int, offer_id: int, provider_telegram_id: int, accept: bool) -> dict:
+    """Le prestataire accepte ou refuse. Le backend prévient lui-même le client."""
+    action = "accept" if accept else "decline"
+    return await _money_call("POST", f"/api/bot/missions/{mission_id}/dispute/offers/{offer_id}/{action}", actor=provider_telegram_id)
+
+
 async def fetch_wallets(telegram_id: int) -> dict | None:
     """Wallet de la personne (un seul, qu'elle soit cliente, prestataire ou
     les deux), lu dans le registre. None si le backend ne répond pas : l'écran

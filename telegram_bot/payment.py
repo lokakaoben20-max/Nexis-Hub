@@ -17,6 +17,7 @@ l'utilisateur réessaie. La résolution des litiges est une action admin
 """
 
 import html
+from decimal import Decimal
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -44,14 +45,19 @@ from telegram_bot.keyboards import (
     build_quote_accept_rich_message,
     clavier_client,
     clavier_confirmation_client,
+    clavier_confirmer_acceptation,
+    clavier_envoyer_accord,
     clavier_mission_prestataire,
     clavier_notation,
     clavier_notation_commentaire,
     clavier_operateurs,
     clavier_paiement,
+    clavier_partage_accord,
     clavier_prestataire,
     clavier_presence_pas_lui,
+    clavier_proposer_accord,
     clavier_question_presence,
+    clavier_types_accord,
     clavier_verifier_paiement,
 )
 
@@ -632,6 +638,9 @@ async def litige_motif_recu(message: Message, state: FSMContext):
         parse_mode="HTML",
         reply_markup=clavier_client(lang),
     )
+    await message.answer(
+        get_message("dispute_offer_hint", lang), parse_mode="HTML", reply_markup=clavier_proposer_accord(mission_id, lang)
+    )
     if mission["provider_telegram_id"]:
         provider_lang = await get_provider_language(mission["provider_telegram_id"])
         await message.bot.send_message(
@@ -679,6 +688,150 @@ async def contestation_motif_recu(message: Message, state: FSMContext):
         return
     await state.clear()
     await message.answer(get_message("dispute_contest_sent", lang, mission_id=mission_id), parse_mode="HTML")
+
+
+# --- Accord amiable (« On s'est arrangés ») ---------------------------------------
+# Le client propose, le prestataire accepte ou refuse. Le backend calcule les
+# montants, règle, et prévient l'autre partie : le bot ne fait que transmettre.
+
+
+def _amount_text(value, currency: str) -> tuple[str, str]:
+    """USD avec 2 décimales, francs congolais sans décimales (charte du 2026-11-07)."""
+    amount = Decimal(str(value))
+    if currency == "CDF":
+        return f"{amount:,.0f}".replace(",", " "), "FC"
+    return f"{amount:.2f}", currency
+
+
+def _offer_choice(choice: str) -> tuple[str, int | None] | None:
+    """`redo`, `release`, `refund` ou `split<pourcentage>` → (type, pourcentage)."""
+    if choice in ("redo", "release", "refund"):
+        return choice, None
+    if choice.startswith("split") and choice[5:].isdigit() and 0 <= int(choice[5:]) <= 100:
+        return "split", int(choice[5:])
+    return None
+
+
+@router.callback_query(F.data.startswith("doffer_new_"))
+async def accord_choisir(callback: CallbackQuery):
+    mission_id = int(callback.data.removeprefix("doffer_new_"))
+    lang = await get_user_language(callback.from_user.id)
+    await callback.message.answer(
+        get_message("dispute_offer_choose", lang, mission_id=mission_id),
+        parse_mode="HTML",
+        reply_markup=clavier_types_accord(mission_id, lang),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("doffer_kind_"))
+async def accord_type_choisi(callback: CallbackQuery):
+    choice, mission_id = callback.data.removeprefix("doffer_kind_").rsplit("_", 1)
+    mission_id = int(mission_id)
+    lang = await get_user_language(callback.from_user.id)
+    if choice == "split":
+        await callback.message.edit_text(
+            get_message("dispute_offer_split_choose", lang, mission_id=mission_id),
+            parse_mode="HTML",
+            reply_markup=clavier_partage_accord(mission_id, lang),
+        )
+        await callback.answer()
+        return
+    parsed = _offer_choice(choice)
+    if parsed is None:
+        await callback.answer(get_message("money_error_invalid_offer", lang), show_alert=True)
+        return
+    kind, percentage = parsed
+    await callback.message.edit_text(
+        get_message(f"dispute_offer_confirm_{kind}", lang, mission_id=mission_id, percentage=percentage),
+        parse_mode="HTML",
+        reply_markup=clavier_envoyer_accord(mission_id, choice, lang),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("doffer_cancel_"))
+async def accord_annule(callback: CallbackQuery):
+    lang = await get_user_language(callback.from_user.id)
+    await callback.message.edit_text(get_message("dispute_offer_cancelled", lang), parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("doffer_send_"))
+async def accord_envoye(callback: CallbackQuery):
+    choice, mission_id = callback.data.removeprefix("doffer_send_").rsplit("_", 1)
+    mission_id = int(mission_id)
+    lang = await get_user_language(callback.from_user.id)
+    parsed = _offer_choice(choice)
+    if parsed is None:
+        await callback.answer(get_message("money_error_invalid_offer", lang), show_alert=True)
+        return
+    kind, percentage = parsed
+    try:
+        await backend_client.propose_dispute_settlement(mission_id, callback.from_user.id, kind, percentage)
+    except (MoneyRefused, BackendUnavailable) as error:
+        # Service injoignable : les boutons restent, le client réessaie.
+        await callback.answer(money_failure_text(mission_id, error, lang), show_alert=True)
+        return
+    await callback.message.edit_text(get_message("dispute_offer_sent", lang, mission_id=mission_id), parse_mode="HTML")
+    await callback.answer()
+
+
+def _offer_ids(data: str, prefix: str) -> tuple[int, int]:
+    mission_id, offer_id = data.removeprefix(prefix).split("_", 1)
+    return int(mission_id), int(offer_id)
+
+
+@router.callback_query(F.data.startswith("doffer_ok_"))
+async def accord_accepter(callback: CallbackQuery):
+    """Accepter est définitif : on demande une confirmation, dans un message
+    à part pour garder la proposition et ses boutons."""
+    mission_id, offer_id = _offer_ids(callback.data, "doffer_ok_")
+    lang = await get_provider_language(callback.from_user.id)
+    await callback.message.answer(
+        get_message("dispute_offer_accept_confirm", lang, mission_id=mission_id),
+        parse_mode="HTML",
+        reply_markup=clavier_confirmer_acceptation(mission_id, offer_id, lang),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("doffer_back_"))
+async def accord_acceptation_annulee(callback: CallbackQuery):
+    await callback.message.delete()
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("doffer_yes_"))
+async def accord_accepte(callback: CallbackQuery):
+    mission_id, offer_id = _offer_ids(callback.data, "doffer_yes_")
+    lang = await get_provider_language(callback.from_user.id)
+    try:
+        result = await backend_client.answer_dispute_settlement(mission_id, offer_id, callback.from_user.id, accept=True)
+    except (MoneyRefused, BackendUnavailable) as error:
+        await callback.answer(money_failure_text(mission_id, error, lang), show_alert=True)
+        return
+    settlement = (result.get("money") or {}).get("settlement")
+    if settlement is None:
+        text = get_message("dispute_offer_accepted_provider_redo", lang, mission_id=mission_id)
+    else:
+        mine, currency = _amount_text(settlement["provider_amount"], result["mission"]["currency"])
+        text = get_message("dispute_offer_accepted_provider", lang, mission_id=mission_id, mine=mine, currency=currency)
+    await callback.message.edit_text(text, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("doffer_no_"))
+async def accord_refuse(callback: CallbackQuery):
+    mission_id, offer_id = _offer_ids(callback.data, "doffer_no_")
+    lang = await get_provider_language(callback.from_user.id)
+    try:
+        await backend_client.answer_dispute_settlement(mission_id, offer_id, callback.from_user.id, accept=False)
+    except (MoneyRefused, BackendUnavailable) as error:
+        await callback.answer(money_failure_text(mission_id, error, lang), show_alert=True)
+        return
+    await callback.message.edit_text(get_message("dispute_offer_declined_provider", lang, mission_id=mission_id), parse_mode="HTML")
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("qpay_wallet_"))

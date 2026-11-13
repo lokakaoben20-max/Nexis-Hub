@@ -648,3 +648,54 @@ def clavier_admin_new_provider(telegram_id: int):
     builder.button(text="❌ Refuser", callback_data=f"admin_reject_provider_tg_{telegram_id}")
     builder.adjust(2)
     return builder.as_markup()
+
+
+# --- Accord amiable sur un litige ------------------------------------------------
+
+# Parts proposées au prestataire dans le bot ; l'API accepte tout pourcentage
+# de 0 à 100.
+OFFER_SPLIT_PERCENTAGES = (25, 50, 75)
+
+
+def clavier_proposer_accord(mission_id: int, lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=get_message("button_propose_agreement", lang), callback_data=f"doffer_new_{mission_id}")
+    return builder.as_markup()
+
+
+def clavier_types_accord(mission_id: int, lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    for kind in ("redo", "release", "refund", "split"):
+        builder.button(text=get_message(f"button_offer_{kind}", lang), callback_data=f"doffer_kind_{kind}_{mission_id}")
+    builder.button(text=get_message("button_offer_cancel", lang), callback_data=f"doffer_cancel_{mission_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_partage_accord(mission_id: int, lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    for percentage in OFFER_SPLIT_PERCENTAGES:
+        builder.button(
+            text=get_message("button_offer_split_pct", lang, percentage=percentage),
+            callback_data=f"doffer_kind_split{percentage}_{mission_id}",
+        )
+    builder.button(text=get_message("button_offer_cancel", lang), callback_data=f"doffer_cancel_{mission_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_envoyer_accord(mission_id: int, choice: str, lang: str = "fr"):
+    """`choice` : redo, release, refund ou split<pourcentage>."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=get_message("button_offer_send", lang), callback_data=f"doffer_send_{choice}_{mission_id}")
+    builder.button(text=get_message("button_offer_cancel", lang), callback_data=f"doffer_cancel_{mission_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_confirmer_acceptation(mission_id: int, offer_id: int, lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=get_message("button_offer_accept_confirm", lang), callback_data=f"doffer_yes_{mission_id}_{offer_id}")
+    builder.button(text=get_message("button_offer_cancel", lang), callback_data=f"doffer_back_{mission_id}_{offer_id}")
+    builder.adjust(1)
+    return builder.as_markup()

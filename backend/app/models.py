@@ -347,6 +347,63 @@ class DisputeDecision(Base):
     executed_operation_id: Mapped[int | None] = mapped_column(ForeignKey("money_operations.id"), nullable=True, unique=True)
 
 
+class DisputeSettlementOffer(Base):
+    """Proposition d'accord amiable sur un litige (« On s'est arrangés »).
+    Écrite uniquement par backend/app/ledger.py ; une ligne n'est jamais
+    effacée.
+
+    Le client propose, le prestataire accepte ou refuse :
+
+    - `redo` : le prestataire repasse. La mission revient en cours et
+      l'argent reste bloqué ; quand il termine à nouveau, le client a de
+      nouveau 48 h.
+    - `release`, `refund` ou `split` : le serveur règle tout de suite à
+      l'acceptation, avec les montants figés ici à la proposition. Il n'y a
+      pas de délai de contestation, puisque les deux parties sont d'accord.
+
+    Au plus une proposition en attente par mission. Sans réponse, elle expire
+    à `expires_at` (48 h) ; une décision de Nexis Hub l'annule, et aucune
+    proposition n'est possible une fois que Nexis Hub a décidé."""
+
+    __tablename__ = "dispute_settlement_offers"
+    __table_args__ = (
+        CheckConstraint("kind IN ('redo', 'release', 'refund', 'split')", name="ck_dispute_offers_kind"),
+        CheckConstraint(
+            "status IN ('pending', 'accepted', 'declined', 'expired', 'cancelled')", name="ck_dispute_offers_status"
+        ),
+        CheckConstraint(
+            "(kind = 'split') = (provider_percentage IS NOT NULL)", name="ck_dispute_offers_split_percentage"
+        ),
+        Index(
+            "uq_dispute_offers_pending_mission",
+            "mission_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mission_id: Mapped[int] = mapped_column(ForeignKey("bot_missions.mission_id"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    # Pourcentage versé au prestataire (partage seulement), au centième.
+    provider_percentage: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # Montants figés à la proposition (vides pour `redo`) : le prestataire
+    # accepte exactement ce qu'on lui a montré.
+    currency: Mapped[str] = mapped_column(String(3))
+    provider_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    client_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    platform_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    status: Mapped[str] = mapped_column(String(20))
+    proposed_by_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
+    proposed_at: Mapped[datetime] = mapped_column(DateTime)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    responded_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
+    # Réponse, expiration ou annulation : quand la proposition a cessé d'attendre.
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    settlement_operation_id: Mapped[int | None] = mapped_column(ForeignKey("money_operations.id"), nullable=True, unique=True)
+
+
 class LedgerEntry(Base):
     """Un mouvement d'un compte. La somme des mouvements d'une opération vaut
     toujours 0 ; le solde d'un compte est la somme de ses mouvements.

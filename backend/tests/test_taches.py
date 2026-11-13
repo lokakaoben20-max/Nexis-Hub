@@ -33,6 +33,7 @@ def test_le_calendrier_reprend_les_frequences_de_celery(taches):
         "liberations-automatiques": "0 * * * *",
         "litiges-en-retard": "15 * * * *",
         "decisions-litiges": "*/10 * * * *",
+        "accords-expires": "*/10 * * * *",
         "verification-mobile-money": "*/2 * * * *",
         "rapprochement-quotidien": "0 6 * * *",
         "analytics-quotidiennes": "0 8 * * *",
@@ -48,7 +49,7 @@ def test_les_taches_dues_suivent_l_heure_utc(taches):
 
     assert taches.taches_dues(a(6, 0)) == [
         "relances-prestataires", "devis-expires", "liberations-automatiques", "decisions-litiges",
-        "verification-mobile-money", "rapprochement-quotidien", "alertes-nouvel-appareil",
+        "accords-expires", "verification-mobile-money", "rapprochement-quotidien", "alertes-nouvel-appareil",
     ]
     assert taches.taches_dues(a(6, 2)) == ["verification-mobile-money", "alertes-nouvel-appareil"]
     assert taches.taches_dues(a(6, 3)) == ["alertes-nouvel-appareil"]
@@ -162,7 +163,7 @@ def test_le_planificateur_lance_chaque_tache_due_une_fois_par_minute_et_survit_a
 
     assert lancees == [
         "relances-prestataires", "devis-expires", "liberations-automatiques", "decisions-litiges",
-        "verification-mobile-money", "alertes-nouvel-appareil",
+        "accords-expires", "verification-mobile-money", "alertes-nouvel-appareil",
         "verification-mobile-money", "alertes-nouvel-appareil",
     ]
 

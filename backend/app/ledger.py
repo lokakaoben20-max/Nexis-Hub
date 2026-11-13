@@ -31,6 +31,7 @@ from backend.app.models import (
     BotQuote,
     ChannelIdentity,
     DisputeDecision,
+    DisputeSettlementOffer,
     LedgerEntry,
     MoneyOperation,
     NexisAccount,
@@ -67,6 +68,10 @@ PAYMENT_METHODS = {
     "wallet": ("fund_wallet", "WLT"),
 }
 DISPUTE_DECISIONS = {"refund", "release", "split"}
+# Accord amiable : le prestataire repasse (`redo`), ou un règlement accepté
+# par les deux parties (mêmes montants que les décisions de Nexis Hub).
+SETTLEMENT_OFFER_KINDS = {"redo"} | DISPUTE_DECISIONS
+SETTLEMENT_OFFER_DELAY = timedelta(hours=48)
 
 # Une mission se paie avant tout démarrage ; un litige s'ouvre après paiement
 # et avant tout règlement.
@@ -219,6 +224,7 @@ def mission_money_state(db: Session, mission_id: int) -> dict:
             else None
         )
     state["dispute_decisions"] = [dispute_decision_view(decision) for decision in dispute_decisions(db, mission_id)]
+    state["dispute_offers"] = [settlement_offer_view(offer) for offer in settlement_offers(db, mission_id)]
     return state
 
 
@@ -255,6 +261,52 @@ def dispute_decision_view(decision: DisputeDecision) -> dict:
         "contested_at": iso(decision.contested_at),
         "contested_by": decision.contested_by_role,
         "executed_at": iso(decision.executed_at),
+    }
+
+
+def settlement_offers(db: Session, mission_id: int) -> list[DisputeSettlementOffer]:
+    return (
+        db.query(DisputeSettlementOffer)
+        .filter(DisputeSettlementOffer.mission_id == mission_id)
+        .order_by(DisputeSettlementOffer.id)
+        .all()
+    )
+
+
+def pending_settlement_offer(db: Session, mission_id: int) -> DisputeSettlementOffer | None:
+    """La proposition encore enregistrée « en attente » (elle peut avoir
+    dépassé son échéance sans avoir encore été notée expirée)."""
+    return (
+        db.query(DisputeSettlementOffer)
+        .filter(DisputeSettlementOffer.mission_id == mission_id, DisputeSettlementOffer.status == "pending")
+        .one_or_none()
+    )
+
+
+def settlement_offer_state(offer: DisputeSettlementOffer, now: datetime | None = None) -> str:
+    """État lu par tous : une proposition en attente dont l'échéance est
+    passée est expirée, même avant que la tâche planifiée ne l'ait notée."""
+    if offer.status == "pending" and (now or _utcnow()) >= offer.expires_at:
+        return "expired"
+    return offer.status
+
+
+def settlement_offer_view(offer: DisputeSettlementOffer, now: datetime | None = None) -> dict:
+    def money(value: Decimal | None) -> str | None:
+        return str(value) if value is not None else None
+
+    return {
+        "id": offer.id,
+        "kind": offer.kind,
+        "state": settlement_offer_state(offer, now),
+        "percentage": str(offer.provider_percentage) if offer.provider_percentage is not None else None,
+        "currency": offer.currency,
+        "provider_amount": money(offer.provider_amount),
+        "client_amount": money(offer.client_amount),
+        "platform_amount": money(offer.platform_amount),
+        "proposed_at": offer.proposed_at.isoformat(),
+        "expires_at": offer.expires_at.isoformat(),
+        "closed_at": offer.closed_at.isoformat() if offer.closed_at is not None else None,
     }
 
 
@@ -824,6 +876,7 @@ def decide_dispute(
 
     if first is None:
         try:
+            _cancel_pending_offer(db, mission_id, now)
             db.add(row)
             db.commit()
         except IntegrityError:
@@ -838,6 +891,7 @@ def decide_dispute(
         return db.get(BotMission, mission_id)
 
     def add_review():
+        _cancel_pending_offer(db, mission_id, now)
         db.add(row)
         db.flush()
 
@@ -915,22 +969,9 @@ def _execute(db: Session, mission: BotMission, row: DisputeDecision, *, now: dat
         raise MoneyError("not_disputed", mission=mission)
     funded = _funded_amounts(db, mission)
     provider_amount, client_amount, platform_amount = row.provider_amount, row.client_amount, row.platform_amount
-    if provider_amount + client_amount + platform_amount != funded["total"]:
-        # Montants figés incohérents avec le paiement : ne peut venir que d'un bug.
-        raise RuntimeError(f"Décision {row.id} : montants {provider_amount}/{client_amount}/{platform_amount} ≠ {funded['total']}")
-
+    movements = _settlement_movements(mission, funded["total"], provider_amount, client_amount, platform_amount)
     kind = {"refund": "refund", "release": "dispute_release", "split": "split"}[row.decision]
-    movements = [
-        (ESCROW, mission_id, -funded["total"]),
-        (WALLET, mission.provider_account_id, provider_amount),
-        (WALLET, mission.client_account_id, client_amount),
-        (PLATFORM, None, platform_amount),
-    ]
-    payment_status, status = {
-        "refund": ("refunded", "cancelled"),
-        "release": ("released", "completed"),
-        "split": ("split", "completed"),
-    }[row.decision]
+    payment_status, status = _SETTLED_STATES[row.decision]
     details = {
         "decision": row.decision,
         "decision_round": row.round,
@@ -963,6 +1004,257 @@ def _execute(db: Session, mission: BotMission, row: DisputeDecision, *, now: dat
         before=before,
         on_recorded=mark_executed,
     )
+
+
+# --- Accord amiable --------------------------------------------------------------
+
+
+def _settlement_movements(mission: BotMission, total: Decimal, provider_amount, client_amount, platform_amount) -> list:
+    if provider_amount + client_amount + platform_amount != total:
+        # Montants figés incohérents avec le paiement : ne peut venir que d'un bug.
+        raise RuntimeError(
+            f"Mission {mission.mission_id} : montants {provider_amount}/{client_amount}/{platform_amount} ≠ {total}"
+        )
+    return [
+        (ESCROW, mission.mission_id, -total),
+        (WALLET, mission.provider_account_id, provider_amount),
+        (WALLET, mission.client_account_id, client_amount),
+        (PLATFORM, None, platform_amount),
+    ]
+
+
+# Statut de paiement et de mission après un règlement de litige, que Nexis
+# Hub l'ait décidé ou que les deux parties s'en soient arrangées.
+_SETTLED_STATES = {
+    "refund": ("refunded", "cancelled"),
+    "release": ("released", "completed"),
+    "split": ("split", "completed"),
+}
+
+
+def _offer_percentage(kind: str, provider_percentage) -> Decimal | None:
+    if kind not in SETTLEMENT_OFFER_KINDS:
+        raise MoneyError("invalid_offer", 400)
+    if kind == "redo":
+        return None
+    return _decision_percentage(kind, provider_percentage)
+
+
+def _same_offer(offer: DisputeSettlementOffer, kind: str, percentage: Decimal | None) -> bool:
+    stored = offer.provider_percentage.quantize(CENT) if offer.provider_percentage is not None else None
+    return offer.kind == kind and stored == percentage
+
+
+def _require_open_dispute(db: Session, mission: BotMission) -> None:
+    """Litige ouvert, sans règlement et sans décision de Nexis Hub : la
+    seule situation où un accord amiable peut encore être proposé ou accepté."""
+    if mission_operation(db, mission.mission_id, SETTLEMENT) is not None:
+        raise MoneyError("already_settled", mission=mission)
+    if mission.status != "disputed":
+        raise MoneyError("not_disputed", mission=mission)
+    if dispute_decisions(db, mission.mission_id):
+        raise MoneyError("already_decided", mission=mission)
+
+
+def _cancel_pending_offer(db: Session, mission_id: int, now: datetime) -> None:
+    """Une décision de Nexis Hub annule la proposition qui attendait encore
+    (même transaction que la décision) : elle ne peut plus être acceptée."""
+    offer = pending_settlement_offer(db, mission_id)
+    if offer is not None:
+        offer.status = "expired" if now >= offer.expires_at else "cancelled"
+        offer.closed_at = min(now, offer.expires_at)
+        db.flush()
+
+
+def propose_dispute_settlement(
+    db: Session,
+    mission_id: int,
+    client_account_id: int,
+    *,
+    kind: str,
+    provider_percentage=None,
+    now: datetime | None = None,
+) -> BotMission:
+    """Le client d'une mission en litige propose un arrangement au
+    prestataire : qu'il repasse (`redo`), le payer (`release`), être
+    remboursé (`refund`) ou partager (`split`, pourcentage versé au
+    prestataire). Les montants sont calculés ici et figés : le prestataire
+    accepte exactement ce qu'on lui montre.
+
+    Une seule proposition à la fois (`offer_pending`) ; elle expire au bout de
+    48 h. Impossible une fois que Nexis Hub a décidé (`already_decided`). Un
+    rejeu identique renvoie l'état enregistré."""
+    percentage = _offer_percentage(kind, provider_percentage)
+    now = now or _utcnow()
+    mission = _lock_mission(db, mission_id)
+    require_mission_client(mission, client_account_id)
+
+    pending = pending_settlement_offer(db, mission_id)
+    if pending is not None and now < pending.expires_at and _same_offer(pending, kind, percentage):
+        return mission
+
+    _require_open_dispute(db, mission)
+    if mission.provider_account_id is None:
+        raise MoneyError("mission_account_missing", mission=mission)
+    if pending is not None:
+        if now < pending.expires_at:
+            raise MoneyError("offer_pending", mission=mission)
+        pending.status = "expired"
+        pending.closed_at = pending.expires_at
+        db.flush()
+
+    funded = _funded_amounts(db, mission)
+    amounts = (
+        {"provider_amount": None, "client_amount": None, "platform_amount": None}
+        if kind == "redo"
+        else _decision_amounts(funded, kind, percentage)
+    )
+    db.add(
+        DisputeSettlementOffer(
+            mission_id=mission_id,
+            kind=kind,
+            provider_percentage=percentage,
+            currency=mission.currency,
+            status="pending",
+            proposed_by_account_id=client_account_id,
+            proposed_at=now,
+            expires_at=now + SETTLEMENT_OFFER_DELAY,
+            **amounts,
+        )
+    )
+    try:
+        db.commit()
+    except IntegrityError:
+        # Proposition enregistrée au même instant par une autre demande.
+        db.rollback()
+        mission = db.get(BotMission, mission_id)
+        stored = pending_settlement_offer(db, mission_id)
+        if stored is not None and _same_offer(stored, kind, percentage):
+            return mission
+        raise MoneyError("offer_pending", mission=mission) from None
+    return db.get(BotMission, mission_id)
+
+
+def _offer_for_response(db: Session, mission: BotMission, offer_id: int, account_id: int) -> DisputeSettlementOffer:
+    """La proposition de cette mission, à laquelle seul son prestataire répond."""
+    try:
+        _require_provider(db, mission, account_id)
+    except MoneyError as error:
+        if error.code == "not_mission_provider":
+            raise MoneyError("offer_not_for_you", 403, mission) from None
+        raise
+    offer = db.get(DisputeSettlementOffer, offer_id)
+    if offer is None or offer.mission_id != mission.mission_id:
+        raise MoneyError("offer_not_found", 404, mission)
+    db.refresh(offer)
+    return offer
+
+
+def _require_answerable(offer: DisputeSettlementOffer, mission: BotMission, now: datetime) -> None:
+    if settlement_offer_state(offer, now) == "expired":
+        raise MoneyError("offer_expired", mission=mission)
+    if offer.status != "pending":
+        raise MoneyError("offer_closed", mission=mission)
+
+
+def accept_dispute_settlement(
+    db: Session, mission_id: int, offer_id: int, provider_account_id: int, now: datetime | None = None
+) -> BotMission:
+    """Le prestataire accepte la proposition du client, avant son échéance.
+
+    - `redo` : la mission revient en cours, l'argent reste bloqué, le litige
+      est clos. Quand le prestataire termine à nouveau, le client a de
+      nouveau 48 h pour confirmer ou signaler un problème.
+    - Sinon : règlement immédiat avec les montants figés à la proposition,
+      dans la même transaction que l'acceptation. Un règlement n'est jamais
+      écrit deux fois (règlement unique par mission)."""
+    now = now or _utcnow()
+    mission = _lock_mission(db, mission_id)
+    offer = _offer_for_response(db, mission, offer_id, provider_account_id)
+    if offer.status == "accepted":
+        return mission
+    _require_answerable(offer, mission, now)
+    _require_open_dispute(db, mission)
+
+    def accepted(operation: MoneyOperation | None = None) -> None:
+        offer.status = "accepted"
+        offer.responded_by_account_id = provider_account_id
+        offer.closed_at = now
+        if operation is not None:
+            offer.settlement_operation_id = operation.id
+
+    if offer.kind == "redo":
+        accepted()
+        _set_status(mission, "in_progress")
+        mission.release_after = None
+        mission.dispute_deadline = None
+        mission.dispute_overdue_alerted_at = None
+        db.commit()
+        _recompute_stats(db, mission)
+        return db.get(BotMission, mission_id)
+
+    funded = _funded_amounts(db, mission)
+    movements = _settlement_movements(mission, funded["total"], offer.provider_amount, offer.client_amount, offer.platform_amount)
+    details = {
+        "agreement": offer.kind,
+        "offer_id": offer.id,
+        "provider_amount": str(offer.provider_amount),
+        "client_amount": str(offer.client_amount),
+        "platform_amount": str(offer.platform_amount),
+    }
+    if offer.provider_percentage is not None:
+        details["percentage"] = str(offer.provider_percentage.quantize(CENT))
+    payment_status, status = _SETTLED_STATES[offer.kind]
+    return _settle(
+        db,
+        mission,
+        kind="agreement",
+        actor_account_id=provider_account_id,
+        actor_telegram_id=mission.provider_telegram_id,
+        movements=movements,
+        details=details,
+        payment_status=payment_status,
+        status=status,
+        matches=lambda operation: (operation.details or {}).get("offer_id") == offer_id,
+        on_recorded=accepted,
+    )
+
+
+def decline_dispute_settlement(
+    db: Session, mission_id: int, offer_id: int, provider_account_id: int, now: datetime | None = None
+) -> BotMission:
+    """Le prestataire refuse : le litige continue, l'argent reste bloqué et
+    le client peut faire une autre proposition."""
+    now = now or _utcnow()
+    mission = _lock_mission(db, mission_id)
+    offer = _offer_for_response(db, mission, offer_id, provider_account_id)
+    if offer.status == "declined":
+        return mission
+    _require_answerable(offer, mission, now)
+    offer.status = "declined"
+    offer.responded_by_account_id = provider_account_id
+    offer.closed_at = now
+    db.commit()
+    return db.get(BotMission, mission_id)
+
+
+def expire_dispute_settlement(db: Session, offer_id: int, now: datetime | None = None) -> bool:
+    """Note expirée une proposition restée sans réponse après son échéance
+    (tâche du planificateur). Vrai seulement pour celle qui vient d'être
+    notée, pour ne prévenir le client qu'une fois."""
+    now = now or _utcnow()
+    offer = db.get(DisputeSettlementOffer, offer_id)
+    if offer is None:
+        return False
+    _lock_mission(db, offer.mission_id)
+    db.refresh(offer)
+    if offer.status != "pending" or now < offer.expires_at:
+        db.rollback()
+        return False
+    offer.status = "expired"
+    offer.closed_at = offer.expires_at
+    db.commit()
+    return True
 
 
 # --- Après règlement ------------------------------------------------------------
