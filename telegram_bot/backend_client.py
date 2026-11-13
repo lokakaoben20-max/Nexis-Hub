@@ -5,19 +5,18 @@ Déplacé depuis `main.py` — regroupe les helpers `sync_*`/`fetch_*` utilisés
 `main.py` importe les fonctions ci-dessous au lieu de les redéfinir, pour que les
 handlers hors scope qui les utilisent encore n'aient rien à changer.
 
-Missions, devis et argent n'existent que dans le backend (CONCEPTION_MISSIONS.md,
-CONCEPTION_ARGENT.md) : le bot les lit et les demande ici, et n'en garde aucune
-copie. Les profils (client, prestataire, langue, statut) restent encore écrits
-des deux côtés : `db.py` les lit pour le matching et la Mini App.
+Profils, catalogue, missions, devis et argent n'existent que dans le backend
+(CONCEPTION_MISSIONS.md, CONCEPTION_ARGENT.md) : le bot les lit et les demande
+ici, au nom de la personne qui écrit (`actor_headers`), et n'en garde aucune
+copie. Backend injoignable = `BackendUnavailable`, refus = `MoneyRefused`
+avec un code stable : rien n'est écrit ailleurs pour « rattraper plus tard ».
 """
 
-import json
 import os
 
 import httpx
 from dotenv import load_dotenv
 
-from db import create_user, get_provider_by_telegram_id, get_user_by_telegram_id
 from messages import MESSAGES, get_message
 
 load_dotenv()
@@ -81,151 +80,6 @@ async def _safe_backend_call(coro):
         return None
 
 
-async def sync_user_to_backend(
-    telegram_id: int,
-    first_name: str | None = None,
-    phone_number: str | None = None,
-    language: str = "fr",
-    phone_verified: bool = False,
-) -> dict:
-    """`phone_verified` : seulement pour un numéro reçu par le bouton
-    « Partager mon numéro » et vérifié comme celui de l'expéditeur
-    (`registration._numero_partage`). Le backend l'enregistre alors comme
-    numéro prouvé du compte Nexis."""
-    payload = {
-        "telegram_id": telegram_id,
-        "first_name": first_name or "Client",
-        "phone_number": phone_number,
-        "language": language,
-        "phone_verified": phone_verified,
-    }
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/users", json=payload)
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_provider_to_backend(
-    telegram_id: int,
-    full_name: str,
-    phone_number: str | None = None,
-    services: list[str] | None = None,
-    communes: list[str] | None = None,
-    language: str = "fr",
-    id_document_file_id: str | None = None,
-    selfie_file_id: str | None = None,
-    portfolio_file_ids: list[str] | None = None,
-    phone_verified: bool = False,
-) -> dict:
-    payload = {
-        "telegram_id": telegram_id,
-        "full_name": full_name,
-        "phone_number": phone_number,
-        "services": services or [],
-        "communes": communes or [],
-        "language": language,
-        "id_document_file_id": id_document_file_id,
-        "selfie_file_id": selfie_file_id,
-        "portfolio_file_ids": portfolio_file_ids,
-        "phone_verified": phone_verified,
-    }
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers", json=payload)
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_provider_services_to_backend(telegram_id: int, services: list[str]) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/services", json={"services": services})
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_provider_status_to_backend(telegram_id: int, status: str) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/status", json={"status": status})
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_provider_verified_to_backend(telegram_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/verify")
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_provider_suspended_to_backend(telegram_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/suspend")
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_provider_unsuspended_to_backend(telegram_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/unsuspend")
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_user_language_to_backend(telegram_id: int, language: str) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/users/{telegram_id}/language", json={"language": language})
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_user_name_to_backend(telegram_id: int, first_name: str) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/users/{telegram_id}/name", json={"first_name": first_name})
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_provider_language_to_backend(telegram_id: int, language: str) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.patch(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/language", json={"language": language})
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_provider_ignored_reset_to_backend(telegram_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/ignored/reset")
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_provider_ignored_increment_to_backend(telegram_id: int) -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers/{telegram_id}/ignored")
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_service_request_to_backend(provider_telegram_id: int, service_name: str, description: str = "") -> dict:
-    payload = {
-        "service_name": service_name,
-        "description": description,
-    }
-    async with httpx.AsyncClient(timeout=5.0, headers=actor_headers(provider_telegram_id)) as client:
-        response = await client.post(f"{BACKEND_BASE_URL}/api/bot/service-requests", json=payload)
-        response.raise_for_status()
-        return response.json()
-
-
-async def sync_service_request_status_to_backend(backend_request_id: int, status: str, admin_note: str = "") -> dict:
-    async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-        response = await client.patch(
-            f"{BACKEND_BASE_URL}/api/bot/service-requests/{backend_request_id}/status",
-            json={"status": status, "admin_note": admin_note},
-        )
-        response.raise_for_status()
-        return response.json()
-
-
 # --- Argent : le backend décide, seul (voir CONCEPTION_ARGENT.md) -----------
 # Missions, devis, paiement, démarrage, fin, confirmation, litige et
 # résolution vivent dans le backend, seule mémoire (CONCEPTION_MISSIONS.md) :
@@ -250,18 +104,17 @@ class MoneyRefused(Exception):
         self.details = details or {}
 
 
-async def _money_call(
-    method: str, path: str, payload: dict | None = None, actor: int | None = None, expect: str = "mission"
+async def _call(
+    method: str, path: str, payload: dict | None = None, actor: int | None = None, expect: tuple[str, ...] = ("mission",)
 ) -> dict:
-    """`actor` : identifiant Telegram de la personne qui agit (sauf lecture ou
-    relance d'un paiement, qui n'agissent au nom de personne)."""
+    """Une demande au backend. `actor` : identifiant Telegram de la personne
+    qui agit (sauf lecture ou relance d'un paiement, qui n'agissent au nom de
+    personne). Refus métier = `MoneyRefused(code)` ; injoignable ou réponse
+    inattendue (sans aucune des clés `expect`) = `BackendUnavailable`."""
     headers = actor_headers(actor) if actor is not None else BACKEND_AUTH_HEADERS
     try:
         async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
-            if method == "GET":
-                response = await client.get(f"{BACKEND_BASE_URL}{path}")
-            else:
-                response = await client.post(f"{BACKEND_BASE_URL}{path}", json=payload)
+            response = await client.request(method, f"{BACKEND_BASE_URL}{path}", json=payload)
     except Exception as error:
         raise BackendUnavailable(repr(error)) from error
     try:
@@ -272,13 +125,22 @@ async def _money_call(
         detail = body.get("detail") if isinstance(body, dict) else None
         if isinstance(detail, dict) and isinstance(detail.get("code"), str):
             raise MoneyRefused(detail["code"], detail.get("mission"), detail.get("money"), detail)
-    if response.status_code != 200 or not isinstance(body, dict) or not isinstance(body.get(expect), (dict, list)):
+    if response.status_code != 200 or not isinstance(body, dict) or not any(key in body for key in expect):
         raise BackendUnavailable(f"réponse inattendue ({response.status_code})")
     return body
 
 
-async def create_mission(client_telegram_id: int, data: dict, creation_key: str, alert_provider_telegram_ids: list[int]) -> dict:
-    """Crée la mission dans le backend, qui lui donne son numéro, et enregistre
+async def _money_call(
+    method: str, path: str, payload: dict | None = None, actor: int | None = None, expect: str = "mission"
+) -> dict:
+    body = await _call(method, path, payload, actor, (expect,))
+    if not isinstance(body.get(expect), (dict, list)):
+        raise BackendUnavailable(f"réponse inattendue (pas de {expect})")
+    return body
+
+
+async def create_mission(client_telegram_id: int, data: dict, creation_key: str) -> dict:
+    """Crée la mission dans le backend, qui lui donne son numéro et choisit
     les prestataires prévenus. `creation_key` : la même à chaque nouvel essai
     de la même demande (le backend ne la crée qu'une fois). Renvoie la vue de
     la mission, avec `alerted_provider_telegram_ids` : les seuls à prévenir."""
@@ -293,7 +155,6 @@ async def create_mission(client_telegram_id: int, data: dict, creation_key: str,
         "description": data.get("description", ""),
         "urgent": bool(data.get("urgent", False)),
         "media": media,
-        "alert_provider_telegram_ids": alert_provider_telegram_ids,
         "destination": {
             "latitude": data["destination_latitude"],
             "longitude": data["destination_longitude"],
@@ -577,98 +438,150 @@ async def sync_review_to_backend(mission_id: int, client_telegram_id: int, ratin
         return response.json()
 
 
-async def fetch_backend_profile(telegram_id: int) -> dict | None:
-    try:
-        async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-            response = await client.get(f"{BACKEND_BASE_URL}/api/profile/{telegram_id}")
-            response.raise_for_status()
-            return response.json()
-    except Exception:
-        return None
-
-
-async def fetch_backend_provider_ranking(telegram_ids: list[int]) -> list[int] | None:
-    """Ces prestataires classés par le score backend (vraies notes, missions,
-    taux de succès) ; ceux inconnus du backend sont omis. None si le backend
-    ne répond pas."""
-    try:
-        async with httpx.AsyncClient(timeout=5.0, headers=BACKEND_AUTH_HEADERS) as client:
-            response = await client.post(
-                f"{BACKEND_BASE_URL}/api/bot/providers/rank", json={"telegram_ids": telegram_ids[:100]}
-            )
-            response.raise_for_status()
-            ranked = response.json().get("telegram_ids")
-    except Exception:
-        return None
-    if not isinstance(ranked, list):
-        return None
-    ranking = []
-    for telegram_id in ranked:
-        if isinstance(telegram_id, int) and telegram_id not in ranking:
-            ranking.append(telegram_id)
-    return ranking
-
-
-async def load_profile_from_backend(telegram_id: int, fallback_user: dict | None = None) -> dict:
-    backend_profile = await fetch_backend_profile(telegram_id)
-    if backend_profile:
-        return backend_profile
-    # fallback_user vient souvent de db.py (sqlite3.Row, pas de .get()) ; les
-    # appelants traitent toujours profile_data["client"] comme un dict.
-    client = dict(fallback_user) if fallback_user else {"telegram_id": telegram_id, "first_name": "Client"}
-    # Missions inconnues (None, pas une liste vide) : le backend seul les connaît.
-    return {"client": client, "provider": None, "client_missions": None, "provider_missions": None}
-
-
 async def get_state_language(state) -> str:
     data = await state.get_data()
     return data.get("language", "fr")
 
 
-async def get_user_language(telegram_id: int) -> str:
-    backend_profile = await fetch_backend_profile(telegram_id)
-    client_data = backend_profile.get("client") if backend_profile else None
-    if client_data and client_data.get("language"):
-        return client_data["language"]
-    user = get_user_by_telegram_id(telegram_id)
-    return user["language"] if user else "fr"
+# --- Profils : au nom de la personne qui écrit (routes /api/me/*) ------------
 
 
-async def get_provider_language(telegram_id: int) -> str:
-    backend_profile = await fetch_backend_profile(telegram_id)
-    provider_data = backend_profile.get("provider") if backend_profile else None
-    if provider_data and provider_data.get("language"):
-        return provider_data["language"]
-    provider = get_provider_by_telegram_id(telegram_id)
-    if not provider:
-        return "fr"
+LANGUAGES = ("fr", "ln", "en")
+
+
+def telegram_language(person) -> str:
+    """Langue que Telegram donne pour la personne (`language_code`), réduite
+    aux langues de Nexis ; « fr » sinon. Seulement pour une personne que le
+    backend ne connaît pas encore, ou quand il ne répond pas."""
+    code = (getattr(person, "language_code", None) or "").lower()[:2]
+    return code if code in LANGUAGES else "fr"
+
+
+async def get_language(person) -> str:
+    """Langue dans laquelle écrire à cette personne : celle de son compte
+    Nexis. `person` : l'utilisateur Telegram qui écrit (`from_user`) ou
+    l'identifiant Telegram de l'autre partie d'une mission. Personne inconnue
+    du backend, ou backend injoignable : la langue de son Telegram si on
+    l'a, sinon « fr » ; la demande qui suit, elle, échouera proprement."""
+    telegram_id = person if isinstance(person, int) else person.id
     try:
-        languages = json.loads(provider["languages_spoken"] or '["fr"]')
-    except json.JSONDecodeError:
-        return "fr"
-    return languages[0] if languages else "fr"
+        body = await _call("GET", f"/api/bot/telegram/{int(telegram_id)}/language", expect=("language",))
+    except (BackendUnavailable, MoneyRefused):
+        return telegram_language(person)
+    language = body.get("language")
+    return language if language in LANGUAGES else telegram_language(person)
 
 
-async def persist_client_registration(
-    telegram_id: int,
-    first_name: str | None = None,
-    phone_number: str | None = None,
-    language: str = "fr",
-    phone_verified: bool = False,
+async def fetch_catalogue() -> dict:
+    """Services actifs (noms en trois langues) et communes servies."""
+    return await _call("GET", "/api/services", expect=("services",))
+
+
+async def fetch_me(telegram_id: int) -> dict:
+    """Profil de la personne : `client`, `provider` (ou None), `language`,
+    `profile_type` (client, provider, guest)."""
+    return await _call("GET", "/api/me/profile", actor=telegram_id, expect=("profile_type",))
+
+
+async def my_profile(telegram_id: int) -> dict | None:
+    """Comme `fetch_me`, ou None si le backend ne répond pas (l'écran dit
+    alors « service indisponible », jamais un profil inventé)."""
+    try:
+        return await fetch_me(telegram_id)
+    except (BackendUnavailable, MoneyRefused):
+        return None
+
+
+async def save_client_profile(
+    telegram_id: int, first_name: str, phone_number: str | None, language: str, phone_verified: bool = False
 ) -> dict:
-    local_user = create_user(
-        telegram_id=telegram_id,
-        phone_number=phone_number,
-        first_name=first_name or "",
-        language=language,
+    """Inscription du client. `phone_verified` : seulement pour un numéro
+    reçu par « Partager mon numéro », contact de l'expéditeur."""
+    payload = {"first_name": first_name, "phone_number": phone_number, "language": language, "phone_verified": phone_verified}
+    return await _call("PUT", "/api/me/client-profile", payload, actor=telegram_id, expect=("profile_type",))
+
+
+async def save_provider_profile(telegram_id: int, data: dict) -> dict:
+    """Inscription du prestataire (documents compris). Le backend le met en
+    attente de vérification par l'équipe."""
+    return await _call("PUT", "/api/me/provider-profile", data, actor=telegram_id, expect=("profile_type",))
+
+
+async def set_my_language(telegram_id: int, language: str) -> dict:
+    return await _call("PATCH", "/api/me/language", {"language": language}, actor=telegram_id, expect=("profile_type",))
+
+
+async def set_my_name(telegram_id: int, first_name: str) -> dict:
+    return await _call("PATCH", "/api/me/name", {"first_name": first_name}, actor=telegram_id, expect=("profile_type",))
+
+
+async def set_my_services(telegram_id: int, services: list[str]) -> dict:
+    return await _call(
+        "PUT", "/api/me/provider-profile/services", {"services": services}, actor=telegram_id, expect=("profile_type",)
     )
-    backend_result = await _safe_backend_call(
-        sync_user_to_backend(
-            telegram_id=telegram_id,
-            first_name=first_name,
-            phone_number=phone_number,
-            language=language,
-            phone_verified=phone_verified,
-        )
+
+
+async def set_my_availability(telegram_id: int, status: str) -> dict:
+    """`available` ou `offline` ; refus `provider_not_verified`,
+    `provider_suspended`."""
+    return await _call("PATCH", "/api/me/provider-profile/status", {"status": status}, actor=telegram_id, expect=("profile_type",))
+
+
+async def decline_alert(mission_id: int, provider_telegram_id: int) -> dict:
+    """« Pas disponible » sur une alerte : compté une fois par alerte ;
+    `paused_now` au 3e refus d'affilée."""
+    return await _call("POST", f"/api/bot/missions/{mission_id}/decline", actor=provider_telegram_id, expect=("counted",))
+
+
+async def propose_service(provider_telegram_id: int, service_name: str, description: str) -> dict:
+    body = await _call(
+        "POST",
+        "/api/bot/service-requests",
+        {"service_name": service_name, "description": description},
+        actor=provider_telegram_id,
+        expect=("service_request",),
     )
-    return {"local": local_user, "backend": backend_result}
+    return body["service_request"]
+
+
+async def my_service_requests(provider_telegram_id: int) -> list[dict]:
+    body = await _call("GET", "/api/me/service-requests", actor=provider_telegram_id, expect=("service_requests",))
+    return body["service_requests"]
+
+
+# --- Admin : profils et propositions de service ------------------------------
+# Le backend revérifie que la personne est admin (`not_admin` sinon).
+
+
+async def admin_providers(admin_telegram_id: int, status: str | None = None) -> list[dict]:
+    query = f"?status={status}" if status else ""
+    return (await _call("GET", f"/api/admin/providers{query}", actor=admin_telegram_id, expect=("providers",)))["providers"]
+
+
+async def admin_decide_provider(admin_telegram_id: int, account_id: int, action: str) -> dict:
+    """`action` : verify, reject, suspend ou unsuspend. Rend le profil."""
+    if action not in ("verify", "reject", "suspend", "unsuspend"):
+        raise ValueError(action)
+    body = await _call("POST", f"/api/admin/providers/{int(account_id)}/{action}", actor=admin_telegram_id, expect=("provider",))
+    return body["provider"]
+
+
+async def admin_clients(admin_telegram_id: int) -> list[dict]:
+    return (await _call("GET", "/api/admin/clients", actor=admin_telegram_id, expect=("clients",)))["clients"]
+
+
+async def admin_service_requests(admin_telegram_id: int) -> list[dict]:
+    body = await _call("GET", "/api/admin/service-requests", actor=admin_telegram_id, expect=("service_requests",))
+    return body["service_requests"]
+
+
+async def admin_decide_service_request(admin_telegram_id: int, request_id: int, status: str, admin_note: str) -> dict:
+    """Une seule décision par proposition : `already_reviewed` ensuite."""
+    body = await _call(
+        "PATCH",
+        f"/api/admin/service-requests/{int(request_id)}",
+        {"status": status, "admin_note": admin_note},
+        actor=admin_telegram_id,
+        expect=("service_request",),
+    )
+    return body["service_request"]

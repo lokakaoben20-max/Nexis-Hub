@@ -726,7 +726,7 @@ def test_a_provider_language_is_the_language_of_the_account(tmp_path, monkeypatc
         assert response.json()["provider"]["language"] == "ln"
         assert test_client.get("/api/bot/telegram/1/language").json() == {"status": "ok", "language": "ln"}
         # Personne inconnue : le bot lui écrit en français.
-        assert test_client.get("/api/bot/telegram/999/language").json()["language"] == "fr"
+        assert test_client.get("/api/bot/telegram/999/language").json()["language"] is None
 
 
 # ── Statistiques prestataire et badges (Phase 1) ────────────────

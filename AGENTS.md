@@ -56,32 +56,23 @@ base de travail pour la suite.
   (évite les noms auto-générés type `xxx-xxx-xxx`).
 - Ne pousse jamais directement sur `main`. Travaille sur une branche (`feature/...`), ouvre une PR.
 
-## Couplage à connaître : `db.py` est utilisé par le bot ET la Mini App
+## Profils : le backend est la seule mémoire (depuis l'étape 3 du chantier profils)
 
-Un essai de travail en parallèle (Codex sur le bot, Claude Code sur la Mini App) a été
-tenté le 2026-08-05 puis abandonné le jour même : on revient à la règle d'or ci-dessus,
-**un seul agent à la fois**. Ce qui reste utile de cet essai, c'est le couplage qu'il a
-mis en évidence :
+Le bot Telegram et la Mini App ne lisent ni n'écrivent plus `db.py` : profils,
+langue, disponibilité, services proposés, catalogue (services et communes) et choix
+des prestataires prévenus d'une mission passent tous par le backend, au nom de la
+personne (routes `/api/me/*`). Backend injoignable = « service indisponible », jamais
+une copie locale. Le catalogue est lu une fois au démarrage du bot
+(`telegram_bot/catalogue.py`) : sans lui, le bot refuse de démarrer.
 
-`mini_app/app.py` importe une quinzaine de fonctions de `db.py`
-(`get_user_by_telegram_id`, `create_provider`, `start_mission`, `finish_mission`,
-`update_provider_services`…), exactement comme `main.py`. **Modifier la signature ou le
-comportement d'une fonction de `db.py` pour le bot casse donc la Mini App sans que rien
-ne le signale** — et l'inverse est vrai aussi.
-
-- Avant de toucher à une fonction existante de `db.py`, vérifie ses appelants
-  (`main.py`, `mini_app/app.py` et `telegram_bot/` au minimum).
-- Préfère **ajouter** une fonction plutôt que changer une signature déjà utilisée.
-- La Mini App n'a pas de tests de bout en bout du bot : lance toute la suite
-  (`pytest -q`), pas seulement les tests du module que tu modifies.
-
-Corollaire pour les flows déjà extraits vers `telegram_bot/` (Phase 3) : ils écrivent
-**toujours** dans `db.py` en plus du backend. Tant que `find_matching_providers` et la
-Mini App lisent `db.py`, supprimer une écriture locale sous prétexte que « le backend
-l'a » fait diverger silencieusement ces deux lecteurs.
-
-Ce couplage disparaîtra le jour où la Mini App passera par le backend V5 au lieu de
-`db.py` — chantier non lancé, voir [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md).
+- La reprise des profils de l'ancien fichier SQLite se fait une seule fois, sur le PC,
+  bot et Mini App arrêtés : `python -m outils.reprise_profils_sqlite nexis_hub.db`
+  (rapport), puis la même commande avec `--appliquer`.
+- `db.py`, `backfill_*.py` et `audit_backend_parity.py` ne sont plus appelés par le bot
+  ni la Mini App ; ils disparaissent à l'étape 4 (nettoyage).
+- Les tests du bot tournent contre le vrai backend en mémoire (fixture `live_backend`
+  de `tests/conftest.py`) : lance toute la suite (`pytest -q`), pas seulement les tests
+  du module que tu modifies.
 
 ### Ports (les services peuvent tourner en même temps)
 

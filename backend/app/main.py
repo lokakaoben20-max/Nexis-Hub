@@ -1560,10 +1560,11 @@ def list_my_service_requests(actor: Actor = Depends(current_actor)):
 @router.get("/api/bot/telegram/{telegram_id}/language")
 def telegram_person_language(telegram_id: int):
     """Langue dans laquelle le bot écrit à cette personne (alerte de mission,
-    notification à l'autre partie). Rien d'autre de son profil : « fr » pour
-    une personne inconnue."""
+    notification à l'autre partie). Rien d'autre de son profil. Personne
+    inconnue : `null`, le bot prend alors la langue de son Telegram."""
     with SessionLocal() as db:
-        return {"status": "ok", "language": profils.language_of(db, _telegram_account(db, telegram_id))}
+        account_id = _telegram_account(db, telegram_id)
+        return {"status": "ok", "language": profils.language_of(db, account_id) if account_id is not None else None}
 
 
 @router.get("/api/services")

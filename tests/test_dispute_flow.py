@@ -2,7 +2,7 @@
 
 Le litige s'ouvre dans le registre du backend, qui gèle les fonds ; seule une
 décision admin les libère (remboursement total, paiement du prestataire, ou
-partage du net). db.py n'en garde aucune copie (CONCEPTION_MISSIONS.md).
+partage du net). Profils et missions vivent dans le seul backend.
 """
 
 import asyncio
@@ -18,7 +18,6 @@ os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
 import httpx
 
-import db
 from messages import get_message
 from telegram_bot import admin, payment
 
@@ -103,26 +102,13 @@ class DummyState:
         self._data = {}
 
 
-async def _async_return(value):
-    return value
-
-
-def _languages(monkeypatch, live):
-    for module in (payment, admin):
-        monkeypatch.setattr(module, "get_user_language", lambda tid: _async_return("fr"))
-        monkeypatch.setattr(module, "get_provider_language", lambda tid: _async_return("fr"))
-    # Rôle en base : le bot le demande au backend, qui le revérifie à chaque décision.
+def _paid_mission(live, amount=100.0):
+    """Mission payée en escrow par le vrai parcours : profils, mission et devis
+    accepté dans le backend, paiement Mobile Money par le registre. L'admin a
+    son rôle en base : le backend le revérifie à chaque décision."""
     live.grant_admin(ADMIN_ID)
-
-
-def _paid_mission(tmp_path, monkeypatch, live, amount=100.0):
-    """Mission payée en escrow par le vrai parcours : mission et devis accepté
-    dans le backend, paiement Mobile Money par le registre."""
-    db.DB_PATH = tmp_path / "test_nexis_hub.db"
-    db.init_db()
-    _languages(monkeypatch, live)
-    db.create_user(CLIENT_ID, "+243800000100", "Cliente", language="fr")
-    db.create_provider(PROVIDER_ID, "+243800000200", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+    live.client(CLIENT_ID, first_name="Cliente", phone="+243800000100")
+    live.provider(PROVIDER_ID, "Prestataire", phone="+243800000200")
     mission_id, quote_id = live.accepted_quote(CLIENT_ID, PROVIDER_ID, amount=amount, service="service_plomberie")
     callback = DummyCallback(CLIENT_ID, data=f"qpay_op_{quote_id}_mpesa")
     asyncio.run(payment.paiement_mobile_money_operateur(callback))
@@ -154,8 +140,8 @@ def _go_offline(monkeypatch):
 # --- Ouverture -------------------------------------------------------------------
 
 
-def test_client_signale_probleme_starts_dispute_fsm(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_client_signale_probleme_starts_dispute_fsm(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     state = DummyState()
     callback = DummyCallback(CLIENT_ID, data=f"client_report_issue_{mission_id}")
 
@@ -165,8 +151,8 @@ def test_client_signale_probleme_starts_dispute_fsm(tmp_path, monkeypatch, live_
     assert state._data["dispute_mission_id"] == mission_id
 
 
-def test_dispute_freezes_funds_in_the_registry_and_notifies_the_provider(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_dispute_freezes_funds_in_the_registry_and_notifies_the_provider(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
 
     message, state = _open_dispute(mission_id)
 
@@ -179,8 +165,8 @@ def test_dispute_freezes_funds_in_the_registry_and_notifies_the_provider(tmp_pat
     assert live_backend.disputed_ids() == [mission_id]
 
 
-def test_empty_reason_is_refused_without_touching_the_registry(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_empty_reason_is_refused_without_touching_the_registry(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
 
     message, state = _open_dispute(mission_id, reason="   ")
 
@@ -189,8 +175,8 @@ def test_empty_reason_is_refused_without_touching_the_registry(tmp_path, monkeyp
     assert message.answers == [get_message("dispute_reason_invalid", "fr")]
 
 
-def test_dispute_is_not_opened_while_the_backend_is_down_and_the_reason_is_kept(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_dispute_is_not_opened_while_the_backend_is_down_and_the_reason_is_kept(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _go_offline(monkeypatch)
 
     message, state = _open_dispute(mission_id)
@@ -200,10 +186,10 @@ def test_dispute_is_not_opened_while_the_backend_is_down_and_the_reason_is_kept(
     assert live_backend.mission(mission_id).status == "confirmed"
 
 
-def test_dispute_after_release_explains_the_mission_was_already_paid(tmp_path, monkeypatch, live_backend):
+def test_dispute_after_release_explains_the_mission_was_already_paid(monkeypatch, live_backend):
     """Délai de 48 h dépassé : le backend a libéré seul ; le litige refusé
     l'explique au client."""
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+    mission_id = _paid_mission(live_backend)
     # Arrivée confirmée par le client : la mission démarre.
     asyncio.run(payment.client_confirme_presence(DummyCallback(CLIENT_ID, data=f"presence_yes_{mission_id}")))
     asyncio.run(payment.prestataire_termine_mission(DummyCallback(PROVIDER_ID, data=f"mission_finish_{mission_id}")))
@@ -219,8 +205,8 @@ def test_dispute_after_release_explains_the_mission_was_already_paid(tmp_path, m
     assert live_backend.balance(PROVIDER_ID) == 90.0
 
 
-def test_another_client_cannot_open_the_dispute(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_another_client_cannot_open_the_dispute(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     state = DummyState({"dispute_mission_id": mission_id})
     message = DummyMessage(555, text="Je conteste")
 
@@ -233,8 +219,8 @@ def test_another_client_cannot_open_the_dispute(tmp_path, monkeypatch, live_back
 # --- Décision admin -----------------------------------------------------------------
 
 
-def test_admin_screens_are_closed_when_no_admin_is_configured(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_admin_screens_are_closed_when_no_admin_is_configured(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     live_backend.revoke_admin(ADMIN_ID)
 
@@ -245,8 +231,8 @@ def test_admin_screens_are_closed_when_no_admin_is_configured(tmp_path, monkeypa
     assert live_backend.mission(mission_id).status == "disputed"
 
 
-def test_a_revoked_admin_can_no_longer_decide(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_a_revoked_admin_can_no_longer_decide(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     live_backend.grant_admin(OTHER_ADMIN_ID)
     live_backend.revoke_admin(OTHER_ADMIN_ID)
@@ -261,8 +247,8 @@ def test_a_revoked_admin_can_no_longer_decide(tmp_path, monkeypatch, live_backen
         assert ledger.dispute_decisions(session, mission_id) == []
 
 
-def test_only_the_configured_admin_can_decide(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_only_the_configured_admin_can_decide(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
 
     callback = DummyCallback(CLIENT_ID, data=f"admin_dispute_refund_{mission_id}")
@@ -291,8 +277,8 @@ def _first_decision(live, mission_id):
         return ledger.dispute_decisions(session, mission_id)[0]
 
 
-def test_admin_refund_is_recorded_then_executed_after_three_days(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_admin_refund_is_recorded_then_executed_after_three_days(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     callback = DummyCallback(ADMIN_ID, data=f"admin_dispute_refund_{mission_id}")
 
@@ -319,8 +305,8 @@ def test_admin_refund_is_recorded_then_executed_after_three_days(tmp_path, monke
     assert live_backend.disputed_ids() == []
 
 
-def test_admin_release_pays_the_provider_net_after_three_days(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_admin_release_pays_the_provider_net_after_three_days(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
 
     asyncio.run(admin.admin_litige_payer_prestataire(DummyCallback(ADMIN_ID, data=f"admin_dispute_release_{mission_id}")))
@@ -334,8 +320,8 @@ def test_admin_release_pays_the_provider_net_after_three_days(tmp_path, monkeypa
     assert "90.00" in provider_message
 
 
-def test_admin_split_starts_fsm(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_admin_split_starts_fsm(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     state = DummyState()
     callback = DummyCallback(ADMIN_ID, data=f"admin_dispute_split_{mission_id}")
@@ -346,8 +332,8 @@ def test_admin_split_starts_fsm(tmp_path, monkeypatch, live_backend):
     assert "le client récupère le reste" in callback.message.edited_text
 
 
-def test_admin_split_is_prorata_commission_included(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_admin_split_is_prorata_commission_included(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     message = DummyMessage(ADMIN_ID, text="50")
     state = DummyState({"dispute_split_mission_id": mission_id})
@@ -371,8 +357,8 @@ def test_admin_split_is_prorata_commission_included(tmp_path, monkeypatch, live_
     assert "50.00" in client_message
 
 
-def test_admin_split_rejects_non_numeric_input_without_crashing(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_admin_split_rejects_non_numeric_input_without_crashing(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     message = DummyMessage(ADMIN_ID, text="moitié")
     state = DummyState({"dispute_split_mission_id": mission_id})
@@ -383,8 +369,8 @@ def test_admin_split_rejects_non_numeric_input_without_crashing(tmp_path, monkey
     assert live_backend.mission(mission_id).status == "disputed"
 
 
-def test_admin_split_refuses_an_out_of_range_percentage(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_admin_split_refuses_an_out_of_range_percentage(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     message = DummyMessage(ADMIN_ID, text="150")
     state = DummyState({"dispute_split_mission_id": mission_id})
@@ -395,8 +381,8 @@ def test_admin_split_refuses_an_out_of_range_percentage(tmp_path, monkeypatch, l
     assert live_backend.mission(mission_id).status == "disputed"
 
 
-def test_admin_decision_is_refused_while_the_backend_is_down(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_admin_decision_is_refused_while_the_backend_is_down(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     _go_offline(monkeypatch)
 
@@ -412,8 +398,8 @@ def test_admin_decision_is_refused_while_the_backend_is_down(tmp_path, monkeypat
     assert live_backend.mission(mission_id).status == "disputed"
 
 
-def test_a_dispute_is_decided_once(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_a_dispute_is_decided_once(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     asyncio.run(admin.admin_litige_rembourser(DummyCallback(ADMIN_ID, data=f"admin_dispute_refund_{mission_id}")))
 
@@ -437,8 +423,8 @@ def _contest(telegram_id, role, mission_id, reason="Le travail n'est pas fini"):
     return message, state
 
 
-def test_the_provider_contests_and_the_money_stays_frozen(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_the_provider_contests_and_the_money_stays_frozen(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     asyncio.run(admin.admin_litige_rembourser(DummyCallback(ADMIN_ID, data=f"admin_dispute_refund_{mission_id}")))
     live_backend.sent.clear()
@@ -455,8 +441,8 @@ def test_the_provider_contests_and_the_money_stays_frozen(tmp_path, monkeypatch,
     assert live_backend.balance(CLIENT_ID) == 0.0
 
 
-def test_only_the_parties_can_contest(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_only_the_parties_can_contest(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     asyncio.run(admin.admin_litige_rembourser(DummyCallback(ADMIN_ID, data=f"admin_dispute_refund_{mission_id}")))
 
@@ -466,8 +452,8 @@ def test_only_the_parties_can_contest(tmp_path, monkeypatch, live_backend):
     assert _first_decision(live_backend, mission_id).contested_at is None
 
 
-def test_contest_is_kept_while_the_backend_is_down(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_contest_is_kept_while_the_backend_is_down(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     asyncio.run(admin.admin_litige_rembourser(DummyCallback(ADMIN_ID, data=f"admin_dispute_refund_{mission_id}")))
     _go_offline(monkeypatch)
@@ -478,8 +464,8 @@ def test_contest_is_kept_while_the_backend_is_down(tmp_path, monkeypatch, live_b
     assert not state.cleared
 
 
-def test_the_review_is_done_by_another_admin_and_applied_at_once(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_the_review_is_done_by_another_admin_and_applied_at_once(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     asyncio.run(admin.admin_litige_payer_prestataire(DummyCallback(ADMIN_ID, data=f"admin_dispute_release_{mission_id}")))
     _contest(CLIENT_ID, "c", mission_id)
@@ -500,8 +486,8 @@ def test_the_review_is_done_by_another_admin_and_applied_at_once(tmp_path, monke
     assert {chat_id for chat_id, _ in live_backend.sent} == {CLIENT_ID, PROVIDER_ID}
 
 
-def test_confirming_a_disputed_mission_is_refused(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_confirming_a_disputed_mission_is_refused(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
 
     callback = DummyCallback(CLIENT_ID, data=f"client_confirm_done_{mission_id}")
@@ -527,8 +513,8 @@ def _offer_id(live, mission_id):
         return ledger.settlement_offers(session, mission_id)[-1].id
 
 
-def test_the_client_sees_the_agreement_button_after_reporting_a_problem(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_the_client_sees_the_agreement_button_after_reporting_a_problem(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     message, _ = _open_dispute(mission_id)
     assert message.answers[-1] == get_message("dispute_offer_hint", "fr")
 
@@ -548,8 +534,8 @@ def test_the_client_sees_the_agreement_button_after_reporting_a_problem(tmp_path
         assert ledger.settlement_offers(session, mission_id) == []
 
 
-def test_a_split_agreed_in_the_bot_is_paid_at_once(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_a_split_agreed_in_the_bot_is_paid_at_once(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     live_backend.sent.clear()
 
@@ -570,8 +556,8 @@ def test_a_split_agreed_in_the_bot_is_paid_at_once(tmp_path, monkeypatch, live_b
     assert live_backend.balance(CLIENT_ID) == 50.0
 
 
-def test_only_the_provider_can_accept_and_nothing_moves_while_the_backend_is_down(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_only_the_provider_can_accept_and_nothing_moves_while_the_backend_is_down(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     _propose(mission_id, "release")
     offer_id = _offer_id(live_backend, mission_id)
@@ -589,8 +575,8 @@ def test_only_the_provider_can_accept_and_nothing_moves_while_the_backend_is_dow
     assert live_backend.balance(PROVIDER_ID) == 0.0
 
 
-def test_a_refused_agreement_leaves_the_dispute_to_nexis_hub(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_a_refused_agreement_leaves_the_dispute_to_nexis_hub(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     _propose(mission_id, "refund")
     offer_id = _offer_id(live_backend, mission_id)
@@ -605,8 +591,8 @@ def test_a_refused_agreement_leaves_the_dispute_to_nexis_hub(tmp_path, monkeypat
     assert live_backend.balance(CLIENT_ID) == 0.0
 
 
-def test_a_redo_agreed_in_the_bot_resumes_the_mission(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_a_redo_agreed_in_the_bot_resumes_the_mission(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
     _propose(mission_id, "redo")
     offer_id = _offer_id(live_backend, mission_id)

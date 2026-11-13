@@ -24,7 +24,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
-from db import get_provider_by_telegram_id, get_user_by_telegram_id
 from messages import get_message
 from telegram_bot import backend_client
 from telegram_bot.backend_client import (
@@ -32,10 +31,8 @@ from telegram_bot.backend_client import (
     MoneyRefused,
     _safe_backend_call,
     detect_operator,
-    fetch_backend_profile,
     fetch_wallets,
-    get_provider_language,
-    get_user_language,
+    get_language,
     money_failure_text,
     normalize_phone,
     sync_review_to_backend,
@@ -84,14 +81,14 @@ OLD_QUOTE_PREFIXES = ("client_accept_quote_", "client_reject_quote_", "pay_mobil
 
 @router.callback_query(F.data.startswith(OLD_QUOTE_PREFIXES))
 async def ancien_bouton_devis(callback: CallbackQuery):
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     await callback.answer(get_message("inactive_button", lang), show_alert=True)
 
 
 @router.callback_query(F.data.startswith("quote_accept_"))
 async def client_accepte_devis(callback: CallbackQuery):
     quote_id = int(callback.data.removeprefix("quote_accept_"))
-    client_lang = await get_user_language(callback.from_user.id)
+    client_lang = await get_language(callback.from_user)
     try:
         result = await backend_client.accept_quote(quote_id, callback.from_user.id)
     except (MoneyRefused, BackendUnavailable) as error:
@@ -130,7 +127,7 @@ async def client_accepte_devis(callback: CallbackQuery):
             reply_markup=clavier_paiement(quote_id),
         )
 
-    provider_lang = await get_provider_language(quote["provider_telegram_id"])
+    provider_lang = await get_language(quote["provider_telegram_id"])
     await callback.bot.send_message(
         quote["provider_telegram_id"],
         get_message(
@@ -148,7 +145,7 @@ async def client_accepte_devis(callback: CallbackQuery):
 async def _payable_quote(callback: CallbackQuery, quote_id: int):
     """Devis accepté que ce client peut payer, lu dans le backend, ou None
     (l'alerte est faite). Le backend revérifie tout au paiement."""
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     try:
         result = await backend_client.get_quote(quote_id, callback.from_user.id)
     except (MoneyRefused, BackendUnavailable) as error:
@@ -165,7 +162,7 @@ async def _payable_quote(callback: CallbackQuery, quote_id: int):
 
 
 async def _notify_provider_paid(callback: CallbackQuery, quote, funding: dict, message_key: str):
-    provider_lang = await get_provider_language(quote["provider_telegram_id"])
+    provider_lang = await get_language(quote["provider_telegram_id"])
     await callback.bot.send_message(
         quote["provider_telegram_id"],
         get_message(
@@ -182,9 +179,18 @@ async def _notify_provider_paid(callback: CallbackQuery, quote, funding: dict, m
     )
 
 
-def _client_phone(telegram_id: int):
-    user = get_user_by_telegram_id(telegram_id)
-    return normalize_phone(user["phone_number"] if user else None)
+async def _client_phone(callback: CallbackQuery, lang: str) -> str | None:
+    """Numéro du profil client, lu dans le backend. None après avoir dit
+    pourquoi à la personne (pas de numéro, ou service indisponible)."""
+    try:
+        me = await backend_client.fetch_me(callback.from_user.id)
+    except (BackendUnavailable, MoneyRefused) as error:
+        await callback.answer(money_failure_text(0, error, lang), show_alert=True)
+        return None
+    phone = normalize_phone((me.get("client") or {}).get("phone_number"))
+    if phone is None:
+        await callback.answer(get_message("money_error_invalid_phone", lang), show_alert=True)
+    return phone
 
 
 async def _show_mobile_money_status(callback: CallbackQuery, result: dict, lang: str, notify_provider):
@@ -228,10 +234,9 @@ async def paiement_mobile_money(callback: CallbackQuery):
     quote = await _payable_quote(callback, int(callback.data.removeprefix("qpay_mobile_")))
     if quote is None:
         return
-    lang = await get_user_language(callback.from_user.id)
-    phone = _client_phone(callback.from_user.id)
+    lang = await get_language(callback.from_user)
+    phone = await _client_phone(callback, lang)
     if phone is None:
-        await callback.answer(get_message("money_error_invalid_phone", lang), show_alert=True)
         return
     await callback.message.edit_text(
         get_message("choose_operator", lang, total=float(quote["amount"]), currency=quote["currency"], phone=phone),
@@ -249,10 +254,9 @@ async def paiement_mobile_money_operateur(callback: CallbackQuery):
     quote = await _payable_quote(callback, int(quote_part))
     if quote is None:
         return
-    lang = await get_user_language(callback.from_user.id)
-    phone = _client_phone(callback.from_user.id)
+    lang = await get_language(callback.from_user)
+    phone = await _client_phone(callback, lang)
     if phone is None:
-        await callback.answer(get_message("money_error_invalid_phone", lang), show_alert=True)
         return
     try:
         result = await backend_client.create_payment_intent(
@@ -273,7 +277,7 @@ async def verifier_paiement_mobile_money(callback: CallbackQuery):
     """Relit le statut chez l'agrégateur. Si le paiement vient d'être confirmé,
     c'est le backend qui prévient client et prestataire (un seul envoi)."""
     intent_id = int(callback.data.removeprefix("check_mm_"))
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     try:
         result = await backend_client.refresh_payment_intent(intent_id)
     except (MoneyRefused, BackendUnavailable) as error:
@@ -319,7 +323,7 @@ async def _show_presence_confirmed_to_provider(target, mission_id: int, lang: st
 @router.callback_query(F.data.startswith(ARRIVAL_PREFIXES))
 async def prestataire_arrive(callback: CallbackQuery):
     mission_id = _mission_id_from(callback.data, ARRIVAL_PREFIXES)
-    provider_lang = await get_provider_language(callback.from_user.id)
+    provider_lang = await get_language(callback.from_user)
     try:
         result = await backend_client.declare_arrival(mission_id, callback.from_user.id)
     except (MoneyRefused, BackendUnavailable) as error:
@@ -341,7 +345,7 @@ async def prestataire_arrive(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("presence_code_"))
 async def prestataire_demande_saisie_code(callback: CallbackQuery, state: FSMContext):
     mission_id = _mission_id_from(callback.data, "presence_code_")
-    provider_lang = await get_provider_language(callback.from_user.id)
+    provider_lang = await get_language(callback.from_user)
     await state.set_state(PresenceFlow.code)
     await state.update_data(presence_mission_id=mission_id)
     await callback.message.answer(get_message("presence_ask_code", provider_lang, mission_id=mission_id), parse_mode="HTML")
@@ -351,7 +355,7 @@ async def prestataire_demande_saisie_code(callback: CallbackQuery, state: FSMCon
 @router.message(PresenceFlow.code)
 async def prestataire_tape_code(message: Message, state: FSMContext):
     mission_id = (await state.get_data())["presence_mission_id"]
-    provider_lang = await get_provider_language(message.from_user.id)
+    provider_lang = await get_language(message.from_user)
     code = (message.text or "").strip()
     if len(code) != 4 or not code.isascii() or not code.isdigit():
         # Pas compté comme un essai : seul un code à 4 chiffres est vérifié.
@@ -392,7 +396,7 @@ async def _close_presence_question(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("presence_yes_"))
 async def client_confirme_presence(callback: CallbackQuery):
     mission_id = _mission_id_from(callback.data, "presence_yes_")
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     try:
         await backend_client.confirm_presence(mission_id, callback.from_user.id)
     except (MoneyRefused, BackendUnavailable) as error:
@@ -406,7 +410,7 @@ async def client_confirme_presence(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("presence_notyet_"))
 async def client_presence_pas_encore(callback: CallbackQuery):
     mission_id = _mission_id_from(callback.data, "presence_notyet_")
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     try:
         await backend_client.presence_not_yet(mission_id, callback.from_user.id)
     except (MoneyRefused, BackendUnavailable) as error:
@@ -421,7 +425,7 @@ async def client_presence_pas_lui(callback: CallbackQuery):
     """« Ce n'est pas lui » gèle la mission : on demande de confirmer d'abord
     (un appui par erreur bloquerait un prestataire honnête)."""
     mission_id = _mission_id_from(callback.data, "presence_wrong_")
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     await callback.message.edit_reply_markup(reply_markup=clavier_presence_pas_lui(mission_id, lang))
     await callback.answer(get_message("presence_wrong_confirm_prompt", lang), show_alert=True)
 
@@ -429,7 +433,7 @@ async def client_presence_pas_lui(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("presence_back_"))
 async def client_presence_retour(callback: CallbackQuery):
     mission_id = _mission_id_from(callback.data, "presence_back_")
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     await callback.message.edit_reply_markup(reply_markup=clavier_question_presence(mission_id, lang))
     await callback.answer()
 
@@ -437,7 +441,7 @@ async def client_presence_retour(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("presence_wrongok_"))
 async def client_presence_pas_lui_confirme(callback: CallbackQuery):
     mission_id = _mission_id_from(callback.data, "presence_wrongok_")
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     try:
         await backend_client.report_wrong_person(mission_id, callback.from_user.id)
     except (MoneyRefused, BackendUnavailable) as error:
@@ -451,7 +455,7 @@ async def client_presence_pas_lui_confirme(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("mission_finish_"))
 async def prestataire_termine_mission(callback: CallbackQuery):
     mission_id = int(callback.data.replace("mission_finish_", "", 1))
-    provider_lang = await get_provider_language(callback.from_user.id)
+    provider_lang = await get_language(callback.from_user)
     try:
         result = await backend_client.finish_mission(mission_id, callback.from_user.id)
     except (MoneyRefused, BackendUnavailable) as error:
@@ -464,7 +468,7 @@ async def prestataire_termine_mission(callback: CallbackQuery):
         parse_mode="HTML",
         reply_markup=clavier_prestataire(provider_lang),
     )
-    client_lang = await get_user_language(mission["telegram_id"])
+    client_lang = await get_language(mission["telegram_id"])
     await callback.bot.send_message(
         mission["telegram_id"],
         get_message("mission_finished_client", client_lang, mission_id=mission_id),
@@ -477,7 +481,7 @@ async def prestataire_termine_mission(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("client_confirm_done_"))
 async def client_confirme_mission_terminee(callback: CallbackQuery, state: FSMContext):
     mission_id = int(callback.data.replace("client_confirm_done_", "", 1))
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     try:
         result = await backend_client.confirm_mission(mission_id, callback.from_user.id)
     except (MoneyRefused, BackendUnavailable) as error:
@@ -492,7 +496,7 @@ async def client_confirme_mission_terminee(callback: CallbackQuery, state: FSMCo
         reply_markup=clavier_client(lang),
     )
     if mission["provider_telegram_id"]:
-        provider_lang = await get_provider_language(mission["provider_telegram_id"])
+        provider_lang = await get_language(mission["provider_telegram_id"])
         await callback.bot.send_message(
             mission["provider_telegram_id"],
             get_message(
@@ -506,14 +510,8 @@ async def client_confirme_mission_terminee(callback: CallbackQuery, state: FSMCo
             reply_markup=clavier_prestataire(provider_lang),
         )
 
-    provider = get_provider_by_telegram_id(mission["provider_telegram_id"]) if mission["provider_telegram_id"] else None
-    if provider is not None:
-        # Lecture backend-first pour le nom affiché uniquement — l'existence
-        # du prestataire (déclenche ou non le flow de notation) reste sur la
-        # lecture locale ci-dessus, inchangée.
-        backend_profile = await fetch_backend_profile(mission["provider_telegram_id"])
-        provider_data = (backend_profile or {}).get("provider") if backend_profile else None
-        display_full_name = provider_data.get("full_name") if provider_data else provider["full_name"]
+    if mission["provider_telegram_id"]:
+        display_full_name = html.escape(mission.get("provider_name") or "")
         await state.set_state(RatingFlow.rating)
         await state.update_data(rating_mission_id=mission_id)
         await callback.message.answer(
@@ -531,7 +529,7 @@ async def notation_etoile_recue(callback: CallbackQuery, state: FSMContext):
     mission_id = int(mission_id_str)
     await state.update_data(rating_value=int(rating_str))
     await state.set_state(RatingFlow.comment)
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     await callback.message.edit_text(
         get_message("rate_comment_prompt", lang),
         parse_mode="HTML",
@@ -542,7 +540,7 @@ async def notation_etoile_recue(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(RatingFlow.rating, F.data.startswith("rate_skip_"))
 async def notation_ignoree(callback: CallbackQuery, state: FSMContext):
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     await state.clear()
     await callback.message.edit_text(get_message("rate_skipped", lang), parse_mode="HTML")
     await callback.answer()
@@ -571,7 +569,7 @@ async def notation_commentaire_recu(message: Message, state: FSMContext):
     comment = (message.text or "").strip()
     if comment == "-":
         comment = None
-    lang = await get_user_language(message.from_user.id)
+    lang = await get_language(message.from_user)
     result = await _finalize_review(message.from_user.id, data, comment, state)
     if result is None:
         await message.answer(get_message("rate_save_failed", lang), parse_mode="HTML")
@@ -582,7 +580,7 @@ async def notation_commentaire_recu(message: Message, state: FSMContext):
 @router.callback_query(RatingFlow.comment, F.data.startswith("rate_comment_skip_"))
 async def notation_commentaire_ignore(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     result = await _finalize_review(callback.from_user.id, data, None, state)
     if result is None:
         await callback.answer(get_message("rate_save_failed", lang), show_alert=True)
@@ -596,7 +594,7 @@ async def client_signale_probleme(callback: CallbackQuery, state: FSMContext):
     mission_id = int(callback.data.replace("client_report_issue_", "", 1))
     await state.set_state(DisputeFlow.reason)
     await state.update_data(dispute_mission_id=mission_id)
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     await callback.message.edit_text(
         get_message("dispute_reason_prompt", lang, mission_id=mission_id),
         parse_mode="HTML",
@@ -609,7 +607,7 @@ async def litige_motif_recu(message: Message, state: FSMContext):
     data = await state.get_data()
     mission_id = data["dispute_mission_id"]
     reason = (message.text or "").strip()
-    lang = await get_user_language(message.from_user.id)
+    lang = await get_language(message.from_user)
     if not reason:
         await message.answer(get_message("dispute_reason_invalid", lang), parse_mode="HTML")
         return
@@ -642,7 +640,7 @@ async def litige_motif_recu(message: Message, state: FSMContext):
         get_message("dispute_offer_hint", lang), parse_mode="HTML", reply_markup=clavier_proposer_accord(mission_id, lang)
     )
     if mission["provider_telegram_id"]:
-        provider_lang = await get_provider_language(mission["provider_telegram_id"])
+        provider_lang = await get_language(mission["provider_telegram_id"])
         await message.bot.send_message(
             mission["provider_telegram_id"],
             get_message("dispute_opened_provider_notify", provider_lang, mission_id=mission_id),
@@ -651,7 +649,7 @@ async def litige_motif_recu(message: Message, state: FSMContext):
 
 
 async def _contest_language(telegram_id: int, role: str) -> str:
-    return await (get_provider_language if role == "p" else get_user_language)(telegram_id)
+    return await (get_language if role == "p" else get_language)(telegram_id)
 
 
 @router.callback_query(F.data.startswith("dispute_contest_"))
@@ -715,7 +713,7 @@ def _offer_choice(choice: str) -> tuple[str, int | None] | None:
 @router.callback_query(F.data.startswith("doffer_new_"))
 async def accord_choisir(callback: CallbackQuery):
     mission_id = int(callback.data.removeprefix("doffer_new_"))
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     await callback.message.answer(
         get_message("dispute_offer_choose", lang, mission_id=mission_id),
         parse_mode="HTML",
@@ -728,7 +726,7 @@ async def accord_choisir(callback: CallbackQuery):
 async def accord_type_choisi(callback: CallbackQuery):
     choice, mission_id = callback.data.removeprefix("doffer_kind_").rsplit("_", 1)
     mission_id = int(mission_id)
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     if choice == "split":
         await callback.message.edit_text(
             get_message("dispute_offer_split_choose", lang, mission_id=mission_id),
@@ -752,7 +750,7 @@ async def accord_type_choisi(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("doffer_cancel_"))
 async def accord_annule(callback: CallbackQuery):
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     await callback.message.edit_text(get_message("dispute_offer_cancelled", lang), parse_mode="HTML")
     await callback.answer()
 
@@ -761,7 +759,7 @@ async def accord_annule(callback: CallbackQuery):
 async def accord_envoye(callback: CallbackQuery):
     choice, mission_id = callback.data.removeprefix("doffer_send_").rsplit("_", 1)
     mission_id = int(mission_id)
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     parsed = _offer_choice(choice)
     if parsed is None:
         await callback.answer(get_message("money_error_invalid_offer", lang), show_alert=True)
@@ -787,7 +785,7 @@ async def accord_accepter(callback: CallbackQuery):
     """Accepter est définitif : on demande une confirmation, dans un message
     à part pour garder la proposition et ses boutons."""
     mission_id, offer_id = _offer_ids(callback.data, "doffer_ok_")
-    lang = await get_provider_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     await callback.message.answer(
         get_message("dispute_offer_accept_confirm", lang, mission_id=mission_id),
         parse_mode="HTML",
@@ -805,7 +803,7 @@ async def accord_acceptation_annulee(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("doffer_yes_"))
 async def accord_accepte(callback: CallbackQuery):
     mission_id, offer_id = _offer_ids(callback.data, "doffer_yes_")
-    lang = await get_provider_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     try:
         result = await backend_client.answer_dispute_settlement(mission_id, offer_id, callback.from_user.id, accept=True)
     except (MoneyRefused, BackendUnavailable) as error:
@@ -824,7 +822,7 @@ async def accord_accepte(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("doffer_no_"))
 async def accord_refuse(callback: CallbackQuery):
     mission_id, offer_id = _offer_ids(callback.data, "doffer_no_")
-    lang = await get_provider_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     try:
         await backend_client.answer_dispute_settlement(mission_id, offer_id, callback.from_user.id, accept=False)
     except (MoneyRefused, BackendUnavailable) as error:
@@ -839,7 +837,7 @@ async def paiement_wallet(callback: CallbackQuery):
     quote = await _payable_quote(callback, int(callback.data.removeprefix("qpay_wallet_")))
     if quote is None:
         return
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     try:
         result = await backend_client.fund_mission(quote["mission_id"], quote["id"], callback.from_user.id)
     except (MoneyRefused, BackendUnavailable) as error:
@@ -865,7 +863,7 @@ async def paiement_wallet(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("quote_reject_"))
 async def client_refuse_devis(callback: CallbackQuery):
     quote_id = int(callback.data.removeprefix("quote_reject_"))
-    client_lang = await get_user_language(callback.from_user.id)
+    client_lang = await get_language(callback.from_user)
     try:
         result = await backend_client.reject_quote(quote_id, callback.from_user.id)
     except (MoneyRefused, BackendUnavailable) as error:
@@ -881,7 +879,7 @@ async def client_refuse_devis(callback: CallbackQuery):
         ),
         parse_mode="HTML",
     )
-    provider_lang = await get_provider_language(quote["provider_telegram_id"])
+    provider_lang = await get_language(quote["provider_telegram_id"])
     await callback.bot.send_message(
         quote["provider_telegram_id"],
         get_message("quote_rejected_provider_notify", provider_lang, mission_id=quote["mission_id"]),

@@ -32,6 +32,7 @@ def provider(
     communes=("Gombe",),
     verified: bool = True,
     language: str = "fr",
+    phone_number: str | None = None,
     **stats,
 ):
     """Profil prestataire (vérifié par défaut, donc disponible). `stats` :
@@ -39,7 +40,7 @@ def provider(
     ensure_catalogue(db)
     account_id = ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
     profile, _ = profils.register_provider(
-        db, account_id, full_name=full_name, phone_number=None, services=list(services), communes=list(communes)
+        db, account_id, full_name=full_name, phone_number=phone_number, services=list(services), communes=list(communes)
     )
     profils.set_language(db, account_id, language)
     if verified:

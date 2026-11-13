@@ -24,7 +24,6 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
-import db
 from telegram_bot import admin, backend_client
 
 
@@ -103,277 +102,175 @@ class DummyCallback:
         self.answered = text
 
 
-def _init_db(tmp_path):
-    db.DB_PATH = tmp_path / "test_nexis_hub.db"
-    db.init_db()
+ADMIN = 999
 
 
-def _use_dummy_backend(monkeypatch):
-    DummyAsyncClient.last_request = None
-    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
-    monkeypatch.setattr(backend_client, "fetch_backend_profile", lambda telegram_id: _async_return(None))
+def _propose(live, telegram_id, name="Service exotique"):
+    """Proposition de service faite par le prestataire, enregistrée par le backend."""
+    live.provider(telegram_id, "Proposeur")
+    return asyncio.run(backend_client.propose_service(telegram_id, name, "Description suffisamment longue."))["id"]
 
 
-async def _async_return(value):
-    return value
+def _requests(live):
+    from backend.app.models import ProviderServiceRequest
+
+    with live.database.SessionLocal() as session:
+        return {request.id: request.status for request in session.query(ProviderServiceRequest).all()}
 
 
 # --- accès admin -------------------------------------------------------------
 
 
-def test_non_admin_is_refused_on_any_handler(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=False))
-
-    callback = DummyCallback(telegram_id=999, data="admin_stats")
+def test_non_admin_is_refused_on_any_handler(live_backend):
+    callback = DummyCallback(telegram_id=ADMIN, data="admin_stats")
     asyncio.run(admin.admin_stats(callback))
 
     assert callback.answered == "Accès admin refusé."
     assert callback.message.edited_text is None, "aucune donnée admin ne doit être révélée à un non-admin"
 
 
-# --- suspension / réactivation prestataire -----------------------------------
+def test_admin_stats_come_from_the_backend(live_backend):
+    live_backend.grant_admin(ADMIN)
+    live_backend.client(2100)
+    live_backend.provider(2101)
+    live_backend.provider(2102, verified=False)
+    _propose(live_backend, 2103)
+
+    callback = DummyCallback(telegram_id=ADMIN, data="admin_stats")
+    asyncio.run(admin.admin_stats(callback))
+
+    text = callback.message.edited_text
+    assert "Clients : <b>1</b>" in text
+    assert "Prestataires : <b>3</b> (à vérifier : <b>1</b>)" in text
+    assert "Services proposés en attente : <b>1</b>" in text
 
 
-def test_admin_suspend_provider_notifies_via_callback_bot_and_syncs_backend(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
-    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
-    monkeypatch.setattr(admin, "get_provider_language", lambda telegram_id: _async_return("fr"))
-
-    telegram_id = 2001
-    db.create_provider(telegram_id, "+243800002001", "A Suspendre", ["service_plomberie"], ["Gombe"], language="fr")
-    local_id = db.get_provider_by_telegram_id(telegram_id)["id"]
-
-    bot = DummyBot()
-    callback = DummyCallback(999, data=f"admin_suspend_provider_{local_id}", bot=bot)
-    asyncio.run(admin.admin_suspend_provider(callback))
-
-    provider = db.get_provider_by_telegram_id(telegram_id)
-    assert provider["is_suspended"] == 1
-    assert DummyAsyncClient.last_request["url"].endswith(f"/api/bot/providers/{telegram_id}/suspend"), (
-        "le sync backend doit cibler telegram_id, pas l'id interne SQLite"
-    )
-    assert bot.messages, "le prestataire doit être notifié via callback.bot"
-    assert bot.messages[0][0] == telegram_id
+# --- vérification / suspension / réactivation prestataire --------------------
 
 
-def test_admin_unsuspend_provider_notifies_via_callback_bot_and_syncs_backend(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
-    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
-    monkeypatch.setattr(admin, "get_provider_language", lambda telegram_id: _async_return("fr"))
-
-    telegram_id = 2002
-    db.create_provider(telegram_id, "+243800002002", "A Reactiver", ["service_plomberie"], ["Gombe"], language="fr")
-    local_id = db.get_provider_by_telegram_id(telegram_id)["id"]
-    db.set_provider_suspended(local_id, True)
+def test_admin_provider_actions_by_account(live_backend):
+    live_backend.grant_admin(ADMIN)
+    # Un autre prestataire d'abord : le compte et le telegram_id diffèrent.
+    live_backend.provider(2020, "Autre", verified=False)
+    account_id = live_backend.provider(2021, "Cible", verified=False)
 
     bot = DummyBot()
-    callback = DummyCallback(999, data=f"admin_unsuspend_provider_{local_id}", bot=bot)
-    asyncio.run(admin.admin_unsuspend_provider(callback))
+    asyncio.run(admin.admin_verify_provider(DummyCallback(ADMIN, data=f"admin_verify_provider_acc_{account_id}", bot=bot)))
+    assert live_backend.profile(2021)["provider"]["status"] == "available"
+    assert live_backend.profile(2020)["provider"]["status"] == "pending_verification", "aucun autre prestataire touché"
 
-    provider = db.get_provider_by_telegram_id(telegram_id)
-    assert provider["is_suspended"] == 0
-    assert DummyAsyncClient.last_request["url"].endswith(f"/api/bot/providers/{telegram_id}/unsuspend")
-    assert bot.messages
-    assert bot.messages[0][0] == telegram_id
+    asyncio.run(admin.admin_suspend_provider(DummyCallback(ADMIN, data=f"admin_suspend_provider_acc_{account_id}", bot=bot)))
+    assert live_backend.profile(2021)["provider"]["is_suspended"] is True
+    asyncio.run(admin.admin_unsuspend_provider(DummyCallback(ADMIN, data=f"admin_unsuspend_provider_acc_{account_id}", bot=bot)))
+    assert live_backend.profile(2021)["provider"]["is_suspended"] is False
+    assert [chat_id for chat_id, _ in bot.messages] == [2021, 2021, 2021], "prévenu par callback.bot à chaque décision"
 
 
-def test_admin_suspend_provider_answers_alert_when_provider_missing(tmp_path, monkeypatch):
-    _init_db(tmp_path)
+def test_a_verified_provider_cannot_be_rejected(live_backend):
+    live_backend.grant_admin(ADMIN)
+    account_id = live_backend.provider(2022)
+
+    callback = DummyCallback(ADMIN, data=f"admin_reject_provider_acc_{account_id}")
+    asyncio.run(admin.admin_reject_provider(callback))
+
+    assert callback.answered == admin.PROVIDER_REFUSALS["provider_not_pending"]
+    assert live_backend.profile(2022)["provider"]["status"] == "available"
+
+
+def test_admin_provider_button_with_unknown_or_old_id(live_backend):
+    live_backend.grant_admin(ADMIN)
+
+    unknown = DummyCallback(ADMIN, data="admin_suspend_provider_acc_77777")
+    asyncio.run(admin.admin_suspend_provider(unknown))
+    assert unknown.answered == "Prestataire introuvable."
+
+    for data in ("admin_reject_provider_tg_77777", "admin_reject_provider_12", "admin_reject_provider_acc_abc"):
+        callback = DummyCallback(ADMIN, data=data)
+        asyncio.run(admin.admin_reject_provider(callback))
+        assert callback.answered.startswith("Bouton périmé")
+
+
+def test_admin_provider_decision_says_so_when_the_backend_is_down(monkeypatch):
     monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
 
-    callback = DummyCallback(999, data="admin_suspend_provider_9999")
-    asyncio.run(admin.admin_suspend_provider(callback))
+    callback = DummyCallback(ADMIN, data="admin_verify_provider_acc_1")
+    asyncio.run(admin.admin_verify_provider(callback))
 
-    assert callback.answered == "Prestataire introuvable."
-
-
-# --- services proposés --------------------------------------------------------
-
-
-def test_admin_accept_service_notifies_provider_via_callback_bot(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    telegram_id = 2003
-    db.create_provider(telegram_id, "+243800002003", "Proposeur", ["service_plomberie"], ["Gombe"], language="fr")
-    request_id = db.create_service_request(telegram_id, "Service exotique", "Description suffisamment longue.")
-    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
-
-    bot = DummyBot()
-    callback = DummyCallback(999, data=f"admin_accept_service_{request_id}", bot=bot)
-    asyncio.run(admin.admin_accept_service(callback))
-
-    request = db.get_service_request_by_id(request_id)
-    assert request["status"] == "accepted"
-    assert bot.messages
-    assert bot.messages[0][0] == telegram_id, "la notification doit partir vers le prestataire, pas l'admin"
-
-
-def test_admin_reject_service_notifies_provider_via_callback_bot(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    telegram_id = 2004
-    db.create_provider(telegram_id, "+243800002004", "Proposeur", ["service_plomberie"], ["Gombe"], language="fr")
-    request_id = db.create_service_request(telegram_id, "Service refusé", "Description suffisamment longue.")
-    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
-
-    bot = DummyBot()
-    callback = DummyCallback(999, data=f"admin_reject_service_{request_id}", bot=bot)
-    asyncio.run(admin.admin_reject_service(callback))
-
-    request = db.get_service_request_by_id(request_id)
-    assert request["status"] == "rejected"
-    assert bot.messages
-    assert bot.messages[0][0] == telegram_id
-
-
-def test_admin_service_requests_lists_pending_only(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    telegram_id = 2005
-    db.create_provider(telegram_id, "+243800002005", "Proposeur", ["service_plomberie"], ["Gombe"], language="fr")
-    accepted_id = db.create_service_request(telegram_id, "Déjà traité", "Description suffisamment longue.")
-    db.update_service_request_status(accepted_id, "accepted", "note")
-    pending_id = db.create_service_request(telegram_id, "En attente", "Description suffisamment longue.")
-    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
-
-    callback = DummyCallback(999, data="admin_service_requests")
-    asyncio.run(admin.admin_service_requests(callback))
-
-    listed_ids = {int(text.split("SRV-")[1][:4]) for text in callback.message.answered_texts if "SRV-" in text}
-    assert pending_id in listed_ids
-    assert accepted_id not in listed_ids, "une proposition déjà traitée ne doit plus apparaître dans la file"
-
-
-# --- services proposés : décision unique + recopie backend (étape C) ---------
-
-
-def _pending_request(telegram_id, backend_request_id=None):
-    db.create_provider(telegram_id, f"+2438000{telegram_id}", "Proposeur", ["service_plomberie"], ["Gombe"], language="fr")
-    request_id = db.create_service_request(telegram_id, "Service exotique", "Description suffisamment longue.")
-    if backend_request_id is not None:
-        db.set_service_request_backend_id(request_id, backend_request_id)
-    return request_id
-
-
-def test_admin_cannot_decide_a_service_request_twice(tmp_path, monkeypatch):
-    """Avant l'étape C, un second clic (refuser après accepter) écrasait le
-    statut et renotifiait le prestataire. Désormais : alerte, rien ne change."""
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
-    telegram_id = 2010
-    request_id = _pending_request(telegram_id)
-    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
-
-    bot = DummyBot()
-    asyncio.run(admin.admin_accept_service(DummyCallback(999, data=f"admin_accept_service_{request_id}", bot=bot)))
-    second = DummyCallback(999, data=f"admin_reject_service_{request_id}", bot=bot)
-    asyncio.run(admin.admin_reject_service(second))
-
-    assert db.get_service_request_by_id(request_id)["status"] == "accepted"
-    assert second.answered == "Cette proposition a déjà été traitée."
-    assert second.message.edited_text is None
-    assert len(bot.messages) == 1, "le prestataire ne doit être notifié qu'une fois"
-
-
-def test_admin_decision_is_mirrored_to_backend_when_backend_id_known(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
-    telegram_id = 2011
-    request_id = _pending_request(telegram_id, backend_request_id=55)
-    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
-
-    asyncio.run(admin.admin_reject_service(DummyCallback(999, data=f"admin_reject_service_{request_id}")))
-
-    assert DummyAsyncClient.last_request == {
-        "method": "patch",
-        "url": f"{backend_client.BACKEND_BASE_URL}/api/bot/service-requests/55/status",
-        "json": {"status": "rejected", "admin_note": "Service non pris en charge pour le moment."},
-    }
-
-
-def test_admin_decision_without_backend_id_stays_local(tmp_path, monkeypatch):
-    """Proposition créée via la Mini App (jamais recopiée au backend) : la
-    décision s'applique en local sans appel backend."""
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
-    telegram_id = 2012
-    request_id = _pending_request(telegram_id)
-    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
-
-    asyncio.run(admin.admin_accept_service(DummyCallback(999, data=f"admin_accept_service_{request_id}")))
-
-    assert db.get_service_request_by_id(request_id)["status"] == "accepted"
-    assert DummyAsyncClient.last_request is None
-
-
-def test_backend_request_id_column_added_to_existing_database(tmp_path):
-    db.DB_PATH = tmp_path / "old.db"
-    with db.get_connection() as conn:
-        conn.execute(
-            "CREATE TABLE service_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, provider_id INTEGER NOT NULL,"
-            " service_name TEXT NOT NULL, description TEXT NOT NULL, status TEXT DEFAULT 'pending',"
-            " admin_note TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)"
-        )
-    db.init_db()
-    with db.get_connection() as conn:
-        columns = [row[1] for row in conn.execute("PRAGMA table_info(service_requests)").fetchall()]
-    assert "backend_request_id" in columns
-
-
-# --- boutons admin prestataire : telegram_id plutôt que l'id SQLite (étape D) --
+    assert "indisponible" in callback.answered
+    assert callback.message.edited_text is None
 
 
 def _button_data(markup):
     return [button.callback_data for row in markup.inline_keyboard for button in row]
 
 
-def test_provider_admin_buttons_carry_telegram_id_not_sqlite_id():
-    """Le telegram_id est la clé commune au bot et au backend ; l'id interne
-    SQLite n'existe que dans db.py."""
+def test_provider_admin_buttons_carry_the_nexis_account():
     from telegram_bot import keyboards
 
     assert _button_data(keyboards.clavier_admin_provider(424242)) == [
-        "admin_verify_provider_tg_424242",
-        "admin_reject_provider_tg_424242",
-        "admin_suspend_provider_tg_424242",
-        "admin_unsuspend_provider_tg_424242",
+        "admin_verify_provider_acc_424242",
+        "admin_reject_provider_acc_424242",
+        "admin_suspend_provider_acc_424242",
+        "admin_unsuspend_provider_acc_424242",
         "admin_home",
     ]
     assert _button_data(keyboards.clavier_admin_new_provider(424242)) == [
-        "admin_verify_provider_tg_424242",
-        "admin_reject_provider_tg_424242",
+        "admin_verify_provider_acc_424242",
+        "admin_reject_provider_acc_424242",
     ]
     assert all(len(data.encode()) <= 64 for data in _button_data(keyboards.clavier_admin_provider(10**15)))
 
 
-def test_admin_provider_actions_by_telegram_id(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
-    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
-    # Un autre prestataire d'abord : l'id SQLite (1) et le telegram_id diffèrent.
-    db.create_provider(2020, "+243800002020", "Autre", ["service_plomberie"], ["Gombe"], language="fr")
-    db.create_provider(2021, "+243800002021", "Cible", ["service_plomberie"], ["Gombe"], language="fr")
-    db.update_provider_status(2021, "pending_verification")
+# --- services proposés --------------------------------------------------------
+
+
+def test_admin_accept_service_notifies_provider_via_callback_bot(live_backend):
+    live_backend.grant_admin(ADMIN)
+    request_id = _propose(live_backend, 2003)
 
     bot = DummyBot()
-    asyncio.run(admin.admin_verify_provider(DummyCallback(999, data="admin_verify_provider_tg_2021", bot=bot)))
-    target = db.get_provider_by_telegram_id(2021)
-    assert target["is_verified"] == 1 and target["status"] == "available"
-    assert db.get_provider_by_telegram_id(2020)["is_verified"] == 0, "aucun autre prestataire touché"
-    assert DummyAsyncClient.last_request["url"].endswith("/api/bot/providers/2021/status")
+    asyncio.run(admin.admin_accept_service(DummyCallback(ADMIN, data=f"admin_accept_service_{request_id}", bot=bot)))
 
-    asyncio.run(admin.admin_suspend_provider(DummyCallback(999, data="admin_suspend_provider_tg_2021", bot=bot)))
-    assert db.get_provider_by_telegram_id(2021)["is_suspended"] == 1
-    asyncio.run(admin.admin_unsuspend_provider(DummyCallback(999, data="admin_unsuspend_provider_tg_2021", bot=bot)))
-    assert db.get_provider_by_telegram_id(2021)["is_suspended"] == 0
-    assert [chat_id for chat_id, _ in bot.messages] == [2021, 2021, 2021]
+    assert _requests(live_backend)[request_id] == "accepted"
+    assert [chat_id for chat_id, _ in bot.messages] == [2003], "la notification part vers le prestataire, pas l'admin"
 
 
-def test_admin_provider_button_with_unknown_or_malformed_id(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
+def test_admin_reject_service_notifies_provider_via_callback_bot(live_backend):
+    live_backend.grant_admin(ADMIN)
+    request_id = _propose(live_backend, 2004, "Service refusé")
 
-    for data in ("admin_reject_provider_tg_77777", "admin_reject_provider_tg_abc"):
-        callback = DummyCallback(999, data=data)
-        asyncio.run(admin.admin_reject_provider(callback))
-        assert callback.answered == "Prestataire introuvable."
+    bot = DummyBot()
+    asyncio.run(admin.admin_reject_service(DummyCallback(ADMIN, data=f"admin_reject_service_{request_id}", bot=bot)))
+
+    assert _requests(live_backend)[request_id] == "rejected"
+    assert [chat_id for chat_id, _ in bot.messages] == [2004]
+
+
+def test_admin_service_requests_lists_pending_only(live_backend):
+    live_backend.grant_admin(ADMIN)
+    accepted_id = _propose(live_backend, 2005, "Déjà traité")
+    asyncio.run(admin.admin_accept_service(DummyCallback(ADMIN, data=f"admin_accept_service_{accepted_id}")))
+    pending_id = _propose(live_backend, 2005, "En attente")
+
+    callback = DummyCallback(ADMIN, data="admin_service_requests")
+    asyncio.run(admin.admin_service_requests(callback))
+
+    listed_ids = {int(text.split("SRV-")[1][:4]) for text in callback.message.answered_texts if "SRV-" in text}
+    assert listed_ids == {pending_id}, "une proposition déjà traitée n'apparaît plus dans la file"
+
+
+def test_admin_cannot_decide_a_service_request_twice(live_backend):
+    """Un second clic (refuser après accepter) ne change rien et ne
+    renotifie pas le prestataire."""
+    live_backend.grant_admin(ADMIN)
+    request_id = _propose(live_backend, 2010)
+
+    bot = DummyBot()
+    asyncio.run(admin.admin_accept_service(DummyCallback(ADMIN, data=f"admin_accept_service_{request_id}", bot=bot)))
+    second = DummyCallback(ADMIN, data=f"admin_reject_service_{request_id}", bot=bot)
+    asyncio.run(admin.admin_reject_service(second))
+
+    assert _requests(live_backend)[request_id] == "accepted"
+    assert second.answered == "Cette proposition a déjà été traitée."
+    assert second.message.edited_text is None
+    assert len(bot.messages) == 1, "le prestataire n'est notifié qu'une fois"

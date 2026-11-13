@@ -23,48 +23,15 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from dotenv import load_dotenv
 
-from db import get_active_services
 from messages import get_message
+from telegram_bot import catalogue
 
 load_dotenv()
 MINI_APP_URL = os.getenv("MINI_APP_URL")
 
-FALLBACK_SERVICES = {
-    "service_plomberie": "🔧 Plomberie",
-    "service_electricite": "⚡ Electricité",
-    "service_climatisation": "❄️ Climatisation",
-    "service_informatique": "💻 Informatique",
-    "service_graphisme": "🎨 Graphisme",
-    "service_coiffure": "✂️ Coiffure",
-    "service_nettoyage": "🧹 Nettoyage",
-    "service_jardinage": "🌿 Jardinage",
-    "service_autre": "➕ Autre service",
-}
-
-
-def load_services():
-    try:
-        services = get_active_services("fr", include_icon=True)
-        return services or FALLBACK_SERVICES
-    except Exception:
-        return FALLBACK_SERVICES
-
-
-SERVICES = load_services()
-
-SERVICE_CALLBACKS = list(SERVICES.keys())
-
-COMMUNES = [
-    ("Gombe", "commune_gombe"),
-    ("Kinshasa", "commune_kinshasa"),
-    ("Limete", "commune_limete"),
-    ("Ngaliema", "commune_ngaliema"),
-    ("Lemba", "commune_lemba"),
-    ("Kalamu", "commune_kalamu"),
-    ("Barumbu", "commune_barumbu"),
-    ("Lingwala", "commune_lingwala"),
-    ("Autre commune", "commune_autre"),
-]
+# Catalogue lu dans le backend au démarrage du bot (telegram_bot/catalogue.py).
+SERVICES = catalogue.SERVICES
+COMMUNES = catalogue.COMMUNES
 
 CURRENCIES = {
     "currency_usd": "USD",
@@ -614,12 +581,14 @@ def clavier_admin_menu():
     return builder.as_markup()
 
 
-def clavier_admin_provider(telegram_id: int):
+def clavier_admin_provider(account_id: int):
+    """Boutons de décision sur un prestataire, désigné par son compte Nexis
+    (`acc_<compte>`), le seul identifiant que le backend accepte ici."""
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Vérifier", callback_data=f"admin_verify_provider_tg_{telegram_id}")
-    builder.button(text="❌ Refuser", callback_data=f"admin_reject_provider_tg_{telegram_id}")
-    builder.button(text="⛔ Suspendre", callback_data=f"admin_suspend_provider_tg_{telegram_id}")
-    builder.button(text="♻️ Réactiver", callback_data=f"admin_unsuspend_provider_tg_{telegram_id}")
+    builder.button(text="✅ Vérifier", callback_data=f"admin_verify_provider_acc_{account_id}")
+    builder.button(text="❌ Refuser", callback_data=f"admin_reject_provider_acc_{account_id}")
+    builder.button(text="⛔ Suspendre", callback_data=f"admin_suspend_provider_acc_{account_id}")
+    builder.button(text="♻️ Réactiver", callback_data=f"admin_unsuspend_provider_acc_{account_id}")
     builder.button(text="⬅️ Admin", callback_data="admin_home")
     builder.adjust(1)
     return builder.as_markup()
@@ -635,17 +604,16 @@ def clavier_admin_dispute(mission_id: int):
     return builder.as_markup()
 
 
-def clavier_admin_new_provider(telegram_id: int):
+def clavier_admin_new_provider(account_id: int):
     """Boutons Approuver/Refuser sur la notification admin poussée à l'inscription.
 
-    Mêmes callback_data que clavier_admin_provider (admin_verify_provider_tg_{telegram_id} /
-    admin_reject_provider_tg_{telegram_id}) : un seul chemin de code dans
-    telegram_bot/admin.py, que l'admin approuve depuis ce push ou depuis la liste
-    admin_providers.
+    Mêmes callback_data que clavier_admin_provider : un seul chemin de code
+    dans telegram_bot/admin.py, que l'admin approuve depuis ce message ou
+    depuis la liste des prestataires.
     """
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Approuver", callback_data=f"admin_verify_provider_tg_{telegram_id}")
-    builder.button(text="❌ Refuser", callback_data=f"admin_reject_provider_tg_{telegram_id}")
+    builder.button(text="✅ Approuver", callback_data=f"admin_verify_provider_acc_{account_id}")
+    builder.button(text="❌ Refuser", callback_data=f"admin_reject_provider_acc_{account_id}")
     builder.adjust(2)
     return builder.as_markup()
 

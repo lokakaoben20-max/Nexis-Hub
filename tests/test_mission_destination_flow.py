@@ -7,15 +7,12 @@ fois la mission payée (« 📍 Voir le lieu »)."""
 import asyncio
 from types import SimpleNamespace
 
-import db
 from messages import get_message
 from telegram_bot import keyboards, mission
 from tests.test_mission_flow_extraction import (
     DummyBot,
     DummyCallback,
     DummyState,
-    _async_return,
-    _init_db,
     _mission_request,
 )
 
@@ -129,11 +126,9 @@ def test_the_summary_shows_the_landmark_escaped():
     assert "Repère : <b>Chez &lt;Mama&gt; &amp; fils</b>" in recap
 
 
-def test_a_point_outside_kinshasa_is_asked_again_without_losing_the_request(monkeypatch, tmp_path, live_backend):
-    _init_db(tmp_path)
-    db.create_user(900, "+243800000900", "Cliente", language="fr")
-    db.create_provider(901, "+243800000901", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-    monkeypatch.setattr(mission, "get_provider_language", lambda tid: _async_return("fr"))
+def test_a_point_outside_kinshasa_is_asked_again_without_losing_the_request(live_backend):
+    live_backend.client(900, first_name="Cliente")
+    live_backend.provider(901)
     state = DummyState(data=_mission_request(destination_latitude=0.0, destination_longitude=0.0))
 
     bot = DummyBot()
@@ -167,7 +162,6 @@ def test_a_point_outside_kinshasa_is_asked_again_without_losing_the_request(monk
 def test_the_provider_reads_the_place_only_once_the_mission_is_paid(monkeypatch, live_backend):
     from backend.app import ledger
 
-    monkeypatch.setattr(mission, "get_provider_language", lambda tid: _async_return("fr"))
     mission_id, quote_id = live_backend.accepted_quote(900, 901)
 
     early = DummyCallback(901, data=f"mission_place_{mission_id}", bot=LocationBot())
@@ -194,7 +188,6 @@ def test_the_provider_reads_the_place_only_once_the_mission_is_paid(monkeypatch,
 
 
 def test_the_place_button_says_so_when_the_backend_is_down(monkeypatch):
-    monkeypatch.setattr(mission, "get_provider_language", lambda tid: _async_return("fr"))
     callback = DummyCallback(901, data="mission_place_12", bot=LocationBot())
 
     asyncio.run(mission.voir_lieu_mission(callback))
