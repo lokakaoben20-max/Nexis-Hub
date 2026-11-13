@@ -41,6 +41,9 @@ PROVIDER_ROUTES = {
     ("POST", "/api/bot/missions/{mission_id}/presence/arrived"),
     ("POST", "/api/bot/missions/{mission_id}/presence/code"),
     ("POST", "/api/bot/missions/{mission_id}/finish"),
+    # Réponse du prestataire à un accord amiable.
+    ("POST", "/api/bot/missions/{mission_id}/dispute/offers/{offer_id}/accept"),
+    ("POST", "/api/bot/missions/{mission_id}/dispute/offers/{offer_id}/decline"),
     ("POST", "/api/bot/service-requests"),
     # Profil prestataire au nom de l'acteur et refus d'alerte (profils, étape 2).
     ("PUT", "/api/me/provider-profile"),

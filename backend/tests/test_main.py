@@ -1114,3 +1114,79 @@ def test_a_wallet_is_only_read_by_its_owner(tmp_path, monkeypatch, backend_db_ur
         assert test_client.get("/api/me/wallet", headers=_as(42)).json()["wallet"]["wallet_balance_usd"] == 30.0
         assert test_client.get("/api/me/wallet", headers=_as(7)).json()["wallet"]["wallet_balance_usd"] == 0.0
         assert test_client.get("/api/bot/wallets/42").status_code == 404, "plus de lecture du wallet d'autrui"
+
+
+def test_an_amicable_agreement_is_proposed_by_the_client_and_accepted_by_the_provider(tmp_path, monkeypatch, backend_db_url):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
+    _grant_admin(database_module, 1)
+    from backend.app import tasks
+
+    sent = []
+    monkeypatch.setattr(tasks, "send_telegram_message", lambda telegram_id, text, markup=None: sent.append((telegram_id, markup)) or True)
+
+    with _authed_client(backend_main) as test_client:
+        mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        _fund(test_client, mission_id=mission_id, quote_id=quote_id)
+        test_client.post(f"/api/bot/missions/{mission_id}/dispute", json={"reason": "Travail non fait"}, headers=_as(42))
+        path = f"/api/bot/missions/{mission_id}/dispute/offers"
+
+        by_provider = test_client.post(path, json={"kind": "release"}, headers=_as(7))
+        assert by_provider.status_code == 403
+        assert by_provider.json()["detail"]["code"] == "not_mission_client"
+
+        proposed = test_client.post(path, json={"kind": "split", "provider_percentage": 50}, headers=_as(42))
+        assert proposed.status_code == 200
+        offer = proposed.json()["money"]["dispute_offers"][0]
+        assert (offer["state"], offer["provider_amount"], offer["client_amount"]) == ("pending", "45.00", "50.00")
+        assert [telegram_id for telegram_id, _ in sent] == [7]
+        assert "doffer_ok_" in str(sent[0][1])
+
+        # Rejeu identique : rien de nouveau, personne n'est prévenu deux fois.
+        sent.clear()
+        assert test_client.post(path, json={"kind": "split", "provider_percentage": 50}, headers=_as(42)).status_code == 200
+        assert sent == []
+        other = test_client.post(path, json={"kind": "refund"}, headers=_as(42))
+        assert other.status_code == 409 and other.json()["detail"]["code"] == "offer_pending"
+
+        by_client = test_client.post(f"{path}/{offer['id']}/accept", headers=_as(42))
+        assert by_client.status_code == 403 and by_client.json()["detail"]["code"] == "offer_not_for_you"
+
+        accepted = test_client.post(f"{path}/{offer['id']}/accept", headers=_as(7))
+        assert accepted.status_code == 200
+        assert accepted.json()["mission"]["payment_status"] == "split"
+        assert accepted.json()["money"]["settlement"]["provider_amount"] == "45.00"
+        assert test_client.get("/api/me/wallet", headers=_as(7)).json()["wallet"]["wallet_balance_usd"] == 45.0
+        assert test_client.get("/api/me/wallet", headers=_as(42)).json()["wallet"]["wallet_balance_usd"] == 50.0
+        assert sorted(telegram_id for telegram_id, _ in sent) == [1, 42]
+
+        sent.clear()
+        again = test_client.post(f"{path}/{offer['id']}/accept", headers=_as(7))
+        assert again.status_code == 200 and sent == []
+
+
+def test_a_declined_agreement_keeps_the_dispute_and_whatsapp_cannot_answer_as_provider(tmp_path, monkeypatch, backend_db_url):
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
+    from backend.app import tasks
+
+    sent = []
+    monkeypatch.setattr(tasks, "send_telegram_message", lambda telegram_id, text, markup=None: sent.append((telegram_id, markup)) or True)
+    assert backend_main.is_provider_action(backend_main.accept_dispute_settlement)
+    assert backend_main.is_provider_action(backend_main.decline_dispute_settlement)
+
+    with _authed_client(backend_main) as test_client:
+        mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        _fund(test_client, mission_id=mission_id, quote_id=quote_id)
+        test_client.post(f"/api/bot/missions/{mission_id}/dispute", json={"reason": "Travail non fait"}, headers=_as(42))
+        path = f"/api/bot/missions/{mission_id}/dispute/offers"
+        offer_id = test_client.post(path, json={"kind": "redo"}, headers=_as(42)).json()["money"]["dispute_offers"][0]["id"]
+
+        sent.clear()
+        declined = test_client.post(f"{path}/{offer_id}/decline", headers=_as(7))
+        assert declined.status_code == 200
+        assert declined.json()["mission"]["status"] == "disputed"
+        assert declined.json()["money"]["dispute_offers"][0]["state"] == "declined"
+        assert [telegram_id for telegram_id, _ in sent] == [42]
+        assert "doffer_new_" in str(sent[0][1])
+
+        late = test_client.post(f"{path}/{offer_id}/accept", headers=_as(7))
+        assert late.status_code == 409 and late.json()["detail"]["code"] == "offer_closed"

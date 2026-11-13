@@ -133,6 +133,25 @@ reçoit le devis moins la commission.
     gelé : jamais d'exécution par défaut ;
   - états finaux : `cancelled` / `refunded`, `completed` / `released`, ou
     `completed` / `split`
+- accord amiable (« On s'est arrangés », table `dispute_settlement_offers`),
+  possible tant que Nexis Hub n'a pas décidé :
+  - le client propose : le prestataire repasse (`redo`), le payer en entier
+    (`release`), être remboursé en entier (`refund`) ou partager (`split`,
+    même prorata que l'admin). Les montants sont calculés et figés à la
+    proposition ;
+  - le prestataire accepte ou refuse, dans les 48 h. Une seule proposition en
+    attente à la fois (index unique partiel en base) ; sans réponse, elle
+    expire (tâche `accords-expires`, et refus `offer_expired` dès l'échéance) ;
+  - acceptation de `release`, `refund` ou `split` : règlement immédiat
+    (opération `agreement`) avec les montants figés, sans délai de
+    contestation puisque les deux parties sont d'accord ; mêmes états finaux
+    qu'une décision ;
+  - acceptation de `redo` : la mission revient `in_progress`, l'argent reste
+    en escrow ; quand le prestataire termine à nouveau, le client a de
+    nouveau 48 h ;
+  - une décision de Nexis Hub annule la proposition en attente, dans la même
+    transaction ; ensuite, plus de proposition (`already_decided`). Un accord
+    et une décision simultanés : un seul gagne (verrou de la mission)
 - partage au prorata : pour p % au prestataire, il reçoit son net × p,
   Nexis Hub garde sa commission × p (chacun arrondi au centime), et le client
   récupère le reste du total, frais compris (la somme vaut toujours zéro)
@@ -164,14 +183,18 @@ Remplacent les anciens endpoints de recopie (`/api/bot/payments`,
 - `POST /api/bot/missions/{id}/finish`
 - `POST /api/bot/missions/{id}/confirm`
 - `POST /api/bot/missions/{id}/dispute`
-- `POST /api/bot/missions/{id}/dispute/resolve` (`refund`, `release`, `split` + pourcentage, admin)
+- `POST /api/bot/missions/{id}/dispute/decide` (`refund`, `release`, `split` + pourcentage, admin)
+- `POST /api/bot/missions/{id}/dispute/contest` (client ou prestataire)
+- `POST /api/bot/missions/{id}/dispute/offers` (accord amiable, client)
+- `POST /api/bot/missions/{id}/dispute/offers/{offer_id}/accept` et `/decline` (prestataire, canaux des prestataires seulement)
 - `GET /api/bot/missions/{id}`
 - `GET /api/bot/wallets/{telegram_id}` (résout l'identité Telegram vers le compte Nexis)
 
 Refus métier : HTTP 409 (ou 404 / 403) avec un code stable (`already_paid`,
 `insufficient_balance`, `not_paid`, `invalid_state`, `mission_disputed`,
 `already_settled`, `not_mission_client`, `not_mission_provider`,
-`provider_is_client`, `quote_not_accepted`, `invalid_percentage`…) et l'état courant de la mission.
+`provider_is_client`, `quote_not_accepted`, `invalid_percentage`, `offer_pending`,
+`offer_not_for_you`, `offer_expired`, `offer_closed`, `already_decided`…) et l'état courant de la mission.
 
 ## Bot
 

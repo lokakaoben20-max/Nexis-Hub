@@ -391,7 +391,7 @@ def test_admin_split_refuses_an_out_of_range_percentage(tmp_path, monkeypatch, l
 
     asyncio.run(admin.admin_litige_partage_recu(message, state))
 
-    assert message.answers == [get_message("money_error_generic", "fr")]
+    assert message.answers == [get_message("money_error_invalid_percentage", "fr")]
     assert live_backend.mission(mission_id).status == "disputed"
 
 
@@ -508,4 +508,112 @@ def test_confirming_a_disputed_mission_is_refused(tmp_path, monkeypatch, live_ba
     asyncio.run(payment.client_confirme_mission_terminee(callback, DummyState()))
 
     assert callback.answered == get_message("money_error_mission_disputed", "fr")
+    assert live_backend.balance(PROVIDER_ID) == 0.0
+
+
+# --- Accord amiable -----------------------------------------------------------------
+
+
+def _propose(mission_id, choice):
+    callback = DummyCallback(CLIENT_ID, data=f"doffer_send_{choice}_{mission_id}")
+    asyncio.run(payment.accord_envoye(callback))
+    return callback
+
+
+def _offer_id(live, mission_id):
+    from backend.app import ledger
+
+    with live.database.SessionLocal() as session:
+        return ledger.settlement_offers(session, mission_id)[-1].id
+
+
+def test_the_client_sees_the_agreement_button_after_reporting_a_problem(tmp_path, monkeypatch, live_backend):
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+    message, _ = _open_dispute(mission_id)
+    assert message.answers[-1] == get_message("dispute_offer_hint", "fr")
+
+    choose = DummyCallback(CLIENT_ID, data=f"doffer_kind_split_{mission_id}")
+    asyncio.run(payment.accord_type_choisi(choose))
+    assert choose.message.edited_text == get_message("dispute_offer_split_choose", "fr", mission_id=mission_id)
+    callbacks = [button.callback_data for row in choose.message.edited_markup.inline_keyboard for button in row]
+    assert f"doffer_kind_split50_{mission_id}" in callbacks
+
+    confirm = DummyCallback(CLIENT_ID, data=f"doffer_kind_split50_{mission_id}")
+    asyncio.run(payment.accord_type_choisi(confirm))
+    assert confirm.message.edited_text == get_message("dispute_offer_confirm_split", "fr", mission_id=mission_id, percentage=50)
+    # Rien n'est envoyé au backend avant « Envoyer la proposition ».
+    from backend.app import ledger
+
+    with live_backend.database.SessionLocal() as session:
+        assert ledger.settlement_offers(session, mission_id) == []
+
+
+def test_a_split_agreed_in_the_bot_is_paid_at_once(tmp_path, monkeypatch, live_backend):
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+    _open_dispute(mission_id)
+    live_backend.sent.clear()
+
+    sent = _propose(mission_id, "split50")
+    assert sent.message.edited_text == get_message("dispute_offer_sent", "fr", mission_id=mission_id)
+    # Le backend prévient le prestataire, avec les boutons pour répondre.
+    assert [chat_id for chat_id, _ in live_backend.sent] == [PROVIDER_ID]
+
+    offer_id = _offer_id(live_backend, mission_id)
+    accepted = DummyCallback(PROVIDER_ID, data=f"doffer_yes_{mission_id}_{offer_id}")
+    asyncio.run(payment.accord_accepte(accepted))
+
+    assert accepted.message.edited_text == get_message(
+        "dispute_offer_accepted_provider", "fr", mission_id=mission_id, mine="45.00", currency="USD"
+    )
+    assert live_backend.mission(mission_id).payment_status == "split"
+    assert live_backend.balance(PROVIDER_ID) == 45.0
+    assert live_backend.balance(CLIENT_ID) == 50.0
+
+
+def test_only_the_provider_can_accept_and_nothing_moves_while_the_backend_is_down(tmp_path, monkeypatch, live_backend):
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+    _open_dispute(mission_id)
+    _propose(mission_id, "release")
+    offer_id = _offer_id(live_backend, mission_id)
+
+    intruder = DummyCallback(CLIENT_ID, data=f"doffer_yes_{mission_id}_{offer_id}")
+    asyncio.run(payment.accord_accepte(intruder))
+    assert intruder.answered == get_message("money_error_offer_not_for_you", "fr")
+
+    _go_offline(monkeypatch)
+    offline = DummyCallback(PROVIDER_ID, data=f"doffer_yes_{mission_id}_{offer_id}")
+    asyncio.run(payment.accord_accepte(offline))
+    assert offline.answered == get_message("money_backend_unavailable", "fr")
+    assert offline.message.edited_text is None
+    assert live_backend.mission(mission_id).status == "disputed"
+    assert live_backend.balance(PROVIDER_ID) == 0.0
+
+
+def test_a_refused_agreement_leaves_the_dispute_to_nexis_hub(tmp_path, monkeypatch, live_backend):
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+    _open_dispute(mission_id)
+    _propose(mission_id, "refund")
+    offer_id = _offer_id(live_backend, mission_id)
+    live_backend.sent.clear()
+
+    refused = DummyCallback(PROVIDER_ID, data=f"doffer_no_{mission_id}_{offer_id}")
+    asyncio.run(payment.accord_refuse(refused))
+
+    assert refused.message.edited_text == get_message("dispute_offer_declined_provider", "fr", mission_id=mission_id)
+    assert [chat_id for chat_id, _ in live_backend.sent] == [CLIENT_ID]
+    assert live_backend.mission(mission_id).status == "disputed"
+    assert live_backend.balance(CLIENT_ID) == 0.0
+
+
+def test_a_redo_agreed_in_the_bot_resumes_the_mission(tmp_path, monkeypatch, live_backend):
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+    _open_dispute(mission_id)
+    _propose(mission_id, "redo")
+    offer_id = _offer_id(live_backend, mission_id)
+
+    accepted = DummyCallback(PROVIDER_ID, data=f"doffer_yes_{mission_id}_{offer_id}")
+    asyncio.run(payment.accord_accepte(accepted))
+
+    assert accepted.message.edited_text == get_message("dispute_offer_accepted_provider_redo", "fr", mission_id=mission_id)
+    assert live_backend.mission(mission_id).status == "in_progress"
     assert live_backend.balance(PROVIDER_ID) == 0.0
