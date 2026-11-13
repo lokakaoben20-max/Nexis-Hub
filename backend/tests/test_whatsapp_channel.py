@@ -23,6 +23,11 @@ WHATSAPP_ROUTES = {
     ("POST", "/api/whatsapp/client"),
     ("GET", "/api/me/wallet"),
     ("GET", "/api/me/missions"),
+    # Profil de l'acteur et catalogue (profils, étape 2).
+    ("GET", "/api/services"),
+    ("GET", "/api/me/profile"),
+    ("PATCH", "/api/me/language"),
+    ("PATCH", "/api/me/name"),
 }
 
 # Actions de prestataire : jamais depuis WhatsApp, refus explicite.
@@ -37,6 +42,12 @@ PROVIDER_ROUTES = {
     ("POST", "/api/bot/missions/{mission_id}/presence/code"),
     ("POST", "/api/bot/missions/{mission_id}/finish"),
     ("POST", "/api/bot/service-requests"),
+    # Profil prestataire au nom de l'acteur et refus d'alerte (profils, étape 2).
+    ("PUT", "/api/me/provider-profile"),
+    ("PUT", "/api/me/provider-profile/services"),
+    ("PUT", "/api/me/provider-profile/communes"),
+    ("PATCH", "/api/me/provider-profile/status"),
+    ("POST", "/api/bot/missions/{mission_id}/decline"),
 }
 
 
