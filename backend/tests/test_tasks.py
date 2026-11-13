@@ -52,9 +52,12 @@ def _new_mission(db, crud, client_id, alert=()):
     """Mission créée par le backend (il lui donne son numéro)."""
     from backend.app import ledger
 
+    from backend.tests import profils_de_test
+
+    profils_de_test.alerted(db, alert)
     mission, _ = crud.create_mission(
         db, channel=ledger.TELEGRAM, client_external_id=str(client_id), creation_key=f"demande-{next(_KEYS)}",
-        service="service_menage", commune="Gombe", alert_provider_telegram_ids=list(alert),
+        service="service_plomberie", commune="Gombe",
         destination_latitude=-4.3076, destination_longitude=15.3125, destination_landmark="Portail bleu après la poste",
     )
     return mission
@@ -429,8 +432,9 @@ def test_send_provider_reminders_does_not_duplicate_within_same_tier(monkeypatch
 
         from backend.app import crud
 
-        # Deux prestataires couvrent ce service : seul le prévenu (7) est relancé.
-        profils_de_test.provider(db, 8, "Non prévenu")
+        # Un autre prestataire fait ce service ailleurs : il n'est pas prévenu,
+        # donc jamais relancé ; seul le prévenu (7) l'est.
+        profils_de_test.provider(db, 8, "Non prévenu", communes=("Lemba",))
         mission = _new_mission(db, crud, 1, alert=(7,))
         mission.created_at = datetime.utcnow() - timedelta(minutes=12)
         db.commit()

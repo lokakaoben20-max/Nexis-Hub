@@ -136,7 +136,7 @@ def test_a_minimum_version_set_by_the_server_is_enforced(client, monkeypatch):
 
 
 def test_the_bot_api_does_not_exist_on_the_public_app(client):
-    response = client.post("/api/bot/users", json={"telegram_id": 601}, headers={**VERSION, "X-API-Key": BOT_KEY})
+    response = client.get("/api/me/profile", headers={**VERSION, "X-API-Key": BOT_KEY, "X-Actor-Channel": "telegram", "X-Actor-Id": "601"})
 
     assert response.status_code == 404
 
@@ -333,7 +333,7 @@ def test_a_mission_of_mine_is_read_without_telegram_identifiers(client, env, ale
     with database.SessionLocal() as session:
         mission, _ = crud.create_mission(
             session, channel="telegram", client_external_id="601", creation_key="k-app-1",
-            service="plomberie", commune="Gombe", description="Fuite sous l'évier",
+            service="service_plomberie", commune="Gombe", description="Fuite sous l'évier",
             destination_latitude=-4.307612, destination_longitude=15.312512,
             destination_landmark="Portail bleu après la poste",
         )
@@ -355,7 +355,7 @@ def test_another_persons_mission_does_not_exist_for_me(client, env, alerts):
     with database.SessionLocal() as session:
         mission, _ = crud.create_mission(
             session, channel="telegram", client_external_id="601", creation_key="k-app-2",
-            service="plomberie", commune="Gombe",
+            service="service_plomberie", commune="Gombe",
             destination_latitude=-4.307612, destination_longitude=15.312512,
             destination_landmark="Portail bleu après la poste",
         )

@@ -50,6 +50,24 @@ def provider(
     return profile
 
 
+def alerted(db, telegram_ids, service: str = "service_plomberie", commune: str = "Gombe") -> None:
+    """Ces personnes sont des prestataires vérifiés et disponibles pour ce
+    service dans cette commune : le backend les choisira à la création d'une
+    mission. Un profil existant garde ses services et communes, complétés."""
+    ensure_catalogue(db)
+    for telegram_id in telegram_ids:
+        existing = provider_of(db, telegram_id)
+        if existing is None:
+            provider(db, telegram_id, f"Prestataire {telegram_id}", services=(service,), communes=(commune,))
+            continue
+        account_id = existing.account_id
+        services = list(dict.fromkeys([*profils.provider_services(db, account_id), service]))
+        communes = list(dict.fromkeys([*profils.provider_communes(db, account_id), commune]))
+        profils.set_provider_services(db, account_id, services)
+        profils.set_provider_communes(db, account_id, communes)
+        db.commit()
+
+
 def admin(db, telegram_id: int):
     from backend.app import admins
 

@@ -21,7 +21,6 @@ def _create(test_client, client=CLIENT, key="demande-1", **fields):
         "description": "Fuite sous l'évier",
         "urgent": False,
         "media": [{"kind": "photo", "id": "photo-a"}, {"kind": "voice", "id": "voix-a"}],
-        "alert_provider_telegram_ids": [PROVIDER],
         "destination": {"latitude": -4.3076, "longitude": 15.3125, "landmark": "Portail bleu après la poste"},
         **fields,
     }
@@ -29,15 +28,21 @@ def _create(test_client, client=CLIENT, key="demande-1", **fields):
 
 
 def _backend(monkeypatch, backend_db_url):
+    """Backend jetable avec un admin et un plombier vérifié à Gombe
+    (`PROVIDER`), que le backend prévient donc des missions de plomberie."""
     backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     _grant_admin(database_module, ADMIN)
-    return _authed_client(backend_main), database_module
+    test_client = _authed_client(backend_main)
+    _register_provider(test_client, PROVIDER, ["service_plomberie"], ["Gombe"])
+    return test_client, database_module
 
 
 def test_the_backend_numbers_the_mission_and_records_media_and_alerts(tmp_path, monkeypatch, backend_db_url):
     test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
-        first = _create(test_client, alert_provider_telegram_ids=[PROVIDER, CLIENT, PROVIDER])
+        # Le client est aussi plombier à Gombe : jamais prévenu de sa propre mission.
+        _register_provider(test_client, CLIENT, ["service_plomberie"], ["Gombe"])
+        first = _create(test_client)
         second = _create(test_client, key="demande-2")
 
     assert first.status_code == 200
@@ -52,8 +57,6 @@ def test_the_backend_numbers_the_mission_and_records_media_and_alerts(tmp_path, 
         {"channel": "telegram", "kind": "photo", "id": "photo-a"},
         {"channel": "telegram", "kind": "voice", "id": "voix-a"},
     ]
-    # Le client n'est jamais prévenu de sa propre mission ; un doublon ne
-    # crée pas deux alertes.
     assert body["alerted_provider_telegram_ids"] == [PROVIDER]
 
     from backend.app import ledger
@@ -62,6 +65,51 @@ def test_the_backend_numbers_the_mission_and_records_media_and_alerts(tmp_path, 
     with database_module.SessionLocal() as db:
         stored = db.get(BotMission, mission["mission_id"])
         assert stored.client_account_id == ledger.account_id_for(db, ledger.TELEGRAM, CLIENT)
+
+
+def test_the_backend_alerts_the_three_best_providers_who_can_do_the_job(tmp_path, monkeypatch, backend_db_url):
+    """Le canal ne propose personne : le backend prévient au plus trois
+    prestataires vérifiés, disponibles, non suspendus, qui font ce service
+    dans cette commune, du mieux classé au moins bien classé."""
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
+    with test_client:
+        for telegram_id in (11, 12, 13):
+            _register_provider(test_client, telegram_id, ["service_plomberie"], ["Gombe"])
+        _register_provider(test_client, 20, ["service_plomberie"], ["Gombe"], verified=False)
+        _register_provider(test_client, 21, ["service_plomberie"], ["Lemba"])
+        _register_provider(test_client, 22, ["service_nettoyage"], ["Gombe"])
+        _register_provider(test_client, 23, ["service_plomberie"], ["Gombe"])
+        assert test_client.patch("/api/me/provider-profile/status", json={"status": "offline"}, headers=_as(23)).status_code == 200
+        _register_provider(test_client, 24, ["service_plomberie"], ["Gombe"])
+        suspended = test_client.get("/api/me/profile", headers=_as(24)).json()["account_id"]
+        assert test_client.post(f"/api/admin/providers/{suspended}/suspend", headers=_as(ADMIN)).status_code == 200
+
+        from backend.tests.profils_de_test import provider_of
+
+        with database_module.SessionLocal() as db:
+            provider_of(db, 13).badge = "partner"
+            provider_of(db, 12).average_rating = 2.0
+            db.commit()
+
+        body = _create(test_client).json()
+        plumbing_elsewhere = _create(test_client, key="demande-2", commune="Lemba").json()
+        nobody = _create(test_client, key="demande-3", service="service_jardinage").json()
+        unknown = _create(test_client, key="demande-4", service="service_inconnu")
+        unserved = _create(test_client, key="demande-5", commune="Paris")
+
+    # 13 (badge partenaire, 30 points) puis 12 (note 2, 25 points) puis le plus ancien inscrit des
+    # autres à égalité (PROVIDER) ; 11 n'est pas prévenu (trois au plus).
+    assert body["alerted_provider_telegram_ids"] == [13, 12, PROVIDER]
+    assert plumbing_elsewhere["alerted_provider_telegram_ids"] == [21]
+    assert nobody["alerted_provider_telegram_ids"] == []
+    # Service ou commune hors catalogue : refus, rien n'est créé.
+    assert unknown.json()["detail"] == {"code": "invalid_mission"}
+    assert unserved.json()["detail"] == {"code": "invalid_mission"}
+
+    from backend.app.models import BotMission
+
+    with database_module.SessionLocal() as db:
+        assert db.query(BotMission).count() == 3
 
 
 def test_a_replayed_creation_returns_the_same_mission_and_a_different_one_is_refused(tmp_path, monkeypatch, backend_db_url):
@@ -212,7 +260,14 @@ def test_admin_lists_and_counts_missions(tmp_path, monkeypatch, backend_db_url):
         assert [mission["mission_id"] for mission in recent] == [second, first]
         disputed = test_client.get("/api/admin/missions?status=disputed", headers=_as(ADMIN)).json()["missions"]
         assert [mission["mission_id"] for mission in disputed] == [first]
-        assert test_client.get("/api/admin/stats", headers=_as(ADMIN)).json()["stats"] == {"missions": 2, "disputes": 1}
+        assert test_client.get("/api/admin/stats", headers=_as(ADMIN)).json()["stats"] == {
+            "missions": 2,
+            "disputes": 1,
+            "users": 0,
+            "providers": 1,
+            "providers_pending": 0,
+            "pending_services": 0,
+        }
 
 
 def test_api_key_is_still_required(tmp_path, monkeypatch, backend_db_url):

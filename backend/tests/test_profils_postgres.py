@@ -288,7 +288,7 @@ def test_one_alert_declined_simultaneously_counts_once(sessions):
         db.commit()
         mission, _ = crud.create_mission(
             db, channel=ledger.TELEGRAM, client_external_id="42", creation_key="k1", service="service_plomberie",
-            commune="Gombe", alert_provider_telegram_ids=[7], destination_latitude=-4.3076,
+            commune="Gombe", destination_latitude=-4.3076,
             destination_longitude=15.3125, destination_landmark="Portail bleu après la poste",
         )
         mission_id = mission.mission_id
@@ -329,27 +329,46 @@ def test_simultaneous_registrations_create_one_profile(sessions):
 
 
 def test_routes_of_the_bot_on_postgres(engine, monkeypatch):
-    """Les routes du bot d'aujourd'hui sur la base migrée : inscription,
-    validation, matching, statut refusé."""
+    """Les routes du bot sur la base migrée : inscription au nom de l'acteur,
+    validation par un admin, prestataires prévenus choisis par le backend,
+    service hors catalogue refusé."""
     alembic("upgrade", "head")
     importlib.import_module("backend.app.main")
     monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TELEGRAM_KEY)
     database = importlib.reload(importlib.import_module("backend.app.database"))
     importlib.reload(importlib.import_module("backend.app.models"))
     main = importlib.reload(importlib.import_module("backend.app.main"))
+    from backend.app import admins
+
+    with database.SessionLocal() as db:
+        admins.grant(db, 999, "Admin de test")
+
+    def actor(telegram_id):
+        return {"X-Actor-Channel": "telegram", "X-Actor-Id": str(telegram_id)}
+
+    def alerted(key):
+        mission = {
+            "creation_key": key,
+            "service": "service_plomberie",
+            "commune": "Gombe",
+            "destination": {"latitude": -4.3076, "longitude": 15.3125, "landmark": "Portail bleu après la poste"},
+        }
+        return client.post("/api/bot/missions", json=mission, headers=actor(42)).json()["alerted_provider_telegram_ids"]
+
     try:
         with TestClient(main.app) as client:
             client.headers["X-API-Key"] = TELEGRAM_KEY
-            body = {"telegram_id": 7, "full_name": "Jean", "services": ["service_plomberie"], "communes": ["Gombe"]}
-            assert client.post("/api/bot/providers", json=body).json()["provider"]["status"] == "pending_verification"
-            refused = client.patch("/api/bot/providers/7/status", json={"status": "available"})
+            body = {"full_name": "Jean", "phone_number": "+243810000007", "services": ["service_plomberie"], "communes": ["Gombe"]}
+            registered = client.put("/api/me/provider-profile", json=body, headers=actor(7)).json()
+            assert registered["provider"]["status"] == "pending_verification"
+            refused = client.patch("/api/me/provider-profile/status", json={"status": "available"}, headers=actor(7))
             assert (refused.status_code, refused.json()["detail"]["code"]) == (409, "provider_not_verified")
-            matching = {"service": "service_plomberie", "commune": "Gombe"}
-            assert client.get("/api/bot/providers/matching", params=matching).json()["providers"] == []
+            assert alerted("k1") == []
 
-            assert client.post("/api/bot/providers/7/verify").json()["provider"]["status"] == "available"
-            assert [p["telegram_id"] for p in client.get("/api/bot/providers/matching", params=matching).json()["providers"]] == [7]
-            unknown = client.post("/api/bot/providers", json={**body, "services": ["service_peinture"]})
+            verified = client.post(f"/api/admin/providers/{registered['account_id']}/verify", headers=actor(999))
+            assert verified.json()["provider"]["status"] == "available"
+            assert alerted("k2") == [7]
+            unknown = client.put("/api/me/provider-profile", json={**body, "services": ["service_peinture"]}, headers=actor(7))
             assert (unknown.status_code, unknown.json()["detail"]["code"]) == (400, "unknown_service")
     finally:
         database.engine.dispose()
