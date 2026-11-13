@@ -5,7 +5,7 @@ cette alerte. Posé une seule fois, il rend le refus idempotent : un même
 appui rejoué ne compte jamais deux refus.
 
 Revision ID: a3b4c5d6e7f8
-Revises: f2a3b4c5d6e7
+Revises: f1a2b3c4d5e6
 Create Date: 2026-11-13
 """
 from typing import Sequence, Union
@@ -15,7 +15,7 @@ from alembic import op
 
 
 revision: str = "a3b4c5d6e7f8"
-down_revision: Union[str, Sequence[str], None] = "f2a3b4c5d6e7"
+down_revision: Union[str, Sequence[str], None] = "f1a2b3c4d5e6"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
