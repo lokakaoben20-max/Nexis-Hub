@@ -5,9 +5,9 @@ import logging
 import os
 from datetime import datetime, timedelta
 
-from backend.app import app_sessions, crud, ledger, mobile_money, reconciliation
+from backend.app import app_sessions, crud, ledger, mobile_money, profils, reconciliation
 from backend.app.database import SessionLocal
-from backend.app.models import BotMission, BotProvider, BotUser, Device, NexisAccount, PaymentIntent, Payout
+from backend.app.models import BotMission, Device, NexisAccount, PaymentIntent, Payout
 from backend.app.notify import send_telegram_message
 from messages import get_message
 
@@ -48,21 +48,25 @@ def release_auto_confirmed_missions() -> int:
                 continue
             released += 1
 
-            user = db.get(BotUser, mission.telegram_id)
-            if user is not None:
+            client_account_id = mission.client_account_id or ledger.account_id_for(db, ledger.TELEGRAM, mission.telegram_id)
+            if profils.client_profile(db, client_account_id) is not None:
                 send_telegram_message(
-                    user.telegram_id,
-                    get_message("payment_released_client", user.language, mission_id=mission.mission_id),
+                    mission.telegram_id,
+                    get_message(
+                        "payment_released_client", profils.language_of(db, client_account_id), mission_id=mission.mission_id
+                    ),
                 )
 
             if mission.provider_telegram_id is not None:
-                provider = db.get(BotProvider, mission.provider_telegram_id)
-                if provider is not None:
+                provider_account_id = mission.provider_account_id or ledger.account_id_for(
+                    db, ledger.TELEGRAM, mission.provider_telegram_id
+                )
+                if profils.provider_profile(db, provider_account_id) is not None:
                     send_telegram_message(
-                        provider.telegram_id,
+                        mission.provider_telegram_id,
                         get_message(
                             "payment_released_provider",
-                            provider.language,
+                            profils.language_of(db, provider_account_id),
                             mission_id=mission.mission_id,
                             net=f"{mission.net_provider:.2f}",
                             currency=mission.currency,
@@ -93,12 +97,11 @@ def send_provider_reminders() -> int:
                     provider_telegram_id = ledger.telegram_id_of(db, account_id)
                     if provider_telegram_id is None:
                         continue
-                    provider = db.get(BotProvider, provider_telegram_id)
                     send_telegram_message(
                         provider_telegram_id,
                         get_message(
                             message_key,
-                            provider.language if provider is not None else "fr",
+                            profils.language_of(db, account_id),
                             mission_id=mission.mission_id,
                             service=mission.service,
                             commune=mission.commune,

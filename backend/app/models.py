@@ -8,44 +8,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from backend.app.database import Base
 
 
-class BotUser(Base):
-    __tablename__ = "bot_users"
-
-    telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
-    first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    phone_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    language: Mapped[str] = mapped_column(String(5), default="fr")
-    total_missions: Mapped[int] = mapped_column(Integer, default=0)
-
-
-class BotProvider(Base):
-    __tablename__ = "bot_providers"
-
-    telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
-    full_name: Mapped[str] = mapped_column(String(255))
-    phone_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    services: Mapped[list] = mapped_column(JSON, default=list)
-    communes: Mapped[list] = mapped_column(JSON, default=list)
-    language: Mapped[str] = mapped_column(String(5), default="fr")
-    status: Mapped[str] = mapped_column(String(20), default="available")
-    module: Mapped[str] = mapped_column(String(1), default="A")
-    badge: Mapped[str] = mapped_column(String(20), default="pending")
-    rating: Mapped[float] = mapped_column(Float, default=0.0)
-    total_missions: Mapped[int] = mapped_column(Integer, default=0)
-    success_rate: Mapped[float] = mapped_column(Float, default=0.0)
-    average_rating: Mapped[float] = mapped_column(Float, default=0.0)
-    total_reviews: Mapped[int] = mapped_column(Integer, default=0)
-    is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    is_suspended: Mapped[bool] = mapped_column(Boolean, default=False)
-    consecutive_ignored: Mapped[int] = mapped_column(Integer, default=0)
-    # Vérification obligatoire à l'inscription (voir V5_MIGRATION_PLAN.md) : file_id
-    # Telegram, pas d'URL — aucun hébergement de fichier nécessaire.
-    id_document_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    selfie_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    portfolio_file_ids: Mapped[list] = mapped_column(JSON, default=list)
-
-
 class BotMission(Base):
     __tablename__ = "bot_missions"
     __table_args__ = (
@@ -183,21 +145,6 @@ class BotReview(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
-class BotServiceRequest(Base):
-    __tablename__ = "bot_service_requests"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    provider_telegram_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("bot_providers.telegram_id"), index=True)
-    provider_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
-    service_name: Mapped[str] = mapped_column(String(255))
-    description: Mapped[str] = mapped_column(Text, default="")
-    # Index créé dès la migration c1a9f0e2b345 ; le modèle l'avait oublié.
-    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
-    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
-
 class NexisAccount(Base):
     """Une personne pour Nexis Hub, indépendamment du canal (architecture du
     canal WhatsApp : table `accounts`). Elle peut être cliente, prestataire,
@@ -224,10 +171,8 @@ class NexisAccount(Base):
     # ces colonnes et participe à l'unicité.
     phone_e164: Mapped[str | None] = mapped_column(String(32), nullable=True)
     phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Seule langue de la personne, quel que soit son rôle ou son canal.
     language: Mapped[str] = mapped_column(String(5), default="fr")
-    # Nom choisi par la personne sur un canal sans profil historique
-    # (WhatsApp). Les comptes Telegram gardent le leur dans `bot_users`.
-    display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -536,3 +481,168 @@ class AuthEvent(Base):
     result: Mapped[str] = mapped_column(String(20))
     ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+# --- Profils (chantier « profils au backend ») ----------------------------
+#
+# Le backend est la seule mémoire des profils : un profil client et un profil
+# prestataire au plus par compte Nexis, quel que soit le canal. L'identifiant
+# Telegram ou WhatsApp ne vit que dans `channel_identities`. Les règles (qui
+# change quoi, qui est éligible) sont dans `backend/app/profils.py` ; les
+# contraintes ci-dessous rendent impossibles, dans la base elle-même, les états
+# que ces règles interdisent.
+
+SERVICE_MODULES = ("A", "B")
+PROVIDER_STATUSES = ("pending_verification", "rejected", "available", "offline", "paused")
+# Statuts d'un prestataire vérifié, et d'eux seuls : un prestataire non
+# vérifié ne peut jamais être disponible, donc jamais recevoir une mission.
+PROVIDER_VERIFIED_STATUSES = ("available", "offline", "paused")
+PROVIDER_BADGES = ("pending", "verified", "premium", "expert", "partner")
+SERVICE_REQUEST_STATUSES = ("pending", "accepted", "rejected")
+
+
+def _sql_in(values) -> str:
+    return "(" + ", ".join(f"'{value}'" for value in values) + ")"
+
+
+class Service(Base):
+    """Catalogue des services. Rempli et modifié par migration seulement :
+    les frais de visite (module B) sont une règle d'argent, à un seul endroit."""
+
+    __tablename__ = "services"
+    __table_args__ = (
+        CheckConstraint(f"module IN {_sql_in(SERVICE_MODULES)}", name="ck_services_module"),
+        # Module B = visite payante avant devis ; module A = ni visite ni frais.
+        CheckConstraint(
+            "(module = 'B' AND requires_inspection AND visit_fee_usd > 0)"
+            " OR (module = 'A' AND NOT requires_inspection AND visit_fee_usd = 0)",
+            name="ck_services_visit_fee",
+        ),
+        UniqueConstraint("position", name="uq_services_position"),
+    )
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name_fr: Mapped[str] = mapped_column(String(100))
+    name_ln: Mapped[str] = mapped_column(String(100))
+    name_en: Mapped[str] = mapped_column(String(100))
+    category: Mapped[str] = mapped_column(String(50))
+    icon_emoji: Mapped[str] = mapped_column(String(16))
+    module: Mapped[str] = mapped_column(String(1))
+    requires_inspection: Mapped[bool] = mapped_column(Boolean)
+    visit_fee_usd: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    position: Mapped[int] = mapped_column(Integer)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Commune(Base):
+    """Communes servies, telles que les canaux les proposent. Remplies par
+    migration seulement."""
+
+    __tablename__ = "communes"
+    __table_args__ = (UniqueConstraint("position", name="uq_communes_position"),)
+
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    position: Mapped[int] = mapped_column(Integer)
+
+
+class ClientProfile(Base):
+    """Profil client d'un compte Nexis (Telegram, WhatsApp ou l'app)."""
+
+    __tablename__ = "client_profiles"
+
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), primary_key=True, autoincrement=False)
+    first_name: Mapped[str] = mapped_column(String(255))
+    # Numéro donné par la personne, pour la contacter. Seul le numéro prouvé
+    # du compte (`accounts.phone_e164`) sert à l'identifier.
+    phone_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ProviderProfile(Base):
+    """Profil prestataire d'un compte Nexis. Services et communes : tables
+    `provider_services` et `provider_communes`."""
+
+    __tablename__ = "provider_profiles"
+    __table_args__ = (
+        CheckConstraint(f"status IN {_sql_in(PROVIDER_STATUSES)}", name="ck_provider_profiles_status"),
+        # Vérifié <=> statut de prestataire vérifié. Un prestataire en attente
+        # ou refusé ne peut pas être disponible, même par erreur de code.
+        CheckConstraint(
+            f"(verified_at IS NOT NULL AND status IN {_sql_in(PROVIDER_VERIFIED_STATUSES)})"
+            f" OR (verified_at IS NULL AND status NOT IN {_sql_in(PROVIDER_VERIFIED_STATUSES)})",
+            name="ck_provider_profiles_verified_status",
+        ),
+        CheckConstraint(
+            "(is_suspended AND suspended_at IS NOT NULL) OR (NOT is_suspended AND suspended_at IS NULL)",
+            name="ck_provider_profiles_suspension",
+        ),
+        CheckConstraint(f"badge IN {_sql_in(PROVIDER_BADGES)}", name="ck_provider_profiles_badge"),
+        CheckConstraint("consecutive_ignored >= 0", name="ck_provider_profiles_ignored"),
+        Index("ix_provider_profiles_status", "status"),
+    )
+
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), primary_key=True, autoincrement=False)
+    full_name: Mapped[str] = mapped_column(String(255))
+    phone_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="pending_verification")
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Suspension par l'admin : indépendante du statut, qui est retrouvé tel
+    # quel au rétablissement.
+    is_suspended: Mapped[bool] = mapped_column(Boolean, default=False)
+    suspended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    badge: Mapped[str] = mapped_column(String(20), default="pending")
+    # Statistiques recalculées depuis les missions et les avis
+    # (crud._recompute_provider_stats), jamais saisies.
+    average_rating: Mapped[float] = mapped_column(Float, default=0.0)
+    total_reviews: Mapped[int] = mapped_column(Integer, default=0)
+    total_missions: Mapped[int] = mapped_column(Integer, default=0)
+    success_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    consecutive_ignored: Mapped[int] = mapped_column(Integer, default=0)
+    # Vérification à l'inscription : identifiants de fichiers Telegram. Leur
+    # stockage chiffré relève du chantier « vérification des prestataires ».
+    id_document_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    selfie_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    portfolio_file_ids: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ProviderService(Base):
+    __tablename__ = "provider_services"
+
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("provider_profiles.account_id", ondelete="CASCADE"), primary_key=True, autoincrement=False
+    )
+    service_key: Mapped[str] = mapped_column(ForeignKey("services.key"), primary_key=True, index=True)
+
+
+class ProviderCommune(Base):
+    __tablename__ = "provider_communes"
+
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("provider_profiles.account_id", ondelete="CASCADE"), primary_key=True, autoincrement=False
+    )
+    commune: Mapped[str] = mapped_column(ForeignKey("communes.name"), primary_key=True, index=True)
+
+
+class ProviderServiceRequest(Base):
+    """Demande d'un prestataire pour un service absent du catalogue."""
+
+    __tablename__ = "provider_service_requests"
+    __table_args__ = (
+        CheckConstraint(f"status IN {_sql_in(SERVICE_REQUEST_STATUSES)}", name="ck_provider_service_requests_status"),
+        CheckConstraint(
+            "(status = 'pending' AND reviewed_at IS NULL) OR (status <> 'pending' AND reviewed_at IS NOT NULL)",
+            name="ck_provider_service_requests_reviewed",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider_account_id: Mapped[int] = mapped_column(ForeignKey("provider_profiles.account_id"), index=True)
+    service_name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

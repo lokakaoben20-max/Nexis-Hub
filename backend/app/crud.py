@@ -5,30 +5,18 @@ from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app import app_auth, ledger
+from backend.app import app_auth, ledger, profils
 from backend.app.models import (
+    SERVICE_REQUEST_STATUSES,
     BotMission,
-    BotProvider,
     BotQuote,
     BotReview,
-    BotServiceRequest,
-    BotUser,
     MissionAlert,
     MissionMedia,
     NexisAccount,
+    ProviderProfile,
+    ProviderServiceRequest,
 )
-
-MODULE_B_SERVICES = {"service_plomberie", "service_electricite", "service_climatisation"}
-BADGE_SCORES = {"partner": 30, "expert": 20, "premium": 10, "verified": 5, "pending": 0}
-SERVICE_REQUEST_STATUSES = {"pending", "accepted", "rejected"}
-
-# Nombre de missions terminées à partir duquel le taux de succès devient un
-# signal exploitable dans le matching (en dessous, il n'est pas représentatif).
-MIN_MISSIONS_FOR_SUCCESS_BONUS = 3
-
-
-def _compute_module(services: list[str]) -> str:
-    return "B" if any(service in MODULE_B_SERVICES for service in services) else "A"
 
 
 def _touch_status(mission: BotMission) -> None:
@@ -42,41 +30,13 @@ def _touch_status(mission: BotMission) -> None:
     mission.status_changed_at = datetime.utcnow()
 
 
-def _sync_account_role(db: Session, telegram_id: int, role: str, language: str) -> NexisAccount:
-    """Synchronise le rôle et la langue commune du compte à chaque écriture
-    de profil Telegram. Les profils restent des vues métier historiques ;
-    l'identité canonique réside dans `accounts` + `channel_identities`."""
-    account_id = ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
-    account = db.get(NexisAccount, account_id, with_for_update=True)
-    if account is None:  # défense contre une identité orpheline en base
-        raise RuntimeError(f"Compte Nexis introuvable pour l'identité Telegram {telegram_id}")
-    roles = set(account.roles or [])
-    roles.add(role)
-    account.roles = sorted(roles)
-    account.language = language
-    return account
-
-
-def _record_proven_phone(db: Session, account_id: int, phone_number: str | None, phone_verified: bool) -> None:
-    """Numéro prouvé par le canal (bouton « Partager mon numéro » de
-    Telegram, contact de l'expéditeur) : enregistré sur le compte Nexis. Un
-    numéro tapé, ou illisible, n'est jamais enregistré comme prouvé. Un numéro
-    déjà prouvé sur un autre compte reste où il est (`app_auth.prove_phone`)."""
-    if not phone_verified or not phone_number:
-        return
-    try:
-        app_auth.prove_phone(db, account_id, phone_number)
-    except app_auth.AuthError:
-        return
-
-
 def _account_id_for_telegram(db: Session, telegram_id: int) -> int:
     """Compte canonique d'une identité Telegram vérifiée par le canal."""
     return ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
 
 
-CLIENT_LANGUAGES = ("fr", "ln", "en")
-MAX_DISPLAY_NAME_LENGTH = 100
+CLIENT_LANGUAGES = profils.LANGUAGES
+MAX_DISPLAY_NAME_LENGTH = profils.MAX_NAME_LENGTH
 
 
 class ClientRefused(ValueError):
@@ -131,9 +91,9 @@ def register_whatsapp_client(
         account = db.get(NexisAccount, account_id, with_for_update=True)
         if account is None:  # défense contre une identité orpheline en base
             raise RuntimeError("Compte Nexis introuvable pour une identité WhatsApp")
-        account.roles = sorted(set(account.roles or []) | {"client"})
+        # Rôle client seulement : aucun parcours prestataire sur WhatsApp.
+        profils.save_client_profile(db, account_id, first_name=display_name)
         account.language = language
-        account.display_name = display_name
         if normalized_phone and not app_auth.prove_phone(db, account_id, normalized_phone):
             if created:
                 # Numéro prouvé par un autre compte entre la première lecture
@@ -158,213 +118,6 @@ def _refuse_whatsapp_phone_conflict(db: Session, phone: str | None):
     app_auth.record_event(db, "whatsapp_phone_conflict", "refused", account_id=holder.id if holder else None)
     db.commit()
     raise ClientRefused("phone_owned_by_account")
-
-
-def upsert_user(
-    db: Session,
-    telegram_id: int,
-    first_name: str | None,
-    phone_number: str | None,
-    language: str = "fr",
-    phone_verified: bool = False,
-) -> BotUser:
-    user = db.get(BotUser, telegram_id)
-    if user is None:
-        user = BotUser(telegram_id=telegram_id)
-        db.add(user)
-    user.first_name = first_name or "Client"
-    user.phone_number = phone_number
-    user.language = language
-    account = _sync_account_role(db, telegram_id, "client", language)
-    _record_proven_phone(db, account.id, phone_number, phone_verified)
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def upsert_provider(
-    db: Session,
-    telegram_id: int,
-    full_name: str,
-    phone_number: str | None,
-    services: list[str],
-    communes: list[str],
-    language: str = "fr",
-    id_document_file_id: str | None = None,
-    selfie_file_id: str | None = None,
-    portfolio_file_ids: list[str] | None = None,
-    phone_verified: bool = False,
-) -> BotProvider:
-    provider = db.get(BotProvider, telegram_id)
-    is_new = provider is None
-    if provider is None:
-        provider = BotProvider(telegram_id=telegram_id)
-        db.add(provider)
-    provider.full_name = full_name
-    provider.phone_number = phone_number
-    provider.services = services
-    provider.communes = communes
-    provider.language = language
-    provider.module = _compute_module(services)
-    account = _sync_account_role(db, telegram_id, "provider", language)
-    _record_proven_phone(db, account.id, phone_number, phone_verified)
-    # None = pas fourni sur cet appel (ex. mise à jour de profil) : ne pas écraser
-    # des documents déjà soumis avec du vide.
-    if id_document_file_id is not None:
-        provider.id_document_file_id = id_document_file_id
-    if selfie_file_id is not None:
-        provider.selfie_file_id = selfie_file_id
-    if portfolio_file_ids is not None:
-        provider.portfolio_file_ids = portfolio_file_ids
-    if not is_new:
-        provider.status = "available"
-    db.commit()
-    db.refresh(provider)
-    return provider
-
-
-def update_user_language(db: Session, telegram_id: int, language: str) -> BotUser | None:
-    user = db.get(BotUser, telegram_id)
-    if user is None:
-        return None
-    user.language = language
-    _sync_account_role(db, telegram_id, "client", language)
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def update_user_name(db: Session, telegram_id: int, first_name: str) -> BotUser | None:
-    user = db.get(BotUser, telegram_id)
-    if user is None:
-        return None
-    user.first_name = first_name
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def update_provider_language(db: Session, telegram_id: int, language: str) -> BotProvider | None:
-    provider = db.get(BotProvider, telegram_id)
-    if provider is None:
-        return None
-    provider.language = language
-    _sync_account_role(db, telegram_id, "provider", language)
-    db.commit()
-    db.refresh(provider)
-    return provider
-
-
-def update_provider_services(db: Session, telegram_id: int, services: list[str]) -> BotProvider | None:
-    provider = db.get(BotProvider, telegram_id)
-    if provider is None:
-        return None
-    provider.services = services
-    provider.module = _compute_module(services)
-    db.commit()
-    db.refresh(provider)
-    return provider
-
-
-def update_provider_status(db: Session, telegram_id: int, status: str) -> BotProvider | None:
-    provider = db.get(BotProvider, telegram_id)
-    if provider is None:
-        return None
-    provider.status = status
-    db.commit()
-    db.refresh(provider)
-    return provider
-
-
-def set_provider_verified(db: Session, telegram_id: int, is_verified: bool = True) -> BotProvider | None:
-    provider = db.get(BotProvider, telegram_id)
-    if provider is None:
-        return None
-    provider.is_verified = is_verified
-    provider.badge = "verified" if is_verified else "pending"
-    db.commit()
-    db.refresh(provider)
-    return provider
-
-
-def set_provider_suspended(db: Session, telegram_id: int, is_suspended: bool = True) -> BotProvider | None:
-    provider = db.get(BotProvider, telegram_id)
-    if provider is None:
-        return None
-    provider.is_suspended = is_suspended
-    provider.status = "paused" if is_suspended else "available"
-    db.commit()
-    db.refresh(provider)
-    return provider
-
-
-def update_consecutive_ignored(db: Session, telegram_id: int) -> BotProvider | None:
-    provider = db.get(BotProvider, telegram_id)
-    if provider is None:
-        return None
-    provider.consecutive_ignored += 1
-    if provider.consecutive_ignored >= 3:
-        provider.status = "paused"
-    db.commit()
-    db.refresh(provider)
-    return provider
-
-
-def reset_consecutive_ignored(db: Session, telegram_id: int) -> BotProvider | None:
-    provider = db.get(BotProvider, telegram_id)
-    if provider is None:
-        return None
-    provider.consecutive_ignored = 0
-    db.commit()
-    db.refresh(provider)
-    return provider
-
-
-def find_matching_providers(db: Session, service: str, commune: str) -> list[BotProvider]:
-    providers = (
-        db.query(BotProvider)
-        .filter(BotProvider.is_active.is_(True))
-        .filter(BotProvider.is_suspended.is_(False))
-        .filter(BotProvider.status == "available")
-        .all()
-    )
-
-    matches = []
-    for provider in providers:
-        if service in (provider.services or []) and commune in (provider.communes or []):
-            matches.append((_matching_score(provider), provider))
-
-    matches.sort(key=lambda item: item[0], reverse=True)
-    return [provider for _, provider in matches[:3]]
-
-
-def _matching_score(provider: BotProvider) -> float:
-    score = BADGE_SCORES.get(provider.badge, 0)
-    # `average_rating` (moyenne réelle des avis) et non l'ancien champ
-    # `rating`, qui n'a jamais été alimenté et vaut 0 partout : la note
-    # d'un prestataire ne pesait donc rien dans le classement.
-    score += provider.average_rating * 10
-    score += min(provider.total_missions, 50) * 0.2
-    # Le bonus de fiabilité demande un minimum d'historique : sans lui,
-    # un prestataire sans aucune mission (success_rate initialisé à
-    # 100 %) partait à égalité avec un vétéran irréprochable.
-    if provider.total_missions >= MIN_MISSIONS_FOR_SUCCESS_BONUS:
-        if provider.success_rate == 100:
-            score += 15
-        elif provider.success_rate >= 90:
-            score += 8
-    return score
-
-
-def rank_providers(db: Session, telegram_ids: list[int]) -> list[int]:
-    """Classe des prestataires déjà choisis par l'appelant, au score de
-    matching seul : ni disponibilité, ni service, ni commune ne sont filtrés
-    ici (le bot les lit dans db.py, que la Mini App met à jour sans le
-    backend). Les inconnus du backend sont omis ; à égalité, l'ordre reçu."""
-    providers = db.query(BotProvider).filter(BotProvider.telegram_id.in_(telegram_ids)).all()
-    position = {telegram_id: index for index, telegram_id in enumerate(telegram_ids)}
-    providers.sort(key=lambda provider: (-_matching_score(provider), position[provider.telegram_id]))
-    return [provider.telegram_id for provider in providers]
 
 
 MEDIA_KINDS = ("photo", "voice", "video_note")  # 10 caractères au plus (mission_media.kind)
@@ -501,9 +254,6 @@ def create_mission(
         if provider_account_id == client_account_id:
             continue
         db.add(MissionAlert(mission_id=mission.mission_id, provider_account_id=provider_account_id))
-    user = db.get(BotUser, client_telegram_id)
-    if user is not None:
-        user.total_missions += 1
     try:
         db.commit()
     except IntegrityError:
@@ -796,12 +546,14 @@ _SUCCESS_STATUS = "completed"
 _FAILURE_STATUSES = ("disputed", "cancelled")
 
 
-def _earned_badge(provider: BotProvider) -> str:
+def _earned_badge(provider: ProviderProfile) -> str:
     """Badge dérivé des statistiques, ou badge administratif si aucun tier atteint.
 
     Entièrement recalculé plutôt que cumulatif : un prestataire qui repasse sous
     un seuil (note qui baisse, litige) perd son tier au lieu de le garder à vie.
     """
+    if not profils.is_verified(provider):
+        return "pending"
     for badge, rules in BADGE_TIERS:
         if (
             provider.total_missions >= rules["min_missions"]
@@ -809,33 +561,34 @@ def _earned_badge(provider: BotProvider) -> str:
             and provider.success_rate >= rules["min_success_rate"]
         ):
             return badge
-    return "verified" if provider.is_verified else "pending"
+    return "verified"
 
 
-def _recompute_provider_stats(db: Session, provider_telegram_id: int, provider_account_id: int | None = None) -> None:
+def _recompute_provider_stats(db: Session, provider_account_id: int | None) -> None:
     """Recalcule note, volume, taux de succès et badge d'un prestataire.
 
     Tout est recalculé depuis les tables sources (bot_reviews, bot_missions)
     plutôt qu'incrémenté : le résultat ne peut pas dériver si une mission ou un
     avis est corrigé après coup.
     """
-    provider = db.get(BotProvider, provider_telegram_id)
+    provider = profils.provider_profile(db, provider_account_id)
     if provider is None:
         return
+    # Les lignes d'avant les comptes Nexis ne portent que l'identifiant Telegram.
+    provider_telegram_id = ledger.telegram_id_of(db, provider_account_id)
+    review_filter = BotReview.provider_account_id == provider_account_id
+    mission_filter = BotMission.provider_account_id == provider_account_id
+    if provider_telegram_id is not None:
+        review_filter = or_(review_filter, BotReview.provider_telegram_id == provider_telegram_id)
+        mission_filter = or_(mission_filter, BotMission.provider_telegram_id == provider_telegram_id)
 
-    provider_account_id = provider_account_id or _account_id_for_telegram(db, provider_telegram_id)
-
-    avg_rating, total_reviews = (
-        db.query(func.avg(BotReview.rating), func.count(BotReview.id))
-        .filter(or_(BotReview.provider_account_id == provider_account_id, BotReview.provider_telegram_id == provider_telegram_id))
-        .one()
-    )
+    avg_rating, total_reviews = db.query(func.avg(BotReview.rating), func.count(BotReview.id)).filter(review_filter).one()
     provider.average_rating = round(float(avg_rating), 1) if avg_rating is not None else 0.0
     provider.total_reviews = total_reviews or 0
 
     status_counts = dict(
         db.query(BotMission.status, func.count(BotMission.mission_id))
-        .filter(or_(BotMission.provider_account_id == provider_account_id, BotMission.provider_telegram_id == provider_telegram_id))
+        .filter(mission_filter)
         .group_by(BotMission.status)
         .all()
     )
@@ -890,7 +643,7 @@ def create_review(
     db.commit()
     db.refresh(review)
 
-    _recompute_provider_stats(db, mission.provider_telegram_id, review.provider_account_id)
+    _recompute_provider_stats(db, review.provider_account_id)
     return review
 
 
@@ -947,35 +700,16 @@ def find_missions_needing_reminder(db: Session) -> dict[str, list[BotMission]]:
     return {"first": first_tier, "second": second_tier}
 
 
-def _service_request_to_dict(req: BotServiceRequest, provider: BotProvider | None = None) -> dict:
-    data = {
-        "id": req.id,
-        "provider_telegram_id": req.provider_telegram_id,
-        "provider_account_id": req.provider_account_id,
-        "service_name": req.service_name,
-        "description": req.description,
-        "status": req.status,
-        "admin_note": req.admin_note,
-        "created_at": req.created_at.isoformat() if req.created_at else None,
-        "reviewed_at": req.reviewed_at.isoformat() if req.reviewed_at else None,
-    }
-    if provider is not None:
-        data["provider_name"] = provider.full_name
-    return data
-
-
 def create_service_request(
     db: Session,
-    provider_telegram_id: int,
+    provider_account_id: int | None,
     service_name: str,
     description: str = "",
-) -> BotServiceRequest:
-    provider = db.get(BotProvider, provider_telegram_id)
-    if provider is None:
+) -> ProviderServiceRequest:
+    if profils.provider_profile(db, provider_account_id) is None:
         raise ValueError("Prestataire introuvable")
-    req = BotServiceRequest(
-        provider_telegram_id=provider_telegram_id,
-        provider_account_id=_account_id_for_telegram(db, provider_telegram_id),
+    req = ProviderServiceRequest(
+        provider_account_id=provider_account_id,
         service_name=service_name,
         description=description,
         status="pending",
@@ -986,32 +720,32 @@ def create_service_request(
     return req
 
 
-def get_provider_service_requests(db: Session, provider_telegram_id: int) -> list[BotServiceRequest]:
+def get_provider_service_requests(db: Session, provider_account_id: int) -> list[ProviderServiceRequest]:
     return (
-        db.query(BotServiceRequest)
-        .filter(BotServiceRequest.provider_telegram_id == provider_telegram_id)
-        .order_by(BotServiceRequest.id.desc())
+        db.query(ProviderServiceRequest)
+        .filter(ProviderServiceRequest.provider_account_id == provider_account_id)
+        .order_by(ProviderServiceRequest.id.desc())
         .limit(10)
         .all()
     )
 
 
-def get_pending_service_requests(db: Session, limit: int = 10) -> list[tuple[BotServiceRequest, BotProvider]]:
+def get_pending_service_requests(db: Session, limit: int = 10) -> list[tuple[ProviderServiceRequest, ProviderProfile]]:
     return (
-        db.query(BotServiceRequest, BotProvider)
-        .join(BotProvider, BotProvider.telegram_id == BotServiceRequest.provider_telegram_id)
-        .filter(BotServiceRequest.status == "pending")
-        .order_by(BotServiceRequest.id.asc())
+        db.query(ProviderServiceRequest, ProviderProfile)
+        .join(ProviderProfile, ProviderProfile.account_id == ProviderServiceRequest.provider_account_id)
+        .filter(ProviderServiceRequest.status == "pending")
+        .order_by(ProviderServiceRequest.id.asc())
         .limit(limit)
         .all()
     )
 
 
-def get_service_request_by_id(db: Session, request_id: int) -> tuple[BotServiceRequest, BotProvider] | None:
+def get_service_request_by_id(db: Session, request_id: int) -> tuple[ProviderServiceRequest, ProviderProfile] | None:
     return (
-        db.query(BotServiceRequest, BotProvider)
-        .join(BotProvider, BotProvider.telegram_id == BotServiceRequest.provider_telegram_id)
-        .filter(BotServiceRequest.id == request_id)
+        db.query(ProviderServiceRequest, ProviderProfile)
+        .join(ProviderProfile, ProviderProfile.account_id == ProviderServiceRequest.provider_account_id)
+        .filter(ProviderServiceRequest.id == request_id)
         .first()
     )
 
@@ -1021,7 +755,7 @@ def update_service_request_status(
     request_id: int,
     status: str,
     admin_note: str = "",
-) -> BotServiceRequest | None:
+) -> ProviderServiceRequest | None:
     if status not in SERVICE_REQUEST_STATUSES:
         raise ValueError("Statut de proposition invalide")
     # UPDATE conditionnel atomique plutôt que SELECT puis check Python : en
@@ -1029,14 +763,14 @@ def update_service_request_status(
     # avant le commit de l'autre et écraser le résultat sans erreur
     # (ponytail : pas de verrou distribué, une seule colonne à protéger).
     updated = (
-        db.query(BotServiceRequest)
-        .filter(BotServiceRequest.id == request_id, BotServiceRequest.status == "pending")
+        db.query(ProviderServiceRequest)
+        .filter(ProviderServiceRequest.id == request_id, ProviderServiceRequest.status == "pending")
         .update({"status": status, "admin_note": admin_note, "reviewed_at": datetime.utcnow()})
     )
     db.commit()
     if updated == 0:
-        if db.get(BotServiceRequest, request_id) is None:
+        if db.get(ProviderServiceRequest, request_id) is None:
             return None
         raise ValueError("Cette proposition a déjà été traitée")
-    return db.get(BotServiceRequest, request_id)
+    return db.get(ProviderServiceRequest, request_id)
 
