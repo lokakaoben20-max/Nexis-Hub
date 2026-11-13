@@ -1,0 +1,2 @@
+# Contrôle statique de l infrastructure (job CI « Infrastructure (Terraform) »).
+checkov==3.4.5

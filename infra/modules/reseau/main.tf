@@ -15,6 +15,22 @@ resource "google_compute_network" "vpc" {
   routing_mode            = "REGIONAL"
 }
 
+# Refus explicite de tout trafic entrant vers le VPC. Google le refuse déjà
+# par défaut ; la règle le rend visible et contrôlable. Les accès entrants
+# (répartiteur, Cloud Run) n'empruntent pas le VPC.
+resource "google_compute_firewall" "refus_entrant" {
+  name      = "${var.prefixe}-refus-entrant"
+  network   = google_compute_network.vpc.name
+  direction = "INGRESS"
+  priority  = 65534
+
+  source_ranges = ["0.0.0.0/0"]
+
+  deny {
+    protocol = "all"
+  }
+}
+
 resource "google_compute_subnetwork" "services" {
   name                     = "${var.prefixe}-services"
   region                   = var.region

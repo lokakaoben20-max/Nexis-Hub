@@ -56,6 +56,7 @@ locals {
 }
 
 resource "google_artifact_registry_repository" "images" {
+  #checkov:skip=CKV_GCP_84:Chiffrement par les clés gérées par Google. Les clés propres (CSEK) ajoutent une gestion de clés sans gain pour un dépôt privé.
   repository_id = var.prefixe
   location      = var.region
   format        = "DOCKER"

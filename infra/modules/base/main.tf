@@ -14,6 +14,8 @@
 # Secret Manager.
 
 resource "google_sql_database_instance" "postgres" {
+  #checkov:skip=CKV_GCP_6:ssl_mode = ENCRYPTED_ONLY impose le chiffrement de toute connexion (remplace l'ancien réglage require_ssl).
+  #checkov:skip=CKV_GCP_79:PostgreSQL 16 est pris en charge. La montée en version 17 est une décision séparée (compatibilité de l'application, test préalable).
   name                = "${var.prefixe}-postgres"
   region              = var.region
   database_version    = "POSTGRES_16"
@@ -76,6 +78,21 @@ resource "google_sql_database_instance" "postgres" {
     }
     database_flags {
       name  = "log_lock_waits"
+      value = "on"
+    }
+    database_flags {
+      name  = "log_hostname"
+      value = "on"
+    }
+    database_flags {
+      # Les DDL seulement : les requêtes de paiement ne sont pas journalisées
+      # en clair (données personnelles et montants).
+      name  = "log_statement"
+      value = "ddl"
+    }
+    database_flags {
+      # Durée des requêtes, sans leur texte.
+      name  = "log_duration"
       value = "on"
     }
     database_flags {
