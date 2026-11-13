@@ -64,7 +64,7 @@ jobs:
         base: [postgres, sqlite]
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: nexis
           POSTGRES_PASSWORD: nexis-ci-seulement
@@ -109,7 +109,7 @@ jobs:
     timeout-minutes: 10
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: nexis
           POSTGRES_PASSWORD: nexis-ci-seulement
@@ -144,7 +144,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: nexis
           POSTGRES_PASSWORD: nexis-ci-seulement
