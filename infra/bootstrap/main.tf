@@ -33,6 +33,7 @@ data "google_project" "projet" {
 }
 
 resource "google_storage_bucket" "etat" {
+  #checkov:skip=CKV_GCP_62:Journaux d'accès du bucket d'état non activés : à décider (suivi dans infra/README.md, « Limites connues »).
   for_each                    = toset(["test", "prod"])
   name                        = "nexis-tfstate-${each.key}"
   location                    = var.region
@@ -62,6 +63,7 @@ resource "google_iam_workload_identity_pool" "github" {
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
+  #checkov:skip=CKV_GCP_125:La confiance est limitée au seul dépôt (attribute_condition). L'environnement GitHub est vérifié au niveau des droits (attribute.depot_env dans modules/identites), pas ici.
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
   workload_identity_pool_provider_id = "depot"
   display_name                       = "Dépôt lokakaoben20-max/Nexis-Hub"

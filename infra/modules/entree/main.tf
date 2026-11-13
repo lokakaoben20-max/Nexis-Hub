@@ -67,6 +67,19 @@ resource "google_compute_security_policy" "cloudflare" {
     }
   }
 
+  # Règle WAF préconfigurée contre les tentatives d'exécution de code à
+  # distance type Log4j : elle passe avant les règles d'autorisation.
+  rule {
+    action      = "deny(403)"
+    priority    = 900
+    description = "WAF : tentatives Log4j (CVE-2021-44228)"
+    match {
+      expr {
+        expression = "evaluatePreconfiguredExpr('cve-canary')"
+      }
+    }
+  }
+
   rule {
     action      = "deny(403)"
     priority    = 2147483647

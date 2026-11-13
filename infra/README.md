@@ -83,6 +83,5 @@ rarement). Un oubli bloque le trafic légitime, jamais l'argent.
 
 ## Limites connues (à traiter avant la production)
 
-- `checkov` (règles de sécurité) n'est pas encore dans la CI.
-- `tflint` n'est pas encore dans la CI.
+- `checkov` et `tflint` tournent dans la CI (versions et empreintes épinglées). Chaque règle `checkov` écartée est justifiée à côté de la ressource (`#checkov:skip=...`). Restent à décider : la montée en version de Postgres (17), les journaux d'accès du bucket d'état (CKV_GCP_62) et les clés propres pour le registre d'images (CSEK).
 - Le premier `apply` n'a jamais été joué : la validation est statique seulement.

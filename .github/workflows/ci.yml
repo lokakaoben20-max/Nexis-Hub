@@ -229,3 +229,22 @@ jobs:
           done
       - name: Calendrier des tâches (copie lue par Terraform)
         run: python3 -c "import json,sys; json.load(open('infra/calendrier.json'))"
+      - name: Sécurité de l'infrastructure (checkov, version et empreintes épinglées)
+        run: |
+          set -eu
+          python3 -m venv "$RUNNER_TEMP/checkov"
+          "$RUNNER_TEMP/checkov/bin/pip" install --quiet --require-hashes -r infra/requirements-controle.txt
+          "$RUNNER_TEMP/checkov/bin/checkov" -d infra --framework terraform --quiet --compact -o cli
+      - name: Lint de l'infrastructure (tflint, empreinte vérifiée)
+        env:
+          TFLINT_VERSION: "0.60.0"
+          # SHA256 de tflint_linux_amd64.zip, lu dans checksums.txt de la même version
+          TFLINT_SHA256: "3476ceedcf0c4f9f2bed35e92988e1411bec2caa543c9387bffaa720df9efaf7"
+        run: |
+          set -eu
+          archive="tflint_linux_amd64.zip"
+          curl -sSfL -o "$archive" "https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSION}/${archive}"
+          echo "${TFLINT_SHA256}  ${archive}" | sha256sum --check --strict
+          mkdir -p "$HOME/.local/bin"
+          unzip -o "$archive" tflint -d "$HOME/.local/bin"
+          tflint --chdir infra --recursive --format compact

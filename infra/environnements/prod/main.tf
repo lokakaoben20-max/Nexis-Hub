@@ -4,6 +4,15 @@
 # changement passe par l'environnement GitHub `production`, approuvé par Ben.
 
 terraform {
+  required_version = ">= 1.9"
+
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 8.10"
+    }
+  }
+
   backend "gcs" {
     bucket = "nexis-tfstate-prod"
     prefix = "infra/prod"
