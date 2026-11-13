@@ -2,6 +2,8 @@
   "relances-prestataires": "*/10 * * * *",
   "devis-expires": "0 * * * *",
   "liberations-automatiques": "0 * * * *",
+  "litiges-en-retard": "15 * * * *",
+  "decisions-litiges": "*/10 * * * *",
   "verification-mobile-money": "*/2 * * * *",
   "rapprochement-quotidien": "0 6 * * *",
   "analytics-quotidiennes": "0 8 * * *",

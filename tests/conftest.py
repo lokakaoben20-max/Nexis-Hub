@@ -206,4 +206,6 @@ def live_backend(monkeypatch, backend_db_url):
     live = LiveBackend(database_module)
     tasks_module = importlib.import_module("backend.app.tasks")
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda chat_id, text, reply_markup=None: live.sent.append((chat_id, text)))
+    # Les tâches du planificateur ouvrent leur propre session : sur cette base.
+    monkeypatch.setattr(tasks_module, "SessionLocal", database_module.SessionLocal)
     return live

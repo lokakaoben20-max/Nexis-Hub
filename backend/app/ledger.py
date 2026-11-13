@@ -26,7 +26,16 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app.models import BotMission, BotQuote, ChannelIdentity, LedgerEntry, MoneyOperation, NexisAccount, Payout
+from backend.app.models import (
+    BotMission,
+    BotQuote,
+    ChannelIdentity,
+    DisputeDecision,
+    LedgerEntry,
+    MoneyOperation,
+    NexisAccount,
+    Payout,
+)
 
 CENT = Decimal("0.01")
 ZERO = Decimal("0.00")
@@ -39,6 +48,15 @@ DISPUTE_RESOLUTION_DELAY = timedelta(hours=48)
 # le 2026-11-07) : sans confirmation ni litige, l'argent part au prestataire.
 AUTO_RELEASE_DELAY = timedelta(hours=48)
 MAX_DISPUTE_REASON_LENGTH = 1000
+# Décision d'un litige en deux temps (décidé par Ben le 2026-11-08) : la
+# décision de Nexis Hub n'est exécutée que 3 jours plus tard ; pendant ce
+# délai le client ou le prestataire peut la contester, et l'argent reste gelé.
+# Une contestation est revue par une autre personne de Nexis Hub, avec le
+# même délai de réponse que l'ouverture d'un litige.
+DISPUTE_CONTEST_WINDOW = timedelta(days=3)
+DISPUTE_REVIEW_DELAY = DISPUTE_RESOLUTION_DELAY
+FIRST_DECISION = 1
+REVIEW_DECISION = 2
 
 FUNDING = "funding"
 SETTLEMENT = "settlement"
@@ -190,7 +208,8 @@ def mission_operation(db: Session, mission_id: int, phase: str) -> MoneyOperatio
 
 
 def mission_money_state(db: Session, mission_id: int) -> dict:
-    """Paiement et règlement enregistrés d'une mission, montants en texte."""
+    """Paiement et règlement enregistrés d'une mission, montants en texte, et
+    décisions de litige (première décision puis révision éventuelle)."""
     state = {}
     for phase in (FUNDING, SETTLEMENT):
         operation = mission_operation(db, mission_id, phase)
@@ -199,7 +218,44 @@ def mission_money_state(db: Session, mission_id: int) -> dict:
             if operation is not None
             else None
         )
+    state["dispute_decisions"] = [dispute_decision_view(decision) for decision in dispute_decisions(db, mission_id)]
     return state
+
+
+def dispute_decisions(db: Session, mission_id: int) -> list[DisputeDecision]:
+    return db.query(DisputeDecision).filter(DisputeDecision.mission_id == mission_id).order_by(DisputeDecision.round).all()
+
+
+def dispute_decision_view(decision: DisputeDecision) -> dict:
+    """Décision telle que le client, le prestataire et les canaux la lisent :
+    montants figés en texte, échéances. Jamais l'identité de la personne de
+    Nexis Hub qui a décidé."""
+
+    def iso(value: datetime | None) -> str | None:
+        return value.isoformat() if value is not None else None
+
+    if decision.executed_at is not None:
+        state = "executed"
+    elif decision.contested_at is not None:
+        state = "contested"
+    else:
+        state = "pending"
+    return {
+        "id": decision.id,
+        "round": decision.round,
+        "decision": decision.decision,
+        "state": state,
+        "percentage": str(decision.provider_percentage) if decision.provider_percentage is not None else None,
+        "currency": decision.currency,
+        "provider_amount": str(decision.provider_amount),
+        "client_amount": str(decision.client_amount),
+        "platform_amount": str(decision.platform_amount),
+        "decided_at": iso(decision.decided_at),
+        "execute_after": iso(decision.execute_after),
+        "contested_at": iso(decision.contested_at),
+        "contested_by": decision.contested_by_role,
+        "executed_at": iso(decision.executed_at),
+    }
 
 
 # --- Écriture (privé) ---------------------------------------------------------
@@ -527,13 +583,19 @@ def _settle(
     payment_status: str,
     status: str,
     matches,
+    before=None,
+    on_recorded=None,
 ) -> BotMission:
     """Enregistre le règlement et le nouvel état en une transaction, puis
-    recalcule les statistiques du prestataire."""
+    recalcule les statistiques du prestataire. `before` écrit d'abord ce qui
+    doit aller dans la même transaction ; `on_recorded(opération)` complète
+    après l'écriture du règlement (décision de litige marquée exécutée)."""
     mission_id = mission.mission_id
 
     def write():
-        _record(
+        if before is not None:
+            before()
+        operation = _record(
             db,
             kind=kind,
             currency=mission.currency,
@@ -546,6 +608,8 @@ def _settle(
         )
         mission.payment_status = payment_status
         _set_status(mission, status)
+        if on_recorded is not None:
+            on_recorded(operation)
 
     _write(db, mission_id, SETTLEMENT, matches, write)
     return _after_settlement(db, mission_id)
@@ -631,85 +695,251 @@ def open_dispute(db: Session, mission_id: int, client_account_id: int, reason: s
     return db.get(BotMission, mission_id)
 
 
-def resolve_dispute(
+def dispute_split_amounts(amounts: dict[str, Decimal], percentage: Decimal) -> dict[str, Decimal]:
+    """Partage au prorata (décidé par Ben le 2026-11-08) pour un pourcentage p
+    versé au prestataire : le prestataire reçoit son net × p, Nexis Hub garde
+    sa commission × p, chacun arrondi au centime, et le client récupère le
+    reste du total, frais compris. Le reste est calculé par soustraction : la
+    somme des mouvements vaut toujours exactement zéro."""
+    ratio = percentage / Decimal("100")
+    provider_amount = (amounts["net"] * ratio).quantize(CENT, rounding=ROUND_HALF_UP)
+    platform_amount = (amounts["commission"] * ratio).quantize(CENT, rounding=ROUND_HALF_UP)
+    return {
+        "provider_amount": provider_amount,
+        "platform_amount": platform_amount,
+        "client_amount": amounts["total"] - provider_amount - platform_amount,
+    }
+
+
+def _decision_percentage(decision: str, provider_percentage) -> Decimal | None:
+    if decision not in DISPUTE_DECISIONS:
+        raise MoneyError("invalid_decision", 400)
+    if decision != "split":
+        return None
+    try:
+        percentage = Decimal(str(provider_percentage))
+    except (InvalidOperation, ValueError, TypeError) as error:
+        raise MoneyError("invalid_percentage", 400) from error
+    if not percentage.is_finite() or not (Decimal("0") <= percentage <= Decimal("100")):
+        raise MoneyError("invalid_percentage", 400)
+    return percentage.quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+def _decision_amounts(amounts: dict[str, Decimal], decision: str, percentage: Decimal | None) -> dict[str, Decimal]:
+    if decision == "refund":
+        return {"provider_amount": ZERO, "client_amount": amounts["total"], "platform_amount": ZERO}
+    if decision == "release":
+        return {"provider_amount": amounts["net"], "client_amount": ZERO, "platform_amount": amounts["commission"]}
+    return dispute_split_amounts(amounts, percentage)
+
+
+def _same_decision(row: DisputeDecision, decision: str, percentage: Decimal | None) -> bool:
+    stored = row.provider_percentage.quantize(CENT) if row.provider_percentage is not None else None
+    return row.decision == decision and stored == percentage
+
+
+def decide_dispute(
     db: Session,
     mission_id: int,
     *,
     decision: str,
-    admin_telegram_id: int,
+    admin_account_id: int,
+    admin_telegram_id: int | None,
     provider_percentage=None,
+    now: datetime | None = None,
 ) -> BotMission:
-    """Décision admin sur un litige : rembourser le client (tout, frais
-    compris), payer le prestataire, ou partager le net du prestataire (la
-    plateforme garde sa commission)."""
-    if decision not in DISPUTE_DECISIONS:
-        raise MoneyError("invalid_decision", 400)
-    percentage = None
-    if decision == "split":
-        try:
-            percentage = Decimal(str(provider_percentage))
-        except (InvalidOperation, ValueError, TypeError) as error:
-            raise MoneyError("invalid_percentage", 400) from error
-        if not percentage.is_finite() or not (Decimal("0") <= percentage <= Decimal("100")):
-            raise MoneyError("invalid_percentage", 400)
-        percentage = percentage.quantize(CENT, rounding=ROUND_HALF_UP)
+    """Décision de Nexis Hub sur un litige : rembourser le client (tout, frais
+    compris), payer le prestataire, ou partager au prorata.
 
-    kind = {"refund": "refund", "release": "dispute_release", "split": "split"}[decision]
+    - Sans décision : c'est la première décision. Ses montants sont figés,
+      l'argent reste gelé, et elle ne sera exécutée qu'au bout de 3 jours
+      (`execute_dispute_decision`), sauf contestation.
+    - Décision contestée : c'est la révision, par une autre personne que celle
+      qui a pris la première décision (`same_reviewer` sinon). Elle est finale
+      et exécutée tout de suite, dans la même transaction.
 
-    def matches(operation: MoneyOperation) -> bool:
-        return operation.kind == kind and (operation.details or {}).get("percentage") == (
-            str(percentage) if percentage is not None else None
-        )
-
+    Un rejeu identique renvoie l'état enregistré ; une décision différente
+    alors qu'une décision attend son exécution est refusée
+    (`decision_pending`)."""
+    percentage = _decision_percentage(decision, provider_percentage)
+    now = now or _utcnow()
     mission = _lock_mission(db, mission_id)
-    settlement = mission_operation(db, mission_id, SETTLEMENT)
-    if settlement is not None:
-        if matches(settlement):
-            return mission
+    decisions = {row.round: row for row in dispute_decisions(db, mission_id)}
+    first, review = decisions.get(FIRST_DECISION), decisions.get(REVIEW_DECISION)
+
+    # Rejeu de la dernière décision prise (double clic, réseau coupé) : on
+    # renvoie l'état enregistré. Une première décision contestée n'est plus
+    # « la dernière » : la redemander, c'est demander une révision.
+    latest = review if review is not None else (first if first is not None and first.contested_at is None else None)
+    if latest is not None and latest.decided_by_account_id == admin_account_id and _same_decision(latest, decision, percentage):
+        return mission
+
+    if mission_operation(db, mission_id, SETTLEMENT) is not None:
         raise MoneyError("already_settled", mission=mission)
     if mission.status != "disputed":
         raise MoneyError("not_disputed", mission=mission)
-    amounts = _funded_amounts(db, mission)
+    if first is not None and first.contested_at is None:
+        raise MoneyError("decision_pending", mission=mission)
+    if first is not None and first.decided_by_account_id == admin_account_id:
+        raise MoneyError("same_reviewer", 403, mission)
 
-    if decision == "refund":
-        provider_amount, client_amount, platform_amount = ZERO, amounts["total"], ZERO
-        movements = [(ESCROW, mission_id, -amounts["total"]), (WALLET, mission.client_account_id, amounts["total"])]
-        payment_status, status = "refunded", "cancelled"
-    elif decision == "release":
-        provider_amount, client_amount, platform_amount = amounts["net"], ZERO, amounts["commission"]
-        movements = _release_movements(mission, amounts)
-        payment_status, status = "released", "completed"
+    funded = _funded_amounts(db, mission)
+    split = _decision_amounts(funded, decision, percentage)
+    row = DisputeDecision(
+        mission_id=mission_id,
+        round=FIRST_DECISION if first is None else REVIEW_DECISION,
+        decision=decision,
+        provider_percentage=percentage,
+        currency=mission.currency,
+        provider_amount=split["provider_amount"],
+        client_amount=split["client_amount"],
+        platform_amount=split["platform_amount"],
+        decided_by_account_id=admin_account_id,
+        decided_by_telegram_id=admin_telegram_id,
+        decided_at=now,
+        execute_after=now + DISPUTE_CONTEST_WINDOW if first is None else now,
+    )
+
+    if first is None:
+        try:
+            db.add(row)
+            db.commit()
+        except IntegrityError:
+            # Décision enregistrée au même instant par une autre demande : un
+            # rejeu identique est accepté, toute autre décision attend.
+            db.rollback()
+            stored = next((r for r in dispute_decisions(db, mission_id) if r.round == FIRST_DECISION), None)
+            mission = db.get(BotMission, mission_id)
+            if stored is not None and stored.decided_by_account_id == admin_account_id and _same_decision(stored, decision, percentage):
+                return mission
+            raise MoneyError("decision_pending", mission=mission) from None
+        return db.get(BotMission, mission_id)
+
+    def add_review():
+        db.add(row)
+        db.flush()
+
+    return _execute(db, mission, row, now=now, before=add_review)
+
+
+def contest_dispute_decision(
+    db: Session, mission_id: int, account_id: int, reason: str, now: datetime | None = None
+) -> BotMission:
+    """Le client ou le prestataire de la mission conteste la première
+    décision, une seule fois, avant son exécution. L'argent reste gelé et la
+    révision a le délai de réponse habituel (48 h)."""
+    reason = (reason or "").strip()
+    if not reason or len(reason) > MAX_DISPUTE_REASON_LENGTH:
+        raise MoneyError("invalid_reason", 400)
+    now = now or _utcnow()
+    mission = _lock_mission(db, mission_id)
+    if account_id == mission.client_account_id:
+        role = "client"
+    elif account_id is not None and account_id == mission.provider_account_id:
+        role = "provider"
     else:
-        provider_amount = (amounts["net"] * percentage / Decimal("100")).quantize(CENT, rounding=ROUND_HALF_UP)
-        client_amount = amounts["net"] - provider_amount
-        platform_amount = amounts["commission"]
-        movements = [
-            (ESCROW, mission_id, -amounts["total"]),
-            (WALLET, mission.provider_account_id, provider_amount),
-            (WALLET, mission.client_account_id, client_amount),
-            (PLATFORM, None, platform_amount),
-        ]
-        payment_status, status = "split", "completed"
+        raise MoneyError("not_mission_party", 403, mission)
 
+    first = next((row for row in dispute_decisions(db, mission_id) if row.round == FIRST_DECISION), None)
+    if first is None:
+        raise MoneyError("no_decision", mission=mission)
+    if first.contested_at is not None:
+        if first.contested_by_account_id == account_id:
+            return mission
+        raise MoneyError("already_contested", mission=mission)
+    if first.executed_at is not None or mission_operation(db, mission_id, SETTLEMENT) is not None:
+        raise MoneyError("decision_already_executed", mission=mission)
+    if now >= first.execute_after:
+        raise MoneyError("contest_window_closed", mission=mission)
+
+    first.contested_by_account_id = account_id
+    first.contested_by_role = role
+    first.contested_at = now
+    first.contest_reason = reason
+    # Le délai de réponse repart pour la révision, avec ses alertes.
+    mission.dispute_deadline = now + DISPUTE_REVIEW_DELAY
+    mission.dispute_overdue_alerted_at = None
+    db.commit()
+    return db.get(BotMission, mission_id)
+
+
+def execute_dispute_decision(db: Session, decision_id: int, now: datetime | None = None) -> BotMission:
+    """Exécute une première décision non contestée dont le délai de
+    contestation est passé (tâche du planificateur). Tout est revérifié sous
+    le verrou de la mission : une contestation arrivée juste avant gagne, et
+    une décision déjà exécutée ne l'est jamais deux fois."""
+    now = now or _utcnow()
+    row = db.get(DisputeDecision, decision_id)
+    if row is None:
+        raise MoneyError("decision_not_found", 404)
+    mission = _lock_mission(db, row.mission_id)
+    db.refresh(row)
+    if row.executed_at is not None:
+        return mission
+    if row.contested_at is not None:
+        raise MoneyError("decision_contested", mission=mission)
+    if now < row.execute_after:
+        raise MoneyError("decision_not_due", mission=mission)
+    return _execute(db, mission, row, now=now)
+
+
+def _execute(db: Session, mission: BotMission, row: DisputeDecision, *, now: datetime, before=None) -> BotMission:
+    """Écrit le règlement d'une décision avec ses montants figés et marque la
+    décision exécutée, en une transaction."""
+    mission_id = mission.mission_id
+    if mission_operation(db, mission_id, SETTLEMENT) is not None:
+        raise MoneyError("already_settled", mission=mission)
+    if mission.status != "disputed":
+        raise MoneyError("not_disputed", mission=mission)
+    funded = _funded_amounts(db, mission)
+    provider_amount, client_amount, platform_amount = row.provider_amount, row.client_amount, row.platform_amount
+    if provider_amount + client_amount + platform_amount != funded["total"]:
+        # Montants figés incohérents avec le paiement : ne peut venir que d'un bug.
+        raise RuntimeError(f"Décision {row.id} : montants {provider_amount}/{client_amount}/{platform_amount} ≠ {funded['total']}")
+
+    kind = {"refund": "refund", "release": "dispute_release", "split": "split"}[row.decision]
+    movements = [
+        (ESCROW, mission_id, -funded["total"]),
+        (WALLET, mission.provider_account_id, provider_amount),
+        (WALLET, mission.client_account_id, client_amount),
+        (PLATFORM, None, platform_amount),
+    ]
+    payment_status, status = {
+        "refund": ("refunded", "cancelled"),
+        "release": ("released", "completed"),
+        "split": ("split", "completed"),
+    }[row.decision]
     details = {
-        "decision": decision,
+        "decision": row.decision,
+        "decision_round": row.round,
         "provider_amount": str(provider_amount),
         "client_amount": str(client_amount),
         "platform_amount": str(platform_amount),
     }
-    if percentage is not None:
-        details["percentage"] = str(percentage)
+    if row.provider_percentage is not None:
+        details["percentage"] = str(row.provider_percentage.quantize(CENT))
+
+    def mark_executed(operation: MoneyOperation) -> None:
+        row.executed_at = now
+        row.executed_operation_id = operation.id
+
+    def matches(operation: MoneyOperation) -> bool:
+        # Une exécution concurrente de la même décision a déjà écrit le règlement.
+        return (operation.details or {}).get("decision_round") == row.round and (operation.details or {}).get("decision") == row.decision
+
     return _settle(
         db,
         mission,
         kind=kind,
-        actor_account_id=None,
-        actor_telegram_id=admin_telegram_id,
+        actor_account_id=row.decided_by_account_id,
+        actor_telegram_id=row.decided_by_telegram_id,
         movements=movements,
         details=details,
         payment_status=payment_status,
         status=status,
         matches=matches,
+        before=before,
+        on_recorded=mark_executed,
     )
 
 

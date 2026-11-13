@@ -287,9 +287,13 @@ class DisputeOpenPayload(BaseModel):
     reason: str
 
 
-class DisputeResolvePayload(BaseModel):
+class DisputeDecidePayload(BaseModel):
     decision: str
     provider_percentage: float | None = None
+
+
+class DisputeContestPayload(BaseModel):
+    reason: str
 
 
 class ReviewCreatePayload(BaseModel):
@@ -1108,18 +1112,72 @@ def open_dispute(mission_id: int, payload: DisputeOpenPayload, actor: Actor = De
     )
 
 
-@router.post("/api/bot/missions/{mission_id}/dispute/resolve")
-def resolve_dispute(mission_id: int, payload: DisputeResolvePayload, actor: Actor = Depends(current_actor)):
+@router.post("/api/bot/missions/{mission_id}/dispute/decide")
+def decide_dispute(
+    mission_id: int, payload: DisputeDecidePayload, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)
+):
+    """Décision de Nexis Hub : la première est exécutée 3 jours plus tard sauf
+    contestation ; la révision d'une décision contestée, prise par une autre
+    personne, est exécutée tout de suite (ledger.decide_dispute). Le client et
+    le prestataire sont prévenus une fois, après la réponse."""
     admin_telegram_id = _require_admin(actor)
-    return _money_call(
-        lambda db: ledger.resolve_dispute(
+    recorded = {}
+
+    def decide(db):
+        before = len(ledger.dispute_decisions(db, mission_id))
+        mission = ledger.decide_dispute(
             db,
             mission_id,
             decision=payload.decision,
+            # Le compte de la personne qui décide : c'est lui que la révision compare.
+            admin_account_id=_actor_account(db, actor, create=True),
             admin_telegram_id=admin_telegram_id,
             provider_percentage=payload.provider_percentage,
         )
-    )
+        recorded["new"] = len(ledger.dispute_decisions(db, mission_id)) > before
+        return mission
+
+    response = _money_call(decide)
+    if recorded.get("new"):
+        background_tasks.add_task(_notify_dispute, mission_id, "decided")
+    return response
+
+
+@router.post("/api/bot/missions/{mission_id}/dispute/contest")
+def contest_dispute(
+    mission_id: int, payload: DisputeContestPayload, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)
+):
+    """Le client ou le prestataire conteste la première décision, avant son
+    exécution. L'autre partie et l'admin sont prévenus une fois."""
+    recorded = {}
+
+    def contest(db):
+        first = next((row for row in ledger.dispute_decisions(db, mission_id) if row.round == ledger.FIRST_DECISION), None)
+        already = first is not None and first.contested_at is not None
+        mission = ledger.contest_dispute_decision(
+            db, mission_id, _actor_account(db, actor, missing="not_mission_party", http_status=403), payload.reason
+        )
+        recorded["new"] = not already
+        return mission
+
+    response = _money_call(contest)
+    if recorded.get("new"):
+        background_tasks.add_task(_notify_dispute, mission_id, "contested")
+    return response
+
+
+def _notify_dispute(mission_id: int, event: str) -> None:
+    from backend.app import tasks
+
+    with SessionLocal() as db:
+        mission = db.get(BotMission, mission_id)
+        if event == "contested":
+            tasks.notify_dispute_contested(db, mission)
+        elif mission.status == "disputed":
+            tasks.notify_dispute_decided(db, mission)
+        else:
+            # Révision : exécutée tout de suite.
+            tasks.notify_dispute_settled(db, mission)
 
 
 @router.get("/api/bot/missions/{mission_id}")
@@ -1191,14 +1249,29 @@ def my_missions(role: str = "client", limit: int = 20, actor: Actor = Depends(cu
         return {"status": "ok", "missions": [_listed_mission(db, mission) for mission in missions]}
 
 
-def _listed_mission(db, mission: BotMission) -> dict:
-    """Mission d'une liste, avec les noms affichés par les canaux."""
+def _listed_mission(db, mission: BotMission, admin: bool = False) -> dict:
+    """Mission d'une liste, avec les noms affichés par les canaux et ses
+    décisions de litige (détail interne à Nexis Hub seulement pour l'admin)."""
     client = db.get(BotUser, mission.telegram_id)
     provider = db.get(BotProvider, mission.provider_telegram_id) if mission.provider_telegram_id else None
     return {
         **_mission_to_dict(mission),
         "client_name": client.first_name if client is not None else None,
         "provider_name": provider.full_name if provider is not None else None,
+        "dispute_decisions": [
+            _admin_decision(decision) if admin else ledger.dispute_decision_view(decision)
+            for decision in ledger.dispute_decisions(db, mission.mission_id)
+        ],
+    }
+
+
+def _admin_decision(decision) -> dict:
+    """Décision de litige vue par l'admin : avec qui l'a prise (la révision
+    doit venir d'une autre personne) et la raison de la contestation."""
+    return {
+        **ledger.dispute_decision_view(decision),
+        "decided_by_telegram_id": decision.decided_by_telegram_id,
+        "contest_reason": decision.contest_reason,
     }
 
 
@@ -1207,7 +1280,7 @@ def admin_list_missions(status: str | None = None, limit: int = 10, actor: Actor
     _require_admin(actor)
     with SessionLocal() as db:
         missions = crud.admin_missions(db, status=status, limit=max(1, min(limit, 50)))
-        return {"status": "ok", "missions": [_listed_mission(db, mission) for mission in missions]}
+        return {"status": "ok", "missions": [_listed_mission(db, mission, admin=True) for mission in missions]}
 
 
 @router.get("/api/admin/stats")

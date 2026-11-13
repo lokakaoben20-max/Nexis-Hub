@@ -267,5 +267,19 @@
   "button_app_not_me": "🚫 Ce n'est pas moi",
   "app_not_me_done": "✅ Ce téléphone est coupé : il ne peut plus rien faire sur votre compte. Notre équipe est prévenue et vérifie votre compte. Ne donnez jamais votre code de connexion à personne, même à quelqu'un qui dit venir de Nexis.",
   "app_not_me_unknown": "Ce téléphone n'est pas relié à votre compte. Rien n'a été changé.",
-  "app_not_me_retry": "⚠️ Le service est momentanément indisponible : le téléphone n'est pas encore coupé. Réessayez dans un instant avec le bouton « Ce n'est pas moi »."
+  "app_not_me_retry": "⚠️ Le service est momentanément indisponible : le téléphone n'est pas encore coupé. Réessayez dans un instant avec le bouton « Ce n'est pas moi ».",
+  "dispute_decision_client": "⚖️ <b>Décision de Nexis Hub</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\n• Remboursé à vous : <b>{mine} {currency}</b>\n• Versé au prestataire : <b>{theirs} {currency}</b>\n\nL'argent reste bloqué jusqu'au <b>{deadline}</b> (heure de Kinshasa), puis la décision est appliquée.\nSi vous n'êtes pas d'accord, contestez avant cette date : une autre personne de Nexis Hub revoit alors le litige.",
+  "dispute_decision_provider": "⚖️ <b>Décision de Nexis Hub</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\n• Versé à vous : <b>{mine} {currency}</b>\n• Remboursé au client : <b>{theirs} {currency}</b>\n\nL'argent reste bloqué jusqu'au <b>{deadline}</b> (heure de Kinshasa), puis la décision est appliquée.\nSi vous n'êtes pas d'accord, contestez avant cette date : une autre personne de Nexis Hub revoit alors le litige.",
+  "button_contest_decision": "⚖️ Contester",
+  "dispute_contest_prompt": "✏️ Expliquez pourquoi vous contestez la décision.\n\nMission : <b>NXH-{mission_id:04d}</b>",
+  "dispute_contest_sent": "✅ <b>Contestation enregistrée</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nL'argent reste bloqué. Une autre personne de Nexis Hub revoit le litige et vous répond dans les 48 h. Sa décision sera définitive.",
+  "dispute_contested_notify_client": "⚖️ <b>Décision contestée</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nLe prestataire a contesté la décision. L'argent reste bloqué : une autre personne de Nexis Hub revoit le litige dans les 48 h.",
+  "dispute_contested_notify_provider": "⚖️ <b>Décision contestée</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nLe client a contesté la décision. L'argent reste bloqué : une autre personne de Nexis Hub revoit le litige dans les 48 h.",
+  "money_error_decision_pending": "Une décision a déjà été prise sur ce litige. Elle sera appliquée à la fin du délai de contestation.",
+  "money_error_same_reviewer": "La révision doit être faite par une autre personne que celle qui a pris la première décision.",
+  "money_error_already_contested": "Cette décision a déjà été contestée. Une autre personne de Nexis Hub revoit le litige.",
+  "money_error_contest_window_closed": "Le délai pour contester est passé : la décision va être appliquée.",
+  "money_error_decision_already_executed": "Cette décision a déjà été appliquée.",
+  "money_error_no_decision": "Nexis Hub n'a pas encore pris de décision sur ce litige.",
+  "money_error_not_mission_party": "Seuls le client et le prestataire de cette mission peuvent contester la décision."
 }

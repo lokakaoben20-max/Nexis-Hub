@@ -287,6 +287,51 @@ class MoneyOperation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class DisputeDecision(Base):
+    """Décision de Nexis Hub sur un litige, en deux temps (règles du
+    8 novembre 2026, CONCEPTION_ARGENT.md). Écrite uniquement par
+    backend/app/ledger.py ; une ligne n'est jamais effacée.
+
+    - Tour 1 : décision de l'admin. Les montants sont calculés et figés ici,
+      l'argent reste gelé, et la décision n'est exécutée qu'à `execute_after`
+      (3 jours plus tard), sauf si le client ou le prestataire la conteste.
+    - Tour 2 : révision d'une décision contestée, par une autre personne de
+      Nexis Hub que celle du tour 1. Elle est finale et exécutée tout de suite.
+
+    `executed_operation_id` pointe vers le règlement du registre : une
+    décision exécutée l'est exactement une fois (règlement unique par
+    mission dans `money_operations`)."""
+
+    __tablename__ = "dispute_decisions"
+    __table_args__ = (
+        UniqueConstraint("mission_id", "round", name="uq_dispute_decisions_mission_round"),
+        CheckConstraint("round IN (1, 2)", name="ck_dispute_decisions_round"),
+        CheckConstraint("decision IN ('refund', 'release', 'split')", name="ck_dispute_decisions_decision"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    mission_id: Mapped[int] = mapped_column(ForeignKey("bot_missions.mission_id"), index=True)
+    round: Mapped[int] = mapped_column(Integer)
+    decision: Mapped[str] = mapped_column(String(20))
+    # Pourcentage versé au prestataire (partage seulement), au centième.
+    provider_percentage: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    currency: Mapped[str] = mapped_column(String(3))
+    provider_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    client_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    platform_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    decided_by_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
+    decided_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    decided_at: Mapped[datetime] = mapped_column(DateTime)
+    execute_after: Mapped[datetime] = mapped_column(DateTime, index=True)
+    contested_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
+    # `client` ou `provider` : qui a contesté, tel que montré aux parties.
+    contested_by_role: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    contested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    contest_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    executed_operation_id: Mapped[int | None] = mapped_column(ForeignKey("money_operations.id"), nullable=True, unique=True)
+
+
 class LedgerEntry(Base):
     """Un mouvement d'un compte. La somme des mouvements d'une opération vaut
     toujours 0 ; le solde d'un compte est la somme de ses mouvements.

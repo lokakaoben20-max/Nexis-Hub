@@ -261,5 +261,19 @@
   "button_app_not_me": "🚫 Ezali ngai te",
   "app_not_me_done": "✅ Telefone oyo ekatami : ekoki lisusu kosala eloko te na compte na yo. Ekipi na biso eyebisami mpe ezali kotala compte na yo. Kopesa code na yo ya kokɔta na moto te, ata soki alobi ete awuti na Nexis.",
   "app_not_me_unknown": "Telefone oyo ekangami na compte na yo te. Eloko moko te ebongwani.",
-  "app_not_me_retry": "⚠️ Service ekoki te sikoyo : telefone ekatami naino te. Meka lisusu mwa moke na bouton « Ezali ngai te »."
+  "app_not_me_retry": "⚠️ Service ekoki te sikoyo : telefone ekatami naino te. Meka lisusu mwa moke na bouton « Ezali ngai te ».",
+  "dispute_decision_client": "⚖️ <b>Mokano ya Nexis Hub</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\n• Bazongiseli yo : <b>{mine} {currency}</b>\n• Bafuti prestataire : <b>{theirs} {currency}</b>\n\nMbongo ekotikala ekangami tii na <b>{deadline}</b> (ngonga ya Kinshasa), sima mokano ekosalema.\nSoki ondimi te, tinda contestation liboso ya mokolo yango : moto mosusu ya Nexis Hub akotala lisusu likambo.",
+  "dispute_decision_provider": "⚖️ <b>Mokano ya Nexis Hub</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\n• Bafuti yo : <b>{mine} {currency}</b>\n• Bazongiseli client : <b>{theirs} {currency}</b>\n\nMbongo ekotikala ekangami tii na <b>{deadline}</b> (ngonga ya Kinshasa), sima mokano ekosalema.\nSoki ondimi te, tinda contestation liboso ya mokolo yango : moto mosusu ya Nexis Hub akotala lisusu likambo.",
+  "button_contest_decision": "⚖️ Koboya mokano",
+  "dispute_contest_prompt": "✏️ Limbola mpo na nini ozali koboya mokano.\n\nMission : <b>NXH-{mission_id:04d}</b>",
+  "dispute_contest_sent": "✅ <b>Contestation ekomami</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nMbongo ekotikala ekangami. Moto mosusu ya Nexis Hub akotala lisusu likambo mpe akozongisela yo eyano nase ya 48 h. Mokano na ye ekozala ya suka.",
+  "dispute_contested_notify_client": "⚖️ <b>Mokano eboyami</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nPrestataire aboyi mokano. Mbongo ekotikala ekangami : moto mosusu ya Nexis Hub akotala lisusu likambo nase ya 48 h.",
+  "dispute_contested_notify_provider": "⚖️ <b>Mokano eboyami</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\n\nClient aboyi mokano. Mbongo ekotikala ekangami : moto mosusu ya Nexis Hub akotala lisusu likambo nase ya 48 h.",
+  "money_error_decision_pending": "Mokano esi ezwami na likambo oyo. Ekosalema soki ntango ya koboya esili.",
+  "money_error_same_reviewer": "Moto mosusu, kasi te oyo azwaki mokano ya liboso, nde asengeli kotala lisusu likambo.",
+  "money_error_already_contested": "Mokano oyo esi eboyami. Moto mosusu ya Nexis Hub azali kotala lisusu likambo.",
+  "money_error_contest_window_closed": "Ntango ya koboya mokano esili : mokano ekosalema.",
+  "money_error_decision_already_executed": "Mokano oyo esi esalemi.",
+  "money_error_no_decision": "Nexis Hub naino azwi mokano te na likambo oyo.",
+  "money_error_not_mission_party": "Kaka client mpe prestataire ya mission oyo nde bakoki koboya mokano."
 }

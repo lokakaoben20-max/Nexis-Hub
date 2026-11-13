@@ -259,5 +259,19 @@
   "button_app_not_me": "🚫 This wasn't me",
   "app_not_me_done": "✅ This phone has been cut off: it can no longer do anything on your account. Our team has been alerted and is checking your account. Never give your sign-in code to anyone, even someone who says they are from Nexis.",
   "app_not_me_unknown": "This phone is not linked to your account. Nothing was changed.",
-  "app_not_me_retry": "⚠️ The service is temporarily unavailable: the phone has not been cut off yet. Try again in a moment with the \"This wasn't me\" button."
+  "app_not_me_retry": "⚠️ The service is temporarily unavailable: the phone has not been cut off yet. Try again in a moment with the \"This wasn't me\" button.",
+  "dispute_decision_client": "⚖️ <b>Nexis Hub decision</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\n\n• Refunded to you: <b>{mine} {currency}</b>\n• Paid to the provider: <b>{theirs} {currency}</b>\n\nThe money stays on hold until <b>{deadline}</b> (Kinshasa time), then the decision is applied.\nIf you disagree, contest before that date: another person at Nexis Hub will then review the dispute.",
+  "dispute_decision_provider": "⚖️ <b>Nexis Hub decision</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\n\n• Paid to you: <b>{mine} {currency}</b>\n• Refunded to the client: <b>{theirs} {currency}</b>\n\nThe money stays on hold until <b>{deadline}</b> (Kinshasa time), then the decision is applied.\nIf you disagree, contest before that date: another person at Nexis Hub will then review the dispute.",
+  "button_contest_decision": "⚖️ Contest",
+  "dispute_contest_prompt": "✏️ Explain why you contest the decision.\n\nMission: <b>NXH-{mission_id:04d}</b>",
+  "dispute_contest_sent": "✅ <b>Contest recorded</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\n\nThe money stays on hold. Another person at Nexis Hub will review the dispute and answer within 48 h. Their decision will be final.",
+  "dispute_contested_notify_client": "⚖️ <b>Decision contested</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\n\nThe provider contested the decision. The money stays on hold: another person at Nexis Hub will review the dispute within 48 h.",
+  "dispute_contested_notify_provider": "⚖️ <b>Decision contested</b>\n\nMission: <b>NXH-{mission_id:04d}</b>\n\nThe client contested the decision. The money stays on hold: another person at Nexis Hub will review the dispute within 48 h.",
+  "money_error_decision_pending": "A decision has already been made on this dispute. It will be applied when the contest period ends.",
+  "money_error_same_reviewer": "The review must be done by someone other than the person who made the first decision.",
+  "money_error_already_contested": "This decision has already been contested. Another person at Nexis Hub is reviewing the dispute.",
+  "money_error_contest_window_closed": "The contest period is over: the decision will be applied.",
+  "money_error_decision_already_executed": "This decision has already been applied.",
+  "money_error_no_decision": "Nexis Hub has not made a decision on this dispute yet.",
+  "money_error_not_mission_party": "Only the client and the provider of this mission can contest the decision."
 }
