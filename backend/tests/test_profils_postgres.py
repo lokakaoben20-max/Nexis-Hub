@@ -276,6 +276,34 @@ def test_simultaneous_declines_are_all_counted(sessions):
         assert (provider.consecutive_ignored, provider.status) == (40, "paused")
 
 
+def test_one_alert_declined_simultaneously_counts_once(sessions):
+    from backend.app import crud, ledger, profils
+
+    with sessions() as db:
+        account_id = ledger.account_id_for(db, ledger.TELEGRAM, 7, create=True)
+        profils.register_provider(
+            db, account_id, full_name="Jean", phone_number=None, services=["service_plomberie"], communes=["Gombe"]
+        )
+        profils.verify_provider(db, account_id)
+        db.commit()
+        mission, _ = crud.create_mission(
+            db, channel=ledger.TELEGRAM, client_external_id="42", creation_key="k1", service="service_plomberie",
+            commune="Gombe", alert_provider_telegram_ids=[7], destination_latitude=-4.3076,
+            destination_longitude=15.3125, destination_landmark="Portail bleu après la poste",
+        )
+        mission_id = mission.mission_id
+
+    def decline(_index):
+        with sessions() as db:
+            return crud.decline_alert(db, mission_id, account_id)[1]
+
+    counted = _parallel(8, decline)
+
+    assert sum(counted) == 1
+    with sessions() as db:
+        assert profils.provider_profile(db, account_id).consecutive_ignored == 1
+
+
 def test_simultaneous_registrations_create_one_profile(sessions):
     from backend.app import ledger, profils
 

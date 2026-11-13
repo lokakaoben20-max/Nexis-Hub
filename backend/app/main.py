@@ -1632,4 +1632,297 @@ def profile(telegram_id: int):
         }
 
 
+# --- Profils au nom de l'acteur ----------------------------------------------
+# La personne est l'acteur (en-têtes), jamais un identifiant dans l'adresse :
+# un canal ne lit ni n'écrit le profil de quelqu'un d'autre. Les règles sont
+# celles de `profils` ; ces routes ne font que les appeler.
+
+
+class ClientProfilePayload(BaseModel):
+    first_name: str = Field(min_length=1, max_length=profils.MAX_NAME_LENGTH)
+    phone_number: str | None = Field(default=None, max_length=profils.MAX_PHONE_LENGTH)
+    language: str | None = Field(default=None, max_length=5)
+    # Vrai seulement si le numéro vient du bouton « Partager mon numéro »
+    # (contact de l'expéditeur, vérifié par le bot).
+    phone_verified: bool = False
+
+
+class ProviderProfilePayload(BaseModel):
+    full_name: str = Field(min_length=1, max_length=profils.MAX_NAME_LENGTH)
+    phone_number: str = Field(min_length=1, max_length=profils.MAX_PHONE_LENGTH)
+    services: list[str] = Field(max_length=50)
+    communes: list[str] = Field(max_length=50)
+    language: str | None = Field(default=None, max_length=5)
+    id_document_file_id: str | None = Field(default=None, max_length=profils.MAX_FILE_ID_LENGTH)
+    selfie_file_id: str | None = Field(default=None, max_length=profils.MAX_FILE_ID_LENGTH)
+    portfolio_file_ids: list[str] | None = Field(default=None, max_length=profils.MAX_PORTFOLIO_FILES)
+    phone_verified: bool = False
+
+
+class ProviderCommunesPayload(BaseModel):
+    communes: list[str]
+
+
+def _me(db, actor: Actor, account_id: int | None) -> dict:
+    client = profils.client_profile(db, account_id)
+    provider = profils.provider_profile(db, account_id)
+    return {
+        "status": "ok",
+        "account_id": account_id,
+        "language": profils.language_of(db, account_id),
+        "client": _user_to_dict(db, account_id, client) if client is not None else None,
+        "provider": _provider_to_dict(db, provider) if provider is not None else None,
+        "profile_type": "client" if client is not None else "provider" if provider is not None else "guest",
+    }
+
+
+def _my_provider(db, actor: Actor) -> ProviderProfile:
+    provider = profils.provider_profile(db, ledger.account_id_for(db, actor.channel, actor.external_id))
+    if provider is None:
+        raise HTTPException(status_code=404, detail={"code": "provider_not_found"})
+    return provider
+
+
+@router.get("/api/services")
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+def list_services():
+    """Catalogue actif et communes servies, dans l'ordre d'affichage. Les
+    noms sont donnés dans les trois langues : le canal affiche celle de la
+    personne."""
+    with SessionLocal() as db:
+        return {
+            "status": "ok",
+            "services": [
+                {
+                    "key": service.key,
+                    "names": {language: profils.service_label(service, language) for language in profils.LANGUAGES},
+                    "category": service.category,
+                    "icon": service.icon_emoji,
+                    "module": service.module,
+                    "requires_inspection": service.requires_inspection,
+                    "visit_fee_usd": str(service.visit_fee_usd),
+                }
+                for service in profils.active_services(db)
+            ],
+            "communes": profils.communes(db),
+        }
+
+
+@router.get("/api/me/profile")
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+def get_my_profile(actor: Actor = Depends(current_actor)):
+    """Profil de l'acteur : client, prestataire, les deux ou aucun (`guest`)."""
+    with SessionLocal() as db:
+        return _me(db, actor, ledger.account_id_for(db, actor.channel, actor.external_id))
+
+
+@router.put("/api/me/client-profile")
+def save_my_client_profile(payload: ClientProfilePayload, actor: Actor = Depends(current_actor)):
+    """Inscription ou mise à jour du client Telegram. Le client WhatsApp
+    s'inscrit par /api/whatsapp/client."""
+    with SessionLocal() as db:
+        try:
+            account_id = _actor_account(db, actor, create=True)
+            profils.save_client_profile(db, account_id, first_name=payload.first_name, phone_number=payload.phone_number)
+            if payload.language is not None:
+                profils.set_language(db, account_id, payload.language)
+            if payload.phone_verified:
+                profils.record_proven_phone(db, account_id, payload.phone_number)
+            db.commit()
+        except profils.ProfileRefused as refusal:
+            raise _profile_refused(db, refusal) from refusal
+        return _me(db, actor, account_id)
+
+
+@router.patch("/api/me/language")
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+def set_my_language(payload: LanguagePayload, actor: Actor = Depends(current_actor)):
+    with SessionLocal() as db:
+        try:
+            account_id = _actor_account(db, actor)
+            profils.set_language(db, account_id, payload.language)
+            db.commit()
+        except profils.ProfileRefused as refusal:
+            raise _profile_refused(db, refusal) from refusal
+        except ledger.MoneyError as error:
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+        return _me(db, actor, account_id)
+
+
+@router.patch("/api/me/name")
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+def set_my_name(payload: NamePayload, actor: Actor = Depends(current_actor)):
+    with SessionLocal() as db:
+        account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
+        try:
+            profils.rename_client(db, account_id, payload.first_name)
+            db.commit()
+        except profils.ProfileRefused as refusal:
+            raise _profile_refused(db, refusal) from refusal
+        return _me(db, actor, account_id)
+
+
+@router.put("/api/me/provider-profile")
+@provider_action
+def save_my_provider_profile(payload: ProviderProfilePayload, actor: Actor = Depends(current_actor)):
+    """Inscription prestataire (ou nouvelle inscription). Un nouveau
+    prestataire attend la vérification de l'équipe ; une réinscription ne
+    change jamais un statut, sauf un refus qui repasse en attente."""
+    with SessionLocal() as db:
+        try:
+            account_id = _actor_account(db, actor, create=True)
+            profils.register_provider(
+                db,
+                account_id,
+                full_name=payload.full_name,
+                phone_number=payload.phone_number,
+                services=payload.services,
+                communes=payload.communes,
+                id_document_file_id=payload.id_document_file_id,
+                selfie_file_id=payload.selfie_file_id,
+                portfolio_file_ids=payload.portfolio_file_ids,
+            )
+            if payload.language is not None:
+                profils.set_language(db, account_id, payload.language)
+            if payload.phone_verified:
+                profils.record_proven_phone(db, account_id, payload.phone_number)
+            db.commit()
+        except profils.ProfileRefused as refusal:
+            raise _profile_refused(db, refusal) from refusal
+        return _me(db, actor, account_id)
+
+
+@router.put("/api/me/provider-profile/services")
+@provider_action
+def set_my_services(payload: ProviderServicesPayload, actor: Actor = Depends(current_actor)):
+    with SessionLocal() as db:
+        provider = _my_provider(db, actor)
+        try:
+            profils.set_provider_services(db, provider.account_id, payload.services)
+            db.commit()
+        except profils.ProfileRefused as refusal:
+            raise _profile_refused(db, refusal) from refusal
+        return _me(db, actor, provider.account_id)
+
+
+@router.put("/api/me/provider-profile/communes")
+@provider_action
+def set_my_communes(payload: ProviderCommunesPayload, actor: Actor = Depends(current_actor)):
+    with SessionLocal() as db:
+        provider = _my_provider(db, actor)
+        try:
+            profils.set_provider_communes(db, provider.account_id, payload.communes)
+            db.commit()
+        except profils.ProfileRefused as refusal:
+            raise _profile_refused(db, refusal) from refusal
+        return _me(db, actor, provider.account_id)
+
+
+@router.patch("/api/me/provider-profile/status")
+@provider_action
+def set_my_availability(payload: ProviderStatusPayload, actor: Actor = Depends(current_actor)):
+    """Disponible ou hors ligne, et rien d'autre : vérification, refus et
+    suspension sont des décisions de l'admin (routes /api/admin/providers)."""
+    with SessionLocal() as db:
+        provider = _my_provider(db, actor)
+        try:
+            profils.set_own_availability(db, provider.account_id, payload.status)
+            db.commit()
+        except profils.ProfileRefused as refusal:
+            raise _profile_refused(db, refusal) from refusal
+        return _me(db, actor, provider.account_id)
+
+
+@router.post("/api/bot/missions/{mission_id}/decline")
+@provider_action
+def decline_mission_alert(mission_id: int, actor: Actor = Depends(current_actor)):
+    """« Pas disponible » sur l'alerte d'une mission : compte un refus, une
+    seule fois par alerte ; au 3e refus d'affilée, le prestataire disponible
+    est mis en pause (`paused_now`)."""
+    with SessionLocal() as db:
+        account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
+        try:
+            provider, counted = crud.decline_alert(db, mission_id, account_id)
+        except crud.MissionRefused as refusal:
+            db.rollback()
+            raise HTTPException(status_code=refusal.http_status, detail={"code": refusal.code}) from refusal
+        return {
+            "status": "ok",
+            "counted": counted,
+            "paused_now": counted and provider.status == "paused" and provider.consecutive_ignored == profils.MAX_CONSECUTIVE_DECLINES,
+            "provider": _provider_to_dict(db, provider),
+        }
+
+
+# --- Admin : prestataires et demandes de service -----------------------------
+# Revérifié ici : une erreur côté bot ne suffit jamais à valider un
+# prestataire ni à lui ouvrir des missions.
+
+
+@router.get("/api/admin/providers")
+def admin_list_providers(status: str | None = None, limit: int = 20, actor: Actor = Depends(current_actor)):
+    _require_admin(actor)
+    with SessionLocal() as db:
+        try:
+            providers = profils.admin_providers(db, status=status, limit=limit)
+        except profils.ProfileRefused as refusal:
+            raise _profile_refused(db, refusal) from refusal
+        return {"status": "ok", "providers": [_provider_to_dict(db, provider) for provider in providers]}
+
+
+def _admin_provider_decision(account_id: int, actor: Actor, decide) -> dict:
+    _require_admin(actor)
+    with SessionLocal() as db:
+        if profils.provider_profile(db, account_id) is None:
+            raise HTTPException(status_code=404, detail={"code": "provider_not_found"})
+        try:
+            provider = decide(db, account_id)
+            db.commit()
+        except profils.ProfileRefused as refusal:
+            raise _profile_refused(db, refusal) from refusal
+        return {"status": "ok", "provider": _provider_to_dict(db, provider)}
+
+
+@router.post("/api/admin/providers/{account_id}/verify")
+def admin_verify_provider(account_id: int, actor: Actor = Depends(current_actor)):
+    return _admin_provider_decision(account_id, actor, profils.verify_provider)
+
+
+@router.post("/api/admin/providers/{account_id}/reject")
+def admin_reject_provider(account_id: int, actor: Actor = Depends(current_actor)):
+    return _admin_provider_decision(account_id, actor, profils.reject_provider)
+
+
+@router.post("/api/admin/providers/{account_id}/suspend")
+def admin_suspend_provider(account_id: int, actor: Actor = Depends(current_actor)):
+    return _admin_provider_decision(account_id, actor, lambda db, account: profils.set_suspended(db, account, True))
+
+
+@router.post("/api/admin/providers/{account_id}/unsuspend")
+def admin_unsuspend_provider(account_id: int, actor: Actor = Depends(current_actor)):
+    return _admin_provider_decision(account_id, actor, lambda db, account: profils.set_suspended(db, account, False))
+
+
+@router.get("/api/admin/service-requests")
+def admin_list_service_requests(limit: int = 10, actor: Actor = Depends(current_actor)):
+    _require_admin(actor)
+    with SessionLocal() as db:
+        results = crud.get_pending_service_requests(db, limit=max(1, min(limit, 50)))
+        return {"status": "ok", "service_requests": [_service_request_to_dict(db, req, provider) for req, provider in results]}
+
+
+@router.patch("/api/admin/service-requests/{request_id}")
+def admin_decide_service_request(request_id: int, payload: ServiceRequestStatusPayload, actor: Actor = Depends(current_actor)):
+    _require_admin(actor)
+    with SessionLocal() as db:
+        try:
+            req = crud.update_service_request_status(db, request_id=request_id, status=payload.status, admin_note=payload.admin_note)
+        except ValueError as exc:
+            code = str(exc)
+            raise HTTPException(status_code=409 if code == "already_reviewed" else 400, detail={"code": code}) from exc
+        if req is None:
+            raise HTTPException(status_code=404, detail={"code": "service_request_not_found"})
+        return {"status": "ok", "service_request": _service_request_to_dict(db, req)}
+
+
 app.include_router(router)
