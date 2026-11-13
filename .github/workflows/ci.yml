@@ -199,3 +199,33 @@ jobs:
           curl -sf localhost:8000/health/ready
           docker stop -t 10 backend
           docker logs backend | tail -n 5
+
+  infrastructure:
+    name: Infrastructure (Terraform)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TERRAFORM_VERSION: "1.17.2"
+      # SHA256 du zip officiel, vérifié contre releases.hashicorp.com/terraform/1.17.2/terraform_1.17.2_SHA256SUMS
+      TERRAFORM_SHA256: "e6f16b2f0b137ee5729caa8c4e79a3bae4ee261acd198a1fcfa8584a6296605b"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Installer Terraform (empreinte vérifiée)
+        run: |
+          archive="terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+          curl -sSfL -o "$archive" "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/${archive}"
+          echo "${TERRAFORM_SHA256}  ${archive}" | sha256sum --check --strict
+          mkdir -p "$HOME/.local/bin"
+          unzip -o "$archive" terraform -d "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Format
+        run: terraform fmt -check -recursive infra
+      - name: Modules et environnements (sans état, sans identifiants Google)
+        run: |
+          set -eu
+          for dossier in infra/modules/* infra/environnements/test infra/environnements/prod infra/bootstrap; do
+            echo "== $dossier"
+            (cd "$dossier" && terraform init -backend=false -input=false -no-color >/dev/null && terraform validate -no-color)
+          done
+      - name: Calendrier des tâches (copie lue par Terraform)
+        run: python3 -c "import json,sys; json.load(open('infra/calendrier.json'))"

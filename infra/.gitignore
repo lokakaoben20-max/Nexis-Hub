@@ -1,0 +1,6 @@
+# Générés par terraform init ; ne jamais committer d'état ni de cache.
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfplan
