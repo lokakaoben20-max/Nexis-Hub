@@ -4,7 +4,7 @@ Table nouvelle, vide : aucune donnée existante n'est touchée. Voir
 backend/app/idempotency.py.
 
 Revision ID: 2c3d4e5f6a7b
-Revises: f1a2b3c4d5e6
+Revises: a3b4c5d6e7f8
 Create Date: 2026-11-12
 """
 
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "2c3d4e5f6a7b"
-down_revision: Union[str, Sequence[str], None] = "f1a2b3c4d5e6"
+down_revision: Union[str, Sequence[str], None] = "a3b4c5d6e7f8"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

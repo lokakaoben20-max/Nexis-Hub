@@ -1801,30 +1801,53 @@ def save_my_client_profile(payload: ClientProfilePayload, actor: Actor = Depends
 
 @router.patch("/api/me/language")
 @open_to(ledger.TELEGRAM, ledger.WHATSAPP)
-def set_my_language(payload: LanguagePayload, actor: Actor = Depends(current_actor)):
-    with SessionLocal() as db:
+@idempotent
+def set_my_language(
+    payload: LanguagePayload,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    """Langue du compte. Le même message WhatsApp rejoué rend la même réponse
+    sans rien refaire (clé d'idempotence obligatoire pour WhatsApp)."""
+
+    def action(db) -> dict:
         try:
             account_id = _actor_account(db, actor)
             profils.set_language(db, account_id, payload.language)
-            db.commit()
+            db.flush()
         except profils.ProfileRefused as refusal:
             raise _profile_refused(db, refusal) from refusal
         except ledger.MoneyError as error:
             raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
-        return _me(db, actor, account_id)
+        return jsonable_encoder(_me(db, actor, account_id))
+
+    return _run_idempotent(request, response, actor, idempotency_key, payload.model_dump(mode="json"), action)
 
 
 @router.patch("/api/me/name")
 @open_to(ledger.TELEGRAM, ledger.WHATSAPP)
-def set_my_name(payload: NamePayload, actor: Actor = Depends(current_actor)):
-    with SessionLocal() as db:
+@idempotent
+def set_my_name(
+    payload: NamePayload,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    """Prénom du profil client. Idempotent comme `set_my_language`."""
+
+    def action(db) -> dict:
         account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
         try:
             profils.rename_client(db, account_id, payload.first_name)
-            db.commit()
+            db.flush()
         except profils.ProfileRefused as refusal:
             raise _profile_refused(db, refusal) from refusal
-        return _me(db, actor, account_id)
+        return jsonable_encoder(_me(db, actor, account_id))
+
+    return _run_idempotent(request, response, actor, idempotency_key, payload.model_dump(mode="json"), action)
 
 
 @router.put("/api/me/provider-profile")

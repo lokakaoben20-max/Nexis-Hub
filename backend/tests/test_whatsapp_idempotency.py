@@ -182,7 +182,7 @@ def test_every_write_open_to_whatsapp_is_idempotent(backend):
         for method, path, endpoint in api_routes(backend)
         if method in backend.WRITE_METHODS and "whatsapp" in backend.route_channels(endpoint)
     ]
-    assert writes == [("POST", "/api/whatsapp/client")]
+    assert sorted(writes) == [("PATCH", "/api/me/language"), ("PATCH", "/api/me/name"), ("POST", "/api/whatsapp/client")]
     for method, path, endpoint in api_routes(backend):
         if (method, path) in writes:
             assert backend.is_idempotent(endpoint), (method, path)
@@ -196,6 +196,49 @@ def test_the_backend_refuses_to_start_with_a_whatsapp_write_without_idempotence(
 
     with pytest.raises(RuntimeError, match="sans @idempotent"):
         backend.check_route_policies()
+
+
+# --- Profil : langue et prénom ------------------------------------------------------
+
+
+def patch_me(client, path, body, *, key):
+    headers = as_whatsapp(BSUID)
+    if key is not None:
+        headers["Idempotency-Key"] = key
+    return client.patch(path, json=body, headers=headers)
+
+
+@pytest.mark.parametrize(
+    "path, body", [("/api/me/language", {"language": "fr"}), ("/api/me/name", {"first_name": "Mado K."})]
+)
+def test_profile_writes_from_whatsapp_need_a_key(client, backend, path, body):
+    post(client)
+    response = patch_me(client, path, body, key=None)
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "idempotency_key_required"
+
+
+@pytest.mark.parametrize(
+    "path, body", [("/api/me/language", {"language": "fr"}), ("/api/me/name", {"first_name": "Mado K."})]
+)
+def test_profile_writes_from_whatsapp_act_once(client, backend, path, body):
+    post(client)
+    key = f"wamid.{uuid.uuid4().hex}"
+    first = patch_me(client, path, body, key=key)
+    second = patch_me(client, path, body, key=key)
+    assert first.status_code == second.status_code == 200
+    assert second.headers["Idempotent-Replayed"] == "true"
+    assert second.json() == first.json()
+    assert counts(backend) == (1, 2)
+    other = patch_me(client, path, {**body, **({"language": "en"} if "language" in body else {"first_name": "Autre"})}, key=key)
+    assert other.status_code == 409
+
+
+def test_a_refused_profile_write_records_no_key(client, backend):
+    post(client)
+    response = patch_me(client, "/api/me/language", {"language": "xx"}, key=f"wamid.{uuid.uuid4().hex}")
+    assert response.status_code >= 400
+    assert counts(backend) == (1, 1)
 
 
 # --- Purge ------------------------------------------------------------------------------

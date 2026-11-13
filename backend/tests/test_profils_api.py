@@ -8,6 +8,8 @@ service inconnu, action de prestataire depuis WhatsApp, refus rejoué.
 import importlib
 import itertools
 
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -46,6 +48,11 @@ def tg(telegram_id):
 
 def wa(bsuid=BSUID):
     return {"X-API-Key": WHATSAPP_KEY, "X-Actor-Channel": "whatsapp", "X-Actor-Id": bsuid}
+
+
+def wa_write(bsuid=BSUID):
+    """En-têtes d'une écriture WhatsApp : chaque message a sa clé d'idempotence."""
+    return {**wa(bsuid), "Idempotency-Key": f"wamid.{uuid.uuid4().hex}"}
 
 
 def code(response):
@@ -137,10 +144,10 @@ def test_client_profile_refusals(api):
 
 
 def test_whatsapp_reads_and_edits_its_own_client_profile_only(api):
-    assert api.post("/api/whatsapp/client", json={"display_name": "Marie", "language": "fr"}, headers=wa()).status_code == 200
+    assert api.post("/api/whatsapp/client", json={"display_name": "Marie", "language": "fr"}, headers=wa_write()).status_code == 200
     assert api.get("/api/me/profile", headers=wa()).json()["client"]["first_name"] == "Marie"
-    assert api.patch("/api/me/name", json={"first_name": "Mama Marie"}, headers=wa()).json()["client"]["first_name"] == "Mama Marie"
-    assert api.patch("/api/me/language", json={"language": "ln"}, headers=wa()).json()["language"] == "ln"
+    assert api.patch("/api/me/name", json={"first_name": "Mama Marie"}, headers=wa_write()).json()["client"]["first_name"] == "Mama Marie"
+    assert api.patch("/api/me/language", json={"language": "ln"}, headers=wa_write()).json()["language"] == "ln"
     # Inscription client par la route Telegram : fermée à WhatsApp.
     assert code(api.put("/api/me/client-profile", json={"first_name": "X"}, headers=wa())) == "channel_forbidden"
 
