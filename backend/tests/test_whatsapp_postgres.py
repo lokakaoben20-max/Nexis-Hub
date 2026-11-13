@@ -59,7 +59,9 @@ def account_columns(engine):
 
 
 def test_upgrade_downgrade_and_upgrade_again(engine):
-    alembic("upgrade", "head")
+    # Pas jusqu'à la tête : la migration des profils (e0f1a2b3c4d5) déplace
+    # ensuite le nom WhatsApp dans `client_profiles`.
+    alembic("upgrade", REVISION)
     assert external_id_length(engine) == 160
     assert "display_name" in account_columns(engine)
 

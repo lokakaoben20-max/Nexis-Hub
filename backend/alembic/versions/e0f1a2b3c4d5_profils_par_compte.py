@@ -153,7 +153,7 @@ def _create_catalogue_and_profiles() -> None:
         sa.Column("service_key", sa.String(length=64), nullable=False),
         sa.ForeignKeyConstraint(
             ["account_id"], ["provider_profiles.account_id"], ondelete="CASCADE",
-            name="fk_provider_services_account_id_provider_profiles",
+            name="fk_provider_services_provider_profiles",
         ),
         sa.ForeignKeyConstraint(["service_key"], ["services.key"], name="fk_provider_services_service_key_services"),
         sa.PrimaryKeyConstraint("account_id", "service_key"),
@@ -165,7 +165,7 @@ def _create_catalogue_and_profiles() -> None:
         sa.Column("commune", sa.String(length=64), nullable=False),
         sa.ForeignKeyConstraint(
             ["account_id"], ["provider_profiles.account_id"], ondelete="CASCADE",
-            name="fk_provider_communes_account_id_provider_profiles",
+            name="fk_provider_communes_provider_profiles",
         ),
         sa.ForeignKeyConstraint(["commune"], ["communes.name"], name="fk_provider_communes_commune_communes"),
         sa.PrimaryKeyConstraint("account_id", "commune"),
@@ -183,7 +183,7 @@ def _create_catalogue_and_profiles() -> None:
         sa.Column("reviewed_at", sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(
             ["provider_account_id"], ["provider_profiles.account_id"],
-            name="fk_provider_service_requests_provider_account_id_provider_profiles",
+            name="fk_provider_service_requests_provider_profiles",
         ),
         sa.PrimaryKeyConstraint("id"),
         sa.CheckConstraint("status IN ('pending', 'accepted', 'rejected')", name="ck_provider_service_requests_status"),

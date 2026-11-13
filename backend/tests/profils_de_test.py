@@ -52,3 +52,7 @@ def provider(
 
 def provider_of(db, telegram_id: int):
     return profils.provider_profile(db, ledger.account_id_for(db, ledger.TELEGRAM, telegram_id))
+
+
+def client_of(db, telegram_id: int):
+    return profils.client_profile(db, ledger.account_id_for(db, ledger.TELEGRAM, telegram_id))

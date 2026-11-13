@@ -12,3 +12,4 @@ select = ["F", "E9"]
 # redéfinition.
 "backend/tests/test_payment_mismatch.py" = ["F811"]
 "backend/tests/test_app_signed_requests.py" = ["F811"]
+"backend/tests/test_profils_postgres.py" = ["F811"]

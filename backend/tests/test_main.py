@@ -101,9 +101,9 @@ def test_backend_state_persists_to_db(tmp_path, monkeypatch, backend_db_url):
 
     # A fresh session against the same DB file must still see the row.
     with database_module.SessionLocal() as db:
-        from backend.app.models import BotUser
+        from backend.tests import profils_de_test
 
-        user = db.get(BotUser, 777)
+        user = profils_de_test.client_of(db, 777)
         assert user is not None
         assert user.phone_number == "+243800000777"
 
@@ -132,7 +132,9 @@ def test_mission_lifecycle_round_trip(tmp_path, monkeypatch, backend_db_url):
         assert missions[0]["payment_status"] == "paid_escrow"
 
 
-def _register_provider(test_client, telegram_id, services, communes, **overrides):
+def _register_provider(test_client, telegram_id, services, communes, verified=True, **overrides):
+    """Inscrit le prestataire, puis (par défaut) le fait valider par l'admin :
+    seul un prestataire vérifié est disponible."""
     payload = {
         "telegram_id": telegram_id,
         "full_name": overrides.pop("full_name", f"Provider {telegram_id}"),
@@ -142,6 +144,9 @@ def _register_provider(test_client, telegram_id, services, communes, **overrides
     }
     response = test_client.post("/api/bot/providers", json=payload)
     assert response.status_code == 200
+    if verified:
+        response = test_client.post(f"/api/bot/providers/{telegram_id}/verify")
+        assert response.status_code == 200
     return response.json()["provider"]
 
 
@@ -152,51 +157,55 @@ def test_provider_module_is_computed_from_services(tmp_path, monkeypatch, backen
         plumbing = _register_provider(test_client, 1, ["service_plomberie"], ["Gombe"])
         assert plumbing["module"] == "B"
 
-        painting = _register_provider(test_client, 2, ["service_peinture"], ["Gombe"])
+        painting = _register_provider(test_client, 2, ["service_nettoyage"], ["Gombe"])
         assert painting["module"] == "A"
 
 
-def test_provider_registration_resets_status_on_update(tmp_path, monkeypatch, backend_db_url):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
+def test_provider_registration_never_changes_the_status(tmp_path, monkeypatch, backend_db_url):
+    """Avant : une réinscription remettait le prestataire « disponible », même
+    non vérifié, refusé ou en pause. Maintenant le statut ne bouge pas, sauf
+    un prestataire refusé qui redépose une demande (en attente)."""
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
-        _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])
+        new = _register_provider(test_client, 1, ["service_nettoyage"], ["Gombe"], verified=False)
+        assert new["status"] == "pending_verification"
+        again = _register_provider(test_client, 1, ["service_nettoyage"], ["Gombe"], verified=False)
+        assert again["status"] == "pending_verification"
 
-        with database_module.SessionLocal() as db:
-            from backend.app.models import BotProvider
+        _register_provider(test_client, 2, ["service_nettoyage"], ["Gombe"])
+        assert test_client.patch("/api/bot/providers/2/status", json={"status": "offline"}).status_code == 200
+        assert _register_provider(test_client, 2, ["service_nettoyage"], ["Lemba"], verified=False)["status"] == "offline"
 
-            provider = db.get(BotProvider, 1)
-            provider.status = "paused"
-            db.commit()
-
-        updated = _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])
-        assert updated["status"] == "available"
+        _register_provider(test_client, 3, ["service_nettoyage"], ["Gombe"], verified=False)
+        assert test_client.patch("/api/bot/providers/3/status", json={"status": "rejected"}).status_code == 200
+        assert _register_provider(test_client, 3, ["service_nettoyage"], ["Gombe"], verified=False)["status"] == "pending_verification"
 
 
 def test_matching_filters_by_service_commune_and_ranks_by_score(tmp_path, monkeypatch, backend_db_url):
     backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
-        _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])  # matches, default score
-        _register_provider(test_client, 2, ["service_peinture"], ["Kintambo"])  # wrong commune
+        _register_provider(test_client, 1, ["service_nettoyage"], ["Gombe"])  # matches, default score
+        _register_provider(test_client, 2, ["service_nettoyage"], ["Lemba"])  # wrong commune
         _register_provider(test_client, 3, ["service_plomberie"], ["Gombe"])  # wrong service
-        _register_provider(test_client, 4, ["service_peinture"], ["Gombe"])  # low score
-        _register_provider(test_client, 5, ["service_peinture"], ["Gombe"])  # high score
+        _register_provider(test_client, 4, ["service_nettoyage"], ["Gombe"])  # low score
+        _register_provider(test_client, 5, ["service_nettoyage"], ["Gombe"])  # high score
 
         with database_module.SessionLocal() as db:
-            from backend.app.models import BotProvider
+            from backend.tests.profils_de_test import provider_of
 
-            low = db.get(BotProvider, 4)
+            low = provider_of(db, 4)
             low.badge = "pending"
             low.average_rating = 1.0
-            high = db.get(BotProvider, 5)
+            high = provider_of(db, 5)
             high.badge = "partner"
             high.average_rating = 5.0
             high.success_rate = 100
             high.total_missions = 10  # au-delà du seuil : le bonus fiabilité s'applique
             db.commit()
 
-        response = test_client.get("/api/bot/providers/matching", params={"service": "service_peinture", "commune": "Gombe"})
+        response = test_client.get("/api/bot/providers/matching", params={"service": "service_nettoyage", "commune": "Gombe"})
         assert response.status_code == 200
         matches = response.json()["providers"]
         assert [p["telegram_id"] for p in matches] == [5, 4, 1]
@@ -207,19 +216,19 @@ def test_perfect_success_rate_gives_no_bonus_without_enough_missions(tmp_path, m
     backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
-        _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])  # neuf, success_rate 100 par défaut
-        _register_provider(test_client, 2, ["service_peinture"], ["Gombe"])  # expérimenté
+        _register_provider(test_client, 1, ["service_nettoyage"], ["Gombe"])  # neuf, success_rate 100 par défaut
+        _register_provider(test_client, 2, ["service_nettoyage"], ["Gombe"])  # expérimenté
 
         with database_module.SessionLocal() as db:
-            from backend.app.models import BotProvider
+            from backend.tests.profils_de_test import provider_of
 
-            veteran = db.get(BotProvider, 2)
+            veteran = provider_of(db, 2)
             veteran.success_rate = 100.0
             veteran.total_missions = 5
             db.commit()
 
         response = test_client.get(
-            "/api/bot/providers/matching", params={"service": "service_peinture", "commune": "Gombe"}
+            "/api/bot/providers/matching", params={"service": "service_nettoyage", "commune": "Gombe"}
         )
         assert [p["telegram_id"] for p in response.json()["providers"]][0] == 2
 
@@ -232,7 +241,7 @@ def _create_mission(test_client, client=42, alert=(7,), key=None, **fields):
     prestataires `alert` prévenus. Renvoie son numéro, attribué par le backend."""
     payload = {
         "creation_key": key or f"demande-{next(_CREATION_KEYS)}",
-        "service": "service_peinture",
+        "service": "service_nettoyage",
         "commune": "Gombe",
         "currency": "USD",
         "description": "Peindre le salon",
@@ -248,7 +257,7 @@ def _create_mission(test_client, client=42, alert=(7,), key=None, **fields):
 
 def _setup_mission_with_quote(test_client, amount=100.0, currency="USD", urgent=False):
     test_client.post("/api/bot/users", json={"telegram_id": 42, "first_name": "Client"})
-    _register_provider(test_client, 7, ["service_peinture"], ["Gombe"])
+    _register_provider(test_client, 7, ["service_nettoyage"], ["Gombe"])
     mission_id = _create_mission(test_client, alert=(7, 8), currency=currency, urgent=urgent)
     quote_response = test_client.post(
         "/api/bot/quotes",
@@ -269,7 +278,7 @@ def test_accepting_a_quote_rejects_the_others_and_confirms_mission(tmp_path, mon
 
     with _authed_client(backend_main) as test_client:
         mission_id, quote_id = _setup_mission_with_quote(test_client)
-        _register_provider(test_client, 8, ["service_peinture"], ["Gombe"])
+        _register_provider(test_client, 8, ["service_nettoyage"], ["Gombe"])
         second_quote = test_client.post(
             "/api/bot/quotes",
             json={"mission_id": mission_id, "amount": 90.0, "currency": "USD", "delay_hours": 3},
@@ -481,7 +490,7 @@ def test_consecutive_ignored_auto_pauses_provider_after_three(tmp_path, monkeypa
     backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
-        _register_provider(test_client, 9, ["service_peinture"], ["Gombe"])
+        _register_provider(test_client, 9, ["service_nettoyage"], ["Gombe"])
 
         for _ in range(2):
             response = test_client.post("/api/bot/providers/9/ignored")
@@ -599,7 +608,7 @@ def test_update_provider_language(tmp_path, monkeypatch, backend_db_url):
     backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
-        _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])
+        _register_provider(test_client, 1, ["service_nettoyage"], ["Gombe"])
 
         response = test_client.patch("/api/bot/providers/1/language", json={"language": "ln"})
         assert response.status_code == 200
@@ -658,7 +667,9 @@ def test_a_disputed_mission_lowers_the_success_rate(tmp_path, monkeypatch, backe
         with database_module.SessionLocal() as db:
             db.get(BotMission, disputed_id).status = "disputed"
             db.commit()
-            crud._recompute_provider_stats(db, 7)
+            from backend.app import ledger
+
+            crud._recompute_provider_stats(db, ledger.account_id_for(db, ledger.TELEGRAM, 7))
 
         stats = _provider_stats(test_client)
         assert stats["total_missions"] == 2
@@ -689,7 +700,8 @@ def test_badge_stays_below_premium_when_rating_is_too_low(tmp_path, monkeypatch,
 
         stats = _provider_stats(test_client)
         assert stats["total_missions"] == 5
-        assert stats["badge"] == "pending"
+        # Prestataire vérifié (sinon il n'aurait eu aucune mission) : badge de base.
+        assert stats["badge"] == "verified"
 
 
 def test_badge_falls_back_to_verified_when_no_tier_is_earned(tmp_path, monkeypatch, backend_db_url):
@@ -711,7 +723,7 @@ def test_a_new_provider_has_no_badge_tier(tmp_path, monkeypatch, backend_db_url)
     backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
-        _register_provider(test_client, 7, ["service_plomberie"], ["Gombe"])
+        _register_provider(test_client, 7, ["service_plomberie"], ["Gombe"], verified=False)
         stats = _provider_stats(test_client)
         assert stats["badge"] == "pending"
         assert stats["total_missions"] == 0
@@ -762,23 +774,26 @@ def test_verify_provider_endpoint_sets_is_verified(tmp_path, monkeypatch, backen
     backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
-        _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])
+        pending = _register_provider(test_client, 1, ["service_nettoyage"], ["Gombe"], verified=False)
+        assert pending["is_verified"] is False
 
         response = test_client.post("/api/bot/providers/1/verify")
         assert response.status_code == 200
         assert response.json()["provider"]["is_verified"] is True
+        assert response.json()["provider"]["status"] == "available"
 
 
 def test_suspend_then_unsuspend_provider(tmp_path, monkeypatch, backend_db_url):
     backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 
     with _authed_client(backend_main) as test_client:
-        _register_provider(test_client, 1, ["service_peinture"], ["Gombe"])
+        _register_provider(test_client, 1, ["service_nettoyage"], ["Gombe"])
 
         suspend_response = test_client.post("/api/bot/providers/1/suspend")
         assert suspend_response.status_code == 200
         assert suspend_response.json()["provider"]["is_suspended"] is True
-        assert suspend_response.json()["provider"]["status"] == "paused"
+        # La suspension est un drapeau : le statut est retrouvé au rétablissement.
+        assert suspend_response.json()["provider"]["status"] == "available"
 
         unsuspend_response = test_client.post("/api/bot/providers/1/unsuspend")
         assert unsuspend_response.status_code == 200
@@ -802,14 +817,14 @@ def test_rank_providers_orders_given_ids_by_score_without_availability_filter(tm
 
     with _authed_client(backend_main) as test_client:
         for telegram_id in (1, 2, 3):
-            _register_provider(test_client, telegram_id, ["service_peinture"], ["Gombe"])
+            _register_provider(test_client, telegram_id, ["service_nettoyage"], ["Gombe"])
         with database_module.SessionLocal() as db:
-            from backend.app.models import BotProvider
+            from backend.tests.profils_de_test import provider_of
 
-            best = db.get(BotProvider, 3)
+            best = provider_of(db, 3)
             best.average_rating = 5.0
             best.status = "offline"  # périmé : le prestataire s'est remis disponible via la Mini App
-            db.get(BotProvider, 2).average_rating = 4.0
+            provider_of(db, 2).average_rating = 4.0
             db.commit()
 
         response = test_client.post("/api/bot/providers/rank", json={"telegram_ids": [1, 2, 3, 999]})
@@ -878,7 +893,7 @@ def test_only_one_quote_is_accepted_and_it_cannot_be_withdrawn(tmp_path, monkeyp
 
     with _authed_client(backend_main) as test_client:
         mission_id, first = _setup_mission_with_quote(test_client)
-        _register_provider(test_client, 8, ["service_peinture"], ["Gombe"])
+        _register_provider(test_client, 8, ["service_nettoyage"], ["Gombe"])
         second = test_client.post(
             "/api/bot/quotes",
             json={"mission_id": mission_id, "amount": 90.0, "currency": "USD", "delay_hours": 3},
@@ -902,7 +917,7 @@ def test_backend_refuses_a_quote_from_the_mission_client(tmp_path, monkeypatch, 
 
     with _authed_client(backend_main) as test_client:
         mission_id, _ = _setup_mission_with_quote(test_client)
-        _register_provider(test_client, 42, ["service_peinture"], ["Gombe"])
+        _register_provider(test_client, 42, ["service_nettoyage"], ["Gombe"])
         response = test_client.post(
             "/api/bot/quotes",
             json={"mission_id": mission_id, "amount": 10.0, "currency": "USD", "delay_hours": 1},

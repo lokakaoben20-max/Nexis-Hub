@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 
-from backend.app import crud, ledger, mobile_money
+from backend.app import ledger, mobile_money
 from backend.tests import profils_de_test
 from backend.tests.test_ledger import accepted_quote
 from backend.app.payment_gateway import FAILED, PENDING, SUCCEEDED, GatewayResult, GatewayUnavailable
