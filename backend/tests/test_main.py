@@ -421,9 +421,14 @@ def test_money_endpoints_return_a_stable_code_and_the_current_mission_on_refusal
         assert missing.json()["detail"] == {"code": "mission_not_found"}
 
 
-def test_dispute_freezes_funds_and_admin_split_pays_both_parties(tmp_path, monkeypatch, backend_db_url):
+def test_dispute_decision_waits_can_be_contested_and_is_reviewed_by_someone_else(tmp_path, monkeypatch, backend_db_url):
     monkeypatch.setenv("ADMIN_TELEGRAM_ID", "1")
     backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
+    from backend.app import tasks
+
+    sent = []
+    monkeypatch.setattr(tasks, "ADMIN_TELEGRAM_ID", "1")
+    monkeypatch.setattr(tasks, "send_telegram_message", lambda telegram_id, text, markup=None: sent.append((telegram_id, markup)) or True)
 
     with _authed_client(backend_main) as test_client:
         mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
@@ -439,33 +444,81 @@ def test_dispute_freezes_funds_and_admin_split_pays_both_parties(tmp_path, monke
         assert frozen.json()["detail"]["code"] == "mission_disputed"
 
         not_admin = test_client.post(
-            f"/api/bot/missions/{mission_id}/dispute/resolve",
+            f"/api/bot/missions/{mission_id}/dispute/decide",
             json={"decision": "refund"},
             headers=_as(42),
         )
         assert not_admin.status_code == 403
         assert not_admin.json()["detail"] == {"code": "not_admin"}
 
-        resolved = test_client.post(
-            f"/api/bot/missions/{mission_id}/dispute/resolve",
+        # Première décision : enregistrée, l'argent ne bouge pas avant 3 jours.
+        decided = test_client.post(
+            f"/api/bot/missions/{mission_id}/dispute/decide",
+            json={"decision": "release"},
+            headers=_as(1),
+        )
+        assert decided.status_code == 200
+        assert decided.json()["mission"]["status"] == "disputed"
+        assert decided.json()["money"]["settlement"] is None
+        decision = decided.json()["money"]["dispute_decisions"][0]
+        assert (decision["round"], decision["state"], decision["provider_amount"]) == (1, "pending", "90.00")
+        assert "decided_by_telegram_id" not in decision
+        assert test_client.get("/api/me/wallet", headers=_as(7)).json()["wallet"]["wallet_balance_usd"] == 0.0
+        assert sorted(telegram_id for telegram_id, _ in sent) == [7, 42]
+        assert all("Contester" in str(markup) for _, markup in sent)
+
+        stranger = test_client.post(f"/api/bot/missions/{mission_id}/dispute/contest", json={"reason": "Moi aussi"}, headers=_as(999))
+        assert stranger.status_code == 403
+        assert stranger.json()["detail"]["code"] == "not_mission_party"
+
+        sent.clear()
+        contested = test_client.post(
+            f"/api/bot/missions/{mission_id}/dispute/contest", json={"reason": "Le travail n'est pas fini"}, headers=_as(42)
+        )
+        assert contested.status_code == 200
+        assert contested.json()["money"]["dispute_decisions"][0]["state"] == "contested"
+        # Le prestataire et l'admin sont prévenus.
+        assert sorted(telegram_id for telegram_id, _ in sent) == [1, 7]
+
+        listed = test_client.get("/api/admin/missions?status=disputed", headers=_as(1)).json()["missions"][0]
+        assert listed["dispute_decisions"][0]["decided_by_telegram_id"] == 1
+        assert listed["dispute_decisions"][0]["contest_reason"] == "Le travail n'est pas fini"
+
+        same_person = test_client.post(
+            f"/api/bot/missions/{mission_id}/dispute/decide",
             json={"decision": "split", "provider_percentage": 50},
             headers=_as(1),
         )
-        assert resolved.status_code == 200
-        assert resolved.json()["mission"]["payment_status"] == "split"
-        assert resolved.json()["money"]["settlement"]["provider_amount"] == "45.00"
-        assert resolved.json()["money"]["settlement"]["client_amount"] == "45.00"
-        assert resolved.json()["money"]["settlement"]["platform_amount"] == "10.00"
+        assert same_person.status_code == 403
+        assert same_person.json()["detail"]["code"] == "same_reviewer"
+
+        # Une autre personne de Nexis Hub revoit : décision finale, exécutée tout de suite.
+        monkeypatch.setenv("ADMIN_TELEGRAM_ID", "2")
+        sent.clear()
+        reviewed = test_client.post(
+            f"/api/bot/missions/{mission_id}/dispute/decide",
+            json={"decision": "split", "provider_percentage": 50},
+            headers=_as(2),
+        )
+        assert reviewed.status_code == 200
+        assert reviewed.json()["mission"]["payment_status"] == "split"
+        assert reviewed.json()["money"]["settlement"]["provider_amount"] == "45.00"
+        assert reviewed.json()["money"]["settlement"]["client_amount"] == "50.00"
+        assert reviewed.json()["money"]["settlement"]["platform_amount"] == "5.00"
         assert test_client.get("/api/me/wallet", headers=_as(7)).json()["wallet"]["wallet_balance_usd"] == 45.0
-        assert test_client.get("/api/me/wallet", headers=_as(42)).json()["wallet"]["wallet_balance_usd"] == 45.0
+        assert test_client.get("/api/me/wallet", headers=_as(42)).json()["wallet"]["wallet_balance_usd"] == 50.0
+        assert sorted(telegram_id for telegram_id, _ in sent) == [7, 42]
 
         again = test_client.post(
-            f"/api/bot/missions/{mission_id}/dispute/resolve",
+            f"/api/bot/missions/{mission_id}/dispute/decide",
             json={"decision": "refund"},
-            headers=_as(1),
+            headers=_as(2),
         )
         assert again.status_code == 409
         assert again.json()["detail"]["code"] == "already_settled"
+
+        gone = test_client.post(f"/api/bot/missions/{mission_id}/dispute/resolve", json={"decision": "refund"}, headers=_as(2))
+        assert gone.status_code in (404, 405)
 
 
 def test_profile_provider_missions_are_filtered_by_provider_not_client(tmp_path, monkeypatch, backend_db_url):

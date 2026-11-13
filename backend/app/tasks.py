@@ -1,6 +1,7 @@
 """Tâches périodiques du backend. Le calendrier et le verrou qui empêche
 deux exécutions simultanées sont dans `taches.py`."""
 
+import html
 import logging
 import os
 from datetime import datetime, timedelta
@@ -104,11 +105,20 @@ def alert_overdue_disputes(now: datetime | None = None) -> int:
         alerted = 0
         for mission in overdue:
             late_hours = int((now - mission.dispute_deadline).total_seconds() // 3600)
-            text = (
-                f"⏰ Litige sans décision : mission NXH-{mission.mission_id:04d}. Le délai de réponse "
-                f"(échéance {mission.dispute_deadline:%d/%m %H:%M} UTC) est dépassé de {late_hours} h. "
-                "L'argent reste bloqué tant que personne n'a tranché."
-            )
+            contested = any(decision.contested_at is not None for decision in ledger.dispute_decisions(db, mission.mission_id))
+            if contested:
+                text = (
+                    f"⏰ Décision contestée sans révision : mission NXH-{mission.mission_id:04d}. Le délai de réponse "
+                    f"(échéance {mission.dispute_deadline:%d/%m %H:%M} UTC) est dépassé de {late_hours} h. "
+                    "La révision doit venir d'une autre personne de Nexis Hub que celle de la première décision. "
+                    "L'argent reste bloqué jusque-là."
+                )
+            else:
+                text = (
+                    f"⏰ Litige sans décision : mission NXH-{mission.mission_id:04d}. Le délai de réponse "
+                    f"(échéance {mission.dispute_deadline:%d/%m %H:%M} UTC) est dépassé de {late_hours} h. "
+                    "L'argent reste bloqué tant que personne n'a tranché."
+                )
             if send_telegram_message(int(ADMIN_TELEGRAM_ID), text):
                 mission.dispute_overdue_alerted_at = now
                 db.commit()
@@ -116,6 +126,156 @@ def alert_overdue_disputes(now: datetime | None = None) -> int:
         return alerted
     finally:
         db.close()
+
+
+def execute_due_dispute_decisions(now: datetime | None = None) -> int:
+    """Exécute les décisions de litige non contestées dont le délai de
+    contestation de 3 jours est passé, puis prévient le client et le
+    prestataire.
+
+    Passe par `ledger.execute_dispute_decision`, qui revérifie tout sous le
+    verrou de la mission : une contestation enregistrée entre la recherche et
+    l'exécution gagne, et une décision n'est jamais exécutée deux fois."""
+    now = now or ledger._utcnow()
+    db = SessionLocal()
+    try:
+        executed = 0
+        for due in crud.find_dispute_decisions_due(db, now):
+            decision_id = due.id
+            try:
+                mission = ledger.execute_dispute_decision(db, decision_id, now=now)
+            except ledger.MoneyError as error:
+                db.rollback()
+                logger.warning("Décision de litige %s non exécutée : %s", decision_id, error.code)
+                continue
+            executed += 1
+            notify_dispute_settled(db, mission)
+        return executed
+    finally:
+        db.close()
+
+
+# Heure montrée au client et au prestataire : Kinshasa (UTC+1, sans heure
+# d'été). Les colonnes sont en UTC naïf.
+KINSHASA_OFFSET = timedelta(hours=1)
+
+
+def _kinshasa_time(value: datetime) -> str:
+    return f"{value + KINSHASA_OFFSET:%d/%m/%Y %H:%M}"
+
+
+def _amount_text(amount, currency: str) -> tuple[str, str]:
+    """Montant et devise tels qu'affichés : USD avec 2 décimales, francs
+    congolais sans décimales (règle de la charte, 2026-11-07)."""
+    if currency == "CDF":
+        return f"{amount:,.0f}".replace(",", " "), "FC"
+    return f"{amount:.2f}", currency
+
+
+def _party_language(db, mission: BotMission, role: str) -> str | None:
+    """Langue du client ou du prestataire de la mission (celle de son compte
+    Nexis). None si la mission n'a personne dans ce rôle (rien à envoyer)."""
+    telegram_id = _party_telegram_id(mission, role)
+    if telegram_id is None:
+        return None
+    return _language(db, telegram_id)
+
+
+def _party_telegram_id(mission: BotMission, role: str) -> int | None:
+    return mission.telegram_id if role == "client" else mission.provider_telegram_id
+
+
+def notify_dispute_decided(db, mission: BotMission) -> None:
+    """Première décision enregistrée : le client et le prestataire reçoivent
+    les montants prévus, la date d'exécution et un bouton pour contester."""
+    decision = next(row for row in ledger.dispute_decisions(db, mission.mission_id) if row.round == ledger.FIRST_DECISION)
+    for role, mine, theirs in (
+        ("client", decision.client_amount, decision.provider_amount),
+        ("provider", decision.provider_amount, decision.client_amount),
+    ):
+        lang = _party_language(db, mission, role)
+        if lang is None:
+            continue
+        mine_text, currency = _amount_text(mine, decision.currency)
+        theirs_text, _ = _amount_text(theirs, decision.currency)
+        text = get_message(
+            f"dispute_decision_{role}",
+            lang,
+            mission_id=mission.mission_id,
+            mine=mine_text,
+            theirs=theirs_text,
+            currency=currency,
+            deadline=_kinshasa_time(decision.execute_after),
+        )
+        keyboard = {
+            "inline_keyboard": [
+                [
+                    {
+                        "text": get_message("button_contest_decision", lang),
+                        # c / p : la langue à utiliser ensuite (client ou prestataire).
+                        "callback_data": f"dispute_contest_{role[0]}_{mission.mission_id}",
+                    }
+                ]
+            ]
+        }
+        send_telegram_message(_party_telegram_id(mission, role), text, keyboard)
+
+
+def notify_dispute_contested(db, mission: BotMission) -> None:
+    """Décision contestée : l'autre partie est prévenue que l'argent reste
+    bloqué, et l'admin qu'une autre personne doit revoir le litige."""
+    decision = next(row for row in ledger.dispute_decisions(db, mission.mission_id) if row.round == ledger.FIRST_DECISION)
+    other = "provider" if decision.contested_by_role == "client" else "client"
+    lang = _party_language(db, mission, other)
+    if lang is not None:
+        send_telegram_message(
+            _party_telegram_id(mission, other),
+            get_message(f"dispute_contested_notify_{other}", lang, mission_id=mission.mission_id),
+        )
+    who = "le client" if decision.contested_by_role == "client" else "le prestataire"
+    _alert_admin(
+        f"⚖️ Décision contestée par {who} : mission NXH-{mission.mission_id:04d}.\n"
+        f"Raison : {html.escape(decision.contest_reason or '')}\n"
+        f"À revoir avant le {mission.dispute_deadline:%d/%m %H:%M} UTC par une autre personne de Nexis Hub "
+        "que celle qui a pris la première décision. L'argent reste bloqué."
+    )
+
+
+def notify_dispute_settled(db, mission: BotMission) -> None:
+    """Prévient le client et le prestataire qu'une décision de litige a été
+    appliquée, avec les montants du règlement enregistré."""
+    settlement = ledger.mission_money_state(db, mission.mission_id)["settlement"] or {}
+    decision = settlement.get("decision")
+    if decision not in ledger.DISPUTE_DECISIONS:
+        return
+    mission_id, currency = mission.mission_id, mission.currency
+    client_lang = _party_language(db, mission, "client")
+    if client_lang is not None:
+        client_text = {
+            "refund": get_message("dispute_resolved_refund_client", client_lang, mission_id=mission_id),
+            "release": get_message("dispute_resolved_release_client", client_lang, mission_id=mission_id),
+            "split": get_message(
+                "dispute_resolved_split_client",
+                client_lang,
+                mission_id=mission_id,
+                refund=settlement.get("client_amount"),
+                currency=currency,
+            ),
+        }[decision]
+        send_telegram_message(mission.telegram_id, client_text)
+    provider_lang = _party_language(db, mission, "provider")
+    if provider_lang is not None:
+        if decision == "refund":
+            provider_text = get_message("dispute_resolved_refund_provider", provider_lang, mission_id=mission_id)
+        else:
+            provider_text = get_message(
+                f"dispute_resolved_{decision}_provider",
+                provider_lang,
+                mission_id=mission_id,
+                net=settlement.get("provider_amount"),
+                currency=currency,
+            )
+        send_telegram_message(mission.provider_telegram_id, provider_text)
 
 
 def send_provider_reminders() -> int:

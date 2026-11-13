@@ -118,15 +118,31 @@ reçoit le devis moins la commission.
 - litige : `disputed`, fonds gelés ; ouvrable par le client de la mission
   depuis `confirmed`, `in_progress` ou `awaiting_confirmation`, jamais après
   un règlement
-- résolution admin : `cancelled` / `refunded`, `completed` / `released`, ou
-  `completed` / `split`
+- décision de Nexis Hub, en deux temps (table `dispute_decisions`) :
+  - la première décision (rembourser, payer le prestataire, ou partager) est
+    enregistrée avec ses montants figés ; la mission reste `disputed` et
+    l'argent gelé pendant 3 jours (`execute_after`) ;
+  - pendant ces 3 jours, le client ou le prestataire peut la contester, une
+    seule fois, avec une raison. Le délai de réponse de 48 h repart pour la
+    révision ;
+  - sans contestation, la tâche `decisions-litiges` l'exécute à l'échéance,
+    avec les montants figés, une seule fois ;
+  - une décision contestée est revue par une autre personne de Nexis Hub que
+    celle de la première décision (refus `same_reviewer`) ; la révision est
+    finale et exécutée tout de suite. Avec un seul admin, l'argent reste
+    gelé : jamais d'exécution par défaut ;
+  - états finaux : `cancelled` / `refunded`, `completed` / `released`, ou
+    `completed` / `split`
+- partage au prorata : pour p % au prestataire, il reçoit son net × p,
+  Nexis Hub garde sa commission × p (chacun arrondi au centime), et le client
+  récupère le reste du total, frais compris (la somme vaut toujours zéro)
 - libération auto 48 h : seulement depuis `awaiting_confirmation`, donc
   jamais une mission en litige. L'échéance (`release_after`) est fixée quand
   le prestataire déclare la mission terminée et ne change plus ensuite ; les
   missions terminées avant le passage à 48 h gardent leur échéance de 24 h
-- litige sans décision après le délai de réponse de 48 h : alerte admin (tâche
-  `litiges-en-retard`), puis une relance par jour ; aucun argent ne bouge
-  sans décision humaine
+- litige sans décision (ou décision contestée sans révision) après le délai
+  de réponse de 48 h : alerte admin (tâche `litiges-en-retard`), puis une
+  relance par jour ; aucun argent ne bouge sans décision humaine
 
 Atomicité : chaque opération est une seule transaction SQL (mission
 verrouillée `FOR UPDATE`, wallet client verrouillé pour un paiement wallet,
@@ -197,9 +213,11 @@ qu'aux numéros dont la vérification est enregistrée.
   référence `SIM-…`.
 - Retraits vers Mobile Money : nouvelle opération provider → external, qui
   ne pourra jamais toucher un compte escrow.
-- Décision de litige en deux temps avec 3 jours pour contester, partage avec
-  commission au prorata, accord amiable confirmé par les deux (prochaines
-  étapes). Un litige en retard n'est jamais réglé automatiquement.
+- Plusieurs admins (rôle admin enregistré en base, à la place de
+  `ADMIN_TELEGRAM_ID`) : nécessaire pour qu'une décision contestée puisse
+  être revue par une autre personne.
+- Accord amiable confirmé par les deux. Un litige en retard n'est jamais
+  réglé automatiquement.
 
 ## Tests
 

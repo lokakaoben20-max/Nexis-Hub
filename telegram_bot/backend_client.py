@@ -470,13 +470,21 @@ async def open_dispute(mission_id: int, client_telegram_id: int, reason: str) ->
     return await _money_call("POST", f"/api/bot/missions/{mission_id}/dispute", {"reason": reason}, actor=client_telegram_id)
 
 
-async def resolve_dispute(mission_id: int, decision: str, admin_telegram_id: int, provider_percentage: float | None = None) -> dict:
+async def decide_dispute(mission_id: int, decision: str, admin_telegram_id: int, provider_percentage: float | None = None) -> dict:
+    """Décision de Nexis Hub sur un litige. La première attend 3 jours avant
+    d'être exécutée ; la révision d'une décision contestée est exécutée tout
+    de suite. Le backend prévient lui-même le client et le prestataire."""
     return await _money_call(
         "POST",
-        f"/api/bot/missions/{mission_id}/dispute/resolve",
+        f"/api/bot/missions/{mission_id}/dispute/decide",
         {"decision": decision, "provider_percentage": provider_percentage},
         actor=admin_telegram_id,
     )
+
+
+async def contest_dispute(mission_id: int, telegram_id: int, reason: str) -> dict:
+    """Le client ou le prestataire conteste la première décision."""
+    return await _money_call("POST", f"/api/bot/missions/{mission_id}/dispute/contest", {"reason": reason}, actor=telegram_id)
 
 
 async def fetch_wallets(telegram_id: int) -> dict | None:

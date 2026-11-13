@@ -11,6 +11,7 @@ from backend.app.models import (
     BotMission,
     BotQuote,
     BotReview,
+    DisputeDecision,
     MissionAlert,
     MissionMedia,
     NexisAccount,
@@ -666,8 +667,18 @@ def find_missions_due_for_auto_release(db: Session, now: datetime | None = None)
 
 
 def find_overdue_disputes(db: Session, now: datetime, realert_after: timedelta) -> list[BotMission]:
-    """Litiges sans décision dont le délai de réponse de Nexis Hub est dépassé
-    et qui n'ont pas reçu d'alerte depuis `realert_after`."""
+    """Litiges qui attendent une décision de Nexis Hub (aucune décision, ou
+    décision contestée sans révision) dont le délai de réponse est dépassé et
+    qui n'ont pas reçu d'alerte depuis `realert_after`. Une décision prise et
+    non contestée n'attend plus personne : elle sera exécutée à son échéance."""
+    waiting_for_execution = (
+        db.query(DisputeDecision.id)
+        .filter(
+            DisputeDecision.mission_id == BotMission.mission_id,
+            or_(DisputeDecision.contested_at.is_(None), DisputeDecision.round == ledger.REVIEW_DECISION),
+        )
+        .exists()
+    )
     return (
         db.query(BotMission)
         .filter(
@@ -678,8 +689,25 @@ def find_overdue_disputes(db: Session, now: datetime, realert_after: timedelta) 
                 BotMission.dispute_overdue_alerted_at.is_(None),
                 BotMission.dispute_overdue_alerted_at <= now - realert_after,
             ),
+            ~waiting_for_execution,
         )
         .order_by(BotMission.dispute_deadline)
+        .all()
+    )
+
+
+def find_dispute_decisions_due(db: Session, now: datetime) -> list[DisputeDecision]:
+    """Premières décisions de litige non contestées, pas encore exécutées, dont
+    le délai de contestation de 3 jours est passé."""
+    return (
+        db.query(DisputeDecision)
+        .filter(
+            DisputeDecision.round == ledger.FIRST_DECISION,
+            DisputeDecision.contested_at.is_(None),
+            DisputeDecision.executed_at.is_(None),
+            DisputeDecision.execute_after <= now,
+        )
+        .order_by(DisputeDecision.execute_after)
         .all()
     )
 

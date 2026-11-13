@@ -313,7 +313,10 @@ def test_refund_money_needs_the_admin_even_under_the_auto_limit(db, gateway, mon
     monkeypatch.setenv("PAYOUT_AUTO_LIMIT_USD", "1000")
     pay(db)
     ledger.open_dispute(db, 1, acc(db, CLIENT_ID), "Travail non fait")
-    ledger.resolve_dispute(db, 1, decision="refund", admin_telegram_id=ADMIN_ID)
+    admin_account = acc(db, ADMIN_ID)
+    ledger.decide_dispute(db, 1, decision="refund", admin_account_id=admin_account, admin_telegram_id=ADMIN_ID)
+    decision = ledger.dispute_decisions(db, 1)[0]
+    ledger.execute_dispute_decision(db, decision.id, now=decision.execute_after)
 
     payout = withdraw(db, 50, telegram_id=CLIENT_ID)
     assert payout.status == "awaiting_approval"
