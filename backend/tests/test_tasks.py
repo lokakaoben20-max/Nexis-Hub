@@ -276,10 +276,118 @@ def test_a_settled_dispute_is_never_reported_late(monkeypatch, tmp_path, backend
         profils_de_test.provider(db, 7, "Prestataire Test")
         db.commit()
         _overdue_dispute(db, ledger, crud, models, 1, hours_late=5)
-        ledger.resolve_dispute(db, 1, decision="refund", admin_telegram_id=900)
+        admin_account = ledger.account_id_for(db, ledger.TELEGRAM, 900, create=True)
+        ledger.decide_dispute(db, 1, decision="refund", admin_account_id=admin_account, admin_telegram_id=900)
+
+    # Décision prise, pas encore exécutée : elle n'attend plus personne.
+    assert tasks_module.alert_overdue_disputes() == 0
+
+    with database_module.SessionLocal() as db:
+        decision = ledger.dispute_decisions(db, 1)[0]
+        ledger.execute_dispute_decision(db, decision.id, now=decision.execute_after)
 
     assert tasks_module.alert_overdue_disputes() == 0
     assert sent == []
+
+
+def _decided_dispute(db, ledger, crud, models, decision="split", percentage=50):
+    profils_de_test.client(db, 1)
+    profils_de_test.provider(db, 7, full_name="Prestataire Test")
+    _paid_and_finished_mission(db, ledger, crud, 1)
+    ledger.open_dispute(db, 1, acc(db, 1), "Travail bâclé")
+    ledger.decide_dispute(db, 1, decision=decision, admin_account_id=acc(db, 900), admin_telegram_id=900, provider_percentage=percentage)
+    return ledger.dispute_decisions(db, 1)[0].execute_after
+
+
+def test_due_dispute_decisions_are_executed_once_and_both_parties_told(monkeypatch, tmp_path, backend_db_url):
+    database_module, tasks_module = _reload_backend_with_db(monkeypatch, backend_db_url)
+    from backend.app import crud, ledger
+    from backend.app import models
+
+    sent = []
+    monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text, *_: sent.append((telegram_id, text)) or True)
+
+    with database_module.SessionLocal() as db:
+        execute_after = _decided_dispute(db, ledger, crud, models)
+
+    assert tasks_module.execute_due_dispute_decisions(execute_after - timedelta(seconds=1)) == 0
+    assert sent == []
+    with database_module.SessionLocal() as db:
+        assert ledger.balance(db, ledger.ESCROW, 1, "USD") == ledger.to_money("10.00")
+
+    assert tasks_module.execute_due_dispute_decisions(execute_after) == 1
+    assert tasks_module.execute_due_dispute_decisions(execute_after + timedelta(hours=1)) == 0
+
+    # Total 10.00, commission 1.00, net 9.00 ; partage 50 % au prorata.
+    with database_module.SessionLocal() as db:
+        assert ledger.wallet_balances(db, acc(db, 7))["USD"] == ledger.to_money("4.50")
+        assert ledger.balance(db, ledger.PLATFORM, None, "USD") == ledger.to_money("0.50")
+        assert ledger.wallet_balances(db, acc(db, 1))["USD"] == ledger.to_money("5.00")
+        assert db.get(models.BotMission, 1).payment_status == "split"
+    assert sorted(telegram_id for telegram_id, _ in sent) == [1, 7]
+    assert "5.00 USD" in dict(sent)[1]
+    assert "4.50 USD" in dict(sent)[7]
+
+
+def test_a_contested_decision_is_never_executed_and_is_reported_when_late(monkeypatch, tmp_path, backend_db_url):
+    database_module, tasks_module = _reload_backend_with_db(monkeypatch, backend_db_url)
+    from backend.app import crud, ledger
+    from backend.app import models
+
+    sent = []
+    monkeypatch.setattr(tasks_module, "ADMIN_TELEGRAM_ID", "900")
+    monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text, *_: sent.append((telegram_id, text)) or True)
+
+    with database_module.SessionLocal() as db:
+        execute_after = _decided_dispute(db, ledger, crud, models, decision="release", percentage=None)
+        contested_at = execute_after - timedelta(hours=1)
+        ledger.contest_dispute_decision(db, 1, acc(db, 1), "Le travail n'est pas fini", now=contested_at)
+
+    assert tasks_module.execute_due_dispute_decisions(execute_after + timedelta(days=10)) == 0
+    # Décision contestée : la révision a 48 h, puis l'admin est relancé.
+    assert tasks_module.alert_overdue_disputes(contested_at + timedelta(hours=47)) == 0
+    assert tasks_module.alert_overdue_disputes(contested_at + timedelta(hours=48)) == 1
+    assert sent[-1][0] == 900
+    assert "contestée" in sent[-1][1] and "autre personne" in sent[-1][1]
+    with database_module.SessionLocal() as db:
+        assert ledger.balance(db, ledger.ESCROW, 1, "USD") == ledger.to_money("10.00")
+        assert ledger.mission_operation(db, 1, ledger.SETTLEMENT) is None
+
+
+def test_decision_notice_gives_amounts_deadline_and_a_contest_button(monkeypatch, tmp_path, backend_db_url):
+    database_module, tasks_module = _reload_backend_with_db(monkeypatch, backend_db_url)
+    from backend.app import crud, ledger
+    from backend.app import models
+
+    sent = []
+    monkeypatch.setattr(
+        tasks_module, "send_telegram_message", lambda telegram_id, text, markup=None: sent.append((telegram_id, text, markup)) or True
+    )
+
+    with database_module.SessionLocal() as db:
+        execute_after = _decided_dispute(db, ledger, crud, models, percentage="30")
+        tasks_module.notify_dispute_decided(db, db.get(models.BotMission, 1))
+
+    by_person = {telegram_id: (text, markup) for telegram_id, text, markup in sent}
+    assert set(by_person) == {1, 7}
+    client_text, client_markup = by_person[1]
+    provider_text, provider_markup = by_person[7]
+    # Total 10.00 : prestataire 9.00 × 30 % = 2.70, commission 0.30, client 7.00.
+    assert "Remboursé à vous : <b>7.00 USD</b>" in client_text
+    assert "Versé au prestataire : <b>2.70 USD</b>" in client_text
+    assert "Versé à vous : <b>2.70 USD</b>" in provider_text
+    kinshasa = execute_after + timedelta(hours=1)
+    assert f"{kinshasa:%d/%m/%Y %H:%M}" in client_text
+    assert client_markup["inline_keyboard"][0][0]["callback_data"] == "dispute_contest_c_1"
+    assert provider_markup["inline_keyboard"][0][0]["callback_data"] == "dispute_contest_p_1"
+
+
+def test_amounts_in_francs_have_no_decimals():
+    from backend.app import tasks
+    from decimal import Decimal
+
+    assert tasks._amount_text(Decimal("14000.00"), "CDF") == ("14 000", "FC")
+    assert tasks._amount_text(Decimal("5"), "USD") == ("5.00", "USD")
 
 
 def test_send_provider_reminders_does_not_duplicate_within_same_tier(monkeypatch, tmp_path, backend_db_url):

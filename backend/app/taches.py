@@ -94,6 +94,7 @@ CALENDRIER: dict[str, Tache] = {
     "devis-expires": Tache(tasks.check_expired_quotes, Frequence(minute=0)),
     "liberations-automatiques": Tache(tasks.release_auto_confirmed_missions, Frequence(minute=0)),
     "litiges-en-retard": Tache(tasks.alert_overdue_disputes, Frequence(minute=15)),
+    "decisions-litiges": Tache(tasks.execute_due_dispute_decisions, Frequence(toutes_les_minutes=10)),
     "verification-mobile-money": Tache(tasks.check_pending_mobile_money, Frequence(toutes_les_minutes=2)),
     "rapprochement-quotidien": Tache(tasks.send_daily_reconciliation, Frequence(heure=6, minute=0)),
     "analytics-quotidiennes": Tache(tasks.send_daily_analytics, Frequence(heure=8, minute=0)),
