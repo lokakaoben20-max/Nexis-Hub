@@ -1,6 +1,6 @@
 """Contenu initial du catalogue : services et communes servies.
 
-Figé : c'est exactement ce que la migration `e0f1a2b3c4d5` écrit dans une
+Figé : c'est exactement ce que la migration `f2a3b4c5d6e7` écrit dans une
 vraie base, et ce que `database.init_db()` écrit dans une base de test, pour
 que les deux soient identiques. Repris tel quel de l'ancien `db.py`, qui le
 recréait à chaque démarrage du bot.

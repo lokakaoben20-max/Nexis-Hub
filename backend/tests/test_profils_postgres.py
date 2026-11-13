@@ -1,4 +1,4 @@
-"""Profils au backend, sur un vrai Postgres : migration e0f1a2b3c4d5 (reprise
+"""Profils au backend, sur un vrai Postgres : migration f2a3b4c5d6e7 (reprise
 des anciennes tables, échec sûr, retour arrière) et accès simultanés.
 
 Même garde-fou que test_whatsapp_postgres.py : ne s'exécute que si
@@ -17,8 +17,8 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.tests.test_whatsapp_postgres import URL, alembic, engine  # noqa: F401 (fixture)
 
-REVISION = "e0f1a2b3c4d5"
-PREVIOUS = "d9e0f1a2b3c4"
+REVISION = "f2a3b4c5d6e7"
+PREVIOUS = "e0f1a2b3c4d5"
 TELEGRAM_KEY = "test-telegram-service-key-not-a-secret-0001"
 
 pytestmark = pytest.mark.skipif(not URL, reason="NEXIS_TEST_POSTGRES_URL absent : pas de Postgres de test")

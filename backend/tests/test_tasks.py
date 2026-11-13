@@ -191,8 +191,8 @@ def test_overdue_dispute_alerts_the_admin_once_then_daily_without_moving_money(m
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: sent.append((telegram_id, text)) or True)
 
     with database_module.SessionLocal() as db:
-        db.add(models.BotUser(telegram_id=1))
-        db.add(models.BotProvider(telegram_id=7, full_name="Prestataire Test"))
+        profils_de_test.client(db, 1)
+        profils_de_test.provider(db, 7, "Prestataire Test")
         db.commit()
         _overdue_dispute(db, ledger, crud, models, 1, hours_late=3)
         # Litige encore dans le délai de réponse : pas d'alerte.
@@ -228,8 +228,8 @@ def test_overdue_dispute_alert_is_retried_when_telegram_refuses_it(monkeypatch, 
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: bool(accepted))
 
     with database_module.SessionLocal() as db:
-        db.add(models.BotUser(telegram_id=1))
-        db.add(models.BotProvider(telegram_id=7, full_name="Prestataire Test"))
+        profils_de_test.client(db, 1)
+        profils_de_test.provider(db, 7, "Prestataire Test")
         db.commit()
         _overdue_dispute(db, ledger, crud, models, 1, hours_late=1)
 
@@ -251,8 +251,8 @@ def test_overdue_dispute_is_not_marked_alerted_without_an_admin(monkeypatch, tmp
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: sent.append(telegram_id) or True)
 
     with database_module.SessionLocal() as db:
-        db.add(models.BotUser(telegram_id=1))
-        db.add(models.BotProvider(telegram_id=7, full_name="Prestataire Test"))
+        profils_de_test.client(db, 1)
+        profils_de_test.provider(db, 7, "Prestataire Test")
         db.commit()
         _overdue_dispute(db, ledger, crud, models, 1, hours_late=1)
 
@@ -272,8 +272,8 @@ def test_a_settled_dispute_is_never_reported_late(monkeypatch, tmp_path, backend
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: sent.append(telegram_id) or True)
 
     with database_module.SessionLocal() as db:
-        db.add(models.BotUser(telegram_id=1))
-        db.add(models.BotProvider(telegram_id=7, full_name="Prestataire Test"))
+        profils_de_test.client(db, 1)
+        profils_de_test.provider(db, 7, "Prestataire Test")
         db.commit()
         _overdue_dispute(db, ledger, crud, models, 1, hours_late=5)
         ledger.resolve_dispute(db, 1, decision="refund", admin_telegram_id=900)
