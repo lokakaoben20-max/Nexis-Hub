@@ -59,6 +59,19 @@ class LiveBackend:
         self.sent = []
         self.markups = []
 
+    def grant_admin(self, telegram_id: int) -> None:
+        """Rôle admin en base, comme `python -m backend.app.admins ajouter`."""
+        from backend.app import admins
+
+        with self.database.SessionLocal() as session:
+            admins.grant(session, telegram_id, "Admin de test")
+
+    def revoke_admin(self, telegram_id: int) -> None:
+        from backend.app import admins
+
+        with self.database.SessionLocal() as session:
+            admins.revoke(session, telegram_id, "Fin du test")
+
     def balance(self, telegram_id: int, currency: str = "USD") -> float:
         from backend.app import ledger
 

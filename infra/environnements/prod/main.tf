@@ -56,11 +56,6 @@ variable "pool_identite_github" {
   type = string
 }
 
-variable "admin_telegram_id" {
-  description = "Identifiant Telegram numérique de l'administrateur ."
-  type        = string
-}
-
 variable "plages_cloudflare" {
   type = object({ ipv4 = list(string), ipv6 = list(string) })
 }
@@ -130,9 +125,8 @@ module "services" {
   reseau_id          = module.reseau.reseau_id
   sous_reseau_id     = module.reseau.sous_reseau_id
 
-  app_env           = "production"
-  admin_telegram_id = var.admin_telegram_id
-  nom_bot_telegram  = "@NexisHubBot"
+  app_env          = "production"
+  nom_bot_telegram = "@NexisHubBot"
 
   reglages_argent = {
     PAYMENT_GATEWAY       = "flexpay" # ou serdipay, choisi par Ben (agrégateurs/)

@@ -31,7 +31,6 @@ def sent(monkeypatch):
         notify, "send_telegram_photo", lambda chat_id, file_id, caption, reply_markup=None: messages.append((chat_id, f"[photo {file_id}] {caption}", reply_markup)) or True
     )
     monkeypatch.setattr(tasks, "send_telegram_message", lambda chat_id, text, reply_markup=None: messages.append((chat_id, text, reply_markup)))
-    monkeypatch.setattr(tasks, "ADMIN_TELEGRAM_ID", str(ADMIN))
     return messages
 
 

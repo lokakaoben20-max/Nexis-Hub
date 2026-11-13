@@ -3,17 +3,15 @@ deux exécutions simultanées sont dans `taches.py`."""
 
 import html
 import logging
-import os
 from datetime import datetime, timedelta
 
-from backend.app import app_sessions, crud, idempotency, ledger, mobile_money, profils, reconciliation
+from backend.app import admins, app_sessions, crud, idempotency, ledger, mobile_money, profils, reconciliation
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, Device, NexisAccount, PaymentIntent, Payout
 from backend.app.notify import send_telegram_message
 from backend.app.presence import provider_arrival_keyboard
 from messages import get_message
 
-ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID")
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +97,8 @@ def alert_overdue_disputes(now: datetime | None = None) -> int:
         overdue = crud.find_overdue_disputes(db, now, OVERDUE_DISPUTE_REALERT)
         if not overdue:
             return 0
-        if not ADMIN_TELEGRAM_ID:
-            logger.error("%s litige(s) en retard, mais ADMIN_TELEGRAM_ID n'est pas configuré", len(overdue))
+        if not admins.admin_telegram_ids(db):
+            logger.error("%s litige(s) en retard, mais aucun admin n'est enregistré (python -m backend.app.admins)", len(overdue))
             return 0
         alerted = 0
         for mission in overdue:
@@ -119,7 +117,7 @@ def alert_overdue_disputes(now: datetime | None = None) -> int:
                     f"(échéance {mission.dispute_deadline:%d/%m %H:%M} UTC) est dépassé de {late_hours} h. "
                     "L'argent reste bloqué tant que personne n'a tranché."
                 )
-            if send_telegram_message(int(ADMIN_TELEGRAM_ID), text):
+            if _alert_admin(text):
                 mission.dispute_overdue_alerted_at = now
                 db.commit()
                 alerted += 1
@@ -315,15 +313,15 @@ def send_provider_reminders() -> int:
 
 
 def send_daily_analytics() -> bool:
-    """Rapport quotidien à `ADMIN_TELEGRAM_ID` : missions créées/terminées,
+    """Rapport quotidien aux admins : missions créées/terminées,
     volume et commission des dernières 24h, groupés par devise.
 
     Agrégé depuis `BotMission` (qui porte déjà `total_client`/
     `commission_amount` par mission) plutôt que `BotTransaction`, qui n'a pas
     de timestamp — évite une migration supplémentaire pour ce seul rapport.
     """
-    if not ADMIN_TELEGRAM_ID:
-        logger.warning("ADMIN_TELEGRAM_ID manquant : analytics quotidiennes non envoyées")
+    if not _admin_ids():
+        logger.warning("Aucun admin enregistré : analytics quotidiennes non envoyées")
         return False
 
     db = SessionLocal()
@@ -349,8 +347,7 @@ def send_daily_analytics() -> bool:
             for currency, totals in totals_by_currency.items()
         ) or "Aucune mission terminée."
 
-        send_telegram_message(
-            int(ADMIN_TELEGRAM_ID),
+        return _alert_admin(
             get_message(
                 "daily_analytics_admin_report",
                 "fr",
@@ -358,9 +355,8 @@ def send_daily_analytics() -> bool:
                 missions_created=missions_created,
                 missions_completed=len(completed_today),
                 breakdown=breakdown,
-            ),
+            )
         )
-        return True
     finally:
         db.close()
 
@@ -377,9 +373,20 @@ def _language(db, telegram_id: int) -> str:
     return account.language if account is not None else "fr"
 
 
-def _alert_admin(text: str) -> None:
-    if ADMIN_TELEGRAM_ID:
-        send_telegram_message(int(ADMIN_TELEGRAM_ID), text)
+def _admin_ids() -> list[int]:
+    with SessionLocal() as db:
+        return admins.admin_telegram_ids(db)
+
+
+def _alert_admin(text: str) -> bool:
+    """Envoie l'alerte à chaque admin. Vrai si au moins un l'a reçue ; sans
+    admin enregistré, l'alerte est journalisée en erreur."""
+    ids = _admin_ids()
+    if not ids:
+        logger.error("Alerte admin non envoyée, aucun admin enregistré : %s", text)
+        return False
+    delivered = [bool(send_telegram_message(telegram_id, text)) for telegram_id in ids]
+    return any(delivered)
 
 
 def refresh_and_notify_intent(db, intent_id: int) -> str:

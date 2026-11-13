@@ -13,6 +13,9 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.app import admins
+from backend.tests import profils_de_test
+
 TELEGRAM_KEY = "test-telegram-service-key-not-a-secret-0001"
 WHATSAPP_KEY = "test-whatsapp-service-key-not-a-secret-0002"
 BSUID = "CD.13491208655302741918"
@@ -28,11 +31,13 @@ def backend(backend_db_url, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", backend_db_url)
     monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TELEGRAM_KEY)
     monkeypatch.setenv("BACKEND_API_KEY_WHATSAPP", WHATSAPP_KEY)
-    monkeypatch.setenv("ADMIN_TELEGRAM_ID", str(ADMIN))
     database = importlib.reload(importlib.import_module("backend.app.database"))
     importlib.reload(importlib.import_module("backend.app.models"))
     main = importlib.reload(importlib.import_module("backend.app.main"))
     database.init_db()
+    with database.SessionLocal() as db:
+        profils_de_test.admin(db, ADMIN)
+    main.database = database
     return main
 
 
@@ -239,9 +244,10 @@ def test_admin_routes_refuse_anyone_but_the_configured_admin(api, method, path):
     assert api.get("/api/me/profile", headers=tg(PROVIDER)).json()["provider"]["status"] == "pending_verification"
 
 
-def test_without_a_configured_admin_nobody_is_admin(api, monkeypatch):
+def test_without_a_configured_admin_nobody_is_admin(api, backend):
     register(api)
-    monkeypatch.delenv("ADMIN_TELEGRAM_ID")
+    with backend.database.SessionLocal() as db:
+        admins.revoke(db, ADMIN, "Fin du test")
     assert code(api.get("/api/admin/providers", headers=tg(ADMIN))) == "not_admin"
 
 

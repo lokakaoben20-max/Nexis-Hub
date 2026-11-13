@@ -181,12 +181,37 @@ Refus métier : HTTP 409 (ou 404 / 403) avec un code stable (`already_paid`,
   missions : écrans et listes admin les relisent dans le backend.
 - Les soldes affichés (wallet client, wallet prestataire, écran de paiement)
   viennent uniquement du backend ; injoignable = « solde indisponible ».
-- Les actions admin sur l'argent exigent `ADMIN_TELEGRAM_ID` configuré (avant,
-  sans cette variable, tout le monde était admin).
+- Les actions admin sur l'argent exigent un rôle admin enregistré en base
+  (voir « Admins » plus bas). Sans rôle donné, personne n'est admin.
 - Supprimés : soldes, transactions, missions, devis et avis dans `db.py`, fonctions de paiement,
   libération et litige de `db.py`, file `backend_outbox` et son rejeu,
   `backfill_wallets_to_backend.py`, comparaison des wallets dans
   `audit_backend_parity.py`.
+
+## Admins
+
+Plusieurs personnes de Nexis Hub peuvent être admin (litiges, retraits,
+montants différents, vérification des prestataires). Le rôle est enregistré
+en base (`admin_roles`), rattaché au compte Nexis de la personne, et n'existe
+que par cette commande, qui garde la date et la raison :
+
+    python -m backend.app.admins ajouter <identifiant Telegram> --raison "..."
+    python -m backend.app.admins retirer <identifiant Telegram> --raison "..."
+    python -m backend.app.admins liste
+
+- Aucune route de l'API ne donne ni ne retire le rôle. Une ligne n'est jamais
+  effacée : un retrait remplit `revoked_at`.
+- Le backend vérifie le rôle à chaque décision ; le bot lui demande
+  (`GET /api/bot/admin/me`) et n'a aucune liste locale. Backend injoignable :
+  personne n'est admin.
+- Les alertes (litiges en retard, contestations, rapport quotidien, nouveau
+  prestataire à vérifier) partent vers chaque admin.
+- Il faut au moins deux admins : une décision de litige contestée doit être
+  revue par une autre personne que celle qui l'a prise. Avec un seul admin,
+  l'argent reste bloqué.
+- `ADMIN_TELEGRAM_ID` n'est plus lu ; hors développement, le démarrage est
+  refusé s'il est encore réglé, pour qu'il ne fasse croire à personne qu'il
+  désigne un admin.
 
 ## Migration des données
 
@@ -213,9 +238,6 @@ qu'aux numéros dont la vérification est enregistrée.
   référence `SIM-…`.
 - Retraits vers Mobile Money : nouvelle opération provider → external, qui
   ne pourra jamais toucher un compte escrow.
-- Plusieurs admins (rôle admin enregistré en base, à la place de
-  `ADMIN_TELEGRAM_ID`) : nécessaire pour qu'une décision contestée puisse
-  être revue par une autre personne.
 - Accord amiable confirmé par les deux. Un litige en retard n'est jamais
   réglé automatiquement.
 

@@ -40,7 +40,6 @@ def _reload_backend_with_db(monkeypatch, backend_db_url):
     """
     monkeypatch.setenv("DATABASE_URL", backend_db_url)
     monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TEST_API_KEY)
-    monkeypatch.setenv("ADMIN_TELEGRAM_ID", "999")
 
     database_module = importlib.reload(importlib.import_module("backend.app.database"))
     importlib.reload(importlib.import_module("backend.app.models"))
@@ -181,13 +180,39 @@ def _overdue_dispute(db, ledger, crud, models, mission_id, hours_late):
     db.commit()
 
 
+def test_every_admin_gets_the_alert_and_one_failed_send_does_not_hide_it(monkeypatch, tmp_path, backend_db_url):
+    """Plusieurs admins : chacun est prévenu. Un envoi raté (bot bloqué par
+    l'un) ne compte pas comme une alerte manquée tant qu'un autre l'a reçue ;
+    un admin retiré n'est plus prévenu."""
+    database_module, tasks_module = _reload_backend_with_db(monkeypatch, backend_db_url)
+    from backend.app import admins, crud, ledger
+    from backend.app import models
+
+    attempts = []
+    monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: attempts.append(telegram_id) or telegram_id != 900)
+
+    with database_module.SessionLocal() as db:
+        for telegram_id in (900, 901, 902):
+            profils_de_test.admin(db, telegram_id)
+        admins.revoke(db, 902, "Départ")
+        profils_de_test.client(db, 1)
+        profils_de_test.provider(db, 7, "Prestataire Test")
+        _overdue_dispute(db, ledger, crud, models, 1, hours_late=3)
+
+    assert tasks_module.alert_overdue_disputes(datetime.utcnow()) == 1
+    assert attempts == [900, 901]
+    with database_module.SessionLocal() as db:
+        assert db.get(models.BotMission, 1).dispute_overdue_alerted_at is not None
+
+
 def test_overdue_dispute_alerts_the_admin_once_then_daily_without_moving_money(monkeypatch, tmp_path, backend_db_url):
     database_module, tasks_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     from backend.app import crud, ledger
     from backend.app import models
 
     sent = []
-    monkeypatch.setattr(tasks_module, "ADMIN_TELEGRAM_ID", "900")
+    with database_module.SessionLocal() as db:
+        profils_de_test.admin(db, 900)
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: sent.append((telegram_id, text)) or True)
 
     with database_module.SessionLocal() as db:
@@ -224,7 +249,8 @@ def test_overdue_dispute_alert_is_retried_when_telegram_refuses_it(monkeypatch, 
     from backend.app import models
 
     accepted = []
-    monkeypatch.setattr(tasks_module, "ADMIN_TELEGRAM_ID", "900")
+    with database_module.SessionLocal() as db:
+        profils_de_test.admin(db, 900)
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: bool(accepted))
 
     with database_module.SessionLocal() as db:
@@ -247,7 +273,6 @@ def test_overdue_dispute_is_not_marked_alerted_without_an_admin(monkeypatch, tmp
     from backend.app import models
 
     sent = []
-    monkeypatch.setattr(tasks_module, "ADMIN_TELEGRAM_ID", None)
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: sent.append(telegram_id) or True)
 
     with database_module.SessionLocal() as db:
@@ -268,7 +293,8 @@ def test_a_settled_dispute_is_never_reported_late(monkeypatch, tmp_path, backend
     from backend.app import models
 
     sent = []
-    monkeypatch.setattr(tasks_module, "ADMIN_TELEGRAM_ID", "900")
+    with database_module.SessionLocal() as db:
+        profils_de_test.admin(db, 900)
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: sent.append(telegram_id) or True)
 
     with database_module.SessionLocal() as db:
@@ -335,7 +361,8 @@ def test_a_contested_decision_is_never_executed_and_is_reported_when_late(monkey
     from backend.app import models
 
     sent = []
-    monkeypatch.setattr(tasks_module, "ADMIN_TELEGRAM_ID", "900")
+    with database_module.SessionLocal() as db:
+        profils_de_test.admin(db, 900)
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text, *_: sent.append((telegram_id, text)) or True)
 
     with database_module.SessionLocal() as db:

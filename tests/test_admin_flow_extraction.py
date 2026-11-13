@@ -123,7 +123,7 @@ async def _async_return(value):
 
 def test_non_admin_is_refused_on_any_handler(tmp_path, monkeypatch):
     _init_db(tmp_path)
-    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: False)
+    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=False))
 
     callback = DummyCallback(telegram_id=999, data="admin_stats")
     asyncio.run(admin.admin_stats(callback))
@@ -138,7 +138,7 @@ def test_non_admin_is_refused_on_any_handler(tmp_path, monkeypatch):
 def test_admin_suspend_provider_notifies_via_callback_bot_and_syncs_backend(tmp_path, monkeypatch):
     _init_db(tmp_path)
     _use_dummy_backend(monkeypatch)
-    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
     monkeypatch.setattr(admin, "get_provider_language", lambda telegram_id: _async_return("fr"))
 
     telegram_id = 2001
@@ -161,7 +161,7 @@ def test_admin_suspend_provider_notifies_via_callback_bot_and_syncs_backend(tmp_
 def test_admin_unsuspend_provider_notifies_via_callback_bot_and_syncs_backend(tmp_path, monkeypatch):
     _init_db(tmp_path)
     _use_dummy_backend(monkeypatch)
-    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
     monkeypatch.setattr(admin, "get_provider_language", lambda telegram_id: _async_return("fr"))
 
     telegram_id = 2002
@@ -182,7 +182,7 @@ def test_admin_unsuspend_provider_notifies_via_callback_bot_and_syncs_backend(tm
 
 def test_admin_suspend_provider_answers_alert_when_provider_missing(tmp_path, monkeypatch):
     _init_db(tmp_path)
-    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
 
     callback = DummyCallback(999, data="admin_suspend_provider_9999")
     asyncio.run(admin.admin_suspend_provider(callback))
@@ -198,7 +198,7 @@ def test_admin_accept_service_notifies_provider_via_callback_bot(tmp_path, monke
     telegram_id = 2003
     db.create_provider(telegram_id, "+243800002003", "Proposeur", ["service_plomberie"], ["Gombe"], language="fr")
     request_id = db.create_service_request(telegram_id, "Service exotique", "Description suffisamment longue.")
-    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
 
     bot = DummyBot()
     callback = DummyCallback(999, data=f"admin_accept_service_{request_id}", bot=bot)
@@ -215,7 +215,7 @@ def test_admin_reject_service_notifies_provider_via_callback_bot(tmp_path, monke
     telegram_id = 2004
     db.create_provider(telegram_id, "+243800002004", "Proposeur", ["service_plomberie"], ["Gombe"], language="fr")
     request_id = db.create_service_request(telegram_id, "Service refusé", "Description suffisamment longue.")
-    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
 
     bot = DummyBot()
     callback = DummyCallback(999, data=f"admin_reject_service_{request_id}", bot=bot)
@@ -234,7 +234,7 @@ def test_admin_service_requests_lists_pending_only(tmp_path, monkeypatch):
     accepted_id = db.create_service_request(telegram_id, "Déjà traité", "Description suffisamment longue.")
     db.update_service_request_status(accepted_id, "accepted", "note")
     pending_id = db.create_service_request(telegram_id, "En attente", "Description suffisamment longue.")
-    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
 
     callback = DummyCallback(999, data="admin_service_requests")
     asyncio.run(admin.admin_service_requests(callback))
@@ -262,7 +262,7 @@ def test_admin_cannot_decide_a_service_request_twice(tmp_path, monkeypatch):
     _use_dummy_backend(monkeypatch)
     telegram_id = 2010
     request_id = _pending_request(telegram_id)
-    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
 
     bot = DummyBot()
     asyncio.run(admin.admin_accept_service(DummyCallback(999, data=f"admin_accept_service_{request_id}", bot=bot)))
@@ -280,7 +280,7 @@ def test_admin_decision_is_mirrored_to_backend_when_backend_id_known(tmp_path, m
     _use_dummy_backend(monkeypatch)
     telegram_id = 2011
     request_id = _pending_request(telegram_id, backend_request_id=55)
-    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
 
     asyncio.run(admin.admin_reject_service(DummyCallback(999, data=f"admin_reject_service_{request_id}")))
 
@@ -298,7 +298,7 @@ def test_admin_decision_without_backend_id_stays_local(tmp_path, monkeypatch):
     _use_dummy_backend(monkeypatch)
     telegram_id = 2012
     request_id = _pending_request(telegram_id)
-    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
 
     asyncio.run(admin.admin_accept_service(DummyCallback(999, data=f"admin_accept_service_{request_id}")))
 
@@ -349,7 +349,7 @@ def test_provider_admin_buttons_carry_telegram_id_not_sqlite_id():
 def test_admin_provider_actions_by_telegram_id(tmp_path, monkeypatch):
     _init_db(tmp_path)
     _use_dummy_backend(monkeypatch)
-    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
     # Un autre prestataire d'abord : l'id SQLite (1) et le telegram_id diffèrent.
     db.create_provider(2020, "+243800002020", "Autre", ["service_plomberie"], ["Gombe"], language="fr")
     db.create_provider(2021, "+243800002021", "Cible", ["service_plomberie"], ["Gombe"], language="fr")
@@ -371,7 +371,7 @@ def test_admin_provider_actions_by_telegram_id(tmp_path, monkeypatch):
 
 def test_admin_provider_button_with_unknown_or_malformed_id(tmp_path, monkeypatch):
     _init_db(tmp_path)
-    monkeypatch.setattr(admin, "is_admin", lambda telegram_id: True)
+    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
 
     for data in ("admin_reject_provider_tg_77777", "admin_reject_provider_tg_abc"):
         callback = DummyCallback(999, data=data)

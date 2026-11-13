@@ -107,13 +107,12 @@ async def _async_return(value):
     return value
 
 
-def _languages(monkeypatch):
+def _languages(monkeypatch, live):
     for module in (payment, admin):
         monkeypatch.setattr(module, "get_user_language", lambda tid: _async_return("fr"))
         monkeypatch.setattr(module, "get_provider_language", lambda tid: _async_return("fr"))
-    monkeypatch.setattr(admin, "ADMIN_TELEGRAM_ID", str(ADMIN_ID))
-    # Le backend revérifie l'admin (backend/app/main.py::_require_admin).
-    monkeypatch.setenv("ADMIN_TELEGRAM_ID", str(ADMIN_ID))
+    # Rôle en base : le bot le demande au backend, qui le revérifie à chaque décision.
+    live.grant_admin(ADMIN_ID)
 
 
 def _paid_mission(tmp_path, monkeypatch, live, amount=100.0):
@@ -121,7 +120,7 @@ def _paid_mission(tmp_path, monkeypatch, live, amount=100.0):
     dans le backend, paiement Mobile Money par le registre."""
     db.DB_PATH = tmp_path / "test_nexis_hub.db"
     db.init_db()
-    _languages(monkeypatch)
+    _languages(monkeypatch, live)
     db.create_user(CLIENT_ID, "+243800000100", "Cliente", language="fr")
     db.create_provider(PROVIDER_ID, "+243800000200", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
     mission_id, quote_id = live.accepted_quote(CLIENT_ID, PROVIDER_ID, amount=amount, service="service_plomberie")
@@ -237,13 +236,29 @@ def test_another_client_cannot_open_the_dispute(tmp_path, monkeypatch, live_back
 def test_admin_screens_are_closed_when_no_admin_is_configured(tmp_path, monkeypatch, live_backend):
     mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     _open_dispute(mission_id)
-    monkeypatch.setattr(admin, "ADMIN_TELEGRAM_ID", None)
+    live_backend.revoke_admin(ADMIN_ID)
 
     callback = DummyCallback(ADMIN_ID, data=f"admin_dispute_refund_{mission_id}")
     asyncio.run(admin.admin_litige_rembourser(callback))
 
     assert callback.answered == "Accès admin refusé."
     assert live_backend.mission(mission_id).status == "disputed"
+
+
+def test_a_revoked_admin_can_no_longer_decide(tmp_path, monkeypatch, live_backend):
+    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+    _open_dispute(mission_id)
+    live_backend.grant_admin(OTHER_ADMIN_ID)
+    live_backend.revoke_admin(OTHER_ADMIN_ID)
+
+    callback = DummyCallback(OTHER_ADMIN_ID, data=f"admin_dispute_refund_{mission_id}")
+    asyncio.run(admin.admin_litige_rembourser(callback))
+
+    assert callback.answered == "Accès admin refusé."
+    from backend.app import ledger
+
+    with live_backend.database.SessionLocal() as session:
+        assert ledger.dispute_decisions(session, mission_id) == []
 
 
 def test_only_the_configured_admin_can_decide(tmp_path, monkeypatch, live_backend):
@@ -274,11 +289,6 @@ def _first_decision(live, mission_id):
 
     with live.database.SessionLocal() as session:
         return ledger.dispute_decisions(session, mission_id)[0]
-
-
-def _become_admin(monkeypatch, telegram_id):
-    monkeypatch.setattr(admin, "ADMIN_TELEGRAM_ID", str(telegram_id))
-    monkeypatch.setenv("ADMIN_TELEGRAM_ID", str(telegram_id))
 
 
 def test_admin_refund_is_recorded_then_executed_after_three_days(tmp_path, monkeypatch, live_backend):
@@ -431,9 +441,6 @@ def test_the_provider_contests_and_the_money_stays_frozen(tmp_path, monkeypatch,
     mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     _open_dispute(mission_id)
     asyncio.run(admin.admin_litige_rembourser(DummyCallback(ADMIN_ID, data=f"admin_dispute_refund_{mission_id}")))
-    from backend.app import tasks
-
-    monkeypatch.setattr(tasks, "ADMIN_TELEGRAM_ID", str(ADMIN_ID))
     live_backend.sent.clear()
 
     message, state = _contest(PROVIDER_ID, "p", mission_id)
@@ -482,7 +489,7 @@ def test_the_review_is_done_by_another_admin_and_applied_at_once(tmp_path, monke
     assert same.answered == get_message("money_error_same_reviewer", "fr")
     assert live_backend.balance(CLIENT_ID) == 0.0
 
-    _become_admin(monkeypatch, OTHER_ADMIN_ID)
+    live_backend.grant_admin(OTHER_ADMIN_ID)
     live_backend.sent.clear()
     other = DummyCallback(OTHER_ADMIN_ID, data=f"admin_dispute_refund_{mission_id}")
     asyncio.run(admin.admin_litige_rembourser(other))

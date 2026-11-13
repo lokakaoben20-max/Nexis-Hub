@@ -40,7 +40,6 @@ def _backend_complet(env, app_env="production", passerelle="flexpay"):
         BACKEND_API_KEY_TELEGRAM=SECRET,
         APP_CODE_HMAC_KEY=SECRET,
         BOT_TOKEN="123:abc",
-        ADMIN_TELEGRAM_ID="42",
         PAYMENT_GATEWAY=passerelle,
         **ARGENT,
     )
@@ -82,6 +81,15 @@ def test_toutes_les_erreurs_sont_donnees_d_un_coup_sans_les_valeurs(env):
     assert "court-et-secret" not in texte and "x.db" not in texte
 
 
+def test_l_ancien_reglage_admin_est_refuse_hors_developpement(env):
+    """Les admins sont en base : un ADMIN_TELEGRAM_ID oublié ferait croire
+    que cette personne est admin alors que plus rien ne le lit."""
+    _backend_complet(env)
+    env(ADMIN_TELEGRAM_ID="42")
+    for role in ("backend", "taches", "bot"):
+        assert any(e.startswith("ADMIN_TELEGRAM_ID n'est plus utilisé") for e in nexis_config.problemes(role))
+
+
 def test_paiement_simule_interdit_en_production_et_obligatoire_en_test(env):
     _backend_complet(env, passerelle="simulation")
     assert "PAYMENT_GATEWAY=simulation interdit en production" in nexis_config.problemes("taches")
@@ -94,7 +102,7 @@ def test_paiement_simule_interdit_en_production_et_obligatoire_en_test(env):
 def test_le_bot_heberge_est_en_webhook_https_avec_secret(env):
     env(
         APP_ENV="test", BOT_TOKEN="123:abc", BACKEND_BASE_URL="http://backend.interne", BACKEND_API_KEY_TELEGRAM=SECRET,
-        REDIS_URL="rediss://r", MINI_APP_URL="https://app.example.org", ADMIN_TELEGRAM_ID="42", BOT_RUN_MODE="polling",
+        REDIS_URL="rediss://r", MINI_APP_URL="https://app.example.org", BOT_RUN_MODE="polling",
     )
     assert "BOT_RUN_MODE doit valoir webhook hors développement" in nexis_config.problemes("bot")
     env(BOT_RUN_MODE="webhook", WEBHOOK_URL="http://bot.example.org")

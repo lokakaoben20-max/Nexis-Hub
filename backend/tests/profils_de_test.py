@@ -50,6 +50,12 @@ def provider(
     return profile
 
 
+def admin(db, telegram_id: int):
+    from backend.app import admins
+
+    return admins.grant(db, telegram_id, "Admin de test")
+
+
 def provider_of(db, telegram_id: int):
     return profils.provider_profile(db, ledger.account_id_for(db, ledger.TELEGRAM, telegram_id))
 

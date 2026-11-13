@@ -3,7 +3,7 @@
 Le backend attribue le numéro, le client est l'acteur, les prestataires
 prévenus sont enregistrés avec la mission, et seuls les intéressés la lisent."""
 
-from backend.tests.test_main import TEST_API_KEY, _as, _authed_client, _register_provider, _reload_backend_with_db
+from backend.tests.test_main import TEST_API_KEY, _as, _authed_client, _grant_admin, _register_provider, _reload_backend_with_db
 
 CLIENT = 42
 PROVIDER = 7
@@ -29,8 +29,8 @@ def _create(test_client, client=CLIENT, key="demande-1", **fields):
 
 
 def _backend(monkeypatch, backend_db_url):
-    monkeypatch.setenv("ADMIN_TELEGRAM_ID", str(ADMIN))
     backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
+    _grant_admin(database_module, ADMIN)
     return _authed_client(backend_main), database_module
 
 

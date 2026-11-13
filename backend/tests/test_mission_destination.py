@@ -8,7 +8,7 @@ mission payée et tant qu'il doit s'y rendre ou y travailler."""
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from backend.tests.test_main import _as, _authed_client, _register_provider, _reload_backend_with_db
+from backend.tests.test_main import _as, _authed_client, _grant_admin, _register_provider, _reload_backend_with_db
 
 CLIENT = 42
 PROVIDER = 7
@@ -19,8 +19,8 @@ GOMBE = {"latitude": -4.30761234, "longitude": 15.31251234, "landmark": "  Porta
 
 
 def _backend(monkeypatch, backend_db_url):
-    monkeypatch.setenv("ADMIN_TELEGRAM_ID", str(ADMIN))
     backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
+    _grant_admin(database_module, ADMIN)
     return _authed_client(backend_main), database_module
 
 

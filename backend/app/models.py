@@ -224,6 +224,35 @@ class NexisAccount(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class AdminRole(Base):
+    """Personne de Nexis Hub autorisée à agir comme admin (litiges, retraits,
+    vérification des prestataires). Plusieurs personnes peuvent l'être : une
+    décision de litige contestée doit être revue par une autre personne que
+    celle qui l'a prise.
+
+    Le rôle est donné et retiré par `python -m backend.app.admins`, jamais par
+    l'API. Une ligne n'est jamais effacée : un retrait remplit `revoked_at`.
+    Au plus un rôle actif par compte."""
+
+    __tablename__ = "admin_roles"
+    __table_args__ = (
+        Index(
+            "uq_admin_roles_active_account",
+            "account_id",
+            unique=True,
+            postgresql_where=text("revoked_at IS NULL"),
+            sqlite_where=text("revoked_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    granted_at: Mapped[datetime] = mapped_column(DateTime)
+    granted_reason: Mapped[str] = mapped_column(Text)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class ChannelIdentity(Base):
     """Rattache un identifiant de canal (`telegram` + telegram_id,
     `whatsapp` + BSUID) à un compte Nexis. Un même canal + identifiant ne

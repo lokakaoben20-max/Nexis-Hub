@@ -42,7 +42,7 @@ def _accepted_quote(tmp_path, monkeypatch, live):
 
     db.DB_PATH = tmp_path / "test_nexis_hub.db"
     db.init_db()
-    _languages(monkeypatch)
+    _languages(monkeypatch, live)
     for module in (dashboard,):
         monkeypatch.setattr(module, "get_user_language", lambda tid: _async_return("fr"))
         monkeypatch.setattr(module, "get_provider_language", lambda tid: _async_return("fr"))
@@ -260,8 +260,9 @@ def test_only_the_admin_settles_a_different_amount(tmp_path, monkeypatch, live_b
         asyncio.run(handler(intruder))
         assert intruder.answered == "Accès admin refusé."
 
-    # Le backend revérifie : un bot mal configuré ne suffit pas.
-    monkeypatch.setenv("ADMIN_TELEGRAM_ID", "123456")
+    # Le backend revérifie : un bot qui croirait à tort que c'est un admin ne suffit pas.
+    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: _async_return(True))
+    live_backend.revoke_admin(ADMIN_ID)
     refused = DummyCallback(ADMIN_ID, data="admin_mismatch_pay_1")
     asyncio.run(admin.admin_regler_montant_different(refused))
     assert refused.answered == admin.MISMATCH_REFUSALS["not_admin"]

@@ -18,6 +18,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.app import app_auth, app_sessions, ledger, models
+from backend.tests import profils_de_test
 
 NOW = datetime(2026, 11, 7, 8, 0, 0)
 PHONE = "+243810000001"
@@ -461,11 +462,12 @@ TEST_API_KEY = "test-backend-api-key-not-a-secret"
 def backend(monkeypatch, backend_db_url):
     monkeypatch.setenv("DATABASE_URL", backend_db_url)
     monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TEST_API_KEY)
-    monkeypatch.setenv("ADMIN_TELEGRAM_ID", "999")
     database_module = importlib.reload(importlib.import_module("backend.app.database"))
     importlib.reload(importlib.import_module("backend.app.models"))
     backend_main = importlib.reload(importlib.import_module("backend.app.main"))
     database_module.init_db()
+    with database_module.SessionLocal() as db:
+        profils_de_test.admin(db, 999)
     client = TestClient(backend_main.app)
     client.headers["X-API-Key"] = TEST_API_KEY
     return client, database_module
