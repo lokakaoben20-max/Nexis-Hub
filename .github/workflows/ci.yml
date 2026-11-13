@@ -64,7 +64,7 @@ jobs:
         base: [postgres, sqlite]
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: nexis
           POSTGRES_PASSWORD: nexis-ci-seulement
@@ -109,7 +109,7 @@ jobs:
     timeout-minutes: 10
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: nexis
           POSTGRES_PASSWORD: nexis-ci-seulement
@@ -144,7 +144,7 @@ jobs:
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: nexis
           POSTGRES_PASSWORD: nexis-ci-seulement
@@ -199,3 +199,52 @@ jobs:
           curl -sf localhost:8000/health/ready
           docker stop -t 10 backend
           docker logs backend | tail -n 5
+
+  infrastructure:
+    name: Infrastructure (Terraform)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TERRAFORM_VERSION: "1.17.2"
+      # SHA256 du zip officiel, vérifié contre releases.hashicorp.com/terraform/1.17.2/terraform_1.17.2_SHA256SUMS
+      TERRAFORM_SHA256: "e6f16b2f0b137ee5729caa8c4e79a3bae4ee261acd198a1fcfa8584a6296605b"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Installer Terraform (empreinte vérifiée)
+        run: |
+          archive="terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+          curl -sSfL -o "$archive" "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/${archive}"
+          echo "${TERRAFORM_SHA256}  ${archive}" | sha256sum --check --strict
+          mkdir -p "$HOME/.local/bin"
+          unzip -o "$archive" terraform -d "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Format
+        run: terraform fmt -check -recursive infra
+      - name: Modules et environnements (sans état, sans identifiants Google)
+        run: |
+          set -eu
+          for dossier in infra/modules/* infra/environnements/test infra/environnements/prod infra/bootstrap; do
+            echo "== $dossier"
+            (cd "$dossier" && terraform init -backend=false -input=false -no-color >/dev/null && terraform validate -no-color)
+          done
+      - name: Calendrier des tâches (copie lue par Terraform)
+        run: python3 -c "import json,sys; json.load(open('infra/calendrier.json'))"
+      - name: Sécurité de l'infrastructure (checkov, version et empreintes épinglées)
+        run: |
+          set -eu
+          python3 -m venv "$RUNNER_TEMP/checkov"
+          "$RUNNER_TEMP/checkov/bin/pip" install --quiet --require-hashes -r infra/requirements-controle.txt
+          "$RUNNER_TEMP/checkov/bin/checkov" -d infra --framework terraform --quiet --compact -o cli
+      - name: Lint de l'infrastructure (tflint, empreinte vérifiée)
+        env:
+          TFLINT_VERSION: "0.60.0"
+          # SHA256 de tflint_linux_amd64.zip, lu dans checksums.txt de la même version
+          TFLINT_SHA256: "3476ceedcf0c4f9f2bed35e92988e1411bec2caa543c9387bffaa720df9efaf7"
+        run: |
+          set -eu
+          archive="tflint_linux_amd64.zip"
+          curl -sSfL -o "$archive" "https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSION}/${archive}"
+          echo "${TFLINT_SHA256}  ${archive}" | sha256sum --check --strict
+          mkdir -p "$HOME/.local/bin"
+          unzip -o "$archive" tflint -d "$HOME/.local/bin"
+          tflint --chdir infra --recursive --format compact

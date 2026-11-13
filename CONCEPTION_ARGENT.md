@@ -105,7 +105,7 @@ reçoit le devis moins la commission.
 | --- | --- |
 | Paiement Mobile Money | external −total, escrow +total |
 | Paiement wallet | wallet client −total, escrow +total (refusé si solde insuffisant) |
-| Libération (client confirme, auto 24 h, admin « payer le prestataire ») | escrow −total, wallet prestataire +net, platform +commission |
+| Libération (client confirme, auto 48 h, admin « payer le prestataire ») | escrow −total, wallet prestataire +net, platform +commission |
 | Remboursement total (admin) | escrow −total, wallet client +total (frais compris) |
 | Partage à p % (admin) | escrow −total, wallet prestataire +net×p, wallet client +net×(1−p), platform +commission |
 
@@ -120,8 +120,13 @@ reçoit le devis moins la commission.
   un règlement
 - résolution admin : `cancelled` / `refunded`, `completed` / `released`, ou
   `completed` / `split`
-- libération auto 24 h : seulement depuis `awaiting_confirmation`, donc
-  jamais une mission en litige
+- libération auto 48 h : seulement depuis `awaiting_confirmation`, donc
+  jamais une mission en litige. L'échéance (`release_after`) est fixée quand
+  le prestataire déclare la mission terminée et ne change plus ensuite ; les
+  missions terminées avant le passage à 48 h gardent leur échéance de 24 h
+- litige sans décision après le délai de réponse de 48 h : alerte admin (tâche
+  `litiges-en-retard`), puis une relance par jour ; aucun argent ne bouge
+  sans décision humaine
 
 Atomicité : chaque opération est une seule transaction SQL (mission
 verrouillée `FOR UPDATE`, wallet client verrouillé pour un paiement wallet,
@@ -192,7 +197,9 @@ qu'aux numéros dont la vérification est enregistrée.
   référence `SIM-…`.
 - Retraits vers Mobile Money : nouvelle opération provider → external, qui
   ne pourra jamais toucher un compte escrow.
-- Traitement automatique des litiges dont le délai de 48 h est dépassé.
+- Décision de litige en deux temps avec 3 jours pour contester, partage avec
+  commission au prorata, accord amiable confirmé par les deux (prochaines
+  étapes). Un litige en retard n'est jamais réglé automatiquement.
 
 ## Tests
 

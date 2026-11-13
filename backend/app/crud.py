@@ -1,5 +1,5 @@
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
@@ -22,10 +22,10 @@ from backend.app.models import (
 def _touch_status(mission: BotMission) -> None:
     """Marque le moment du changement de statut d'une mission.
 
-    Sert de référence pour les tâches Celery de la Phase 2 : auto-libération
-    d'escrow après 24h passées en `awaiting_confirmation`, relances quand une
-    mission reste sans devis. Appeler juste après toute assignation de
-    `mission.status`.
+    Sert de référence aux relances quand une mission reste sans devis.
+    L'auto-libération ne s'en sert pas : elle suit l'échéance `release_after`
+    fixée par `ledger.finish_mission`. Appeler juste après toute assignation
+    de `mission.status`.
     """
     mission.status_changed_at = datetime.utcnow()
 
@@ -647,16 +647,39 @@ def create_review(
     return review
 
 
-def find_missions_awaiting_confirmation_since(db: Session, older_than_hours: int = 24) -> list[BotMission]:
-    """Missions en `awaiting_confirmation` depuis plus de `older_than_hours`.
-
-    Base pour l'auto-libération d'escrow (Phase 2) : le client n'a ni confirmé
-    ni contesté, on libère automatiquement au bout du délai.
-    """
-    cutoff = datetime.utcnow() - timedelta(hours=older_than_hours)
+def find_missions_due_for_auto_release(db: Session, now: datetime | None = None) -> list[BotMission]:
+    """Missions en `awaiting_confirmation` dont l'échéance de libération
+    automatique (`release_after`) est passée : le client n'a ni confirmé ni
+    signalé de problème dans le délai. `ledger.auto_release` revérifie tout
+    sous verrou avant de verser."""
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
     return (
         db.query(BotMission)
-        .filter(BotMission.status == "awaiting_confirmation", BotMission.status_changed_at < cutoff)
+        .filter(
+            BotMission.status == "awaiting_confirmation",
+            BotMission.release_after.is_not(None),
+            BotMission.release_after <= now,
+        )
+        .order_by(BotMission.release_after)
+        .all()
+    )
+
+
+def find_overdue_disputes(db: Session, now: datetime, realert_after: timedelta) -> list[BotMission]:
+    """Litiges sans décision dont le délai de réponse de Nexis Hub est dépassé
+    et qui n'ont pas reçu d'alerte depuis `realert_after`."""
+    return (
+        db.query(BotMission)
+        .filter(
+            BotMission.status == "disputed",
+            BotMission.dispute_deadline.is_not(None),
+            BotMission.dispute_deadline <= now,
+            or_(
+                BotMission.dispute_overdue_alerted_at.is_(None),
+                BotMission.dispute_overdue_alerted_at <= now - realert_after,
+            ),
+        )
+        .order_by(BotMission.dispute_deadline)
         .all()
     )
 

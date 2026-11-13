@@ -171,6 +171,8 @@ class LiveBackend:
         with self.database.SessionLocal() as session:
             mission = session.get(ledger.BotMission, mission_id)
             mission.status_changed_at = mission.status_changed_at - timedelta(hours=hours)
+            if mission.release_after is not None:
+                mission.release_after = mission.release_after - timedelta(hours=hours)
             session.commit()
 
     def auto_release(self, mission_id: int):
