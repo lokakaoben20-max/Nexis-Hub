@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from backend.app import app_auth
 from backend.app.models import (
+    PROVIDER_STATUSES,
     ClientProfile,
     Commune,
     NexisAccount,
@@ -479,6 +480,17 @@ def reset_declined_alerts(db: Session, account_id: int) -> ProviderProfile:
         provider.updated_at = _now()
         db.flush()
     return provider
+
+
+def admin_providers(db: Session, status: str | None = None, limit: int = 20) -> list[ProviderProfile]:
+    """Prestataires pour l'écran admin : les plus anciens d'abord (une file
+    de vérification se traite dans l'ordre d'arrivée)."""
+    if status is not None and status not in PROVIDER_STATUSES:
+        raise ProfileRefused("invalid_status", 400)
+    query = select(ProviderProfile).order_by(ProviderProfile.created_at, ProviderProfile.account_id)
+    if status is not None:
+        query = query.where(ProviderProfile.status == status)
+    return list(db.scalars(query.limit(max(1, min(limit, 50)))))
 
 
 # --- Matching ----------------------------------------------------------------

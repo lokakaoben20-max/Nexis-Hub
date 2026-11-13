@@ -100,6 +100,9 @@ class MissionAlert(Base):
     mission_id: Mapped[int] = mapped_column(ForeignKey("bot_missions.mission_id"), index=True)
     provider_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     alerted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # « Pas disponible » : posé une seule fois, le refus ne compte qu'une fois
+    # par alerte (crud.decline_alert).
+    declined_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class MissionPresence(Base):

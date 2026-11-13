@@ -426,9 +426,47 @@ def create_quote(
     db.add(quote)
     mission.status = "quoted"
     _touch_status(mission)
+    if profils.provider_profile(db, provider_account_id) is not None:
+        # Il a répondu à une mission : ses refus d'affilée repartent de zéro,
+        # dans la même transaction que le devis.
+        profils.reset_declined_alerts(db, provider_account_id)
     db.commit()
     db.refresh(quote)
     return quote
+
+
+def decline_alert(db: Session, mission_id: int, provider_account_id: int | None) -> tuple[ProviderProfile, bool]:
+    """« Pas disponible » sur une alerte de mission. Le refus compte une seule
+    fois par alerte (rejoué, il ne recompte pas : second élément `False`) et
+    le compteur de refus d'affilée est tenu par `profils` (pause au 3e).
+
+    Refus : `provider_not_alerted` (403) si cette personne n'a pas été
+    prévenue de cette mission, `already_quoted` si elle y a déjà répondu
+    par un devis, `mission_not_open` si la mission n'attend plus de devis."""
+    alert = (
+        db.query(MissionAlert)
+        .filter(MissionAlert.mission_id == mission_id, MissionAlert.provider_account_id == provider_account_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if alert is None or profils.provider_profile(db, provider_account_id) is None:
+        raise MissionRefused("provider_not_alerted", 403)
+    if alert.declined_at is not None:
+        return profils.provider_profile(db, provider_account_id), False
+    already_quoted = (
+        db.query(BotQuote.id)
+        .filter(BotQuote.mission_id == mission_id, BotQuote.provider_account_id == provider_account_id)
+        .first()
+    )
+    if already_quoted is not None:
+        raise MissionRefused("already_quoted")
+    if db.get(BotMission, mission_id).status not in QUOTABLE_STATUSES:
+        # Mission déjà attribuée ou close : ce n'est plus un refus de travail.
+        raise MissionRefused("mission_not_open")
+    alert.declined_at = datetime.utcnow()
+    provider = profils.record_declined_alert(db, provider_account_id)
+    db.commit()
+    return provider, True
 
 
 def _require_quote_client(db: Session, quote: BotQuote, client_account_id: int) -> None:
@@ -780,7 +818,7 @@ def update_service_request_status(
     admin_note: str = "",
 ) -> ProviderServiceRequest | None:
     if status not in SERVICE_REQUEST_STATUSES:
-        raise ValueError("Statut de proposition invalide")
+        raise ValueError("invalid_status")
     # UPDATE conditionnel atomique plutôt que SELECT puis check Python : en
     # Postgres, deux PATCH simultanés pouvaient tous les deux lire "pending"
     # avant le commit de l'autre et écraser le résultat sans erreur
@@ -794,6 +832,6 @@ def update_service_request_status(
     if updated == 0:
         if db.get(ProviderServiceRequest, request_id) is None:
             return None
-        raise ValueError("Cette proposition a déjà été traitée")
+        raise ValueError("already_reviewed")
     return db.get(ProviderServiceRequest, request_id)
 
