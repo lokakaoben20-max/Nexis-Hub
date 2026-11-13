@@ -440,10 +440,68 @@ def test_dispute_needs_a_reason(db, reason):
     refused("invalid_reason", lambda: ledger.open_dispute(db, 1, acc(db, CLIENT_ID), reason))
 
 
+# --- Décision de litige en deux temps, contestation, révision ----------------
+
+ADMIN_ID = 900
+OTHER_ADMIN_ID = 901
+STRANGER_ID = 555
+
+
+def decide(db, decision="refund", percentage=None, admin=ADMIN_ID, mission_id=1, now=None):
+    return ledger.decide_dispute(
+        db,
+        mission_id,
+        decision=decision,
+        admin_account_id=acc(db, admin),
+        admin_telegram_id=admin,
+        provider_percentage=percentage,
+        now=now,
+    )
+
+
+def first_decision(db, mission_id=1):
+    return next(row for row in ledger.dispute_decisions(db, mission_id) if row.round == ledger.FIRST_DECISION)
+
+
+def execute_when_due(db, mission_id=1):
+    row = first_decision(db, mission_id)
+    return ledger.execute_dispute_decision(db, row.id, now=row.execute_after)
+
+
+def settle_dispute(db, decision="refund", percentage=None, mission_id=1):
+    """Litige tranché puis exécuté à la fin du délai de contestation."""
+    decide(db, decision, percentage, mission_id=mission_id)
+    return execute_when_due(db, mission_id)
+
+
+def contest(db, who=CLIENT_ID, reason="Le travail n'est pas fini", mission_id=1, now=None):
+    return ledger.contest_dispute_decision(db, mission_id, acc(db, who), reason, now=now)
+
+
+def test_a_decision_moves_no_money_for_three_days(db):
+    disputed(db)
+
+    mission = decide(db, "refund")
+
+    row = first_decision(db)
+    assert mission.status == "disputed"
+    assert row.execute_after - row.decided_at == timedelta(days=3)
+    assert (row.provider_amount, row.client_amount, row.platform_amount) == (money(0), money(100), money(0))
+    assert bal(db, ledger.ESCROW, 1) == money(100)
+    assert bal(db, ledger.WALLET, CLIENT_ID) == money(0)
+    assert ledger.mission_operation(db, 1, ledger.SETTLEMENT) is None
+    assert ledger.mission_money_state(db, 1)["dispute_decisions"][0]["state"] == "pending"
+    refused(
+        "decision_not_due",
+        lambda: ledger.execute_dispute_decision(db, row.id, now=row.execute_after - timedelta(seconds=1)),
+    )
+    assert bal(db, ledger.ESCROW, 1) == money(100)
+
+
 def test_full_refund_returns_everything_to_the_client_fees_included(db):
     disputed(db)
 
-    mission = ledger.resolve_dispute(db, 1, decision="refund", admin_telegram_id=1)
+    mission = settle_dispute(db, "refund")
 
     assert (mission.status, mission.payment_status) == ("cancelled", "refunded")
     assert bal(db, ledger.WALLET, CLIENT_ID) == money(100)
@@ -455,7 +513,7 @@ def test_full_refund_returns_everything_to_the_client_fees_included(db):
 def test_admin_release_pays_the_provider_like_a_confirmation(db):
     disputed(db)
 
-    mission = ledger.resolve_dispute(db, 1, decision="release", admin_telegram_id=1)
+    mission = settle_dispute(db, "release")
 
     assert (mission.status, mission.payment_status) == ("completed", "released")
     assert bal(db, ledger.WALLET, PROVIDER_ID) == money(90)
@@ -463,50 +521,192 @@ def test_admin_release_pays_the_provider_like_a_confirmation(db):
 
 
 @pytest.mark.parametrize(
-    "percentage,provider,client",
-    [(50, "45.00", "45.00"), (0, "0.00", "90.00"), (100, "90.00", "0.00"), ("33.33", "30.00", "60.00"), (12.5, "11.25", "78.75")],
+    "percentage,provider,platform,client",
+    [
+        (50, "45.00", "5.00", "50.00"),
+        (0, "0.00", "0.00", "100.00"),
+        (100, "90.00", "10.00", "0.00"),
+        ("33.33", "30.00", "3.33", "66.67"),
+        (12.5, "11.25", "1.25", "87.50"),
+    ],
 )
-def test_split_shares_the_provider_net_and_the_platform_keeps_its_commission(db, percentage, provider, client):
+def test_split_is_prorata_and_the_client_gets_the_rest_fees_included(db, percentage, provider, platform, client):
+    """Partage au prorata (Ben, 2026-11-08) : le prestataire reçoit son net ×
+    p, Nexis Hub garde sa commission × p, le client récupère le reste."""
     disputed(db)
 
-    mission = ledger.resolve_dispute(db, 1, decision="split", provider_percentage=percentage, admin_telegram_id=1)
+    mission = settle_dispute(db, "split", percentage)
 
     assert (mission.status, mission.payment_status) == ("completed", "split")
     assert bal(db, ledger.WALLET, PROVIDER_ID) == money(provider)
+    assert bal(db, ledger.PLATFORM, None) == money(platform)
     assert bal(db, ledger.WALLET, CLIENT_ID) == money(client)
-    assert bal(db, ledger.PLATFORM, None) == money(10)
     assert bal(db, ledger.ESCROW, 1) == money(0)
     settlement = ledger.mission_money_state(db, 1)["settlement"]
-    assert (settlement["provider_amount"], settlement["client_amount"]) == (provider, client)
+    assert (settlement["provider_amount"], settlement["platform_amount"], settlement["client_amount"]) == (provider, platform, client)
     assert_books_balanced(db)
+
+
+def test_split_rounding_never_loses_or_creates_a_cent(db):
+    """Montant urgent qui ne tombe pas rond : chaque part est arrondie au
+    centime et le client reçoit exactement le reste."""
+    disputed(db, amount=33.33, urgent=True)
+
+    settle_dispute(db, "split", "33.33")
+
+    # Total 33.33, commission 15 % = 5.00, net 28.33.
+    assert bal(db, ledger.WALLET, PROVIDER_ID) == money("9.44")
+    assert bal(db, ledger.PLATFORM, None) == money("1.67")
+    assert bal(db, ledger.WALLET, CLIENT_ID) == money("22.22")
+    assert bal(db, ledger.ESCROW, 1) == money(0)
+    assert_books_balanced(db)
+
+
+def test_the_executed_amounts_are_the_ones_frozen_at_decision_time(db):
+    disputed(db)
+    decide(db, "split", 40)
+    frozen = ledger.mission_money_state(db, 1)["dispute_decisions"][0]
+
+    execute_when_due(db)
+
+    settlement = ledger.mission_money_state(db, 1)["settlement"]
+    assert (settlement["provider_amount"], settlement["client_amount"], settlement["platform_amount"]) == (
+        frozen["provider_amount"],
+        frozen["client_amount"],
+        frozen["platform_amount"],
+    )
+    row = first_decision(db)
+    assert row.executed_operation_id == ledger.mission_operation(db, 1, ledger.SETTLEMENT).id
+    assert ledger.mission_money_state(db, 1)["dispute_decisions"][0]["state"] == "executed"
 
 
 @pytest.mark.parametrize("percentage", [-1, 100.01, "abc", None, float("nan")])
 def test_split_refuses_an_invalid_percentage(db, percentage):
     disputed(db)
-    refused("invalid_percentage", lambda: ledger.resolve_dispute(db, 1, decision="split", provider_percentage=percentage, admin_telegram_id=1))
+    refused("invalid_percentage", lambda: decide(db, "split", percentage))
+    assert ledger.dispute_decisions(db, 1) == []
 
 
-def test_a_dispute_is_settled_once(db):
+def test_a_decision_is_recorded_once_and_executed_once(db):
     disputed(db)
-    ledger.resolve_dispute(db, 1, decision="split", provider_percentage=50, admin_telegram_id=1)
-    ledger.resolve_dispute(db, 1, decision="split", provider_percentage=50, admin_telegram_id=1)  # rejeu
-    refused("already_settled", lambda: ledger.resolve_dispute(db, 1, decision="refund", admin_telegram_id=1))
-    refused("already_settled", lambda: ledger.resolve_dispute(db, 1, decision="split", provider_percentage=60, admin_telegram_id=1))
+    decide(db, "split", 50)
+    decide(db, "split", 50)  # rejeu (double clic)
+    refused("decision_pending", lambda: decide(db, "refund"))
+    refused("decision_pending", lambda: decide(db, "split", 60))
+    refused("decision_pending", lambda: decide(db, "refund", admin=OTHER_ADMIN_ID))
+    assert len(ledger.dispute_decisions(db, 1)) == 1
+
+    execute_when_due(db)
+    execute_when_due(db)  # la tâche repasse : rien de plus
+    decide(db, "split", 50)  # rejeu après exécution : état enregistré
+    refused("already_settled", lambda: decide(db, "refund", admin=OTHER_ADMIN_ID))
 
     assert bal(db, ledger.WALLET, PROVIDER_ID) == money(45)
-    assert bal(db, ledger.WALLET, CLIENT_ID) == money(45)
+    assert bal(db, ledger.WALLET, CLIENT_ID) == money(50)
+    assert db.query(MoneyOperation).filter(MoneyOperation.phase == ledger.SETTLEMENT).count() == 1
 
 
-def test_only_a_disputed_mission_can_be_resolved(db):
+def test_only_a_disputed_mission_can_be_decided(db):
     fund(db)
-    refused("not_disputed", lambda: ledger.resolve_dispute(db, 1, decision="refund", admin_telegram_id=1))
-    refused("invalid_decision", lambda: ledger.resolve_dispute(db, 1, decision="cancel", admin_telegram_id=1))
+    refused("not_disputed", lambda: decide(db, "refund"))
+    refused("invalid_decision", lambda: decide(db, "cancel"))
+
+
+@pytest.mark.parametrize("who", [CLIENT_ID, PROVIDER_ID])
+def test_the_client_or_the_provider_can_contest_before_execution(db, who):
+    disputed(db)
+    decide(db, "release")
+    row = first_decision(db)
+    contested_at = row.execute_after - timedelta(minutes=1)
+
+    mission = contest(db, who, now=contested_at)
+
+    row = first_decision(db)
+    assert mission.status == "disputed"
+    assert row.contested_at == contested_at
+    assert row.contested_by_role == ("client" if who == CLIENT_ID else "provider")
+    # Nouveau délai de réponse pour la révision, avec ses alertes.
+    assert mission.dispute_deadline == contested_at + ledger.DISPUTE_REVIEW_DELAY
+    assert mission.dispute_overdue_alerted_at is None
+    refused("decision_contested", lambda: ledger.execute_dispute_decision(db, row.id, now=row.execute_after + timedelta(days=1)))
+    assert bal(db, ledger.ESCROW, 1) == money(100)
+    assert ledger.mission_money_state(db, 1)["dispute_decisions"][0]["state"] == "contested"
+
+
+def test_a_decision_is_contested_once(db):
+    disputed(db)
+    decide(db, "refund")
+    contest(db, PROVIDER_ID)
+    contest(db, PROVIDER_ID)  # rejeu
+    refused("already_contested", lambda: contest(db, CLIENT_ID))
+
+
+def test_only_the_parties_can_contest(db):
+    disputed(db)
+    decide(db, "refund")
+    refused("not_mission_party", lambda: contest(db, STRANGER_ID))
+    refused("not_mission_party", lambda: contest(db, ADMIN_ID))
+    assert first_decision(db).contested_at is None
+
+
+def test_no_contest_after_the_three_days_or_after_execution(db):
+    disputed(db)
+    decide(db, "refund")
+    row = first_decision(db)
+    refused("contest_window_closed", lambda: contest(db, PROVIDER_ID, now=row.execute_after))
+
+    ledger.execute_dispute_decision(db, row.id, now=row.execute_after)
+    refused("decision_already_executed", lambda: contest(db, PROVIDER_ID, now=row.decided_at))
+
+
+def test_no_contest_without_a_decision_or_without_a_reason(db):
+    disputed(db)
+    refused("no_decision", lambda: contest(db, PROVIDER_ID))
+    decide(db, "refund")
+    refused("invalid_reason", lambda: contest(db, PROVIDER_ID, reason="   "))
+    refused("invalid_reason", lambda: contest(db, PROVIDER_ID, reason="x" * (ledger.MAX_DISPUTE_REASON_LENGTH + 1)))
+
+
+def test_the_review_must_come_from_another_person_and_is_final(db):
+    disputed(db)
+    decide(db, "release")
+    contest(db, CLIENT_ID)
+
+    refused("same_reviewer", lambda: decide(db, "refund", admin=ADMIN_ID))
+    assert bal(db, ledger.ESCROW, 1) == money(100)
+
+    mission = decide(db, "split", 50, admin=OTHER_ADMIN_ID)
+
+    assert (mission.status, mission.payment_status) == ("completed", "split")
+    assert bal(db, ledger.WALLET, PROVIDER_ID) == money(45)
+    assert bal(db, ledger.WALLET, CLIENT_ID) == money(50)
+    rounds = ledger.mission_money_state(db, 1)["dispute_decisions"]
+    assert [(view["round"], view["state"]) for view in rounds] == [(1, "contested"), (2, "executed")]
+    settlement = ledger.mission_money_state(db, 1)["settlement"]
+    assert settlement["decision_round"] == 2
+
+    decide(db, "split", 50, admin=OTHER_ADMIN_ID)  # rejeu de la révision
+    refused("already_settled", lambda: decide(db, "refund", admin=OTHER_ADMIN_ID))
+    refused("already_contested", lambda: contest(db, PROVIDER_ID))
+    assert_books_balanced(db)
+
+
+def test_with_a_single_admin_a_contested_decision_stays_frozen(db):
+    """Tant qu'une deuxième personne n'existe pas, la révision est impossible
+    et l'argent reste gelé : jamais d'exécution par défaut."""
+    disputed(db)
+    decide(db, "release")
+    row = first_decision(db)
+    contest(db, CLIENT_ID)
+
+    refused("same_reviewer", lambda: decide(db, "release"))
+    refused("decision_contested", lambda: ledger.execute_dispute_decision(db, row.id, now=row.execute_after + timedelta(days=30)))
+    assert bal(db, ledger.ESCROW, 1) == money(100)
 
 
 def test_wallet_refund_can_pay_a_later_mission(db):
     disputed(db)
-    ledger.resolve_dispute(db, 1, decision="refund", admin_telegram_id=1)
+    settle_dispute(db, "refund")
 
     fund(db, mission_id=2, method="wallet", quote_ref=8)
 
@@ -519,7 +719,7 @@ def test_wallets_belong_to_a_channel_neutral_nexis_account(db):
     """Le registre ne connaît que des comptes Nexis : un futur canal (WhatsApp)
     rattaché au même compte voit le même wallet, sans rien migrer."""
     disputed(db)
-    ledger.resolve_dispute(db, 1, decision="refund", admin_telegram_id=1)
+    settle_dispute(db, "refund")
 
     account_id = ledger.account_id_for(db, ledger.TELEGRAM, CLIENT_ID)
     db.add(ledger.ChannelIdentity(account_id=account_id, channel="whatsapp", external_id="+243810000000"))

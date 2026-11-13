@@ -67,6 +67,10 @@ class DisputeFlow(StatesGroup):
     reason = State()
 
 
+class DisputeContestFlow(StatesGroup):
+    reason = State()
+
+
 # Boutons envoyés avant que les devis ne vivent dans le backend : ils portent
 # des numéros de db.py, qui ne désignent plus rien. Jamais interprétés.
 OLD_QUOTE_PREFIXES = ("client_accept_quote_", "client_reject_quote_", "pay_mobile_", "pay_mm_", "pay_wallet_")
@@ -635,6 +639,46 @@ async def litige_motif_recu(message: Message, state: FSMContext):
             get_message("dispute_opened_provider_notify", provider_lang, mission_id=mission_id),
             parse_mode="HTML",
         )
+
+
+async def _contest_language(telegram_id: int, role: str) -> str:
+    return await (get_provider_language if role == "p" else get_user_language)(telegram_id)
+
+
+@router.callback_query(F.data.startswith("dispute_contest_"))
+async def contester_decision(callback: CallbackQuery, state: FSMContext):
+    """Bouton « Contester » envoyé par le backend avec la décision de Nexis
+    Hub, au client comme au prestataire."""
+    role, mission_id = callback.data.removeprefix("dispute_contest_").split("_", 1)
+    mission_id = int(mission_id)
+    await state.set_state(DisputeContestFlow.reason)
+    await state.update_data(contest_mission_id=mission_id, contest_role=role)
+    lang = await _contest_language(callback.from_user.id, role)
+    await callback.message.answer(get_message("dispute_contest_prompt", lang, mission_id=mission_id), parse_mode="HTML")
+    await callback.answer()
+
+
+@router.message(DisputeContestFlow.reason)
+async def contestation_motif_recu(message: Message, state: FSMContext):
+    data = await state.get_data()
+    mission_id = data["contest_mission_id"]
+    lang = await _contest_language(message.from_user.id, data.get("contest_role", "c"))
+    reason = (message.text or "").strip()
+    if not reason:
+        await message.answer(get_message("dispute_reason_invalid", lang), parse_mode="HTML")
+        return
+    try:
+        await backend_client.contest_dispute(mission_id, message.from_user.id, reason)
+    except BackendUnavailable as error:
+        # On garde l'étape : la personne renvoie sa raison quand le service répond.
+        await message.answer(money_failure_text(mission_id, error, lang), parse_mode="HTML")
+        return
+    except MoneyRefused as error:
+        await state.clear()
+        await message.answer(money_failure_text(mission_id, error, lang), parse_mode="HTML")
+        return
+    await state.clear()
+    await message.answer(get_message("dispute_contest_sent", lang, mission_id=mission_id), parse_mode="HTML")
 
 
 @router.callback_query(F.data.startswith("qpay_wallet_"))
