@@ -12,7 +12,7 @@ test_ledger.py (d'autres fichiers rechargent `backend.app.models`).
 from datetime import datetime
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -28,6 +28,11 @@ NexisAccount = profils.NexisAccount
 @pytest.fixture
 def db(backend_db_url):
     engine = create_engine(backend_db_url, future=True)
+    if engine.dialect.name == "sqlite":
+        # SQLite n'applique les clés étrangères qu'à la demande, connexion par
+        # connexion : on les active pour que les contraintes soient vérifiées
+        # ici comme sur Postgres.
+        event.listen(engine, "connect", lambda connection, _: connection.execute("PRAGMA foreign_keys=ON"))
     NexisAccount.metadata.create_all(bind=engine)
     session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
     profils_de_test.ensure_catalogue(session)
@@ -408,9 +413,7 @@ def test_the_database_accepts_a_consistent_provider(db):
 
 
 @pytest.mark.parametrize("row", [ProviderService(service_key="service_inconnu"), ProviderCommune(commune="Kintambo")])
-def test_the_database_refuses_a_service_or_commune_outside_the_catalogue(db, backend_db_url, row):
-    if backend_db_url.startswith("sqlite"):
-        pytest.skip("SQLite ne vérifie les clés étrangères qu'avec PRAGMA foreign_keys : vérifié sur Postgres")
+def test_the_database_refuses_a_service_or_commune_outside_the_catalogue(db, row):
     _raw_provider(db, 7)
     db.commit()
     row.account_id = ledger.account_id_for(db, ledger.TELEGRAM, 7)
