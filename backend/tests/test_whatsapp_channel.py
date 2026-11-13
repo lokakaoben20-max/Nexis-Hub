@@ -32,18 +32,20 @@ PROVIDER_ROUTES = {
     ("PATCH", "/api/bot/providers/{telegram_id}/services"),
     ("PATCH", "/api/bot/providers/{telegram_id}/status"),
     ("POST", "/api/bot/quotes"),
-    ("POST", "/api/bot/missions/{mission_id}/start"),
+    # Arrivée : « je suis arrivé » et code de présence (plus de « démarrer »).
+    ("POST", "/api/bot/missions/{mission_id}/presence/arrived"),
+    ("POST", "/api/bot/missions/{mission_id}/presence/code"),
     ("POST", "/api/bot/missions/{mission_id}/finish"),
     ("POST", "/api/bot/service-requests"),
 }
 
 
 @pytest.fixture
-def backend(tmp_path, monkeypatch):
+def backend(backend_db_url, monkeypatch):
     # Charge d'abord tout le backend : recharger un module importé pour la
     # première fois juste avant redéfinirait ses tables deux fois.
     importlib.import_module("backend.app.main")
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'whatsapp.db'}")
+    monkeypatch.setenv("DATABASE_URL", backend_db_url)
     monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TELEGRAM_KEY)
     monkeypatch.setenv("BACKEND_API_KEY_WHATSAPP", WHATSAPP_KEY)
     database = importlib.reload(importlib.import_module("backend.app.database"))

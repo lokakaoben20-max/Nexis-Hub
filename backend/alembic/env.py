@@ -12,6 +12,11 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import nexis_config  # noqa: E402
+
+# Hors développement, une configuration incomplète empêche de migrer.
+nexis_config.verifier("migration")
+
 from backend.app.database import Base
 from backend.app import models  # noqa: F401  (registers tables on Base.metadata)
 

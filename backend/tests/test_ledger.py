@@ -13,11 +13,10 @@ from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 
 from backend.app import crud, ledger
+from backend.tests import profils_de_test
 
 BotMission = ledger.BotMission
-BotUser = crud.BotUser
 BotQuote = crud.BotQuote
-BotProvider = crud.BotProvider
 LedgerEntry = ledger.LedgerEntry
 MoneyOperation = ledger.MoneyOperation
 
@@ -31,13 +30,12 @@ def acc(db, telegram_id):
 
 
 @pytest.fixture
-def db(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'ledger.db'}", future=True)
+def db(backend_db_url):
+    engine = create_engine(backend_db_url, future=True)
     LedgerEntry.metadata.create_all(bind=engine)
     session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
-    session.add(BotUser(telegram_id=CLIENT_ID, first_name="Client"))
-    session.add(BotProvider(telegram_id=PROVIDER_ID, full_name="Prestataire"))
-    session.commit()
+    profils_de_test.client(session, CLIENT_ID)
+    profils_de_test.provider(session, PROVIDER_ID)
     yield session
     session.close()
     engine.dispose()
@@ -329,7 +327,7 @@ def test_client_confirmation_pays_the_provider_net_and_the_platform_commission(d
     assert bal(db, ledger.WALLET, PROVIDER_ID) == money(85)
     assert bal(db, ledger.PLATFORM, None) == money(15)
     assert bal(db, ledger.ESCROW, 1) == money(0)
-    assert db.get(BotProvider, PROVIDER_ID).total_missions == 1
+    assert profils_de_test.provider_of(db, PROVIDER_ID).total_missions == 1
     assert_books_balanced(db)
 
 
@@ -352,15 +350,48 @@ def test_only_the_mission_client_can_confirm(db):
     refused("not_mission_client", lambda: ledger.confirm_completion(db, 1, acc(db, 999)))
 
 
-def test_auto_release_waits_24_hours(db):
+def test_auto_release_waits_48_hours_after_the_end(db):
     finished(db)
-    refused("invalid_state", lambda: ledger.auto_release(db, 1))
-
     mission = db.get(BotMission, 1)
-    mission.status_changed_at = mission.status_changed_at - timedelta(hours=25)
-    db.commit()
-    assert ledger.auto_release(db, 1).payment_status == "released"
+    assert mission.release_after == mission.status_changed_at + timedelta(hours=48)
+    ended_at = mission.status_changed_at
+
+    refused("invalid_state", lambda: ledger.auto_release(db, 1, now=ended_at + timedelta(hours=47, minutes=59)))
+    assert bal(db, ledger.ESCROW, 1) == money(100)
+
+    assert ledger.auto_release(db, 1, now=ended_at + timedelta(hours=48)).payment_status == "released"
     assert bal(db, ledger.WALLET, PROVIDER_ID) == money(90)
+    assert bal(db, ledger.ESCROW, 1) == money(0)
+
+
+def test_auto_release_follows_the_recorded_deadline_not_the_current_rule(db):
+    """Une mission terminée sous l'ancienne règle (échéance à 24 h, posée par
+    la migration) est versée à son échéance, pas 48 h après."""
+    finished(db)
+    mission = db.get(BotMission, 1)
+    mission.release_after = mission.status_changed_at + timedelta(hours=24)
+    db.commit()
+
+    assert ledger.auto_release(db, 1, now=mission.status_changed_at + timedelta(hours=24)).payment_status == "released"
+
+
+def test_auto_release_never_pays_without_a_recorded_deadline(db):
+    finished(db)
+    mission = db.get(BotMission, 1)
+    mission.release_after = None
+    db.commit()
+
+    refused("invalid_state", lambda: ledger.auto_release(db, 1, now=mission.status_changed_at + timedelta(days=30)))
+    assert bal(db, ledger.ESCROW, 1) == money(100)
+
+
+def test_a_repeated_finish_keeps_the_first_deadline(db):
+    finished(db)
+    deadline = db.get(BotMission, 1).release_after
+
+    ledger.finish_mission(db, 1, acc(db, PROVIDER_ID))
+
+    assert db.get(BotMission, 1).release_after == deadline
 
 
 # --- Litige ---------------------------------------------------------------------
@@ -377,7 +408,7 @@ def test_dispute_freezes_the_escrow(db):
     mission.status_changed_at = mission.status_changed_at - timedelta(days=10)
     db.commit()
     refused("mission_disputed", lambda: ledger.confirm_completion(db, 1, acc(db, CLIENT_ID)))
-    refused("mission_disputed", lambda: ledger.auto_release(db, 1))
+    refused("mission_disputed", lambda: ledger.auto_release(db, 1, now=mission.release_after + timedelta(days=10)))
     assert bal(db, ledger.ESCROW, 1) == money(100)
     assert bal(db, ledger.WALLET, PROVIDER_ID) == money(0)
 
@@ -505,8 +536,7 @@ def test_one_person_has_a_single_wallet_whether_client_or_provider(db):
     même, il peut payer avec ce qu'il a gagné."""
     finished(db)
     ledger.confirm_completion(db, 1, acc(db, CLIENT_ID))
-    db.add(BotUser(telegram_id=PROVIDER_ID, first_name="Prestataire"))
-    db.commit()
+    profils_de_test.client(db, PROVIDER_ID, "Prestataire")
 
     quote_id = accepted_quote(db, mission_id=2, amount=40.0, quote_ref=9, client=PROVIDER_ID, provider_account=acc(db, CLIENT_ID))
     ledger.fund_mission(db, 2, method="wallet", client_account_id=acc(db, PROVIDER_ID), quote_id=quote_id)

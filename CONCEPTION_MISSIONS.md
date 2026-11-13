@@ -113,3 +113,51 @@ Plan : `/mnt/project-files/localisation/plan-localisation-temps-reel-2026-11-07.
 - Prestataire : bouton « 📍 Voir le lieu » sur les messages de paiement reçu,
   de démarrage et de fin ; le bot lit le lieu dans le backend à l'appui et
   l'envoie comme position Telegram avec le repère.
+
+## Arrivée confirmée
+
+Conception : `/mnt/project-files/localisation/confirmation-arrivee-et-devis-sur-place-2026-11-08.md`
+(étapes 1 et 2, décisions de Ben du 8 novembre 2026). Code : `backend/app/presence.py`.
+
+- Plus de « Démarrer la mission » : une mission payée (`confirmed` +
+  `paid_escrow`) démarre quand l'arrivée du prestataire est **confirmée**, et
+  seulement ainsi. Aucune route ne laisse le prestataire démarrer seul
+  (`ledger.start_mission` reste interne ; `ledger.begin_work` démarre sans
+  valider, dans la transaction de la présence).
+- Confirmée par **un geste avec preuve** :
+  - le client appuie « ✅ Oui, il est là » (`POST …/presence/confirm`) ;
+  - ou le prestataire tape le **code de présence** à 4 chiffres que le client
+    lui donne (`POST …/presence/code`).
+  Le « 📍 Je suis arrivé » du prestataire (`POST …/presence/arrived`) ne
+  confirme rien : il pose la question au client. La première réponse valide
+  fait foi (verrou de la mission) : une seule présence enregistrée.
+- Code de présence : HMAC de la clé `PRESENCE_CODE_KEY` (≥ 32 caractères, sinon
+  `presence_not_configured`, 503) et du numéro de mission, jamais enregistré.
+  Donné au client seulement (dans la question et `GET …/presence`), tant que
+  la mission payée attend l'arrivée ; jamais au prestataire, jamais dans un
+  journal. Code mal formé : `invalid_presence_code`, non compté. Mauvais code :
+  `wrong_presence_code` avec `attempts_left`, compté et enregistré avant le
+  refus. 5 mauvais codes : `presence_code_locked`, admin et client prévenus ;
+  seul l'appui du client confirme ensuite.
+- Question au client : photo (selfie d'inscription) et prénom du prestataire,
+  code, rappel « n'acceptez et ne payez un devis que dans Nexis », boutons
+  « Oui, il est là », « Pas encore », « Ce n'est pas lui ». Reposée par un
+  nouvel appui du prestataire au plus toutes les 2 minutes, ou aussitôt après
+  un « pas encore ».
+- « Pas encore » (`…/presence/not-yet`) : rien ne bouge ; le prestataire est
+  prévenu une fois par question.
+- « Ce n'est pas lui » (`…/presence/wrong-person`), après confirmation dans le
+  bot : litige ouvert dans la même transaction (fonds gelés, lieu caché au
+  prestataire), admin et prestataire prévenus.
+- Table `mission_presence` (une ligne par mission, créée au premier
+  événement), contraintes : `confirmed_at`/`confirmed_by` ensemble,
+  `confirmed_by` ∈ {client, presence_code}, 0 à 5 essais, code bloqué si et
+  seulement si 5 essais.
+- Messages envoyés par le backend après validation : l'autre partie est
+  prévenue, celui qui vient d'agir voit la réponse dans son canal.
+- Pas encore fait (étapes suivantes du document) : rappels automatiques au
+  client (5 et 10 min) et alerte admin après 20 min de blocage, attendus avec
+  le nouveau planificateur (PR #13) ; argent du module B (visite de 5 $, devis
+  sur place, rappels au prestataire) ; zone d'arrivée automatique (suivi en
+  route, backend hébergé) ; WhatsApp. En attendant le module B, l'arrivée
+  confirmée démarre aussi les missions des services du module B.

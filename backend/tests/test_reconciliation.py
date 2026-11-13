@@ -12,7 +12,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend.app import crud, ledger, mobile_money, reconciliation
+from backend.app import ledger, mobile_money, reconciliation
+from backend.tests import profils_de_test
 from backend.tests.test_ledger import accepted_quote
 from backend.app.payment_gateway import FAILED, PENDING, SUCCEEDED, GatewayResult
 
@@ -65,12 +66,12 @@ def gateway(monkeypatch):
 
 
 @pytest.fixture
-def db(tmp_path):
-    engine = create_engine(f"sqlite:///{tmp_path / 'reco.db'}", future=True)
+def db(backend_db_url):
+    engine = create_engine(backend_db_url, future=True)
     LedgerEntry.metadata.create_all(bind=engine)
     session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
-    session.add(crud.BotUser(telegram_id=CLIENT_ID, first_name="Client"))
-    session.add(crud.BotProvider(telegram_id=PROVIDER_ID, full_name="Prestataire"))
+    profils_de_test.client(session, CLIENT_ID)
+    profils_de_test.provider(session, PROVIDER_ID)
     session.commit()
     yield session
     session.close()

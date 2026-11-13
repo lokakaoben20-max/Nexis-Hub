@@ -88,8 +88,8 @@ class SessionTokens:
     refresh_expires_at: datetime
     device_id: int
     account_id: int
-    # Téléphone créé par cette connexion : l'API publique lance alors
-    # l'alerte « Nouvel appareil » (tasks.alert_new_app_device).
+    # Téléphone créé par cette connexion (l'alerte « Nouvel appareil », s'il
+    # en faut une, est déjà dans la boîte d'envoi : Device.alert_due_at).
     new_device: bool = False
 
 
@@ -249,6 +249,9 @@ def sign_in(
             app_version=app_version,
             created_at=now,
             money_unlocked_at=now if not verified.existing_account else now + NEW_DEVICE_MONEY_DELAY,
+            # Téléphone ajouté à un compte existant : l'alerte part avec la
+            # transaction (tasks.send_pending_device_alerts), jamais perdue.
+            alert_due_at=now if verified.existing_account else None,
         )
         db.add(device)
         db.flush()

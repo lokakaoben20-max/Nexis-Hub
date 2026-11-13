@@ -107,10 +107,10 @@ def test_the_same_key_with_another_body_is_refused_and_changes_nothing(client, b
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "idempotency_key_reused"
-    from backend.app.models import NexisAccount
+    from backend.app.models import ClientProfile
 
     with backend.database.SessionLocal() as db:
-        assert db.query(NexisAccount).one().display_name == "Mado"
+        assert db.query(ClientProfile).one().first_name == "Mado"
 
 
 def test_the_same_key_from_another_person_is_refused(client, backend):
@@ -220,9 +220,9 @@ def test_old_keys_are_purged_and_recent_ones_kept(backend):
 
 
 def test_the_purge_runs_every_day():
-    from backend.app.celery_app import celery_app
+    from backend.app import taches
 
-    schedule = celery_app.conf.beat_schedule["purge-idempotency-keys"]
-    assert schedule["task"] == "backend.app.tasks.purge_idempotency_keys"
-    importlib.import_module("backend.app.tasks")
-    assert "backend.app.tasks.purge_idempotency_keys" in celery_app.tasks
+    tache = taches.CALENDRIER["purge-cles-idempotence"]
+    # Par nom : d'autres tests rechargent les modules.
+    assert (tache.fonction.__module__, tache.fonction.__name__) == ("backend.app.tasks", "purge_idempotency_keys")
+    assert tache.frequence.cron == "15 3 * * *"

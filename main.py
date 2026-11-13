@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 
 from aiogram import Bot, Dispatcher, F
@@ -9,6 +10,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from dotenv import load_dotenv
 from aiogram.exceptions import TelegramBadRequest
 
+import nexis_config
+import nexis_logs
 from messages import get_message
 from db import init_db
 # Phase 3 (voir V5_MIGRATION_PLAN.md) : tous les flows métier vivent
@@ -115,6 +118,9 @@ async def fonctionnalite_a_venir(callback: CallbackQuery):
 
 
 async def main():
+    # Hors développement, une configuration incomplète empêche le démarrage.
+    nexis_config.verifier("bot")
+    nexis_logs.configurer("bot")
     check_backend_key()
     init_db()
     await ensure_fsm_storage_ready(dp.storage)
@@ -126,7 +132,7 @@ async def main():
         # précédente (switch webhook -> polling), getUpdates échoue avec
         # TelegramConflictError tant que le webhook est actif.
         await bot.delete_webhook(drop_pending_updates=False)
-        print("✅ NEXIS HUB Bot démarré (polling).")
+        logging.getLogger("nexis.bot").info("NEXIS HUB Bot démarré (polling)")
         await dp.start_polling(bot)
 
 

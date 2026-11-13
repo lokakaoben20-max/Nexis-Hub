@@ -9,7 +9,6 @@ import json
 from datetime import timedelta
 
 import pytest
-from celery.exceptions import Retry
 
 from backend.app import app_sessions, ledger, models, tasks
 from test_app_sessions import (  # noqa: F401 - fixtures partagées
@@ -369,17 +368,114 @@ def test_no_alert_for_the_first_phone_of_a_brand_new_account(db, telegram):
     assert sent == []
 
 
-def test_a_failed_alert_is_retried(db, telegram, monkeypatch):
-    _, outcome = telegram
+@pytest.fixture
+def admin_alerts(monkeypatch):
+    alerts = []
+    monkeypatch.setattr(tasks, "_alert_admin", alerts.append)
+    return alerts
+
+
+@pytest.fixture
+def outbox(db, monkeypatch, telegram):
+    """La tâche planifiée travaille sur la base du test."""
+    monkeypatch.setattr(tasks, "SessionLocal", lambda: db)
+    monkeypatch.setattr(db, "close", lambda: None)
+    return telegram
+
+
+def reread(db, tokens):
+    """Relit le téléphone en base : la tâche a pu travailler sur un autre
+    objet (modèles rechargés par d'autres tests)."""
+    db.expire_all()
+    return db.get(models.Device, tokens.device_id)
+
+
+def test_the_alert_is_queued_with_the_new_phone(db):
+    existing_account(db)
+    added = device(db, sign_in(db, Phone()))
+
+    assert added.alert_due_at == NOW and added.alert_sent_at is None and added.alert_attempts == 0
+
+
+def test_no_alert_is_queued_for_the_first_phone_of_a_brand_new_account(db):
+    assert device(db, sign_in(db, Phone())).alert_due_at is None
+
+
+def test_the_scheduled_task_sends_a_due_alert_once(db, outbox):
+    sent, _ = outbox
+    existing_account(db)
+    tokens = sign_in(db, Phone())
+
+    assert tasks.send_pending_device_alerts(now=NOW + timedelta(minutes=1)) == 1
+    assert tasks.send_pending_device_alerts(now=NOW + timedelta(minutes=2)) == 0
+
+    assert len(sent) == 1
+    row = reread(db, tokens)
+    assert row.alert_due_at is None and row.alert_sent_at == NOW + timedelta(minutes=1)
+
+
+def test_a_failed_alert_is_retried_later_with_backoff(db, outbox):
+    sent, outcome = outbox
     outcome["ok"] = False
     existing_account(db)
     tokens = sign_in(db, Phone())
-    monkeypatch.setattr(tasks, "SessionLocal", lambda: db)
-    monkeypatch.setattr(db, "close", lambda: None)
+    first = NOW + timedelta(minutes=1)
 
-    assert not tasks.send_new_device_alert(db, tokens.device_id)
-    with pytest.raises(Retry):
-        tasks.alert_new_app_device.run(tokens.device_id)
+    assert tasks.send_pending_device_alerts(now=first) == 0
+    row = reread(db, tokens)
+    assert row.alert_attempts == 1 and row.alert_due_at == first + timedelta(minutes=1)
+
+    # Pas encore l'heure : rien n'est retenté.
+    assert tasks.send_pending_device_alerts(now=first + timedelta(seconds=30)) == 0
+    assert len(sent) == 1
+
+    outcome["ok"] = True
+    assert tasks.send_pending_device_alerts(now=first + timedelta(minutes=1)) == 1
+    row = reread(db, tokens)
+    assert len(sent) == 2 and row.alert_due_at is None and row.alert_sent_at is not None
+
+
+def test_an_error_while_sending_counts_as_a_failed_attempt(db, outbox, monkeypatch):
+    existing_account(db)
+    tokens = sign_in(db, Phone())
+
+    def broken(telegram_id, text, reply_markup=None):
+        raise RuntimeError("réseau coupé")
+
+    monkeypatch.setattr(tasks, "send_telegram_message", broken)
+
+    assert tasks.send_pending_device_alerts(now=NOW + timedelta(minutes=1)) == 0
+    row = reread(db, tokens)
+    assert row.alert_attempts == 1 and row.alert_due_at is not None
+
+
+def test_after_the_last_retry_the_admin_is_told_and_the_alert_stops(db, outbox, admin_alerts):
+    sent, outcome = outbox
+    outcome["ok"] = False
+    existing_account(db)
+    tokens = sign_in(db, Phone())
+    now = NOW
+    for _ in range(tasks.NEW_DEVICE_ALERT_RETRIES):
+        now = reread(db, tokens).alert_due_at
+        tasks.send_pending_device_alerts(now=now)
+
+    row = reread(db, tokens)
+    assert row.alert_attempts == tasks.NEW_DEVICE_ALERT_RETRIES
+    assert row.alert_due_at is None and row.alert_sent_at is None
+    assert len(sent) == tasks.NEW_DEVICE_ALERT_RETRIES
+    assert len(admin_alerts) == 1 and str(tokens.device_id) in admin_alerts[0]
+    assert tasks.send_pending_device_alerts(now=now + timedelta(days=1)) == 0
+
+
+def test_a_phone_cut_before_the_alert_gets_none(db, outbox):
+    sent, _ = outbox
+    existing_account(db)
+    tokens = sign_in(db, Phone())
+    app_sessions.report_not_me(db, account_id=tokens.account_id, device_id=tokens.device_id, now=NOW)
+
+    assert tasks.send_pending_device_alerts(now=NOW + timedelta(minutes=1)) == 0
+    row = reread(db, tokens)
+    assert sent == [] and row.alert_due_at is None and row.alert_sent_at is None
 
 
 @pytest.mark.parametrize("lang", ["fr", "en", "ln"])
@@ -393,13 +489,6 @@ def test_the_alert_exists_in_every_language(lang):
 
 
 # --- Route du bot « Ce n'est pas moi » ----------------------------------------
-
-
-@pytest.fixture
-def admin_alerts(monkeypatch):
-    alerts = []
-    monkeypatch.setattr(tasks, "_alert_admin", alerts.append)
-    return alerts
 
 
 def test_not_me_from_telegram_cuts_the_phone_and_alerts_the_admin(backend, admin_alerts):

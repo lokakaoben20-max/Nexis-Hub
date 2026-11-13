@@ -57,6 +57,7 @@ class LiveBackend:
         self.database = database_module
         # Notifications que le backend enverrait lui-même par Telegram.
         self.sent = []
+        self.markups = []
 
     def balance(self, telegram_id: int, currency: str = "USD") -> float:
         from backend.app import ledger
@@ -171,6 +172,8 @@ class LiveBackend:
         with self.database.SessionLocal() as session:
             mission = session.get(ledger.BotMission, mission_id)
             mission.status_changed_at = mission.status_changed_at - timedelta(hours=hours)
+            if mission.release_after is not None:
+                mission.release_after = mission.release_after - timedelta(hours=hours)
             session.commit()
 
     def auto_release(self, mission_id: int):
@@ -181,11 +184,11 @@ class LiveBackend:
 
 
 @pytest.fixture
-def live_backend(tmp_path, monkeypatch):
+def live_backend(monkeypatch, backend_db_url):
     # Charge d'abord tout le backend : recharger un module importé pour la
     # première fois juste avant redéfinirait ses tables deux fois.
     importlib.import_module("backend.app.main")
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'backend.db'}")
+    monkeypatch.setenv("DATABASE_URL", backend_db_url)
     monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TEST_BACKEND_API_KEY)
     database_module = importlib.reload(importlib.import_module("backend.app.database"))
     importlib.reload(importlib.import_module("backend.app.models"))
@@ -204,4 +207,15 @@ def live_backend(tmp_path, monkeypatch):
     live = LiveBackend(database_module)
     tasks_module = importlib.import_module("backend.app.tasks")
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda chat_id, text, reply_markup=None: live.sent.append((chat_id, text)))
+    # Messages envoyés par le backend lui-même (arrivée du prestataire) : gardés
+    # avec leurs boutons pour que les tests puissent les « appuyer ».
+    notify_module = importlib.import_module("backend.app.notify")
+
+    def _record(chat_id, text, reply_markup=None):
+        live.sent.append((chat_id, text))
+        live.markups.append((chat_id, reply_markup))
+        return True
+
+    monkeypatch.setattr(notify_module, "send_telegram_message", _record)
+    monkeypatch.setattr(notify_module, "send_telegram_photo", lambda chat_id, file_id, caption, reply_markup=None: _record(chat_id, caption, reply_markup))
     return live

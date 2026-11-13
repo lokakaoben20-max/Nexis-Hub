@@ -50,6 +50,8 @@ from telegram_bot.keyboards import (
     clavier_operateurs,
     clavier_paiement,
     clavier_prestataire,
+    clavier_presence_pas_lui,
+    clavier_question_presence,
     clavier_verifier_paiement,
 )
 
@@ -273,29 +275,167 @@ async def verifier_paiement_mobile_money(callback: CallbackQuery):
     await _show_mobile_money_status(callback, result, lang, None)
 
 
-@router.callback_query(F.data.startswith("mission_start_"))
-async def prestataire_demarre_mission(callback: CallbackQuery):
-    mission_id = int(callback.data.replace("mission_start_", "", 1))
+# --- Arrivée confirmée -------------------------------------------------------
+# Plus de « Démarrer » : la mission démarre quand le client confirme l'arrivée
+# du prestataire (« Oui, il est là »), ou quand le prestataire tape le code de
+# présence que le client lui donne. Le backend décide et prévient l'autre
+# partie ; le bot n'affiche ici que la réponse à celui qui vient d'agir.
+
+ARRIVAL_PREFIXES = ("presence_arrived_", "mission_start_")
+
+
+class PresenceFlow(StatesGroup):
+    code = State()
+
+
+def _mission_id_from(data: str, prefixes) -> int:
+    for prefix in (prefixes if isinstance(prefixes, tuple) else (prefixes,)):
+        if data.startswith(prefix):
+            return int(data.removeprefix(prefix))
+    raise ValueError(data)
+
+
+async def _show_presence_confirmed_to_provider(target, mission_id: int, lang: str, edit: bool) -> None:
+    text = get_message("presence_confirmed_provider", lang, mission_id=mission_id)
+    markup = clavier_mission_prestataire(mission_id, "finish", lang)
+    if edit:
+        await target.edit_text(text, parse_mode="HTML", reply_markup=markup)
+    else:
+        await target.answer(text, parse_mode="HTML", reply_markup=markup)
+
+
+# Les anciens boutons « Démarrer la mission » (`mission_start_`) déjà envoyés
+# signalent l'arrivée : ils ne démarrent plus rien seuls.
+@router.callback_query(F.data.startswith(ARRIVAL_PREFIXES))
+async def prestataire_arrive(callback: CallbackQuery):
+    mission_id = _mission_id_from(callback.data, ARRIVAL_PREFIXES)
     provider_lang = await get_provider_language(callback.from_user.id)
     try:
-        result = await backend_client.start_mission(mission_id, callback.from_user.id)
+        result = await backend_client.declare_arrival(mission_id, callback.from_user.id)
     except (MoneyRefused, BackendUnavailable) as error:
         await callback.answer(money_failure_text(mission_id, error, provider_lang), show_alert=True)
         return
-    mission = result["mission"]
-
+    if result["presence"]["confirmed"]:
+        await _show_presence_confirmed_to_provider(callback.message, mission_id, provider_lang, edit=True)
+        await callback.answer(get_message("presence_already_confirmed", provider_lang))
+        return
+    key = "presence_declared_provider" if result["client_asked"] else "presence_already_asked_provider"
     await callback.message.edit_text(
-        get_message("provider_mission_started", provider_lang, mission_id=mission_id),
+        get_message(key, provider_lang, mission_id=mission_id),
         parse_mode="HTML",
-        reply_markup=clavier_mission_prestataire(mission_id, "finish", provider_lang),
+        reply_markup=clavier_mission_prestataire(mission_id, "start", provider_lang),
     )
-    client_lang = await get_user_language(mission["telegram_id"])
-    await callback.bot.send_message(
-        mission["telegram_id"],
-        get_message("mission_started", client_lang, mission_id=mission_id),
-        parse_mode="HTML",
-    )
-    await callback.answer(get_message("toast_mission_started", provider_lang))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("presence_code_"))
+async def prestataire_demande_saisie_code(callback: CallbackQuery, state: FSMContext):
+    mission_id = _mission_id_from(callback.data, "presence_code_")
+    provider_lang = await get_provider_language(callback.from_user.id)
+    await state.set_state(PresenceFlow.code)
+    await state.update_data(presence_mission_id=mission_id)
+    await callback.message.answer(get_message("presence_ask_code", provider_lang, mission_id=mission_id), parse_mode="HTML")
+    await callback.answer()
+
+
+@router.message(PresenceFlow.code)
+async def prestataire_tape_code(message: Message, state: FSMContext):
+    mission_id = (await state.get_data())["presence_mission_id"]
+    provider_lang = await get_provider_language(message.from_user.id)
+    code = (message.text or "").strip()
+    if len(code) != 4 or not code.isascii() or not code.isdigit():
+        # Pas compté comme un essai : seul un code à 4 chiffres est vérifié.
+        await message.answer(get_message("presence_code_invalid_format", provider_lang), parse_mode="HTML")
+        return
+    try:
+        await backend_client.confirm_presence_code(mission_id, message.from_user.id, code)
+    except BackendUnavailable as error:
+        # Rien n'a été vérifié : le prestataire peut retaper le code.
+        await message.answer(money_failure_text(mission_id, error, provider_lang, "service_unavailable"), parse_mode="HTML")
+        return
+    except MoneyRefused as error:
+        if error.code == "wrong_presence_code":
+            await message.answer(
+                get_message("presence_code_wrong", provider_lang, attempts_left=error.details.get("attempts_left", 0)),
+                parse_mode="HTML",
+            )
+            return
+        await state.clear()
+        key = "presence_code_locked" if error.code == "presence_code_locked" else None
+        await message.answer(
+            get_message(key, provider_lang) if key else money_failure_text(mission_id, error, provider_lang), parse_mode="HTML"
+        )
+        return
+    await state.clear()
+    await _show_presence_confirmed_to_provider(message, mission_id, provider_lang, edit=False)
+
+
+async def _close_presence_question(callback: CallbackQuery) -> None:
+    """Retire les boutons de la question (texte ou photo) ; un message trop
+    ancien pour être modifié n'empêche rien."""
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:  # noqa: BLE001 — l'essentiel (la réponse) est déjà enregistré
+        pass
+
+
+@router.callback_query(F.data.startswith("presence_yes_"))
+async def client_confirme_presence(callback: CallbackQuery):
+    mission_id = _mission_id_from(callback.data, "presence_yes_")
+    lang = await get_user_language(callback.from_user.id)
+    try:
+        await backend_client.confirm_presence(mission_id, callback.from_user.id)
+    except (MoneyRefused, BackendUnavailable) as error:
+        await callback.answer(money_failure_text(mission_id, error, lang), show_alert=True)
+        return
+    await _close_presence_question(callback)
+    await callback.message.answer(get_message("presence_confirmed_client", lang, mission_id=mission_id), parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("presence_notyet_"))
+async def client_presence_pas_encore(callback: CallbackQuery):
+    mission_id = _mission_id_from(callback.data, "presence_notyet_")
+    lang = await get_user_language(callback.from_user.id)
+    try:
+        await backend_client.presence_not_yet(mission_id, callback.from_user.id)
+    except (MoneyRefused, BackendUnavailable) as error:
+        await callback.answer(money_failure_text(mission_id, error, lang), show_alert=True)
+        return
+    # Les boutons restent : le client pourra répondre « oui » sur ce message.
+    await callback.answer(get_message("presence_not_yet_client", lang), show_alert=True)
+
+
+@router.callback_query(F.data.startswith("presence_wrong_"))
+async def client_presence_pas_lui(callback: CallbackQuery):
+    """« Ce n'est pas lui » gèle la mission : on demande de confirmer d'abord
+    (un appui par erreur bloquerait un prestataire honnête)."""
+    mission_id = _mission_id_from(callback.data, "presence_wrong_")
+    lang = await get_user_language(callback.from_user.id)
+    await callback.message.edit_reply_markup(reply_markup=clavier_presence_pas_lui(mission_id, lang))
+    await callback.answer(get_message("presence_wrong_confirm_prompt", lang), show_alert=True)
+
+
+@router.callback_query(F.data.startswith("presence_back_"))
+async def client_presence_retour(callback: CallbackQuery):
+    mission_id = _mission_id_from(callback.data, "presence_back_")
+    lang = await get_user_language(callback.from_user.id)
+    await callback.message.edit_reply_markup(reply_markup=clavier_question_presence(mission_id, lang))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("presence_wrongok_"))
+async def client_presence_pas_lui_confirme(callback: CallbackQuery):
+    mission_id = _mission_id_from(callback.data, "presence_wrongok_")
+    lang = await get_user_language(callback.from_user.id)
+    try:
+        await backend_client.report_wrong_person(mission_id, callback.from_user.id)
+    except (MoneyRefused, BackendUnavailable) as error:
+        await callback.answer(money_failure_text(mission_id, error, lang), show_alert=True)
+        return
+    await _close_presence_question(callback)
+    await callback.message.answer(get_message("presence_wrong_client", lang, mission_id=mission_id), parse_mode="HTML")
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("mission_finish_"))
@@ -474,7 +614,7 @@ async def litige_motif_recu(message: Message, state: FSMContext):
     except MoneyRefused as error:
         await state.clear()
         if error.code == "already_settled" and (error.mission or {}).get("payment_status") == "released":
-            # Libérée entre-temps (confirmation ou délai de 24 h dépassé).
+            # Libérée entre-temps (confirmation ou délai de 48 h dépassé).
             text = get_message("dispute_already_released", lang, mission_id=mission_id)
         else:
             text = money_failure_text(mission_id, error, lang)

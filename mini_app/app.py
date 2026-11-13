@@ -7,10 +7,12 @@ import os
 import time
 from urllib.parse import parse_qsl
 
+
+import httpx
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
-from pydantic import BaseModel
-from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from db import (
@@ -24,6 +26,8 @@ from db import (
     update_provider_services,
     update_provider_status,
 )
+import nexis_config
+import nexis_logs
 from telegram_bot import backend_client
 from telegram_bot.backend_client import BackendUnavailable, MoneyRefused
 
@@ -32,10 +36,11 @@ BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR.parent / ".env")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-
-
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    # Hors développement, une configuration incomplète empêche le démarrage.
+    nexis_config.verifier("miniapp")
+    nexis_logs.configurer("miniapp")
     # Sans la clé du canal Telegram, la Mini App ne pourrait rien demander au
     # backend : elle refuse de démarrer plutôt que de répondre « indisponible ».
     backend_client.check_backend_key()
@@ -107,6 +112,23 @@ def index():
 @app.get("/health")
 def health():
     return {"status": "ok", "app": "nexis-hub-mini-app"}
+
+
+@app.get("/health/live")
+def health_live():
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    """Prête si le backend, dont dépend chaque écran, répond."""
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            response = await client.get(f"{backend_client.BACKEND_BASE_URL}/health/live")
+        response.raise_for_status()
+    except httpx.HTTPError:
+        return JSONResponse({"status": "indisponible", "problemes": ["backend injoignable"]}, status_code=503)
+    return {"status": "ok"}
 
 
 def row_to_dict(row):
@@ -340,27 +362,52 @@ def save_provider_status(
 
 
 async def _mission_action(mission_id: int, action) -> dict:
-    """Démarrer ou finir une mission conditionne la libération des fonds :
-    c'est le registre du backend qui décide (CONCEPTION_ARGENT.md), la Mini App
-    affiche l'état renvoyé. Refus métier : 409 avec son code ; backend
-    injoignable : 503, rien n'a changé."""
+    """Arrivée, code de présence et fin de mission conditionnent la libération
+    des fonds : c'est le registre du backend qui décide (CONCEPTION_ARGENT.md),
+    la Mini App affiche l'état renvoyé. Refus métier : 409 avec son code (et
+    les essais restants d'un mauvais code) ; backend injoignable : 503, rien
+    n'a changé."""
     try:
         result = await action
     except MoneyRefused as error:
-        raise HTTPException(status_code=409, detail={"code": error.code})
+        detail = {"code": error.code}
+        if "attempts_left" in error.details:
+            detail["attempts_left"] = error.details["attempts_left"]
+        raise HTTPException(status_code=409, detail=detail)
     except BackendUnavailable:
         raise HTTPException(status_code=503, detail={"code": "backend_unavailable"})
-    return {"status": "ok", "mission": compact_mission(result["mission"])}
+    response = {"status": "ok", "mission": compact_mission(result["mission"])}
+    if "presence" in result:
+        # Jamais le code : le backend ne le donne qu'au client.
+        response["presence"] = {"confirmed": result["presence"]["confirmed"], "client_asked": result.get("client_asked", False)}
+    return response
 
 
-@app.post("/api/provider/{telegram_id}/missions/{mission_id}/start")
-async def start_provider_mission(
+class PresenceCodeInput(BaseModel):
+    code: str = Field(max_length=20)
+
+
+@app.post("/api/provider/{telegram_id}/missions/{mission_id}/arrived")
+async def provider_arrived(
     telegram_id: int,
     mission_id: int,
     telegram_user: dict = Depends(verify_telegram_init_data),
 ):
+    """« Je suis arrivé » : le client reçoit la question ; la mission démarre
+    à sa réponse, ou au code de présence qu'il donne au prestataire."""
     require_same_telegram_user(telegram_id, telegram_user)
-    return await _mission_action(mission_id, backend_client.start_mission(mission_id, telegram_id))
+    return await _mission_action(mission_id, backend_client.declare_arrival(mission_id, telegram_id))
+
+
+@app.post("/api/provider/{telegram_id}/missions/{mission_id}/presence-code")
+async def provider_presence_code(
+    telegram_id: int,
+    mission_id: int,
+    payload: PresenceCodeInput,
+    telegram_user: dict = Depends(verify_telegram_init_data),
+):
+    require_same_telegram_user(telegram_id, telegram_user)
+    return await _mission_action(mission_id, backend_client.confirm_presence_code(mission_id, telegram_id, payload.code))
 
 
 @app.post("/api/provider/{telegram_id}/missions/{mission_id}/finish")

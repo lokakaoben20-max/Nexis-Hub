@@ -35,7 +35,9 @@ CURRENCIES = ("USD", "CDF")
 STANDARD_COMMISSION_RATE = Decimal("0.10")
 URGENT_COMMISSION_RATE = Decimal("0.15")
 DISPUTE_RESOLUTION_DELAY = timedelta(hours=48)
-AUTO_RELEASE_DELAY = timedelta(hours=24)
+# Délai pour signaler un problème après la fin de la mission (décidé par Ben
+# le 2026-11-07) : sans confirmation ni litige, l'argent part au prestataire.
+AUTO_RELEASE_DELAY = timedelta(hours=48)
 MAX_DISPUTE_REASON_LENGTH = 1000
 
 FUNDING = "funding"
@@ -462,16 +464,26 @@ def _comparable_funding_details(db: Session, details: dict | None) -> dict:
 
 
 def start_mission(db: Session, mission_id: int, provider_account_id: int) -> BotMission:
+    """Usage interne et tests : aucune route ne laisse le prestataire démarrer
+    seul. Une mission démarre quand sa présence est confirmée par le client ou
+    par le code de présence (backend.app.presence)."""
     mission = _lock_mission(db, mission_id)
     _require_provider(db, mission, provider_account_id)
     if mission.status == "in_progress":
         return mission
+    begin_work(db, mission)
+    db.commit()
+    return mission
+
+
+def begin_work(db: Session, mission: BotMission) -> None:
+    """Passe une mission payée et confirmée en cours, sans valider : l'appelant
+    tient le verrou de la mission et valide avec ses propres changements (la
+    présence confirmée et le démarrage vont ensemble ou pas du tout)."""
     _require_open_escrow(db, mission)
     if mission.status != "confirmed":
         raise MoneyError("invalid_state", mission=mission)
     _set_status(mission, "in_progress")
-    db.commit()
-    return mission
 
 
 def finish_mission(db: Session, mission_id: int, provider_account_id: int) -> BotMission:
@@ -483,8 +495,21 @@ def finish_mission(db: Session, mission_id: int, provider_account_id: int) -> Bo
     if mission.status != "in_progress":
         raise MoneyError("invalid_state", mission=mission)
     _set_status(mission, "awaiting_confirmation")
+    mission.release_after = mission.status_changed_at + AUTO_RELEASE_DELAY
     db.commit()
     return mission
+
+
+def lock_mission(db: Session, mission_id: int) -> BotMission:
+    return _lock_mission(db, mission_id)
+
+
+def require_mission_provider(db: Session, mission: BotMission, account_id: int) -> None:
+    _require_provider(db, mission, account_id)
+
+
+def require_open_escrow(db: Session, mission: BotMission) -> None:
+    _require_open_escrow(db, mission)
 
 
 def _require_open_escrow(db: Session, mission: BotMission) -> None:
@@ -577,11 +602,12 @@ def confirm_completion(db: Session, mission_id: int, client_account_id: int) -> 
 
 def auto_release(db: Session, mission_id: int, now: datetime | None = None) -> BotMission:
     """Libération automatique : seulement une mission en attente de
-    confirmation depuis plus de 24 h, donc jamais une mission en litige."""
+    confirmation dont l'échéance `release_after` est passée, donc jamais une
+    mission en litige. Sans échéance enregistrée, rien n'est versé."""
     now = now or _utcnow()
     mission = _lock_mission(db, mission_id)
     _require_open_escrow(db, mission)
-    if mission.status != "awaiting_confirmation" or mission.status_changed_at > now - AUTO_RELEASE_DELAY:
+    if mission.status != "awaiting_confirmation" or mission.release_after is None or mission.release_after > now:
         raise MoneyError("invalid_state", mission=mission)
     amounts = _funded_amounts(db, mission)
     return _settle(
@@ -716,8 +742,11 @@ def _recompute_stats(db: Session, mission: BotMission) -> None:
     # Import local : crud importe déjà les modèles, pas ce module.
     from backend.app.crud import _recompute_provider_stats
 
-    if mission.provider_telegram_id is not None:
-        _recompute_provider_stats(db, mission.provider_telegram_id, mission.provider_account_id)
+    provider_account_id = mission.provider_account_id
+    if provider_account_id is None and mission.provider_telegram_id is not None:
+        provider_account_id = account_id_for(db, TELEGRAM, mission.provider_telegram_id)
+    if provider_account_id is not None:
+        _recompute_provider_stats(db, provider_account_id)
 
 
 def _after_settlement(db: Session, mission_id: int) -> BotMission:

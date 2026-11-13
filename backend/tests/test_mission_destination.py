@@ -18,9 +18,9 @@ ADMIN = 999
 GOMBE = {"latitude": -4.30761234, "longitude": 15.31251234, "landmark": "  Portail bleu   après la poste "}
 
 
-def _backend(monkeypatch, tmp_path):
+def _backend(monkeypatch, backend_db_url):
     monkeypatch.setenv("ADMIN_TELEGRAM_ID", str(ADMIN))
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, tmp_path)
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     return _authed_client(backend_main), database_module
 
 
@@ -67,8 +67,8 @@ def _pay(test_client, database_module, mission_id, quote_id):
     assert response.status_code == 200, response.json()
 
 
-def test_the_destination_is_stored_cleaned_and_never_sent_with_the_mission(tmp_path, monkeypatch):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_the_destination_is_stored_cleaned_and_never_sent_with_the_mission(tmp_path, monkeypatch, backend_db_url):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
         created = _create(test_client)
         mission_id = created.json()["mission"]["mission_id"]
@@ -96,8 +96,8 @@ def test_the_destination_is_stored_cleaned_and_never_sent_with_the_mission(tmp_p
         ({"latitude": -4.30, "longitude": 15.31, "landmark": "x" * 301}, "invalid_destination"),
     ],
 )
-def test_a_wrong_destination_is_refused_and_creates_nothing(tmp_path, monkeypatch, destination, code):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_a_wrong_destination_is_refused_and_creates_nothing(tmp_path, monkeypatch, destination, code, backend_db_url):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
         refused = _create(test_client, destination=destination)
         # La même clé, avec un lieu corrigé, crée bien la mission : le refus
@@ -109,8 +109,8 @@ def test_a_wrong_destination_is_refused_and_creates_nothing(tmp_path, monkeypatc
     assert corrected.status_code == 200 and corrected.json()["created"] is True
 
 
-def test_the_destination_is_mandatory(tmp_path, monkeypatch):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_the_destination_is_mandatory(tmp_path, monkeypatch, backend_db_url):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
         missing = _create(test_client, destination=None)
         no_landmark = _create(test_client, destination={"latitude": -4.3, "longitude": 15.3})
@@ -124,8 +124,8 @@ def test_the_destination_is_mandatory(tmp_path, monkeypatch):
         assert db.query(BotMission).count() == 0
 
 
-def test_a_replay_with_another_destination_is_refused(tmp_path, monkeypatch):
-    test_client, _ = _backend(monkeypatch, tmp_path)
+def test_a_replay_with_another_destination_is_refused(tmp_path, monkeypatch, backend_db_url):
+    test_client, _ = _backend(monkeypatch, backend_db_url)
     with test_client:
         first = _create(test_client)
         replay = _create(test_client)
@@ -138,8 +138,8 @@ def test_a_replay_with_another_destination_is_refused(tmp_path, monkeypatch):
     assert new_landmark.json()["detail"] == {"code": "creation_key_reused"}
 
 
-def test_who_reads_the_destination_along_the_mission(tmp_path, monkeypatch):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_who_reads_the_destination_along_the_mission(tmp_path, monkeypatch, backend_db_url):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
         _register_provider(test_client, PROVIDER, ["service_plomberie"], ["Gombe"])
         _register_provider(test_client, OTHER_PROVIDER, ["service_plomberie"], ["Gombe"])
@@ -179,7 +179,7 @@ def test_who_reads_the_destination_along_the_mission(tmp_path, monkeypatch):
         assert status(PROVIDER) == 200, "mission payée : le prestataire choisi sait où aller"
         assert status(OTHER_PROVIDER) == 403, "l'autre prestataire n'a jamais le lieu"
 
-        assert test_client.post(f"/api/bot/missions/{mission_id}/start", headers=_as(PROVIDER)).status_code == 200
+        assert test_client.post(f"/api/bot/missions/{mission_id}/presence/confirm", headers=_as(CLIENT)).status_code == 200
         assert status(PROVIDER) == 200, "en cours d'intervention"
 
         assert test_client.post(f"/api/bot/missions/{mission_id}/finish", headers=_as(PROVIDER)).status_code == 200
@@ -187,8 +187,8 @@ def test_who_reads_the_destination_along_the_mission(tmp_path, monkeypatch):
         assert status(CLIENT) == 200 and status(ADMIN) == 200
 
 
-def test_a_disputed_mission_hides_the_destination_from_the_provider(tmp_path, monkeypatch):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_a_disputed_mission_hides_the_destination_from_the_provider(tmp_path, monkeypatch, backend_db_url):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
         _register_provider(test_client, PROVIDER, ["service_plomberie"], ["Gombe"])
         mission_id = _create(test_client).json()["mission"]["mission_id"]
@@ -203,8 +203,8 @@ def test_a_disputed_mission_hides_the_destination_from_the_provider(tmp_path, mo
         assert _destination(test_client, mission_id, CLIENT).status_code == 200
 
 
-def test_a_mission_created_before_the_exact_place_says_so(tmp_path, monkeypatch):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_a_mission_created_before_the_exact_place_says_so(tmp_path, monkeypatch, backend_db_url):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
         mission_id = _create(test_client).json()["mission"]["mission_id"]
 
@@ -221,8 +221,8 @@ def test_a_mission_created_before_the_exact_place_says_so(tmp_path, monkeypatch)
     assert response.json()["detail"] == {"code": "destination_unknown"}
 
 
-def test_the_database_refuses_a_partial_destination(tmp_path, monkeypatch):
-    test_client, database_module = _backend(monkeypatch, tmp_path)
+def test_the_database_refuses_a_partial_destination(tmp_path, monkeypatch, backend_db_url):
+    test_client, database_module = _backend(monkeypatch, backend_db_url)
     with test_client:
         mission_id = _create(test_client).json()["mission"]["mission_id"]
 

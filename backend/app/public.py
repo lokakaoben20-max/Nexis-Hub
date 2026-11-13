@@ -141,19 +141,8 @@ def _public(value: Any) -> Any:
 def _mission(mission: BotMission) -> dict[str, Any]:
     data = {field: getattr(mission, field) for field in _MISSION_FIELDS}
     data["dispute_deadline"] = _iso(mission.dispute_deadline)
+    data["release_after"] = _iso(mission.release_after)
     return data
-
-
-def _schedule_new_device_alert(device_id: int) -> None:
-    """Prévient la personne sur Telegram d'un nouveau téléphone. Un échec
-    d'envoi ne fait pas échouer la connexion : la tâche réessaie, et le délai
-    de 72 h protège l'argent de toute façon."""
-    from backend.app.tasks import alert_new_app_device
-
-    try:
-        alert_new_app_device.delay(device_id)
-    except Exception:  # pragma: no cover - broker indisponible
-        logger.exception("Alerte « Nouvel appareil » non programmée (appareil %s)", device_id)
 
 
 # --- Modèles ------------------------------------------------------------------
@@ -237,8 +226,8 @@ def verify_challenge(
             app_version=app_version,
             label=payload.label,
         )
-    if tokens.new_device:
-        _schedule_new_device_alert(tokens.device_id)
+    # Nouveau téléphone sur un compte existant : l'alerte Telegram est dans la
+    # boîte d'envoi (Device.alert_due_at), envoyée par la tâche planifiée.
     return _tokens_view(tokens)
 
 

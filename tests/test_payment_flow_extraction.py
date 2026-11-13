@@ -216,8 +216,11 @@ def test_mobile_money_payment_lifecycle_to_release_and_rating(tmp_path, monkeypa
     assert "SIM-PAY-" in pay_callback.message.edited_text
     assert client_bot.messages[0].chat_id == 200
 
-    # Démarrage puis fin de mission par le prestataire.
-    asyncio.run(payment.prestataire_demarre_mission(DummyCallback(telegram_id=200, data=f"mission_start_{mission_id}", bot=provider_bot)))
+    # Arrivée : le prestataire la signale (rien ne démarre), le client la
+    # confirme (la mission démarre), puis le prestataire termine.
+    asyncio.run(payment.prestataire_arrive(DummyCallback(telegram_id=200, data=f"presence_arrived_{mission_id}", bot=provider_bot)))
+    assert live_backend.mission(mission_id).status == "confirmed"
+    asyncio.run(payment.client_confirme_presence(DummyCallback(telegram_id=100, data=f"presence_yes_{mission_id}", bot=client_bot)))
     assert live_backend.mission(mission_id).status == "in_progress"
     asyncio.run(payment.prestataire_termine_mission(DummyCallback(telegram_id=200, data=f"mission_finish_{mission_id}", bot=provider_bot)))
     assert live_backend.mission(mission_id).status == "awaiting_confirmation"
@@ -350,7 +353,7 @@ def test_paiement_wallet_rejects_a_caller_who_is_not_the_client(tmp_path, monkey
 
 def _paid_and_finished(mission_id, quote_id):
     asyncio.run(payment.paiement_mobile_money_operateur(DummyCallback(telegram_id=100, data=f"qpay_op_{quote_id}_mpesa", bot=DummyBot())))
-    asyncio.run(payment.prestataire_demarre_mission(DummyCallback(telegram_id=200, data=f"mission_start_{mission_id}", bot=DummyBot())))
+    asyncio.run(payment.client_confirme_presence(DummyCallback(telegram_id=100, data=f"presence_yes_{mission_id}", bot=DummyBot())))
     asyncio.run(payment.prestataire_termine_mission(DummyCallback(telegram_id=200, data=f"mission_finish_{mission_id}", bot=DummyBot())))
 
 
@@ -370,15 +373,17 @@ def test_client_confirme_mission_terminee_rejects_a_caller_who_is_not_the_client
     assert state.state is None, "le flow de notation ne doit pas démarrer pour une libération refusée"
 
 
-def test_only_the_mission_provider_can_start_it(tmp_path, monkeypatch, live_backend):
+def test_only_the_mission_provider_can_declare_the_arrival(tmp_path, monkeypatch, live_backend):
     mission_id, quote_id = _setup_accepted_quote(tmp_path, monkeypatch, live_backend)
     asyncio.run(payment.paiement_mobile_money_operateur(DummyCallback(telegram_id=100, data=f"qpay_op_{quote_id}_mpesa", bot=DummyBot())))
+    live_backend.sent.clear()
 
-    callback = DummyCallback(telegram_id=999, data=f"mission_start_{mission_id}", bot=DummyBot())
-    asyncio.run(payment.prestataire_demarre_mission(callback))
+    callback = DummyCallback(telegram_id=999, data=f"presence_arrived_{mission_id}", bot=DummyBot())
+    asyncio.run(payment.prestataire_arrive(callback))
 
     assert callback.answered == get_message("money_error_not_mission_provider", "fr")
     assert live_backend.mission(mission_id).status == "confirmed"
+    assert live_backend.sent == [], "le client n'est pas dérangé"
 
 
 def test_client_confirme_mission_terminee_uses_backend_provider_name(tmp_path, monkeypatch, live_backend):

@@ -6,7 +6,7 @@ devis et notations en cours ; le message suivant de l'utilisateur n'avait plus
 d'étape associée et n'obtenait aucune réponse. Constaté en test réel le
 2026-10-06 : un prestataire bloqué après l'envoi de sa pièce d'identité.
 
-Redis fait déjà partie de la pile (broker Celery, `docker compose up -d`). Le bot
+Redis fait déjà partie de la pile (`docker compose up -d`). Le bot
 refuse de démarrer s'il ne le joint pas : démarrer quand même avec un stockage
 en mémoire reviendrait à perdre de nouveau ces étapes sans que personne ne le
 voie.
@@ -35,7 +35,7 @@ def build_fsm_storage(url: str | None = None) -> RedisStorage:
     importer `main` dans les tests ne demande donc pas de Redis."""
     return RedisStorage.from_url(
         url or redis_url(),
-        # Préfixe distinct des clés Celery qui partagent la même base Redis.
+        # Préfixe distinct des autres clés de la même base Redis (registre des updates).
         key_builder=DefaultKeyBuilder(prefix="nexis_fsm"),
         state_ttl=FSM_TTL,
         data_ttl=FSM_TTL,

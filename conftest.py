@@ -33,7 +33,52 @@ def _sqlite_explicit_begin(connection):
         connection.exec_driver_sql("BEGIN")
 
 
+# --- Base du backend pour les tests : SQLite par défaut, Postgres en CI --------
+#
+# `NEXIS_TEST_BACKEND_DB=postgres` fait tourner tous les tests du backend sur
+# un vrai Postgres, comme en production : chaque test reçoit une base neuve,
+# créée puis supprimée sur le serveur désigné par `NEXIS_TEST_POSTGRES_URL`
+# (une base d'administration dont le nom finit par `_test`). Sans cette
+# variable, rien ne change : SQLite jetable dans le dossier du test.
+
+import os
+import uuid
+
 import pytest
+from sqlalchemy import create_engine, text
+
+_TEST_BACKEND_DB = os.getenv("NEXIS_TEST_BACKEND_DB", "sqlite")
+
+
+def _postgres_admin_url() -> str:
+    url = os.getenv("NEXIS_TEST_POSTGRES_URL", "")
+    if not url:
+        raise RuntimeError("NEXIS_TEST_BACKEND_DB=postgres exige NEXIS_TEST_POSTGRES_URL")
+    if not url.rsplit("/", 1)[-1].split("?", 1)[0].endswith("_test"):
+        raise RuntimeError("NEXIS_TEST_POSTGRES_URL doit viser une base jetable dont le nom finit par _test")
+    return url
+
+
+@pytest.fixture
+def backend_db_url(tmp_path):
+    """URL d'une base vide, propre à ce test."""
+    if _TEST_BACKEND_DB == "sqlite":
+        yield f"sqlite:///{tmp_path / 'backend.db'}"
+        return
+    if _TEST_BACKEND_DB != "postgres":
+        raise RuntimeError(f"NEXIS_TEST_BACKEND_DB inconnu : {_TEST_BACKEND_DB!r}")
+
+    admin_url = _postgres_admin_url()
+    name = f"nexis_t_{uuid.uuid4().hex[:16]}"
+    admin = create_engine(admin_url, isolation_level="AUTOCOMMIT", future=True)
+    try:
+        with admin.connect() as conn:
+            conn.execute(text(f'CREATE DATABASE "{name}"'))
+        yield admin_url.rsplit("/", 1)[0] + "/" + name
+    finally:
+        with admin.connect() as conn:
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+        admin.dispose()
 
 
 @pytest.fixture(autouse=True)
@@ -43,3 +88,23 @@ def _service_keys_from_tests_only(monkeypatch):
     vraie clé WhatsApp locale changerait le résultat des tests."""
     for variable in ("BACKEND_API_KEY", "BACKEND_API_KEY_WHATSAPP"):
         monkeypatch.delenv(variable, raising=False)
+
+
+# Clé de test du code de présence (backend.app.presence) : sans elle, le
+# backend refuse de donner ou de vérifier un code. Jamais une vraie clé.
+TEST_PRESENCE_CODE_KEY = "test-presence-key-not-a-secret-0123456789abcdef"
+
+
+@pytest.fixture(autouse=True)
+def _presence_code_key(monkeypatch):
+    monkeypatch.setenv("PRESENCE_CODE_KEY", TEST_PRESENCE_CODE_KEY)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_telegram(monkeypatch):
+    """Aucun test n'écrit à Telegram, même avec un vrai BOT_TOKEN dans le .env
+    du poste : les messages du backend partent dans le vide (un test qui veut
+    les lire remplace backend.app.notify.send_telegram_message)."""
+    from backend.app import notify
+
+    monkeypatch.setattr(notify, "BOT_TOKEN", "")

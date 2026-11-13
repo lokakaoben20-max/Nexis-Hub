@@ -1,12 +1,15 @@
+"""Tâches périodiques du backend. Le calendrier et le verrou qui empêche
+deux exécutions simultanées sont dans `taches.py`."""
+
 import logging
 import os
 from datetime import datetime, timedelta
 
-from backend.app import app_sessions, crud, idempotency, ledger, mobile_money, reconciliation
-from backend.app.celery_app import celery_app
+from backend.app import app_sessions, crud, idempotency, ledger, mobile_money, profils, reconciliation
 from backend.app.database import SessionLocal
-from backend.app.models import BotMission, BotProvider, BotUser, Device, NexisAccount, PaymentIntent, Payout
+from backend.app.models import BotMission, Device, NexisAccount, PaymentIntent, Payout
 from backend.app.notify import send_telegram_message
+from backend.app.presence import provider_arrival_keyboard
 from messages import get_message
 
 ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID")
@@ -14,7 +17,6 @@ ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID")
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="backend.app.tasks.check_expired_quotes")
 def check_expired_quotes() -> int:
     """Devis `pending` depuis plus de 24h → `expired` (crud.expire_stale_quotes)."""
     db = SessionLocal()
@@ -25,9 +27,9 @@ def check_expired_quotes() -> int:
         db.close()
 
 
-@celery_app.task(name="backend.app.tasks.release_auto_confirmed_missions")
 def release_auto_confirmed_missions() -> int:
-    """Auto-libère l'escrow des missions en `awaiting_confirmation` depuis 24h+.
+    """Auto-libère l'escrow des missions en `awaiting_confirmation` dont
+    l'échéance `release_after` (48 h après la fin) est passée.
 
     Passe par `ledger.auto_release`, qui revérifie tout sous verrou : une
     mission passée en litige entre la recherche et la libération n'est pas
@@ -35,7 +37,7 @@ def release_auto_confirmed_missions() -> int:
     """
     db = SessionLocal()
     try:
-        stale = crud.find_missions_awaiting_confirmation_since(db)
+        stale = crud.find_missions_due_for_auto_release(db)
         released = 0
         for stale_mission in stale:
             try:
@@ -48,21 +50,25 @@ def release_auto_confirmed_missions() -> int:
                 continue
             released += 1
 
-            user = db.get(BotUser, mission.telegram_id)
-            if user is not None:
+            client_account_id = mission.client_account_id or ledger.account_id_for(db, ledger.TELEGRAM, mission.telegram_id)
+            if profils.client_profile(db, client_account_id) is not None:
                 send_telegram_message(
-                    user.telegram_id,
-                    get_message("payment_released_client", user.language, mission_id=mission.mission_id),
+                    mission.telegram_id,
+                    get_message(
+                        "payment_released_client", profils.language_of(db, client_account_id), mission_id=mission.mission_id
+                    ),
                 )
 
             if mission.provider_telegram_id is not None:
-                provider = db.get(BotProvider, mission.provider_telegram_id)
-                if provider is not None:
+                provider_account_id = mission.provider_account_id or ledger.account_id_for(
+                    db, ledger.TELEGRAM, mission.provider_telegram_id
+                )
+                if profils.provider_profile(db, provider_account_id) is not None:
                     send_telegram_message(
-                        provider.telegram_id,
+                        mission.provider_telegram_id,
                         get_message(
                             "payment_released_provider",
-                            provider.language,
+                            profils.language_of(db, provider_account_id),
                             mission_id=mission.mission_id,
                             net=f"{mission.net_provider:.2f}",
                             currency=mission.currency,
@@ -73,7 +79,45 @@ def release_auto_confirmed_missions() -> int:
         db.close()
 
 
-@celery_app.task(name="backend.app.tasks.send_provider_reminders")
+# Relance d'un litige toujours sans décision : une alerte au dépassement du
+# délai de réponse de 48 h, puis une par jour tant que personne n'a tranché.
+OVERDUE_DISPUTE_REALERT = timedelta(hours=24)
+
+
+def alert_overdue_disputes(now: datetime | None = None) -> int:
+    """Prévient l'admin des litiges sans décision après le délai de réponse.
+
+    Ne déplace jamais d'argent : un litige en retard reste gelé jusqu'à une
+    décision humaine. L'alerte n'est notée envoyée que si Telegram l'a
+    acceptée, sinon la tâche suivante réessaie. Sans admin configuré, rien
+    n'est noté et une erreur est journalisée à chaque passage.
+    """
+    now = now or ledger._utcnow()
+    db = SessionLocal()
+    try:
+        overdue = crud.find_overdue_disputes(db, now, OVERDUE_DISPUTE_REALERT)
+        if not overdue:
+            return 0
+        if not ADMIN_TELEGRAM_ID:
+            logger.error("%s litige(s) en retard, mais ADMIN_TELEGRAM_ID n'est pas configuré", len(overdue))
+            return 0
+        alerted = 0
+        for mission in overdue:
+            late_hours = int((now - mission.dispute_deadline).total_seconds() // 3600)
+            text = (
+                f"⏰ Litige sans décision : mission NXH-{mission.mission_id:04d}. Le délai de réponse "
+                f"(échéance {mission.dispute_deadline:%d/%m %H:%M} UTC) est dépassé de {late_hours} h. "
+                "L'argent reste bloqué tant que personne n'a tranché."
+            )
+            if send_telegram_message(int(ADMIN_TELEGRAM_ID), text):
+                mission.dispute_overdue_alerted_at = now
+                db.commit()
+                alerted += 1
+        return alerted
+    finally:
+        db.close()
+
+
 def send_provider_reminders() -> int:
     """Relance les prestataires matchés si une mission reste `pending` (sans
     devis) après 10 min, puis après 20 min.
@@ -94,12 +138,11 @@ def send_provider_reminders() -> int:
                     provider_telegram_id = ledger.telegram_id_of(db, account_id)
                     if provider_telegram_id is None:
                         continue
-                    provider = db.get(BotProvider, provider_telegram_id)
                     send_telegram_message(
                         provider_telegram_id,
                         get_message(
                             message_key,
-                            provider.language if provider is not None else "fr",
+                            profils.language_of(db, account_id),
                             mission_id=mission.mission_id,
                             service=mission.service,
                             commune=mission.commune,
@@ -111,7 +154,6 @@ def send_provider_reminders() -> int:
         db.close()
 
 
-@celery_app.task(name="backend.app.tasks.send_daily_analytics")
 def send_daily_analytics() -> bool:
     """Rapport quotidien à `ADMIN_TELEGRAM_ID` : missions créées/terminées,
     volume et commission des dernières 24h, groupés par devise.
@@ -228,12 +270,9 @@ def _notify_provider_paid(db, provider_id: int, intent: PaymentIntent, funding: 
             mission_id=intent.mission_id, brut=float(funding["total"]), commission=float(funding["commission"]),
             net=float(funding["net"]), currency=intent.currency,
         ),
-        reply_markup={"inline_keyboard": [
-            [{"text": get_message("button_start_mission", provider_lang), "callback_data": f"mission_start_{intent.mission_id}"}],
-            # Le lieu exact n'est pas dans la notification : le bot le lit
-            # dans le backend à l'appui, avec ses règles d'accès.
-            [{"text": get_message("button_view_place", provider_lang), "callback_data": f"mission_place_{intent.mission_id}"}],
-        ]},
+        # « Je suis arrivé », code du client, lieu exact (lu dans le backend à
+        # l'appui, avec ses règles d'accès : jamais dans la notification).
+        reply_markup=provider_arrival_keyboard(intent.mission_id, provider_lang),
     )
 
 
@@ -274,7 +313,6 @@ def notify_payout(db, payout: Payout) -> None:
     )
 
 
-@celery_app.task(name="backend.app.tasks.check_pending_mobile_money")
 def check_pending_mobile_money() -> int:
     """Vérification de secours : relit chez l'agrégateur les paiements
     (`mobile_money.intents_to_refresh`) et retraits en attente (webhook perdu,
@@ -292,7 +330,6 @@ def check_pending_mobile_money() -> int:
         db.close()
 
 
-@celery_app.task(name="backend.app.tasks.send_daily_reconciliation")
 def send_daily_reconciliation() -> bool:
     """Rapprochement interne quotidien (backend/app/reconciliation.py), envoyé
     à l'admin même sans écart : un rapport qui n'arrive pas se remarque."""
@@ -344,19 +381,73 @@ def send_new_device_alert(db, device_id: int) -> bool:
     return send_telegram_message(telegram_id, text, reply_markup=keyboard)
 
 
-@celery_app.task(name="backend.app.tasks.alert_new_app_device", bind=True, max_retries=NEW_DEVICE_ALERT_RETRIES)
-def alert_new_app_device(self, device_id: int) -> bool:
-    """Lancée par l'API publique après une connexion qui crée un téléphone.
-    Réessaie (1 min, 2 min, 4 min… jusqu'à 1 h d'écart) tant que Telegram
-    n'a pas accepté le message."""
+def _next_device_alert_delay(attempts: int) -> timedelta:
+    """1 min, 2 min, 4 min… plafonné à 1 h entre deux essais."""
+    return timedelta(seconds=min(60 * 2 ** (attempts - 1), 3600))
+
+
+def send_pending_device_alerts(now: datetime | None = None) -> int:
+    """Envoie les alertes « Nouvel appareil » dues (boîte d'envoi sur
+    `Device.alert_due_at`, posée à la connexion dans la même transaction que
+    le téléphone). Un échec repousse l'essai suivant ; après
+    `NEW_DEVICE_ALERT_RETRIES` échecs, l'admin est prévenu et on s'arrête.
+    Chaque téléphone est traité sous verrou de ligne et validé à part :
+    une ligne en échec n'arrête pas les autres. Rend le nombre d'alertes
+    envoyées."""
+    now = now or datetime.utcnow()
     db = SessionLocal()
     try:
-        sent = send_new_device_alert(db, device_id)
+        due_ids = [
+            device_id
+            for (device_id,) in db.query(Device.id)
+            .filter(Device.alert_due_at.is_not(None), Device.alert_due_at <= now)
+            .order_by(Device.alert_due_at)
+        ]
+        sent = 0
+        for device_id in due_ids:
+            device = (
+                db.query(Device)
+                .filter(Device.id == device_id, Device.alert_due_at.is_not(None), Device.alert_due_at <= now)
+                .with_for_update(skip_locked=True)
+                .one_or_none()
+            )
+            if device is None:
+                db.rollback()
+                continue
+            try:
+                delivered = send_new_device_alert(db, device.id)
+                reached = (
+                    app_sessions.needs_new_device_alert(device)
+                    and ledger.telegram_id_of(db, device.account_id) is not None
+                )
+            except Exception:
+                # Erreur inattendue (base, réseau) : on repart d'une transaction
+                # propre et l'essai compte comme un échec.
+                logger.exception("Alerte « Nouvel appareil » : erreur pour le téléphone %s", device_id)
+                db.rollback()
+                device = db.query(Device).filter(Device.id == device_id).with_for_update().one()
+                delivered = reached = False
+            if delivered:
+                device.alert_due_at = None
+                if reached:
+                    device.alert_sent_at = now
+                    sent += 1
+            else:
+                device.alert_attempts += 1
+                if device.alert_attempts >= NEW_DEVICE_ALERT_RETRIES:
+                    device.alert_due_at = None
+                    logger.error("Alerte « Nouvel appareil » abandonnée pour le téléphone %s", device.id)
+                    _alert_admin(
+                        f"⚠️ Alerte « Nouvel appareil » non envoyée après {device.alert_attempts} essais : "
+                        f"téléphone {device.id} du compte {device.account_id}. Le délai de 72 h protège l'argent ; "
+                        "préviens la personne autrement."
+                    )
+                else:
+                    device.alert_due_at = now + _next_device_alert_delay(device.alert_attempts)
+            db.commit()
+        return sent
     finally:
         db.close()
-    if not sent:
-        raise self.retry(countdown=min(60 * 2 ** self.request.retries, 3600))
-    return True
 
 
 def alert_admin_not_me(device_id: int, account_id: int) -> None:
@@ -367,7 +458,6 @@ def alert_admin_not_me(device_id: int, account_id: int) -> None:
     )
 
 
-@celery_app.task(name="backend.app.tasks.purge_request_nonces")
 def purge_request_nonces() -> int:
     """Efface les nonces des demandes signées de plus de 24 heures."""
     db = SessionLocal()
@@ -377,7 +467,6 @@ def purge_request_nonces() -> int:
         db.close()
 
 
-@celery_app.task(name="backend.app.tasks.purge_idempotency_keys")
 def purge_idempotency_keys() -> int:
     """Efface les clés d'idempotence de plus de 30 jours (idempotency.RETENTION)."""
     db = SessionLocal()
