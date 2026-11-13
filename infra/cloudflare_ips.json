@@ -1,5 +1,5 @@
 {
-  "source": "NON VERIFIE : listes reprises de mémoire et de sources secondaires, à comparer avec https://www.cloudflare.com/ips-v4 et https://www.cloudflare.com/ips-v6 avant tout apply (voir infra/README.md).",
+  "source": "Vérifié le 2026-11-13 contre https://www.cloudflare.com/ips-v4 et https://www.cloudflare.com/ips-v6 (identique). Re-vérifier à chaque changement d'infrastructure (voir infra/README.md, « Mettre à jour les plages Cloudflare »).",
   "ipv4": [
     "173.245.48.0/20",
     "103.21.244.0/22",
