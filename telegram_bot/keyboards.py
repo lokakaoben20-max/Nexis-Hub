@@ -489,7 +489,10 @@ def clavier_verifier_paiement(intent_id: int, lang: str = "fr"):
 def clavier_mission_prestataire(mission_id: int, action: str, lang: str = "fr"):
     builder = InlineKeyboardBuilder()
     if action == "start":
-        builder.button(text=get_message("button_start_mission", lang), callback_data=f"mission_start_{mission_id}")
+        # Plus de « Démarrer » : la mission démarre quand l'arrivée est
+        # confirmée par le client, ou par son code de présence.
+        builder.button(text=get_message("button_arrived", lang), callback_data=f"presence_arrived_{mission_id}")
+        builder.button(text=get_message("button_presence_enter_code", lang), callback_data=f"presence_code_{mission_id}")
     elif action == "finish":
         builder.button(text=get_message("button_finish_mission", lang), callback_data=f"mission_finish_{mission_id}")
     if action in ("start", "finish"):
@@ -497,6 +500,25 @@ def clavier_mission_prestataire(mission_id: int, action: str, lang: str = "fr"):
         # répond qu'au prestataire d'une mission payée, en cours ou à démarrer.
         builder.button(text=get_message("button_view_place", lang), callback_data=f"mission_place_{mission_id}")
     builder.button(text=get_message("button_provider_menu", lang), callback_data="profil_prestataire")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_question_presence(mission_id: int, lang: str = "fr"):
+    """Boutons de la question « Votre prestataire est-il arrivé ? » (envoyée
+    par le backend, backend.app.presence.notify_client_question)."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text=get_message("button_presence_yes", lang), callback_data=f"presence_yes_{mission_id}")
+    builder.button(text=get_message("button_presence_not_yet", lang), callback_data=f"presence_notyet_{mission_id}")
+    builder.button(text=get_message("button_presence_wrong", lang), callback_data=f"presence_wrong_{mission_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_presence_pas_lui(mission_id: int, lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=get_message("button_presence_wrong_confirm", lang), callback_data=f"presence_wrongok_{mission_id}")
+    builder.button(text=get_message("button_presence_back", lang), callback_data=f"presence_back_{mission_id}")
     builder.adjust(1)
     return builder.as_markup()
 

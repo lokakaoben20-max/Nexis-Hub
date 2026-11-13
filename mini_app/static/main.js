@@ -95,7 +95,7 @@ function renderMissions(containerId, missions, emptyText, role) {
     const canStart = role === "provider" && mission.status === "confirmed" && mission.payment_status === "paid_escrow";
     const canFinish = role === "provider" && mission.status === "in_progress";
     const action = canStart
-      ? `<button class="inline-button" type="button" data-mission-action="start" data-mission-id="${mission.id}">Demarrer</button>`
+      ? `<button class="inline-button" type="button" data-mission-action="arrived" data-mission-id="${mission.id}">Je suis arrivé</button>`
       : canFinish
         ? `<button class="inline-button" type="button" data-mission-action="finish" data-mission-id="${mission.id}">Terminer</button>`
         : "";
@@ -439,20 +439,52 @@ const MISSION_ACTION_ERRORS = {
   already_settled: "Cette mission est déjà réglée.",
   not_mission_provider: "Vous n'êtes pas le prestataire de cette mission.",
   mission_not_found: "Mission introuvable.",
+  invalid_presence_code: "Le code de présence a 4 chiffres.",
+  wrong_presence_code: "Code incorrect. Vérifiez le code avec le client.",
+  presence_code_locked: "Trop de codes incorrects : seul le client peut maintenant confirmer votre arrivée.",
+  presence_not_configured: "Service momentanément indisponible. Rien n'a changé, réessayez dans un instant.",
 };
 
-async function updateMissionAction(action, missionId) {
-  if (!telegramUser?.id) return;
-
-  const endpoint = action === "start" ? "start" : "finish";
+async function postMissionAction(missionId, endpoint, body) {
   const response = await apiFetch(`/api/provider/${telegramUser.id}/missions/${missionId}/${endpoint}`, {
     method: "POST",
+    ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
   });
   const result = await response.json();
   if (!response.ok) {
     const code = result.detail?.code;
-    alert(MISSION_ACTION_ERRORS[code] || (typeof result.detail === "string" ? result.detail : "Action impossible"));
-    return;
+    let text = MISSION_ACTION_ERRORS[code] || (typeof result.detail === "string" ? result.detail : "Action impossible");
+    if (code === "wrong_presence_code" && result.detail?.attempts_left !== undefined) {
+      text += ` Essais restants : ${result.detail.attempts_left}.`;
+    }
+    alert(text);
+    return null;
+  }
+  return result;
+}
+
+async function updateMissionAction(action, missionId) {
+  if (!telegramUser?.id) return;
+
+  let result;
+  if (action === "arrived") {
+    // Le client reçoit la question « votre prestataire est-il arrivé ? ».
+    // La mission démarre à sa réponse, ou au code de présence qu'il donne.
+    result = await postMissionAction(missionId, "arrived");
+    if (!result) return;
+    if (!result.presence?.confirmed) {
+      const code = prompt(
+        "Le client a été prévenu. Sa réponse démarrera la mission.\n\n" +
+          "Vous pouvez aussi taper ici son code de présence à 4 chiffres (ou Annuler pour attendre sa réponse) :"
+      );
+      if (code) {
+        const confirmed = await postMissionAction(missionId, "presence-code", { code: code.trim() });
+        if (confirmed) result = confirmed;
+      }
+    }
+  } else {
+    result = await postMissionAction(missionId, "finish");
+    if (!result) return;
   }
   replaceProviderMission(result.mission);
   renderRole("provider", window.nexisProfile);

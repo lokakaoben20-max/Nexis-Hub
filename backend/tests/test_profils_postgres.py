@@ -18,7 +18,7 @@ from sqlalchemy.orm import sessionmaker
 from backend.tests.test_whatsapp_postgres import URL, alembic, engine  # noqa: F401 (fixture)
 
 REVISION = "f2a3b4c5d6e7"
-PREVIOUS = "e0f1a2b3c4d5"
+PREVIOUS = "e1f2a3b4c5d6"
 TELEGRAM_KEY = "test-telegram-service-key-not-a-secret-0001"
 
 pytestmark = pytest.mark.skipif(not URL, reason="NEXIS_TEST_POSTGRES_URL absent : pas de Postgres de test")

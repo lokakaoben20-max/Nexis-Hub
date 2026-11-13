@@ -29,7 +29,7 @@ refuse un profil prestataire sans identité Telegram (il n'aurait pas de place
 dans `bot_providers`).
 
 Revision ID: f2a3b4c5d6e7
-Revises: e0f1a2b3c4d5
+Revises: e1f2a3b4c5d6
 Create Date: 2026-11-12
 """
 
@@ -44,7 +44,7 @@ from alembic import op
 from backend.app import catalogue_initial
 
 revision: str = "f2a3b4c5d6e7"
-down_revision: Union[str, Sequence[str], None] = "e0f1a2b3c4d5"
+down_revision: Union[str, Sequence[str], None] = "e1f2a3b4c5d6"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

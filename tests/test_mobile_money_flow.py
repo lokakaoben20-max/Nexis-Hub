@@ -103,7 +103,8 @@ def _earned(tmp_path, monkeypatch, live_backend):
     for module in (dashboard,):
         monkeypatch.setattr(module, "get_user_language", lambda tid: _async_return("fr"))
         monkeypatch.setattr(module, "get_provider_language", lambda tid: _async_return("fr"))
-    asyncio.run(payment.prestataire_demarre_mission(DummyCallback(PROVIDER_ID, data=f"mission_start_{mission_id}")))
+    # Arrivée confirmée par le client : la mission démarre.
+    asyncio.run(payment.client_confirme_presence(DummyCallback(CLIENT_ID, data=f"presence_yes_{mission_id}")))
     asyncio.run(payment.prestataire_termine_mission(DummyCallback(PROVIDER_ID, data=f"mission_finish_{mission_id}")))
     asyncio.run(payment.client_confirme_mission_terminee(DummyCallback(CLIENT_ID, data=f"client_confirm_done_{mission_id}"), DummyState()))
 
