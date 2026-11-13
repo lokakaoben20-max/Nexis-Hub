@@ -214,11 +214,13 @@ class MoneyRefused(Exception):
     """Refus métier du backend : `code` stable (traduit pour l'utilisateur),
     `mission` = état courant de la mission côté backend, à recopier."""
 
-    def __init__(self, code: str, mission: dict | None = None, money: dict | None = None):
+    def __init__(self, code: str, mission: dict | None = None, money: dict | None = None, details: dict | None = None):
         super().__init__(code)
         self.code = code
         self.mission = mission
         self.money = money
+        # Le reste du refus (ex. `attempts_left` d'un mauvais code de présence).
+        self.details = details or {}
 
 
 async def _money_call(
@@ -242,7 +244,7 @@ async def _money_call(
     if response.status_code in (400, 403, 404, 409, 503):
         detail = body.get("detail") if isinstance(body, dict) else None
         if isinstance(detail, dict) and isinstance(detail.get("code"), str):
-            raise MoneyRefused(detail["code"], detail.get("mission"), detail.get("money"))
+            raise MoneyRefused(detail["code"], detail.get("mission"), detail.get("money"), detail)
     if response.status_code != 200 or not isinstance(body, dict) or not isinstance(body.get(expect), (dict, list)):
         raise BackendUnavailable(f"réponse inattendue ({response.status_code})")
     return body
@@ -431,8 +433,29 @@ async def resolve_payment_mismatch(intent_id: int, decision: str, admin_telegram
     )
 
 
-async def start_mission(mission_id: int, provider_telegram_id: int) -> dict:
-    return await _money_call("POST", f"/api/bot/missions/{mission_id}/start", actor=provider_telegram_id)
+# Arrivée confirmée : la mission démarre quand le client confirme la présence
+# du prestataire, ou quand le prestataire tape le code de présence du client.
+# Le backend prévient l'autre partie ; le bot n'affiche que la réponse.
+
+
+async def declare_arrival(mission_id: int, provider_telegram_id: int) -> dict:
+    return await _money_call("POST", f"/api/bot/missions/{mission_id}/presence/arrived", actor=provider_telegram_id)
+
+
+async def confirm_presence_code(mission_id: int, provider_telegram_id: int, code: str) -> dict:
+    return await _money_call("POST", f"/api/bot/missions/{mission_id}/presence/code", {"code": code}, actor=provider_telegram_id)
+
+
+async def confirm_presence(mission_id: int, client_telegram_id: int) -> dict:
+    return await _money_call("POST", f"/api/bot/missions/{mission_id}/presence/confirm", actor=client_telegram_id)
+
+
+async def presence_not_yet(mission_id: int, client_telegram_id: int) -> dict:
+    return await _money_call("POST", f"/api/bot/missions/{mission_id}/presence/not-yet", actor=client_telegram_id)
+
+
+async def report_wrong_person(mission_id: int, client_telegram_id: int) -> dict:
+    return await _money_call("POST", f"/api/bot/missions/{mission_id}/presence/wrong-person", actor=client_telegram_id)
 
 
 async def finish_mission(mission_id: int, provider_telegram_id: int) -> dict:

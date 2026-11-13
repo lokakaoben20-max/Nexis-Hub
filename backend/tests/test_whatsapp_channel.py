@@ -31,7 +31,9 @@ PROVIDER_ROUTES = {
     ("PATCH", "/api/bot/providers/{telegram_id}/services"),
     ("PATCH", "/api/bot/providers/{telegram_id}/status"),
     ("POST", "/api/bot/quotes"),
-    ("POST", "/api/bot/missions/{mission_id}/start"),
+    # Arrivée : « je suis arrivé » et code de présence (plus de « démarrer »).
+    ("POST", "/api/bot/missions/{mission_id}/presence/arrived"),
+    ("POST", "/api/bot/missions/{mission_id}/presence/code"),
     ("POST", "/api/bot/missions/{mission_id}/finish"),
     ("POST", "/api/bot/service-requests"),
 }

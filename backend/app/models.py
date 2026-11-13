@@ -140,6 +140,44 @@ class MissionAlert(Base):
     alerted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class MissionPresence(Base):
+    """Arrivée du prestataire chez le client (CONCEPTION_MISSIONS.md,
+    « Arrivée confirmée »). La présence n'est confirmée que par l'appui du
+    client (« Oui, il est là ») ou par le code de présence du client, tapé par
+    le prestataire : le « je suis arrivé » du prestataire seul ne vaut rien.
+    Le code n'est jamais enregistré (backend.app.presence.presence_code).
+    Une ligne par mission, créée au premier événement."""
+
+    __tablename__ = "mission_presence"
+    __table_args__ = (
+        CheckConstraint("confirmed_by IS NULL OR confirmed_by IN ('client', 'presence_code')", name="ck_mission_presence_confirmed_by"),
+        CheckConstraint(
+            "(confirmed_at IS NULL AND confirmed_by IS NULL) OR (confirmed_at IS NOT NULL AND confirmed_by IS NOT NULL)",
+            name="ck_mission_presence_confirmation_complete",
+        ),
+        CheckConstraint("failed_code_attempts >= 0 AND failed_code_attempts <= 5", name="ck_mission_presence_attempts"),
+        CheckConstraint(
+            "(code_locked_at IS NULL AND failed_code_attempts < 5) OR (code_locked_at IS NOT NULL AND failed_code_attempts = 5)",
+            name="ck_mission_presence_code_lock",
+        ),
+    )
+
+    mission_id: Mapped[int] = mapped_column(ForeignKey("bot_missions.mission_id"), primary_key=True)
+    # Premier « je suis arrivé » du prestataire.
+    arrival_declared_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Dernière question « votre prestataire est-il arrivé ? » envoyée au client.
+    client_asked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Dernier « pas encore » du client.
+    not_yet_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    confirmed_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    failed_code_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Cinq mauvais codes : seul l'appui du client peut encore confirmer.
+    code_locked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # « Ce n'est pas lui » : litige ouvert, fonds gelés jusqu'à l'admin.
+    wrong_person_reported_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class BotQuote(Base):
     __tablename__ = "bot_quotes"
 

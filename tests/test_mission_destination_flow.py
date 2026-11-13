@@ -224,4 +224,4 @@ def test_the_mobile_money_paid_notice_offers_the_place(monkeypatch):
 
     text, markup = sent[0]
     callbacks = [button["callback_data"] for row in markup["inline_keyboard"] for button in row]
-    assert callbacks == ["mission_start_12", "mission_place_12"]
+    assert callbacks == ["presence_arrived_12", "presence_code_12", "mission_place_12"]
