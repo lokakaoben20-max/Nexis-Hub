@@ -35,7 +35,9 @@ CURRENCIES = ("USD", "CDF")
 STANDARD_COMMISSION_RATE = Decimal("0.10")
 URGENT_COMMISSION_RATE = Decimal("0.15")
 DISPUTE_RESOLUTION_DELAY = timedelta(hours=48)
-AUTO_RELEASE_DELAY = timedelta(hours=24)
+# Délai pour signaler un problème après la fin de la mission (décidé par Ben
+# le 2026-11-07) : sans confirmation ni litige, l'argent part au prestataire.
+AUTO_RELEASE_DELAY = timedelta(hours=48)
 MAX_DISPUTE_REASON_LENGTH = 1000
 
 FUNDING = "funding"
@@ -493,6 +495,7 @@ def finish_mission(db: Session, mission_id: int, provider_account_id: int) -> Bo
     if mission.status != "in_progress":
         raise MoneyError("invalid_state", mission=mission)
     _set_status(mission, "awaiting_confirmation")
+    mission.release_after = mission.status_changed_at + AUTO_RELEASE_DELAY
     db.commit()
     return mission
 
@@ -599,11 +602,12 @@ def confirm_completion(db: Session, mission_id: int, client_account_id: int) -> 
 
 def auto_release(db: Session, mission_id: int, now: datetime | None = None) -> BotMission:
     """Libération automatique : seulement une mission en attente de
-    confirmation depuis plus de 24 h, donc jamais une mission en litige."""
+    confirmation dont l'échéance `release_after` est passée, donc jamais une
+    mission en litige. Sans échéance enregistrée, rien n'est versé."""
     now = now or _utcnow()
     mission = _lock_mission(db, mission_id)
     _require_open_escrow(db, mission)
-    if mission.status != "awaiting_confirmation" or mission.status_changed_at > now - AUTO_RELEASE_DELAY:
+    if mission.status != "awaiting_confirmation" or mission.release_after is None or mission.release_after > now:
         raise MoneyError("invalid_state", mission=mission)
     amounts = _funded_amounts(db, mission)
     return _settle(

@@ -385,6 +385,7 @@ def _mission_to_dict(mission: BotMission) -> dict:
         "net_provider": mission.net_provider,
         "dispute_reason": mission.dispute_reason,
         "dispute_deadline": mission.dispute_deadline.isoformat() if mission.dispute_deadline else None,
+        "release_after": mission.release_after.isoformat() if mission.release_after else None,
     }
 
 

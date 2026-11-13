@@ -28,7 +28,8 @@ def check_expired_quotes() -> int:
 
 
 def release_auto_confirmed_missions() -> int:
-    """Auto-libère l'escrow des missions en `awaiting_confirmation` depuis 24h+.
+    """Auto-libère l'escrow des missions en `awaiting_confirmation` dont
+    l'échéance `release_after` (48 h après la fin) est passée.
 
     Passe par `ledger.auto_release`, qui revérifie tout sous verrou : une
     mission passée en litige entre la recherche et la libération n'est pas
@@ -36,7 +37,7 @@ def release_auto_confirmed_missions() -> int:
     """
     db = SessionLocal()
     try:
-        stale = crud.find_missions_awaiting_confirmation_since(db)
+        stale = crud.find_missions_due_for_auto_release(db)
         released = 0
         for stale_mission in stale:
             try:
@@ -70,6 +71,45 @@ def release_auto_confirmed_missions() -> int:
                         ),
                     )
         return released
+    finally:
+        db.close()
+
+
+# Relance d'un litige toujours sans décision : une alerte au dépassement du
+# délai de réponse de 48 h, puis une par jour tant que personne n'a tranché.
+OVERDUE_DISPUTE_REALERT = timedelta(hours=24)
+
+
+def alert_overdue_disputes(now: datetime | None = None) -> int:
+    """Prévient l'admin des litiges sans décision après le délai de réponse.
+
+    Ne déplace jamais d'argent : un litige en retard reste gelé jusqu'à une
+    décision humaine. L'alerte n'est notée envoyée que si Telegram l'a
+    acceptée, sinon la tâche suivante réessaie. Sans admin configuré, rien
+    n'est noté et une erreur est journalisée à chaque passage.
+    """
+    now = now or ledger._utcnow()
+    db = SessionLocal()
+    try:
+        overdue = crud.find_overdue_disputes(db, now, OVERDUE_DISPUTE_REALERT)
+        if not overdue:
+            return 0
+        if not ADMIN_TELEGRAM_ID:
+            logger.error("%s litige(s) en retard, mais ADMIN_TELEGRAM_ID n'est pas configuré", len(overdue))
+            return 0
+        alerted = 0
+        for mission in overdue:
+            late_hours = int((now - mission.dispute_deadline).total_seconds() // 3600)
+            text = (
+                f"⏰ Litige sans décision : mission NXH-{mission.mission_id:04d}. Le délai de réponse "
+                f"(échéance {mission.dispute_deadline:%d/%m %H:%M} UTC) est dépassé de {late_hours} h. "
+                "L'argent reste bloqué tant que personne n'a tranché."
+            )
+            if send_telegram_message(int(ADMIN_TELEGRAM_ID), text):
+                mission.dispute_overdue_alerted_at = now
+                db.commit()
+                alerted += 1
+        return alerted
     finally:
         db.close()
 

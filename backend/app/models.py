@@ -87,6 +87,13 @@ class BotMission(Base):
     dispute_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     dispute_opened_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     dispute_deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Dernière alerte admin « litige sans décision après le délai de réponse »
+    # (tâche `litiges-en-retard`) : une alerte, puis une relance par jour.
+    dispute_overdue_alerted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Échéance de la libération automatique, fixée quand le prestataire déclare
+    # la mission terminée (`ledger.finish_mission`) : la règle annoncée au
+    # client à ce moment-là ne change plus, même si le délai change ensuite.
+    release_after: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     # Devis accepté (bot_quotes.id) sur lequel la mission a été payée.
     accepted_quote_ref: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Comptes Nexis (indépendants du canal) du client et du prestataire, fixés

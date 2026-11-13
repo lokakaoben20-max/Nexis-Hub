@@ -202,13 +202,13 @@ def test_dispute_is_not_opened_while_the_backend_is_down_and_the_reason_is_kept(
 
 
 def test_dispute_after_release_explains_the_mission_was_already_paid(tmp_path, monkeypatch, live_backend):
-    """Délai de 24 h dépassé : le backend a libéré seul ; le litige refusé
+    """Délai de 48 h dépassé : le backend a libéré seul ; le litige refusé
     l'explique au client."""
     mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
     # Arrivée confirmée par le client : la mission démarre.
     asyncio.run(payment.client_confirme_presence(DummyCallback(CLIENT_ID, data=f"presence_yes_{mission_id}")))
     asyncio.run(payment.prestataire_termine_mission(DummyCallback(PROVIDER_ID, data=f"mission_finish_{mission_id}")))
-    live_backend.age_status(mission_id, hours=25)
+    live_backend.age_status(mission_id, hours=48)
     live_backend.auto_release(mission_id)
 
     message, state = _open_dispute(mission_id)
