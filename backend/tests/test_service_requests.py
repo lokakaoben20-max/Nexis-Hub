@@ -139,7 +139,7 @@ def test_update_service_request_status_flow(tmp_path, monkeypatch, backend_db_ur
                 "telegram_id": 3001,
                 "full_name": "Charlie",
                 "services": ["service_climatisation"],
-                "communes": ["Bandalungwa"],
+                "communes": ["Kalamu"],
             },
         )
 
@@ -193,7 +193,7 @@ def test_profile_includes_service_requests(tmp_path, monkeypatch, backend_db_url
             json={
                 "telegram_id": 4001,
                 "full_name": "David",
-                "services": ["service_peinture"],
+                "services": ["service_nettoyage"],
                 "communes": ["Limete"],
             },
         )

@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from backend.app import app_auth, crud, ledger, models
+from backend.app import app_auth, ledger, models
 
 NOW = datetime(2026, 11, 7, 8, 0, 0)
 DEVICE = "a" * 64
@@ -398,21 +398,41 @@ def test_a_new_proven_number_replaces_the_old_one_on_the_same_account(db):
     assert db.query(models.AuthEvent).filter_by(type="phone_changed").count() == 1
 
 
+def _register(db, telegram_id, phone, *, provider=False, phone_verified=False):
+    """Ce que fait la route du bot à l'inscription (`/api/bot/users`,
+    `/api/bot/providers`) : profil, puis numéro prouvé s'il a été partagé."""
+    from backend.app import profils
+    from backend.tests import profils_de_test
+
+    account_id = ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
+    if provider:
+        profils_de_test.ensure_catalogue(db)
+        profils.register_provider(
+            db, account_id, full_name="Ben", phone_number=phone, services=["service_plomberie"], communes=["Gombe"]
+        )
+    else:
+        profils.save_client_profile(db, account_id, first_name="Ben", phone_number=phone)
+    if phone_verified:
+        profils.record_proven_phone(db, account_id, phone)
+    db.commit()
+    return account_id
+
+
 def test_telegram_registration_with_a_shared_number_proves_it(db):
-    crud.upsert_user(db, 601, "Ben", "243810000001", language="fr", phone_verified=True)
+    _register(db, 601, "243810000001", phone_verified=True)
 
     account = account_of_telegram(db, 601)
     assert account.phone_e164 == PHONE and account.phone_verified_at is not None
 
 
 def test_a_number_not_flagged_as_shared_is_never_proven(db):
-    crud.upsert_user(db, 601, "Ben", PHONE, language="fr")
+    _register(db, 601, PHONE)
 
     assert account_of_telegram(db, 601).phone_e164 is None
 
 
 def test_provider_registration_with_a_shared_number_proves_it(db):
-    crud.upsert_provider(db, 601, "Ben", PHONE, ["service_plomberie"], ["Gombe"], phone_verified=True)
+    _register(db, 601, PHONE, provider=True, phone_verified=True)
 
     assert account_of_telegram(db, 601).phone_e164 == PHONE
 
@@ -420,9 +440,9 @@ def test_provider_registration_with_a_shared_number_proves_it(db):
 def test_registration_still_works_when_the_number_belongs_to_another_account(db):
     prove(db, 601, PHONE)
 
-    user = crud.upsert_user(db, 602, "Autre", PHONE, language="fr", phone_verified=True)
+    account_id = _register(db, 602, PHONE, phone_verified=True)
 
-    assert user.telegram_id == 602
+    assert account_id == ledger.account_id_for(db, ledger.TELEGRAM, 602)
     assert account_of_telegram(db, 602).phone_e164 is None
     assert account_of_telegram(db, 601).phone_e164 == PHONE
 

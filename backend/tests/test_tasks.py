@@ -11,12 +11,12 @@ if str(ROOT) not in sys.path:
 # Pré-importe une fois au chargement du module (comme `from backend.app.main
 # import app` dans test_main.py) : sans ça, le premier appel à
 # `_reload_backend_with_db` importe puis recharge le même module coup sur
-# coup, ce qui exécute deux fois les `class BotUser(Base): ...` de
-# backend/app/models.py contre la même métadonnée et lève "Table 'bot_users'
-# is already defined".
+# coup, ce qui exécute deux fois les classes de backend/app/models.py contre
+# la même métadonnée et lève "Table ... is already defined".
 from backend.app import database as _database_module  # noqa: F401
 from backend.app import models as _models_module  # noqa: F401
 from backend.app import tasks as _tasks_module  # noqa: F401
+from backend.tests import profils_de_test  # noqa: E402
 
 # Clé factice, jamais la vraie BACKEND_API_KEY_TELEGRAM de .env — même convention que
 # backend/tests/test_main.py.
@@ -65,11 +65,12 @@ _KEYS = itertools.count(1)
 
 
 def _seed_mission_with_quote(db, crud, models, mission_id, quote_created_at, provider_id=7, client_id=1):
-    if db.get(models.BotUser, client_id) is None:
-        db.add(models.BotUser(telegram_id=client_id))
-    if db.get(models.BotProvider, provider_id) is None:
-        db.add(models.BotProvider(telegram_id=provider_id, full_name="Prestataire Test"))
-    db.commit()
+    from backend.tests import profils_de_test
+
+    if profils_de_test.client_of(db, client_id) is None:
+        profils_de_test.client(db, client_id)
+    if profils_de_test.provider_of(db, provider_id) is None:
+        profils_de_test.provider(db, provider_id, "Prestataire Test")
 
     mission = _new_mission(db, crud, client_id, alert=(provider_id,))
     assert mission.mission_id == mission_id
@@ -120,9 +121,8 @@ def test_release_auto_confirmed_missions_only_after_their_deadline(monkeypatch, 
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: sent.append((telegram_id, text)))
 
     with database_module.SessionLocal() as db:
-        db.add(models.BotUser(telegram_id=1))
-        db.add(models.BotProvider(telegram_id=7, full_name="Prestataire Test"))
-        db.commit()
+        profils_de_test.client(db, 1)
+        profils_de_test.provider(db, 7, "Prestataire Test")
 
         _paid_and_finished_mission(db, ledger, crud, 1)
         # Terminée il y a 48 h et 1 minute : échéance passée.
@@ -155,9 +155,8 @@ def test_auto_release_never_pays_a_disputed_mission(monkeypatch, tmp_path, backe
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: None)
 
     with database_module.SessionLocal() as db:
-        db.add(models.BotUser(telegram_id=1))
-        db.add(models.BotProvider(telegram_id=7, full_name="Prestataire Test"))
-        db.commit()
+        profils_de_test.client(db, 1)
+        profils_de_test.provider(db, 7, "Prestataire Test")
         _paid_and_finished_mission(db, ledger, crud, 1)
         ledger.open_dispute(db, 1, acc(db, 1), "Travail bâclé")
         mission = db.get(models.BotMission, 1)
@@ -192,8 +191,8 @@ def test_overdue_dispute_alerts_the_admin_once_then_daily_without_moving_money(m
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: sent.append((telegram_id, text)) or True)
 
     with database_module.SessionLocal() as db:
-        db.add(models.BotUser(telegram_id=1))
-        db.add(models.BotProvider(telegram_id=7, full_name="Prestataire Test"))
+        profils_de_test.client(db, 1)
+        profils_de_test.provider(db, 7, "Prestataire Test")
         db.commit()
         _overdue_dispute(db, ledger, crud, models, 1, hours_late=3)
         # Litige encore dans le délai de réponse : pas d'alerte.
@@ -229,8 +228,8 @@ def test_overdue_dispute_alert_is_retried_when_telegram_refuses_it(monkeypatch, 
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: bool(accepted))
 
     with database_module.SessionLocal() as db:
-        db.add(models.BotUser(telegram_id=1))
-        db.add(models.BotProvider(telegram_id=7, full_name="Prestataire Test"))
+        profils_de_test.client(db, 1)
+        profils_de_test.provider(db, 7, "Prestataire Test")
         db.commit()
         _overdue_dispute(db, ledger, crud, models, 1, hours_late=1)
 
@@ -252,8 +251,8 @@ def test_overdue_dispute_is_not_marked_alerted_without_an_admin(monkeypatch, tmp
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: sent.append(telegram_id) or True)
 
     with database_module.SessionLocal() as db:
-        db.add(models.BotUser(telegram_id=1))
-        db.add(models.BotProvider(telegram_id=7, full_name="Prestataire Test"))
+        profils_de_test.client(db, 1)
+        profils_de_test.provider(db, 7, "Prestataire Test")
         db.commit()
         _overdue_dispute(db, ledger, crud, models, 1, hours_late=1)
 
@@ -273,8 +272,8 @@ def test_a_settled_dispute_is_never_reported_late(monkeypatch, tmp_path, backend
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: sent.append(telegram_id) or True)
 
     with database_module.SessionLocal() as db:
-        db.add(models.BotUser(telegram_id=1))
-        db.add(models.BotProvider(telegram_id=7, full_name="Prestataire Test"))
+        profils_de_test.client(db, 1)
+        profils_de_test.provider(db, 7, "Prestataire Test")
         db.commit()
         _overdue_dispute(db, ledger, crud, models, 1, hours_late=5)
         ledger.resolve_dispute(db, 1, decision="refund", admin_telegram_id=900)
@@ -285,26 +284,18 @@ def test_a_settled_dispute_is_never_reported_late(monkeypatch, tmp_path, backend
 
 def test_send_provider_reminders_does_not_duplicate_within_same_tier(monkeypatch, tmp_path, backend_db_url):
     database_module, tasks_module = _reload_backend_with_db(monkeypatch, backend_db_url)
-    from backend.app import models
 
     sent = []
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda telegram_id, text: sent.append((telegram_id, text)))
 
     with database_module.SessionLocal() as db:
-        db.add(models.BotProvider(
-            telegram_id=7,
-            full_name="Prestataire Test",
-            services=["service_menage"],
-            communes=["Gombe"],
-        ))
-        db.add(models.BotUser(telegram_id=1))
-        db.commit()
+        profils_de_test.provider(db, 7, "Prestataire Test")
+        profils_de_test.client(db, 1)
 
         from backend.app import crud
 
         # Deux prestataires couvrent ce service : seul le prévenu (7) est relancé.
-        db.add(models.BotProvider(telegram_id=8, full_name="Non prévenu", services=["service_menage"], communes=["Gombe"]))
-        db.commit()
+        profils_de_test.provider(db, 8, "Non prévenu")
         mission = _new_mission(db, crud, 1, alert=(7,))
         mission.created_at = datetime.utcnow() - timedelta(minutes=12)
         db.commit()
