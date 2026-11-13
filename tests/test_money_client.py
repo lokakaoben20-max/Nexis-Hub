@@ -45,7 +45,7 @@ def test_a_business_refusal_carries_its_code_and_the_current_mission(monkeypatch
 def test_an_unreachable_backend_is_reported_as_unavailable():
     # La fixture par défaut refuse toute connexion.
     with pytest.raises(backend_client.BackendUnavailable):
-        asyncio.run(backend_client.start_mission(7, 200))
+        asyncio.run(backend_client.declare_arrival(7, 200))
 
 
 @pytest.mark.parametrize(

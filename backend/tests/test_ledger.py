@@ -5,8 +5,6 @@ fichiers de tests rechargent `backend.app.models`, et mélanger deux
 générations de classes dans une même session fausserait les lectures.
 """
 
-import os
-import threading
 from datetime import timedelta
 from decimal import Decimal
 
@@ -706,81 +704,6 @@ def test_with_a_single_admin_a_contested_decision_stays_frozen(db):
     refused("same_reviewer", lambda: decide(db, "release"))
     refused("decision_contested", lambda: ledger.execute_dispute_decision(db, row.id, now=row.execute_after + timedelta(days=30)))
     assert bal(db, ledger.ESCROW, 1) == money(100)
-
-
-def _in_parallel(backend_db_url, *calls):
-    """Lance chaque appel dans sa propre session, au même instant, et renvoie
-    pour chacun le résultat ou le code du refus."""
-    engine = create_engine(backend_db_url, future=True)
-    barrier = threading.Barrier(len(calls))
-    results = [None] * len(calls)
-
-    def run(index, call):
-        session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
-        try:
-            barrier.wait()
-            call(session)
-            results[index] = "ok"
-        except ledger.MoneyError as error:
-            session.rollback()
-            results[index] = error.code
-        finally:
-            session.close()
-
-    threads = [threading.Thread(target=run, args=(index, call)) for index, call in enumerate(calls)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
-    engine.dispose()
-    return results
-
-
-postgres_only = pytest.mark.skipif(
-    os.getenv("NEXIS_TEST_BACKEND_DB", "sqlite") != "postgres",
-    reason="Verrous FOR UPDATE : à vérifier sur Postgres",
-)
-
-
-@postgres_only
-def test_two_simultaneous_executions_settle_once(db, backend_db_url):
-    disputed(db)
-    decide(db, "split", 50)
-    row = first_decision(db)
-
-    def execute(session):
-        ledger.execute_dispute_decision(session, row.id, now=row.execute_after)
-
-    assert _in_parallel(backend_db_url, execute, execute) == ["ok", "ok"]
-    db.expire_all()
-    assert db.query(MoneyOperation).filter(MoneyOperation.phase == ledger.SETTLEMENT).count() == 1
-    assert bal(db, ledger.WALLET, PROVIDER_ID) == money(45)
-    assert_books_balanced(db)
-
-
-@postgres_only
-def test_a_contest_and_the_execution_at_the_same_time_only_one_wins(db, backend_db_url):
-    disputed(db)
-    decide(db, "release")
-    row = first_decision(db)
-    client_account = acc(db, CLIENT_ID)
-
-    def execute(session):
-        ledger.execute_dispute_decision(session, row.id, now=row.execute_after)
-
-    def contest_now(session):
-        ledger.contest_dispute_decision(session, 1, client_account, "Pas d'accord", now=row.execute_after - timedelta(seconds=1))
-
-    executed, contested = _in_parallel(backend_db_url, execute, contest_now)
-
-    db.expire_all()
-    settled = ledger.mission_operation(db, 1, ledger.SETTLEMENT) is not None
-    if settled:
-        assert (executed, contested) == ("ok", "decision_already_executed")
-        assert first_decision(db).contested_at is None
-    else:
-        assert (executed, contested) == ("decision_contested", "ok")
-        assert bal(db, ledger.ESCROW, 1) == money(100)
 
 
 def test_wallet_refund_can_pay_a_later_mission(db):

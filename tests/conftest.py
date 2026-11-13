@@ -57,6 +57,7 @@ class LiveBackend:
         self.database = database_module
         # Notifications que le backend enverrait lui-même par Telegram.
         self.sent = []
+        self.markups = []
 
     def balance(self, telegram_id: int, currency: str = "USD") -> float:
         from backend.app import ledger
@@ -208,4 +209,15 @@ def live_backend(monkeypatch, backend_db_url):
     monkeypatch.setattr(tasks_module, "send_telegram_message", lambda chat_id, text, reply_markup=None: live.sent.append((chat_id, text)))
     # Les tâches du planificateur ouvrent leur propre session : sur cette base.
     monkeypatch.setattr(tasks_module, "SessionLocal", database_module.SessionLocal)
+    # Messages envoyés par le backend lui-même (arrivée du prestataire) : gardés
+    # avec leurs boutons pour que les tests puissent les « appuyer ».
+    notify_module = importlib.import_module("backend.app.notify")
+
+    def _record(chat_id, text, reply_markup=None):
+        live.sent.append((chat_id, text))
+        live.markups.append((chat_id, reply_markup))
+        return True
+
+    monkeypatch.setattr(notify_module, "send_telegram_message", _record)
+    monkeypatch.setattr(notify_module, "send_telegram_photo", lambda chat_id, file_id, caption, reply_markup=None: _record(chat_id, caption, reply_markup))
     return live

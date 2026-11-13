@@ -321,10 +321,13 @@ def test_mission_cannot_start_before_escrow_payment(tmp_path, monkeypatch, backe
         mission_id, quote_id = _setup_mission_with_quote(test_client)
         test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
 
-        response = test_client.post(f"/api/bot/missions/{mission_id}/start", headers=_as(7))
-        assert response.status_code == 409
-        assert response.json()["detail"]["code"] == "not_paid"
-        assert response.json()["detail"]["mission"]["status"] == "confirmed"
+        for path, actor in (("presence/arrived", 7), ("presence/confirm", 42)):
+            response = test_client.post(f"/api/bot/missions/{mission_id}/{path}", headers=_as(actor))
+            assert response.status_code == 409
+            assert response.json()["detail"]["code"] == "not_paid"
+            assert response.json()["detail"]["mission"]["status"] == "confirmed"
+        # Plus de route « démarrer » : la mission démarre à l'arrivée confirmée.
+        assert test_client.post(f"/api/bot/missions/{mission_id}/start", headers=_as(7)).status_code == 404
 
 
 def test_full_escrow_and_release_flow(tmp_path, monkeypatch, backend_db_url):
@@ -340,7 +343,7 @@ def test_full_escrow_and_release_flow(tmp_path, monkeypatch, backend_db_url):
         assert pay_response.json()["money"]["funding"]["reference"] == "SIM-PAY-000001"
         assert pay_response.json()["money"]["funding"]["net"] == "90.00"
 
-        start_response = test_client.post(f"/api/bot/missions/{mission_id}/start", headers=_as(7))
+        start_response = test_client.post(f"/api/bot/missions/{mission_id}/presence/confirm", headers=_as(42))
         assert start_response.status_code == 200
         assert start_response.json()["mission"]["status"] == "in_progress"
 
@@ -569,7 +572,7 @@ def _complete_mission_flow(test_client, amount=100.0, currency="USD", provider_t
     mission_id, quote_id = _setup_mission_with_quote(test_client, amount=amount, currency=currency)
     test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
     assert _fund(test_client, mission_id=mission_id, quote_id=quote_id).status_code == 200
-    test_client.post(f"/api/bot/missions/{mission_id}/start", headers=_as(provider_telegram_id))
+    test_client.post(f"/api/bot/missions/{mission_id}/presence/confirm", headers=_as(42))
     test_client.post(f"/api/bot/missions/{mission_id}/finish", headers=_as(provider_telegram_id))
     release_response = test_client.post(f"/api/bot/missions/{mission_id}/confirm", headers=_as(42))
     assert release_response.status_code == 200

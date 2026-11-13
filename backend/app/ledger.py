@@ -520,16 +520,26 @@ def _comparable_funding_details(db: Session, details: dict | None) -> dict:
 
 
 def start_mission(db: Session, mission_id: int, provider_account_id: int) -> BotMission:
+    """Usage interne et tests : aucune route ne laisse le prestataire démarrer
+    seul. Une mission démarre quand sa présence est confirmée par le client ou
+    par le code de présence (backend.app.presence)."""
     mission = _lock_mission(db, mission_id)
     _require_provider(db, mission, provider_account_id)
     if mission.status == "in_progress":
         return mission
+    begin_work(db, mission)
+    db.commit()
+    return mission
+
+
+def begin_work(db: Session, mission: BotMission) -> None:
+    """Passe une mission payée et confirmée en cours, sans valider : l'appelant
+    tient le verrou de la mission et valide avec ses propres changements (la
+    présence confirmée et le démarrage vont ensemble ou pas du tout)."""
     _require_open_escrow(db, mission)
     if mission.status != "confirmed":
         raise MoneyError("invalid_state", mission=mission)
     _set_status(mission, "in_progress")
-    db.commit()
-    return mission
 
 
 def finish_mission(db: Session, mission_id: int, provider_account_id: int) -> BotMission:
@@ -544,6 +554,18 @@ def finish_mission(db: Session, mission_id: int, provider_account_id: int) -> Bo
     mission.release_after = mission.status_changed_at + AUTO_RELEASE_DELAY
     db.commit()
     return mission
+
+
+def lock_mission(db: Session, mission_id: int) -> BotMission:
+    return _lock_mission(db, mission_id)
+
+
+def require_mission_provider(db: Session, mission: BotMission, account_id: int) -> None:
+    _require_provider(db, mission, account_id)
+
+
+def require_open_escrow(db: Session, mission: BotMission) -> None:
+    _require_open_escrow(db, mission)
 
 
 def _require_open_escrow(db: Session, mission: BotMission) -> None:

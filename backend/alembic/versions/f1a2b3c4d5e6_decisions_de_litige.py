@@ -11,7 +11,7 @@ tranchés ont leur règlement dans `money_operations`, ceux encore ouverts
 n'ont pas de décision.
 
 Revision ID: f1a2b3c4d5e6
-Revises: e0f1a2b3c4d5
+Revises: e1f2a3b4c5d6
 Create Date: 2026-11-13
 """
 from typing import Sequence, Union
@@ -21,7 +21,7 @@ from alembic import op
 
 
 revision: str = "f1a2b3c4d5e6"
-down_revision: Union[str, Sequence[str], None] = "e0f1a2b3c4d5"
+down_revision: Union[str, Sequence[str], None] = "e1f2a3b4c5d6"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
