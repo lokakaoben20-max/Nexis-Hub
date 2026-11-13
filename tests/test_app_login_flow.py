@@ -76,7 +76,7 @@ async def _lang(telegram_id):
 
 @pytest.fixture(autouse=True)
 def french(monkeypatch):
-    monkeypatch.setattr(backend_client, "get_user_language", _lang)
+    monkeypatch.setattr(backend_client, "get_language", _lang)
 
 
 @pytest.fixture

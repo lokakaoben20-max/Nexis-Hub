@@ -1,82 +1,19 @@
-"""Phase 3 (pilote) : flow inscription/profil extrait vers telegram_bot/registration.py.
-
-Miroir du style de tests/test_bot_backend_sync.py. Couvre la garantie centrale de ce
-pilote : double écriture (backend + db.py) maintenue tant que find_matching_providers
-(flow mission) et la Mini App lisent encore db.py — voir V5_MIGRATION_PLAN.md, Phase 3.
-"""
+"""Flow inscription/profil (telegram_bot/registration.py) contre le vrai
+backend : chaque lecture et chaque écriture de profil passe par lui, au nom de
+la personne. Backend injoignable : la personne le voit, rien n'est écrit."""
 
 import asyncio
 import os
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
-import db
-from telegram_bot import backend_client, registration
+from telegram_bot import registration
 
 
-class DummyResponse:
-    def __init__(self, payload, status_code=200):
-        self._payload = payload
-        self.status_code = status_code
-
-    def raise_for_status(self):
-        return None
-
-    def json(self):
-        return self._payload
-
-
-class DummyAsyncClient:
-    """Capture la dernière requête envoyée, comme dans test_bot_backend_sync.py."""
-
-    last_request = None
-
-    def __init__(self, *args, **kwargs):
-        pass
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        return False
-
-    async def post(self, url, json=None):
-        DummyAsyncClient.last_request = {"method": "post", "url": url, "json": json}
-        return DummyResponse({"status": "ok", "provider": json or {}})
-
-    async def patch(self, url, json=None):
-        DummyAsyncClient.last_request = {"method": "patch", "url": url, "json": json}
-        return DummyResponse({"status": "ok", "provider": json or {}})
-
-    async def get(self, url, params=None):
-        DummyAsyncClient.last_request = {"method": "get", "url": url}
-        return DummyResponse({"client": None, "provider": None})
-
-
-class RaisingAsyncClient:
-    def __init__(self, *args, **kwargs):
-        pass
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        return False
-
-    async def post(self, url, json=None):
-        raise RuntimeError("backend unreachable")
-
-    async def patch(self, url, json=None):
-        raise RuntimeError("backend unreachable")
-
-    async def get(self, url, params=None):
-        raise RuntimeError("backend unreachable")
+class DummyContact:
+    def __init__(self, user_id, phone_number):
+        self.user_id = user_id
+        self.phone_number = phone_number
 
 
 class DummyMessage:
@@ -97,6 +34,16 @@ class DummyUser:
     def __init__(self, telegram_id, first_name="Test"):
         self.id = telegram_id
         self.first_name = first_name
+
+
+class DummyContactMessage:
+    def __init__(self, telegram_id, phone_number, first_name="Laura"):
+        self.from_user = DummyUser(telegram_id, first_name)
+        self.contact = DummyContact(telegram_id, phone_number)
+        self.answers = []
+
+    async def answer(self, text, parse_mode=None, reply_markup=None):
+        self.answers.append(text)
 
 
 class DummyCallback:
@@ -129,30 +76,11 @@ class DummyState:
         self._data = {}
 
 
-def _use_dummy_backend(monkeypatch, client=DummyAsyncClient):
-    monkeypatch.setattr(backend_client.httpx, "AsyncClient", client)
-    # get_provider_language/get_user_language lisent fetch_backend_profile en premier ;
-    # None force la lecture locale db.py, indépendamment de la forme de DummyAsyncClient.
-    monkeypatch.setattr(backend_client, "fetch_backend_profile", lambda telegram_id: _async_return(None))
 
 
-async def _async_return(value):
-    return value
-
-
-def _init_db(tmp_path):
-    db.DB_PATH = tmp_path / "test_nexis_hub.db"
-    db.init_db()
-
-
-def test_terminer_inscription_prestataire_asks_for_documents_before_creating_provider(monkeypatch, tmp_path):
-    """Vérification obligatoire (V5_MIGRATION_PLAN.md) : le prestataire n'est créé
-    qu'après la pièce d'identité et le selfie — voir
-    tests/test_provider_verification.py pour le flow complet jusqu'à la création.
-    """
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
-
+def test_terminer_inscription_prestataire_asks_for_documents_before_creating_provider(live_backend):
+    """Vérification obligatoire : rien n'est envoyé au backend avant la pièce
+    d'identité et le selfie (voir tests/test_provider_verification.py)."""
     callback = DummyCallback(telegram_id=501, data="provider_communes_done")
     state = DummyState(data={
         "provider_phone": "+243800000501",
@@ -164,118 +92,118 @@ def test_terminer_inscription_prestataire_asks_for_documents_before_creating_pro
 
     asyncio.run(registration.terminer_inscription_prestataire(callback, state))
 
-    assert db.get_provider_by_telegram_id(501) is None, "pas encore créé avant les documents"
-    assert DummyAsyncClient.last_request is None, "aucun appel backend avant les documents"
+    assert live_backend.profile(501)["provider"] is None, "pas encore créé avant les documents"
 
 
-def test_changer_disponibilite_writes_backend_and_local(monkeypatch, tmp_path):
-    _init_db(tmp_path)
-    db.create_provider(502, "+243800000502", "Bob Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-    _use_dummy_backend(monkeypatch)
+def test_a_client_registers_with_the_shared_number(live_backend):
+    message = DummyContactMessage(601, "+243810000601")
+    state = DummyState(data={"language": "ln", "_state": "phone"})
+
+    asyncio.run(registration.enregistrer_client(message, state))
+
+    me = live_backend.profile(601)
+    assert (me["client"]["first_name"], me["client"]["phone_number"], me["language"]) == ("Laura", "+243810000601", "ln")
+    assert state.cleared is True
+
+
+def test_a_client_registration_waits_when_the_backend_is_down():
+    message = DummyContactMessage(601, "+243810000601")
+    state = DummyState(data={"language": "fr", "_state": "phone"})
+
+    asyncio.run(registration.enregistrer_client(message, state))
+
+    assert state.cleared is False, "l'étape reste ouverte : la personne renvoie son numéro"
+    assert "indisponible" in message.answers[-1]
+
+
+def test_changer_disponibilite_writes_the_backend(live_backend):
+    live_backend.provider(502)
 
     callback = DummyCallback(telegram_id=502, data="provider_status_offline")
     asyncio.run(registration.changer_disponibilite(callback))
 
-    assert db.get_provider_by_telegram_id(502)["status"] == "offline"
-    assert DummyAsyncClient.last_request["method"] == "patch"
-    assert DummyAsyncClient.last_request["url"].endswith("/api/bot/providers/502/status")
-    assert DummyAsyncClient.last_request["json"] == {"status": "offline"}
+    assert live_backend.profile(502)["provider"]["status"] == "offline"
+    assert "Indisponible" in callback.message.edited_text
 
 
-def test_changer_disponibilite_refused_while_awaiting_validation(monkeypatch, tmp_path):
-    _init_db(tmp_path)
-    db.create_provider(504, "+243800000504", "Dan Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-    db.update_provider_status(504, "pending_verification")
-    _use_dummy_backend(monkeypatch)
-    DummyAsyncClient.last_request = None
+def test_changer_disponibilite_refused_while_awaiting_validation(live_backend):
+    live_backend.provider(504, verified=False)
 
     callback = DummyCallback(telegram_id=504, data="provider_status_available")
     asyncio.run(registration.changer_disponibilite(callback))
 
-    assert db.get_provider_by_telegram_id(504)["status"] == "pending_verification"
-    assert DummyAsyncClient.last_request is None, "rien envoyé au backend"
+    assert live_backend.profile(504)["provider"]["status"] == "pending_verification"
     assert "validation" in callback.answered
-    assert db.find_matching_providers("service_plomberie", "Gombe") == []
+    assert live_backend.new_mission(42, service="service_plomberie") and live_backend.mission(1) is not None
+    assert live_backend.alerted(1) == []
 
 
-def test_changer_disponibilite_survives_backend_outage(monkeypatch, tmp_path):
-    """L'écriture locale ne doit jamais dépendre du succès de l'appel backend."""
-    _init_db(tmp_path)
-    db.create_provider(503, "+243800000503", "Carla Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-    _use_dummy_backend(monkeypatch, client=RaisingAsyncClient)
-
+def test_changer_disponibilite_when_the_backend_is_down_changes_nothing():
     callback = DummyCallback(telegram_id=503, data="provider_status_available")
     asyncio.run(registration.changer_disponibilite(callback))
 
-    assert db.get_provider_by_telegram_id(503)["status"] == "available"
+    assert "indisponible" in callback.answered
+    assert callback.message.edited_text is None
 
 
-def test_enregistrer_services_modifies_writes_backend_and_local(monkeypatch, tmp_path):
-    _init_db(tmp_path)
-    db.create_provider(504, "+243800000504", "Dan Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-    _use_dummy_backend(monkeypatch)
+def test_enregistrer_services_modifies_writes_the_backend(live_backend):
+    live_backend.provider(504)
 
     callback = DummyCallback(telegram_id=504, data="edit_services_done")
-    state = DummyState(data={"provider_services_edit": ["service_electricite", "service_informatique"]})
+    state = DummyState(data={"provider_services_edit": ["service_electricite", "service_informatique"], "language": "fr"})
 
     asyncio.run(registration.enregistrer_services_modifies(callback, state))
 
-    local_provider = db.get_provider_by_telegram_id(504)
-    assert "service_electricite" in local_provider["services"]
-    assert DummyAsyncClient.last_request["method"] == "patch"
-    assert DummyAsyncClient.last_request["url"].endswith("/api/bot/providers/504/services")
-    assert set(DummyAsyncClient.last_request["json"]["services"]) == {"service_electricite", "service_informatique"}
+    assert live_backend.profile(504)["provider"]["services"] == ["service_electricite", "service_informatique"]
     assert state.cleared is True
 
 
-def test_langue_fr_updates_both_user_and_provider_language(monkeypatch, tmp_path):
-    _init_db(tmp_path)
-    db.create_user(505, "+243800000505", "Eve Cliente", language="en")
-    _use_dummy_backend(monkeypatch)
+def test_enregistrer_services_keeps_the_choice_when_the_backend_is_down():
+    callback = DummyCallback(telegram_id=504, data="edit_services_done")
+    state = DummyState(data={"provider_services_edit": ["service_electricite"], "language": "fr"})
+
+    asyncio.run(registration.enregistrer_services_modifies(callback, state))
+
+    assert state.cleared is False
+    assert "indisponible" in callback.answered
+
+
+def test_langue_fr_updates_the_account_language(live_backend):
+    live_backend.client(505, language="en")
 
     callback = DummyCallback(telegram_id=505, data="lang_fr")
     state = DummyState()
 
     asyncio.run(registration.langue_fr(callback, state))
 
-    assert db.get_user_by_telegram_id(505)["language"] == "fr"
-    # langue_fr synchronise systématiquement client ET prestataire (voir le
-    # commentaire dans registration.py) : la dernière requête capturée est
-    # celle du prestataire (envoyée en second), mais l'appel côté client a bien
-    # eu lieu avant de lever une éventuelle exception (RuntimeError sinon).
-    assert DummyAsyncClient.last_request["json"]["language"] == "fr"
+    assert live_backend.profile(505)["language"] == "fr"
+    assert state._data["language"] == "fr"
 
 
-def test_afficher_profil_client_survives_backend_unavailable(monkeypatch, tmp_path):
-    """Régression backend-parity-auditor : load_profile_from_backend propageait
-    le sqlite3.Row de fallback_user tel quel ; client_profile.get(...) plantait
-    (AttributeError) dès que le backend ne répond pas. Exerce le vrai chemin de
-    repli (fetch_backend_profile -> None), pas un mock de load_profile_from_backend."""
-    _init_db(tmp_path)
-    db.create_user(507, "+243800000507", "Cliente Locale", language="ln")
-    _use_dummy_backend(monkeypatch)  # fetch_backend_profile -> None
+def test_langue_for_a_new_person_is_kept_for_the_registration(live_backend):
+    callback = DummyCallback(telegram_id=506, data="lang_ln")
+    state = DummyState()
+
+    asyncio.run(registration.langue_ln(callback, state))
+
+    assert state._data["language"] == "ln"
+    assert live_backend.profile(506)["profile_type"] == "guest"
+
+
+def test_afficher_profil_client_reads_the_backend(live_backend):
+    live_backend.client(507, first_name="Cliente", language="ln", phone="+243800000507")
 
     callback = DummyCallback(telegram_id=507, data="client_profil")
     asyncio.run(registration.afficher_profil_client(callback))
 
-    assert "Cliente Locale" in callback.message.edited_text
+    assert "Cliente" in callback.message.edited_text
     assert "Lingala" in callback.message.edited_text
-    # Les missions ne sont connues que du backend : inconnues, pas « 0 ».
-    assert "<b>?</b>" in callback.message.edited_text
+    assert "+243800000507" in callback.message.edited_text
 
 
-def test_afficher_profil_client_shows_backend_language_label(monkeypatch, tmp_path):
-    """lang_label doit suivre client_profile (backend), pas la variable
-    locale user["language"] laissée de côté par erreur (incohérence corrigée)."""
-    _init_db(tmp_path)
-    db.create_user(506, "+243800000506", "Cliente", language="fr")
-    _use_dummy_backend(monkeypatch)
-    monkeypatch.setattr(registration, "load_profile_from_backend", lambda tid, fallback_user=None: _async_return({
-        "client": {"first_name": "Cliente", "phone_number": "+243800000506", "language": "ln"},
-        "client_missions": [],
-    }))
-
-    callback = DummyCallback(telegram_id=506, data="client_profil")
+def test_afficher_profil_client_says_when_the_backend_is_down():
+    callback = DummyCallback(telegram_id=507, data="client_profil")
     asyncio.run(registration.afficher_profil_client(callback))
 
-    assert "Lingala" in callback.message.edited_text
+    assert callback.message.edited_text is None
+    assert "indisponible" in callback.answered

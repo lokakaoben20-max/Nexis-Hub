@@ -1,215 +1,94 @@
-import importlib
-import sys
-from pathlib import Path
+"""Services proposés par les prestataires : créés au nom du prestataire,
+listés pour lui, décidés une seule fois par un admin."""
 
-from fastapi.testclient import TestClient
+from backend.tests.test_main import _as, _authed_client, _grant_admin, _register_provider, _reload_backend_with_db
 
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from backend.app.main import app
-
-client = TestClient(app)
-
-TEST_API_KEY = "test-backend-api-key-not-a-secret"
+ADMIN = 999
 
 
-def _reload_backend_with_db(monkeypatch, backend_db_url):
-    monkeypatch.setenv("DATABASE_URL", backend_db_url)
-    monkeypatch.setenv("BACKEND_API_KEY_TELEGRAM", TEST_API_KEY)
-
-    database_module = importlib.reload(importlib.import_module("backend.app.database"))
-    importlib.reload(importlib.import_module("backend.app.models"))
-    backend_main = importlib.reload(importlib.import_module("backend.app.main"))
-    return backend_main, database_module
+def _backend(monkeypatch, backend_db_url):
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
+    _grant_admin(database_module, ADMIN)
+    return _authed_client(backend_main)
 
 
-
-def _as(telegram_id):
-    """En-têtes d'une action faite au nom d'une personne connue par Telegram."""
-    return {"X-Actor-Channel": "telegram", "X-Actor-Id": str(telegram_id)}
-
-def _authed_client(backend_main):
-    test_client = TestClient(backend_main.app)
-    test_client.headers["X-API-Key"] = TEST_API_KEY
-    return test_client
+def _propose(test_client, telegram_id, service_name="Soudure industrielle", description="Soudure à l'arc et réparation de portails."):
+    return test_client.post(
+        "/api/bot/service-requests",
+        json={"service_name": service_name, "description": description},
+        headers=_as(telegram_id),
+    )
 
 
 def test_create_service_request_nominal(tmp_path, monkeypatch, backend_db_url):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
-    database_module.init_db()
-    with _authed_client(backend_main) as test_client:
-        # Créer le prestataire d'abord
-        res_p = test_client.post(
-            "/api/bot/providers",
-            json={
-                "telegram_id": 1001,
-                "full_name": "Jean Prestataire",
-                "phone_number": "+243810000001",
-                "services": ["service_plomberie"],
-                "communes": ["Gombe"],
-                "language": "fr",
-            },
-        )
-        assert res_p.status_code == 200
+    with _backend(monkeypatch, backend_db_url) as test_client:
+        _register_provider(test_client, 1001, ["service_plomberie"], ["Gombe"], full_name="Jean Prestataire")
 
-        # Créer la proposition de service
-        response = test_client.post(
-            "/api/bot/service-requests",
-            json={
-                "service_name": "Soudure industrielle",
-                "description": "Spécialiste soudure à l'arc et réparation de portails.",
-            },
-            headers=_as(1001),
-        )
+        response = _propose(test_client, 1001, service_name="  Soudure industrielle  ")
+
         assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "ok"
-        assert data["service_request"]["id"] > 0
-        assert data["service_request"]["provider_telegram_id"] == 1001
-        assert data["service_request"]["service_name"] == "Soudure industrielle"
-        assert data["service_request"]["status"] == "pending"
+        request = response.json()["service_request"]
+        assert request["id"] > 0
+        assert request["provider_telegram_id"] == 1001
+        assert request["service_name"] == "Soudure industrielle"
+        assert request["status"] == "pending"
 
 
 def test_create_service_request_provider_not_found(tmp_path, monkeypatch, backend_db_url):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
-    database_module.init_db()
-    with _authed_client(backend_main) as test_client:
-        response = test_client.post(
-            "/api/bot/service-requests",
-            json={
-                "service_name": "Soudure",
-                "description": "Description valide mais sans prestataire existant.",
-            },
-            headers=_as(999999),
-        )
+    with _backend(monkeypatch, backend_db_url) as test_client:
+        response = _propose(test_client, 999999)
         assert response.status_code == 404
+        assert response.json()["detail"] == {"code": "provider_not_found"}
 
 
-def test_get_pending_service_requests(tmp_path, monkeypatch, backend_db_url):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
-    database_module.init_db()
-    with _authed_client(backend_main) as test_client:
-        # Créer deux prestataires
-        for tid, name in [(2001, "Alice"), (2002, "Bob")]:
-            test_client.post(
-                "/api/bot/providers",
-                json={
-                    "telegram_id": tid,
-                    "full_name": name,
-                    "services": ["service_electricite"],
-                    "communes": ["Kalamu"],
-                },
+def test_a_proposal_needs_a_name_and_a_description(tmp_path, monkeypatch, backend_db_url):
+    with _backend(monkeypatch, backend_db_url) as test_client:
+        _register_provider(test_client, 1001, ["service_plomberie"], ["Gombe"])
+        assert _propose(test_client, 1001, service_name="  ab ").status_code == 422
+        assert _propose(test_client, 1001, description="Court").status_code == 422
+        assert test_client.get("/api/me/service-requests", headers=_as(1001)).json()["service_requests"] == []
+
+
+def test_a_provider_lists_only_his_own_proposals(tmp_path, monkeypatch, backend_db_url):
+    with _backend(monkeypatch, backend_db_url) as test_client:
+        _register_provider(test_client, 4001, ["service_nettoyage"], ["Limete"])
+        _register_provider(test_client, 4002, ["service_nettoyage"], ["Limete"])
+        _propose(test_client, 4001, "Peinture époxy", "Revêtement sols industriels et résine.")
+        _propose(test_client, 4002, "Menuiserie aluminium", "Portes et fenêtres sur mesure.")
+
+        mine = test_client.get("/api/me/service-requests", headers=_as(4001)).json()["service_requests"]
+        assert [(request["service_name"], request["status"]) for request in mine] == [("Peinture époxy", "pending")]
+        assert test_client.get("/api/me/service-requests", headers=_as(555)).status_code == 404
+
+
+def test_pending_proposals_are_listed_for_the_admin_only(tmp_path, monkeypatch, backend_db_url):
+    with _backend(monkeypatch, backend_db_url) as test_client:
+        for telegram_id, name in ((2001, "Alice"), (2002, "Bob")):
+            _register_provider(test_client, telegram_id, ["service_electricite"], ["Kalamu"], full_name=name)
+        _propose(test_client, 2001, "Domotique", "Installation d'équipements connectés.")
+        _propose(test_client, 2002, "Menuiserie aluminium", "Portes et fenêtres sur mesure.")
+
+        assert test_client.get("/api/admin/service-requests", headers=_as(2001)).status_code == 403
+        response = test_client.get("/api/admin/service-requests", headers=_as(ADMIN))
+        assert [request["provider_name"] for request in response.json()["service_requests"]] == ["Alice", "Bob"]
+        assert test_client.get("/api/admin/stats", headers=_as(ADMIN)).json()["stats"]["pending_services"] == 2
+
+
+def test_a_proposal_is_decided_once(tmp_path, monkeypatch, backend_db_url):
+    with _backend(monkeypatch, backend_db_url) as test_client:
+        _register_provider(test_client, 3001, ["service_climatisation"], ["Kalamu"], full_name="Charlie")
+        request_id = _propose(test_client, 3001, "Frigoriste", "Réparation chambres froides.").json()["service_request"]["id"]
+
+        def decide(status, actor=ADMIN):
+            return test_client.patch(
+                f"/api/admin/service-requests/{request_id}", json={"status": status, "admin_note": "Validé"}, headers=_as(actor)
             )
 
-        test_client.post(
-            "/api/bot/service-requests",
-            json={
-                "service_name": "Domotique",
-                "description": "Installation d'équipements connectés.",
-            },
-            headers=_as(2001),
-        )
-        test_client.post(
-            "/api/bot/service-requests",
-            json={
-                "service_name": "Menuiserie aluminium",
-                "description": "Portes et fenêtres sur mesure.",
-            },
-            headers=_as(2002),
-        )
-
-        response = test_client.get("/api/bot/service-requests/pending")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "ok"
-        assert len(data["service_requests"]) == 2
-        assert data["service_requests"][0]["provider_name"] == "Alice"
-        assert data["service_requests"][1]["provider_name"] == "Bob"
-
-
-def test_update_service_request_status_flow(tmp_path, monkeypatch, backend_db_url):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
-    database_module.init_db()
-    with _authed_client(backend_main) as test_client:
-        test_client.post(
-            "/api/bot/providers",
-            json={
-                "telegram_id": 3001,
-                "full_name": "Charlie",
-                "services": ["service_climatisation"],
-                "communes": ["Kalamu"],
-            },
-        )
-
-        req_res = test_client.post(
-            "/api/bot/service-requests",
-            json={
-                "service_name": "Frigoriste",
-                "description": "Réparation chambres froides.",
-            },
-            headers=_as(3001),
-        )
-        req_id = req_res.json()["service_request"]["id"]
-
-        # Consulter par ID
-        get_res = test_client.get(f"/api/bot/service-requests/{req_id}")
-        assert get_res.status_code == 200
-        assert get_res.json()["service_request"]["provider_name"] == "Charlie"
-
-        # Accepter
-        patch_res = test_client.patch(
-            f"/api/bot/service-requests/{req_id}/status",
-            json={"status": "accepted", "admin_note": "Service validé pour Kinshasa"},
-        )
-        assert patch_res.status_code == 200
-        assert patch_res.json()["service_request"]["status"] == "accepted"
-        assert patch_res.json()["service_request"]["admin_note"] == "Service validé pour Kinshasa"
-
-        # Ne doit plus apparaître dans les pending
-        pending_res = test_client.get("/api/bot/service-requests/pending")
-        assert len(pending_res.json()["service_requests"]) == 0
-
-        invalid_res = test_client.patch(
-            f"/api/bot/service-requests/{req_id}/status",
-            json={"status": "unknown"},
-        )
-        assert invalid_res.status_code == 400
-
-        second_review_res = test_client.patch(
-            f"/api/bot/service-requests/{req_id}/status",
-            json={"status": "rejected"},
-        )
-        assert second_review_res.status_code == 400
-
-
-def test_profile_includes_service_requests(tmp_path, monkeypatch, backend_db_url):
-    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
-    database_module.init_db()
-    with _authed_client(backend_main) as test_client:
-        test_client.post(
-            "/api/bot/providers",
-            json={
-                "telegram_id": 4001,
-                "full_name": "David",
-                "services": ["service_nettoyage"],
-                "communes": ["Limete"],
-            },
-        )
-
-        test_client.post(
-            "/api/bot/service-requests",
-            json={
-                "service_name": "Peinture époxy",
-                "description": "Revêtement sols industriels et résine.",
-            },
-            headers=_as(4001),
-        )
-
-        profile_res = test_client.get("/api/profile/4001")
-        assert profile_res.status_code == 200
-        profile_data = profile_res.json()
-        assert len(profile_data["service_requests"]) == 1
-        assert profile_data["service_requests"][0]["service_name"] == "Peinture époxy"
-        assert profile_data["service_requests"][0]["status"] == "pending"
+        assert decide("accepted", actor=3001).status_code == 403
+        assert decide("unknown").status_code == 400
+        accepted = decide("accepted")
+        assert accepted.status_code == 200
+        assert accepted.json()["service_request"]["status"] == "accepted"
+        assert accepted.json()["service_request"]["admin_note"] == "Validé"
+        assert decide("rejected").status_code == 409
+        assert test_client.get("/api/admin/service-requests", headers=_as(ADMIN)).json()["service_requests"] == []

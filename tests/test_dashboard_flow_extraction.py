@@ -3,9 +3,9 @@
 Ce groupe (affichage services prestataire, missions/wallet client et
 prestataire, historique, aide) n'avait aucun test dédié avant cette
 extraction — couvert ici pour la première fois, même style que
-`tests/test_payment_flow_extraction.py` (`DummyCallback`/`DummyMessage`,
-SQLite jetable). Les missions sont lues dans le vrai backend (fixture
-`live_backend`) : db.py n'en garde aucune copie.
+`tests/test_payment_flow_extraction.py` (`DummyCallback`/`DummyMessage`).
+Profils, propositions de services, missions et soldes sont lus dans le vrai
+backend (fixture `live_backend`).
 """
 
 import asyncio
@@ -19,9 +19,8 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
-import db
 from messages import get_message
-from telegram_bot import backend_client, dashboard
+from telegram_bot import dashboard
 
 
 class DummyMessageObject:
@@ -85,73 +84,56 @@ class DummyState:
         self._data = {}
 
 
-def _init_db(tmp_path):
-    db.DB_PATH = tmp_path / "test_nexis_hub.db"
-    db.init_db()
+def _requests(live, telegram_id):
+    from backend.app.models import ProviderServiceRequest
 
-
-def _use_dummy_backend(monkeypatch):
-    # dashboard.py fait `from telegram_bot.backend_client import fetch_backend_profile`
-    # au niveau module : ce nom est lié dans le namespace de dashboard à
-    # l'import, donc patcher uniquement backend_client.fetch_backend_profile
-    # ne touche pas dashboard.fetch_backend_missions (trouvaille security-reviewer).
-    monkeypatch.setattr(backend_client, "fetch_backend_profile", lambda telegram_id: _async_return(None))
-    monkeypatch.setattr(dashboard, "fetch_backend_profile", lambda telegram_id: _async_return(None))
-
-
-async def _async_return(value):
-    return value
+    with live.database.SessionLocal() as session:
+        return [
+            (request.service_name, request.status)
+            for request in session.query(ProviderServiceRequest).order_by(ProviderServiceRequest.id)
+        ]
 
 
 # --- services prestataire ------------------------------------------------
 
 
-def test_afficher_services_prestataire_requires_profile(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
+def test_afficher_services_prestataire_requires_profile(live_backend):
+    live_backend.client(999)
 
     callback = DummyCallback(telegram_id=999)
     asyncio.run(dashboard.afficher_services_prestataire(callback))
 
-    assert callback.answered is not None
+    assert callback.answered == get_message("provider_profile_required", "fr")
+    assert callback.message.edited_text is None
 
 
-def test_afficher_services_prestataire_lists_active_and_pending(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
+def test_afficher_services_prestataire_lists_the_backend_services_and_proposals(live_backend):
+    from telegram_bot import backend_client
+
     telegram_id = 3001
-    db.create_provider(telegram_id, "+243800003001", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-    db.create_service_request(telegram_id, "Service manquant", "Description suffisamment longue.")
+    live_backend.provider(telegram_id, services=["service_electricite"])
+    asyncio.run(backend_client.propose_service(telegram_id, "Service manquant", "Description suffisamment longue."))
 
     callback = DummyCallback(telegram_id)
     asyncio.run(dashboard.afficher_services_prestataire(callback))
 
-    assert "Plomberie" in callback.message.edited_text or "plomberie" in callback.message.edited_text.lower()
-    assert "SRV-" in callback.message.edited_text
+    text = callback.message.edited_text
+    assert "lectricit" in text
+    assert "Plomberie" not in text
+    assert "SRV-" in text and "Service manquant" in text
 
 
-def test_afficher_services_prestataire_uses_backend_services_when_available(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
-    telegram_id = 3002
-    db.create_provider(telegram_id, "+243800003002", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-    monkeypatch.setattr(dashboard, "fetch_backend_profile", lambda tid: _async_return({
-        "provider": {"services": ["service_electricite"]}
-    }))
-
-    callback = DummyCallback(telegram_id)
+def test_afficher_services_prestataire_says_so_when_the_backend_is_down():
+    callback = DummyCallback(telegram_id=3001)
     asyncio.run(dashboard.afficher_services_prestataire(callback))
 
-    text = callback.message.edited_text.lower()
-    assert "electricit" in text
-    assert "plomberie" not in text, "la liste locale ne doit plus apparaître quand le backend répond"
+    assert callback.answered == get_message("service_unavailable", "fr")
+    assert callback.message.edited_text is None
 
 
-def test_proposer_service_manquant_starts_fsm(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
+def test_proposer_service_manquant_starts_fsm(live_backend):
     telegram_id = 3002
-    db.create_provider(telegram_id, "+243800003002", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+    live_backend.provider(telegram_id)
 
     callback = DummyCallback(telegram_id)
     state = DummyState()
@@ -160,13 +142,8 @@ def test_proposer_service_manquant_starts_fsm(tmp_path, monkeypatch):
     assert state.state == dashboard.ProviderServiceRequest.service_name
 
 
-def test_recevoir_nom_service_manquant_rejects_too_short(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
-    telegram_id = 3003
-    db.create_provider(telegram_id, "+243800003003", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-
-    message = DummyMessage(telegram_id, text="ab")
+def test_recevoir_nom_service_manquant_rejects_too_short():
+    message = DummyMessage(3003, text="ab")
     state = DummyState()
     asyncio.run(dashboard.recevoir_nom_service_manquant(message, state))
 
@@ -174,83 +151,39 @@ def test_recevoir_nom_service_manquant_rejects_too_short(tmp_path, monkeypatch):
     assert len(message.answers) == 1
 
 
-def test_full_service_request_flow_creates_pending_request(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
+def test_full_service_request_flow_creates_pending_request_in_the_backend(live_backend):
     telegram_id = 3004
-    db.create_provider(telegram_id, "+243800003004", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+    live_backend.provider(telegram_id)
 
     state = DummyState()
     asyncio.run(dashboard.recevoir_nom_service_manquant(DummyMessage(telegram_id, text="Service exotique"), state))
     assert state.state == dashboard.ProviderServiceRequest.description
 
-    asyncio.run(dashboard.recevoir_description_service_manquant(
-        DummyMessage(telegram_id, text="Description suffisamment longue pour passer la validation."), state
-    ))
+    message = DummyMessage(telegram_id, text="Description suffisamment longue pour passer la validation.")
+    asyncio.run(dashboard.recevoir_description_service_manquant(message, state))
 
     assert state.cleared is True
-    requests = db.get_provider_service_requests(telegram_id)
-    assert len(requests) == 1
-    assert requests[0]["service_name"] == "Service exotique"
-    assert requests[0]["status"] == "pending"
+    assert _requests(live_backend, telegram_id) == [("Service exotique", "pending")]
+    assert "SRV-" in message.answers[-1]
 
 
-def _submit_service_request(telegram_id):
+def test_service_request_keeps_the_step_open_when_the_backend_is_down():
+    """Rien n'est enregistré nulle part : la personne renvoie sa description."""
     state = DummyState({"missing_service_name": "Service exotique"})
-    asyncio.run(dashboard.recevoir_description_service_manquant(
-        DummyMessage(telegram_id, text="Description suffisamment longue pour passer la validation."), state
-    ))
-    return db.get_provider_service_requests(telegram_id)
+    message = DummyMessage(3011, text="Description suffisamment longue pour passer la validation.")
+    asyncio.run(dashboard.recevoir_description_service_manquant(message, state))
 
-
-def test_service_request_is_mirrored_to_backend_and_keeps_backend_id(tmp_path, monkeypatch):
-    """Étape C : la proposition est recopiée au backend et son id backend est
-    gardé en local, pour que la décision admin puisse suivre."""
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
-    telegram_id = 3010
-    db.create_provider(telegram_id, "+243800003010", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-    sent = []
-
-    async def fake_sync(provider_telegram_id, service_name, description=""):
-        sent.append((provider_telegram_id, service_name, description))
-        return {"status": "ok", "service_request": {"id": 77}}
-
-    monkeypatch.setattr(dashboard, "sync_service_request_to_backend", fake_sync)
-
-    requests = _submit_service_request(telegram_id)
-
-    assert sent == [(telegram_id, "Service exotique", "Description suffisamment longue pour passer la validation.")]
-    assert len(requests) == 1
-    assert requests[0]["backend_request_id"] == 77
-
-
-def test_service_request_still_created_locally_when_backend_unavailable(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
-    telegram_id = 3011
-    db.create_provider(telegram_id, "+243800003011", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-
-    async def failing_sync(*args, **kwargs):
-        raise RuntimeError("backend indisponible")
-
-    monkeypatch.setattr(dashboard, "sync_service_request_to_backend", failing_sync)
-
-    requests = _submit_service_request(telegram_id)
-
-    assert len(requests) == 1
-    assert requests[0]["status"] == "pending"
-    assert requests[0]["backend_request_id"] is None
+    assert state.cleared is False
+    assert state._data["missing_service_name"] == "Service exotique"
+    assert "indisponible" in message.answers[-1]
 
 
 # --- missions / wallet client ---------------------------------------------
 
 
-def test_afficher_missions_client_shows_empty_state(tmp_path, monkeypatch, live_backend):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
+def test_afficher_missions_client_shows_empty_state(live_backend):
     telegram_id = 3005
-    db.create_user(telegram_id, "+243800003005", "Cliente", language="fr")
+    live_backend.client(telegram_id)
 
     callback = DummyCallback(telegram_id)
     asyncio.run(dashboard.afficher_missions_client(callback))
@@ -258,11 +191,9 @@ def test_afficher_missions_client_shows_empty_state(tmp_path, monkeypatch, live_
     assert callback.message.edited_text == get_message("missions_empty", "fr")
 
 
-def test_afficher_missions_client_lists_the_backend_missions(tmp_path, monkeypatch, live_backend):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
+def test_afficher_missions_client_lists_the_backend_missions(live_backend):
     telegram_id = 3006
-    db.create_user(telegram_id, "+243800003006", "Cliente", language="fr")
+    live_backend.client(telegram_id)
     mission_id = live_backend.new_mission(telegram_id, service="service_plomberie")
     live_backend.new_mission(3999)  # mission d'un autre client : jamais montrée
 
@@ -273,49 +204,20 @@ def test_afficher_missions_client_lists_the_backend_missions(tmp_path, monkeypat
     assert callback.message.edited_text.count("NXH-") == 1
 
 
-def test_afficher_missions_client_says_unavailable_when_the_backend_is_down(tmp_path, monkeypatch):
-    """Plus de copie locale à montrer : l'écran dit que le service ne répond pas."""
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
-    telegram_id = 3016
-    db.create_user(telegram_id, "+243800003016", "Cliente", language="fr")
-
-    callback = DummyCallback(telegram_id)
+def test_afficher_missions_client_says_unavailable_when_the_backend_is_down():
+    callback = DummyCallback(3016)
     asyncio.run(dashboard.afficher_missions_client(callback))
 
     assert callback.answered == get_message("service_unavailable", "fr")
     assert callback.message.edited_text is None
 
 
-def test_afficher_wallet_client_requires_existing_client(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-
-    callback = DummyCallback(telegram_id=999)
-    asyncio.run(dashboard.afficher_wallet_client(callback))
-
-    assert callback.answered == "Client introuvable."
-
-
-def test_afficher_wallet_client_shows_balances(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
-    telegram_id = 3007
-    db.create_user(telegram_id, "+243800003007", "Cliente", language="fr")
-
-    callback = DummyCallback(telegram_id)
-    asyncio.run(dashboard.afficher_wallet_client(callback))
-
-    assert callback.message.edited_text is not None
-
-
 # --- missions / wallet prestataire -----------------------------------------
 
 
-def test_afficher_missions_prestataire_shows_empty_state(tmp_path, monkeypatch, live_backend):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
+def test_afficher_missions_prestataire_shows_empty_state(live_backend):
     telegram_id = 3008
-    db.create_provider(telegram_id, "+243800003008", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+    live_backend.provider(telegram_id)
 
     callback = DummyCallback(telegram_id)
     asyncio.run(dashboard.afficher_missions_prestataire(callback))
@@ -323,12 +225,9 @@ def test_afficher_missions_prestataire_shows_empty_state(tmp_path, monkeypatch, 
     assert callback.message.edited_text == get_message("provider_missions_empty", "fr")
 
 
-def test_afficher_missions_prestataire_lists_the_missions_entrusted_to_them(tmp_path, monkeypatch, live_backend):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
+def test_afficher_missions_prestataire_lists_the_missions_entrusted_to_them(live_backend):
     telegram_id, client_id = 3009, 3109
-    db.create_provider(telegram_id, "+243800003009", "Prestataire", ["service_peinture"], ["Gombe"], language="fr")
-    entrusted, _ = live_backend.accepted_quote(client_id, telegram_id, service="service_peinture")
+    entrusted, _ = live_backend.accepted_quote(client_id, telegram_id, service="service_electricite")
     live_backend.quoted_mission(client_id, telegram_id)  # devis pas encore accepté : pas confiée
 
     callback = DummyCallback(telegram_id)
@@ -338,21 +237,10 @@ def test_afficher_missions_prestataire_lists_the_missions_entrusted_to_them(tmp_
     assert callback.message.edited_text.count("NXH-") == 1
 
 
-def test_afficher_wallet_prestataire_requires_profile(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
-
-    callback = DummyCallback(telegram_id=999)
-    asyncio.run(dashboard.afficher_wallet_prestataire(callback))
-
-    assert callback.answered is not None
-
-
-def test_afficher_wallet_client_reads_the_registry(tmp_path, monkeypatch, live_backend):
+def test_afficher_wallet_client_reads_the_registry(live_backend):
     """Le registre du backend est la seule source des soldes."""
-    _init_db(tmp_path)
     telegram_id = 3012
-    db.create_user(telegram_id, "+243800003012", "Cliente", language="fr")
+    live_backend.client(telegram_id)
     live_backend.credit_wallet(telegram_id, 42.5)
     live_backend.credit_wallet(telegram_id, 7000.0, currency="CDF")
 
@@ -363,22 +251,17 @@ def test_afficher_wallet_client_reads_the_registry(tmp_path, monkeypatch, live_b
     assert "7000.00 CDF" in callback.message.edited_text
 
 
-def test_afficher_wallet_client_shows_unavailable_when_the_backend_is_down(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    telegram_id = 3013
-    db.create_user(telegram_id, "+243800003013", "Cliente", language="fr")
-
-    callback = DummyCallback(telegram_id)
+def test_afficher_wallet_client_shows_unavailable_when_the_backend_is_down():
+    callback = DummyCallback(3013)
     asyncio.run(dashboard.afficher_wallet_client(callback))
 
     assert callback.message.edited_text == get_message("wallet_unavailable", "fr")
 
 
-def test_client_and_provider_screens_show_the_same_single_wallet(tmp_path, monkeypatch, live_backend):
-    _init_db(tmp_path)
+def test_client_and_provider_screens_show_the_same_single_wallet(live_backend):
     telegram_id = 3014
-    db.create_user(telegram_id, "+243800003014", "Prestataire", language="fr")
-    db.create_provider(telegram_id, "+243800003014", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+    live_backend.client(telegram_id)
+    live_backend.provider(telegram_id)
     live_backend.credit_wallet(telegram_id, 88.0)
 
     provider_callback = DummyCallback(telegram_id)
@@ -390,12 +273,8 @@ def test_client_and_provider_screens_show_the_same_single_wallet(tmp_path, monke
     assert "88.00 USD" in client_callback.message.edited_text
 
 
-def test_afficher_wallet_prestataire_shows_unavailable_when_the_backend_is_down(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    telegram_id = 3015
-    db.create_provider(telegram_id, "+243800003015", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-
-    callback = DummyCallback(telegram_id)
+def test_afficher_wallet_prestataire_shows_unavailable_when_the_backend_is_down():
+    callback = DummyCallback(3015)
     asyncio.run(dashboard.afficher_wallet_prestataire(callback))
 
     assert callback.message.edited_text == get_message("wallet_unavailable", "fr")
@@ -404,12 +283,9 @@ def test_afficher_wallet_prestataire_shows_unavailable_when_the_backend_is_down(
 # --- historique / aide ------------------------------------------------------
 
 
-def test_afficher_historique_client_filters_terminal_statuses_only(tmp_path, monkeypatch, live_backend):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
+def test_afficher_historique_client_filters_terminal_statuses_only(live_backend):
     client_id, provider_id = 3009, 3109
-    db.create_user(client_id, "+243800003009", "Cliente", language="fr")
-    db.create_provider(provider_id, "+243800003109", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+    live_backend.client(client_id)
 
     live_backend.new_mission(client_id)  # mission active : pas dans l'historique
     mission_id = live_backend.completed_mission(client_id, provider_id, amount=50.0, service="service_electricite")
@@ -422,11 +298,9 @@ def test_afficher_historique_client_filters_terminal_statuses_only(tmp_path, mon
     assert callback.message.edited_text.count("NXH-") == 1, "seule la mission terminale doit apparaître dans l'historique"
 
 
-def test_afficher_historique_client_shows_empty_state_when_nothing_terminal(tmp_path, monkeypatch, live_backend):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
+def test_afficher_historique_client_shows_empty_state_when_nothing_terminal(live_backend):
     telegram_id = 3010
-    db.create_user(telegram_id, "+243800003010", "Cliente", language="fr")
+    live_backend.client(telegram_id)
     live_backend.new_mission(telegram_id)
 
     callback = DummyCallback(telegram_id)
@@ -435,13 +309,8 @@ def test_afficher_historique_client_shows_empty_state_when_nothing_terminal(tmp_
     assert callback.message.edited_text == get_message("mission_history_empty", "fr")
 
 
-def test_afficher_aide_client_falls_back_to_plain_text(tmp_path, monkeypatch):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
-    telegram_id = 3011
-    db.create_user(telegram_id, "+243800003011", "Cliente", language="fr")
-
-    callback = DummyCallback(telegram_id)
+def test_afficher_aide_client_falls_back_to_plain_text():
+    callback = DummyCallback(3011)
     asyncio.run(dashboard.afficher_aide_client(callback))
 
     assert callback.message.edited_text is not None

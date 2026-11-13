@@ -32,10 +32,6 @@ WHATSAPP_ROUTES = {
 
 # Actions de prestataire : jamais depuis WhatsApp, refus explicite.
 PROVIDER_ROUTES = {
-    ("POST", "/api/bot/providers"),
-    ("PATCH", "/api/bot/providers/{telegram_id}/language"),
-    ("PATCH", "/api/bot/providers/{telegram_id}/services"),
-    ("PATCH", "/api/bot/providers/{telegram_id}/status"),
     ("POST", "/api/bot/quotes"),
     # Arrivée : « je suis arrivé » et code de présence (plus de « démarrer »).
     ("POST", "/api/bot/missions/{mission_id}/presence/arrived"),
@@ -50,6 +46,7 @@ PROVIDER_ROUTES = {
     ("PUT", "/api/me/provider-profile/services"),
     ("PUT", "/api/me/provider-profile/communes"),
     ("PATCH", "/api/me/provider-profile/status"),
+    ("GET", "/api/me/service-requests"),
     ("POST", "/api/bot/missions/{mission_id}/decline"),
 }
 
@@ -314,13 +311,13 @@ def test_whatsapp_client_without_visible_phone_still_gets_an_account(client, bac
 
 
 def _telegram_client_with_proven_phone(client, telegram_id=42, phone="+243810000001"):
-    response = client.post(
-        "/api/bot/users",
-        json={"telegram_id": telegram_id, "first_name": "Ben", "phone_number": phone, "phone_verified": True},
-        headers={"X-API-Key": TELEGRAM_KEY},
+    response = client.put(
+        "/api/me/client-profile",
+        json={"first_name": "Ben", "phone_number": phone, "phone_verified": True},
+        headers={"X-API-Key": TELEGRAM_KEY, "X-Actor-Channel": "telegram", "X-Actor-Id": str(telegram_id)},
     )
     assert response.status_code == 200
-    return response.json()["user"]["account_id"]
+    return response.json()["account_id"]
 
 
 def test_phone_already_proven_by_a_telegram_account_is_refused_and_nothing_is_created(client, backend):

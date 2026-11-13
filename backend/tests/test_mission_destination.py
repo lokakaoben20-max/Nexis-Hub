@@ -32,7 +32,6 @@ def _create(test_client, key="demande-1", destination=GOMBE, **fields):
         "currency": "USD",
         "description": "Fuite sous l'évier",
         "urgent": False,
-        "alert_provider_telegram_ids": [PROVIDER, OTHER_PROVIDER],
         **fields,
     }
     if destination is not None:

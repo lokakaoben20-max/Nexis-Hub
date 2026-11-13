@@ -31,38 +31,18 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 from dotenv import load_dotenv
 
-from db import (
-    decide_pending_service_request,
-    get_admin_stats,
-    get_all_providers,
-    get_all_users,
-    get_pending_service_requests,
-    get_provider_by_id,
-    get_provider_by_telegram_id,
-    get_service_request_by_id,
-    set_provider_suspended,
-    set_provider_verified,
-    update_provider_status,
-)
 from messages import get_message
 from telegram_bot import backend_client
 from telegram_bot.backend_client import (
     BackendUnavailable,
     MoneyRefused,
-    _safe_backend_call,
-    get_provider_language,
-    get_user_language,
+    get_language,
     money_failure_text,
     decide_dispute,
     decide_payout,
     list_payment_mismatches,
     list_payouts_awaiting_approval,
     resolve_payment_mismatch,
-    sync_provider_status_to_backend,
-    sync_provider_suspended_to_backend,
-    sync_provider_unsuspended_to_backend,
-    sync_provider_verified_to_backend,
-    sync_service_request_status_to_backend,
 )
 from telegram_bot.keyboards import (
     SERVICES,
@@ -104,16 +84,17 @@ class AdminDisputeSplit(StatesGroup):
     percentage = State()
 
 
+STAT_KEYS = ("users", "providers", "providers_pending", "missions", "pending_services", "disputes")
+
+
 async def _admin_stats(admin_telegram_id: int) -> dict:
-    """Comptes des profils (db.py) et des missions (backend, seule mémoire des
-    missions). Backend injoignable : « ? » pour les missions, jamais un chiffre
-    local."""
-    stats = get_admin_stats()
+    """Comptes des profils, des propositions et des missions, tous lus dans
+    le backend. Backend injoignable : « ? » partout, jamais un chiffre local."""
     try:
-        stats.update(await backend_client.admin_mission_stats(admin_telegram_id))
+        stats = await backend_client.admin_mission_stats(admin_telegram_id)
     except (BackendUnavailable, MoneyRefused):
-        stats.update(missions="?", disputes="?")
-    return stats
+        stats = {}
+    return {key: stats.get(key, "?") for key in STAT_KEYS}
 
 
 @router.message(Command("admin"))
@@ -126,7 +107,7 @@ async def cmd_admin(message: Message):
     await message.answer(
         "🛠️ <b>Tableau admin NEXIS HUB</b>\n\n"
         f"👥 Clients : <b>{stats['users']}</b>\n"
-        f"🔧 Prestataires : <b>{stats['providers']}</b>\n"
+        f"🔧 Prestataires : <b>{stats['providers']}</b> (à vérifier : <b>{stats['providers_pending']}</b>)\n"
         f"📋 Missions : <b>{stats['missions']}</b>\n"
         f"➕ Services en attente : <b>{stats['pending_services']}</b>\n"
         f"⚠️ Litiges : <b>{stats['disputes']}</b>",
@@ -172,7 +153,7 @@ async def admin_home(callback: CallbackQuery):
     await callback.message.edit_text(
         "🛠️ <b>Tableau admin NEXIS HUB</b>\n\n"
         f"👥 Clients : <b>{stats['users']}</b>\n"
-        f"🔧 Prestataires : <b>{stats['providers']}</b>\n"
+        f"🔧 Prestataires : <b>{stats['providers']}</b> (à vérifier : <b>{stats['providers_pending']}</b>)\n"
         f"📋 Missions : <b>{stats['missions']}</b>\n"
         f"➕ Services en attente : <b>{stats['pending_services']}</b>\n"
         f"⚠️ Litiges : <b>{stats['disputes']}</b>",
@@ -192,7 +173,7 @@ async def admin_stats(callback: CallbackQuery):
     await callback.message.edit_text(
         "📊 <b>Statistiques</b>\n\n"
         f"Clients : <b>{stats['users']}</b>\n"
-        f"Prestataires : <b>{stats['providers']}</b>\n"
+        f"Prestataires : <b>{stats['providers']}</b> (à vérifier : <b>{stats['providers_pending']}</b>)\n"
         f"Missions : <b>{stats['missions']}</b>\n"
         f"Services proposés en attente : <b>{stats['pending_services']}</b>\n"
         f"Litiges ouverts : <b>{stats['disputes']}</b>",
@@ -208,22 +189,26 @@ async def admin_providers(callback: CallbackQuery):
         await callback.answer(refusal, show_alert=True)
         return
 
-    providers = get_all_providers()
+    try:
+        providers = await backend_client.admin_providers(callback.from_user.id)
+    except (BackendUnavailable, MoneyRefused) as error:
+        await callback.answer(money_failure_text(0, error, "fr", "service_unavailable"), show_alert=True)
+        return
     if not providers:
         await callback.message.edit_text("Aucun prestataire enregistré.", reply_markup=clavier_admin_menu())
         await callback.answer()
         return
 
-    await callback.message.edit_text("🔧 <b>Prestataires récents</b>", parse_mode="HTML", reply_markup=clavier_admin_menu())
+    await callback.message.edit_text("🔧 <b>Prestataires</b> (les plus anciens d'abord)", parse_mode="HTML", reply_markup=clavier_admin_menu())
     for provider in providers:
         await callback.message.answer(
-            f"#{provider['id']} | <b>{html.escape(provider['full_name'])}</b>\n"
-            f"Tél : {html.escape(provider['phone_number'])}\n"
-            f"Badge : {provider['badge']} | Note : {provider['rating']}/5\n"
+            f"#{provider['account_id']} | <b>{html.escape(provider['full_name'])}</b>\n"
+            f"Tél : {html.escape(provider['phone_number'] or '')}\n"
+            f"Badge : {provider['badge']} | Note : {provider['average_rating']:.1f}/5\n"
             f"Statut : {provider['status']} | Vérifié : {'Oui' if provider['is_verified'] else 'Non'}\n"
             f"Suspendu : {'Oui' if provider['is_suspended'] else 'Non'}",
             parse_mode="HTML",
-            reply_markup=clavier_admin_provider(provider["telegram_id"]),
+            reply_markup=clavier_admin_provider(provider["account_id"]),
         )
     await callback.answer()
 
@@ -265,14 +250,18 @@ async def admin_clients(callback: CallbackQuery):
         await callback.answer(refusal, show_alert=True)
         return
 
-    users = get_all_users()
+    try:
+        users = await backend_client.admin_clients(callback.from_user.id)
+    except (BackendUnavailable, MoneyRefused) as error:
+        await callback.answer(money_failure_text(0, error, "fr", "service_unavailable"), show_alert=True)
+        return
     if not users:
         await callback.message.edit_text("Aucun client enregistré.", reply_markup=clavier_admin_menu())
         await callback.answer()
         return
 
     lines = [
-        f"#{user['id']} | {user['first_name'] or 'Client'} | {user['phone_number']}"
+        f"#{user['account_id']} | {user['first_name'] or 'Client'} | {user['phone_number'] or '-'}"
         for user in users
     ]
     await callback.message.edit_text(
@@ -491,7 +480,7 @@ async def admin_decider_retrait(callback: CallbackQuery):
     from telegram_bot.dashboard import payout_status_text
 
     requester = payout["requested_by_telegram_id"]
-    lang = await get_provider_language(requester) if get_provider_by_telegram_id(requester) else await get_user_language(requester)
+    lang = await get_language(requester)
     await callback.bot.send_message(requester, payout_status_text(payout, lang), parse_mode="HTML")
     await callback.answer("Retrait validé" if approve else "Retrait refusé")
 
@@ -584,7 +573,11 @@ async def admin_service_requests(callback: CallbackQuery):
         await callback.answer(refusal, show_alert=True)
         return
 
-    requests = get_pending_service_requests()
+    try:
+        requests = await backend_client.admin_service_requests(callback.from_user.id)
+    except (BackendUnavailable, MoneyRefused) as error:
+        await callback.answer(money_failure_text(0, error, "fr", "service_unavailable"), show_alert=True)
+        return
     if not requests:
         await callback.message.edit_text("✅ Aucune proposition de service en attente.", reply_markup=clavier_admin_menu())
         await callback.answer()
@@ -608,26 +601,24 @@ async def admin_service_requests(callback: CallbackQuery):
     await callback.answer()
 
 
-async def _decide_service_request(callback: CallbackQuery, request_id: int, status: str, admin_note: str):
-    """Applique la décision admin une seule fois (étape C).
+SERVICE_REQUEST_REFUSALS = {
+    "already_reviewed": "Cette proposition a déjà été traitée.",
+    "service_request_not_found": "Proposition introuvable.",
+}
 
-    Même règle que le backend V5 : une proposition déjà acceptée ou refusée
-    n'est plus retraitée. Avant, un second clic écrasait le statut et
-    renotifiait le prestataire. La décision locale fait foi (la Mini App lit
-    db.py) ; le backend est mis à jour quand la proposition y a été recopiée.
-    """
-    request = get_service_request_by_id(request_id)
-    if request is None:
-        await callback.answer("Proposition introuvable.", show_alert=True)
-        return None
-    if not decide_pending_service_request(request_id, status, admin_note):
-        await callback.answer("Cette proposition a déjà été traitée.", show_alert=True)
-        return None
-    if request["backend_request_id"] is not None:
-        await _safe_backend_call(
-            sync_service_request_status_to_backend(request["backend_request_id"], status, admin_note)
-        )
-    return request
+
+async def _decide_service_request(callback: CallbackQuery, request_id: int, status: str, admin_note: str):
+    """Décision de l'admin, appliquée une seule fois par le backend : un
+    second appui (ou un second admin) reçoit « déjà traitée » et le
+    prestataire n'est pas prévenu deux fois."""
+    try:
+        return await backend_client.admin_decide_service_request(callback.from_user.id, request_id, status, admin_note)
+    except MoneyRefused as error:
+        text = SERVICE_REQUEST_REFUSALS.get(error.code) or money_failure_text(0, error, "fr")
+        await callback.answer(text, show_alert=True)
+    except BackendUnavailable as error:
+        await callback.answer(money_failure_text(0, error, "fr", "service_unavailable"), show_alert=True)
+    return None
 
 
 @router.callback_query(F.data.startswith("admin_accept_service_"))
@@ -657,151 +648,76 @@ async def admin_accept_service(callback: CallbackQuery):
     await callback.answer("Service accepté")
 
 
-def _provider_from_callback(data: str, prefix: str):
-    """Prestataire visé par un bouton admin. Boutons actuels : `{prefix}tg_{telegram_id}`,
-    l'identifiant commun au bot et au backend. Les anciens boutons déjà envoyés
-    dans les chats admin portent encore l'id interne SQLite : toujours acceptés."""
-    raw = data.replace(prefix, "", 1)
+PROVIDER_DECISIONS = {
+    # action : (texte pour l'admin, message au prestataire, toast)
+    "verify": ("✅ Prestataire vérifié", "provider_verified_and_active", "Prestataire vérifié"),
+    "reject": ("❌ Prestataire refusé", "provider_registration_rejected", "Prestataire refusé"),
+    "suspend": ("⛔ Prestataire suspendu", "provider_suspended_notice", "Prestataire suspendu"),
+    "unsuspend": ("♻️ Prestataire réactivé", "provider_unsuspended_notice", "Prestataire réactivé"),
+}
+PROVIDER_REFUSALS = {
+    "provider_not_found": "Prestataire introuvable.",
+    "provider_not_pending": "Ce prestataire n'est plus en attente : décision impossible.",
+}
+
+
+async def _decide_provider(callback: CallbackQuery, action: str) -> None:
+    """Vérifier, refuser, suspendre ou réactiver : le backend applique ses
+    règles (un vérifié ne se refuse pas, une décision rejouée ne change rien)
+    et rend le profil, d'où le message au prestataire dans sa langue.
+
+    Boutons : `admin_<action>_provider_acc_<compte Nexis>`. Les boutons plus
+    anciens (identifiant Telegram ou numéro SQLite) ne désignent plus
+    personne de façon sûre : refusés, l'admin rouvre la liste."""
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
+        return
+    raw = callback.data.removeprefix(f"admin_{action}_provider_")
+    if not raw.startswith("acc_") or not raw[4:].isdigit():
+        await callback.answer("Bouton périmé : rouvre la liste des prestataires depuis /admin.", show_alert=True)
+        return
     try:
-        if raw.startswith("tg_"):
-            return get_provider_by_telegram_id(int(raw[3:]))
-        return get_provider_by_id(int(raw))
-    except ValueError:
-        return None
+        provider = await backend_client.admin_decide_provider(callback.from_user.id, int(raw[4:]), action)
+    except MoneyRefused as error:
+        await callback.answer(PROVIDER_REFUSALS.get(error.code) or money_failure_text(0, error, "fr"), show_alert=True)
+        return
+    except BackendUnavailable as error:
+        await callback.answer(money_failure_text(0, error, "fr", "service_unavailable"), show_alert=True)
+        return
+
+    admin_text, provider_message, toast = PROVIDER_DECISIONS[action]
+    await callback.message.edit_text(
+        f"{admin_text} : <b>{html.escape(provider['full_name'])}</b>",
+        parse_mode="HTML",
+        reply_markup=clavier_admin_menu(),
+    )
+    if provider["telegram_id"]:
+        provider_lang = provider["language"]
+        await callback.bot.send_message(provider["telegram_id"], get_message(provider_message, provider_lang), parse_mode="HTML")
+    await callback.answer(toast)
 
 
 @router.callback_query(F.data.startswith("admin_verify_provider_"))
 async def admin_verify_provider(callback: CallbackQuery):
-    if refusal := await _access_refusal(callback.from_user.id):
-        await callback.answer(refusal, show_alert=True)
-        return
-
-    provider = _provider_from_callback(callback.data, "admin_verify_provider_")
-    if provider is None:
-        await callback.answer("Prestataire introuvable.", show_alert=True)
-        return
-    provider = set_provider_verified(provider["id"], True)
-
-    # Lève le blocage matching posé à l'inscription (V5_MIGRATION_PLAN.md,
-    # vérification obligatoire) : find_matching_providers ne filtre que sur
-    # status='available', donc c'est ce qui rend le prestataire matchable à nouveau.
-    provider = update_provider_status(provider["telegram_id"], "available")
-
-    # Bug corrigé : ces deux appels utilisaient `provider_id` (id interne SQLite,
-    # auto-increment) au lieu de `provider["telegram_id"]` (clé primaire côté
-    # backend Postgres) — le sync backend échouait silencieusement à tous les coups
-    # depuis le début (404 avalé par _safe_backend_call), ou pire, aurait pu agir
-    # sur un autre prestataire en cas de collision numérique entre les deux espaces.
-    await _safe_backend_call(sync_provider_verified_to_backend(provider["telegram_id"]))
-    await _safe_backend_call(sync_provider_status_to_backend(provider["telegram_id"], "available"))
-
-    await callback.message.edit_text(
-        f"✅ Prestataire vérifié : <b>{html.escape(provider['full_name'])}</b>",
-        parse_mode="HTML",
-        reply_markup=clavier_admin_menu(),
-    )
-    provider_lang = await get_provider_language(provider["telegram_id"])
-    await callback.bot.send_message(
-        provider["telegram_id"],
-        get_message("provider_verified_and_active", provider_lang),
-        parse_mode="HTML",
-    )
-    await callback.answer("Prestataire vérifié")
+    """Validation : le prestataire devient vérifié et disponible."""
+    await _decide_provider(callback, "verify")
 
 
 @router.callback_query(F.data.startswith("admin_reject_provider_"))
 async def admin_reject_provider(callback: CallbackQuery):
-    """Refuse un prestataire en attente de validation (V5_MIGRATION_PLAN.md,
-    vérification obligatoire). Distinct de admin_suspend_provider : suspendre
-    implique "était actif, mis en pause", refuser implique "jamais approuvé,
-    documents insuffisants" — messages et statuts différents. `status="rejected"`
-    ne correspond à aucune valeur filtrée par find_matching_providers, donc le
-    prestataire reste invisible du matching comme s'il était toujours en attente.
-    """
-    if refusal := await _access_refusal(callback.from_user.id):
-        await callback.answer(refusal, show_alert=True)
-        return
-
-    provider = _provider_from_callback(callback.data, "admin_reject_provider_")
-    if provider is None:
-        await callback.answer("Prestataire introuvable.", show_alert=True)
-        return
-
-    provider = update_provider_status(provider["telegram_id"], "rejected")
-    await _safe_backend_call(sync_provider_status_to_backend(provider["telegram_id"], "rejected"))
-
-    await callback.message.edit_text(
-        f"❌ Prestataire refusé : <b>{html.escape(provider['full_name'])}</b>",
-        parse_mode="HTML",
-        reply_markup=clavier_admin_menu(),
-    )
-    provider_lang = await get_provider_language(provider["telegram_id"])
-    await callback.bot.send_message(
-        provider["telegram_id"],
-        get_message("provider_registration_rejected", provider_lang),
-        parse_mode="HTML",
-    )
-    await callback.answer("Prestataire refusé")
+    """Refus d'un prestataire en attente (documents insuffisants). Distinct
+    de la suspension, qui met en pause un prestataire déjà vérifié."""
+    await _decide_provider(callback, "reject")
 
 
 @router.callback_query(F.data.startswith("admin_suspend_provider_"))
 async def admin_suspend_provider(callback: CallbackQuery):
-    if refusal := await _access_refusal(callback.from_user.id):
-        await callback.answer(refusal, show_alert=True)
-        return
-
-    provider = _provider_from_callback(callback.data, "admin_suspend_provider_")
-    if provider is None:
-        await callback.answer("Prestataire introuvable.", show_alert=True)
-        return
-    provider = set_provider_suspended(provider["id"], True)
-
-    # Même bug que admin_verify_provider : provider_id (id interne SQLite) au lieu
-    # de provider["telegram_id"] (clé primaire backend) — le sync échouait
-    # silencieusement depuis le début.
-    await _safe_backend_call(sync_provider_suspended_to_backend(provider["telegram_id"]))
-
-    await callback.message.edit_text(
-        f"⛔ Prestataire suspendu : <b>{html.escape(provider['full_name'])}</b>",
-        parse_mode="HTML",
-        reply_markup=clavier_admin_menu(),
-    )
-    provider_lang = await get_provider_language(provider["telegram_id"])
-    await callback.bot.send_message(
-        provider["telegram_id"],
-        get_message("provider_suspended_notice", provider_lang),
-        parse_mode="HTML",
-    )
-    await callback.answer("Prestataire suspendu")
+    await _decide_provider(callback, "suspend")
 
 
 @router.callback_query(F.data.startswith("admin_unsuspend_provider_"))
 async def admin_unsuspend_provider(callback: CallbackQuery):
-    if refusal := await _access_refusal(callback.from_user.id):
-        await callback.answer(refusal, show_alert=True)
-        return
-
-    provider = _provider_from_callback(callback.data, "admin_unsuspend_provider_")
-    if provider is None:
-        await callback.answer("Prestataire introuvable.", show_alert=True)
-        return
-    provider = set_provider_suspended(provider["id"], False)
-
-    # Même bug que admin_verify_provider (id interne SQLite au lieu de telegram_id).
-    await _safe_backend_call(sync_provider_unsuspended_to_backend(provider["telegram_id"]))
-
-    await callback.message.edit_text(
-        f"♻️ Prestataire réactivé : <b>{html.escape(provider['full_name'])}</b>",
-        parse_mode="HTML",
-        reply_markup=clavier_admin_menu(),
-    )
-    provider_lang = await get_provider_language(provider["telegram_id"])
-    await callback.bot.send_message(
-        provider["telegram_id"],
-        get_message("provider_unsuspended_notice", provider_lang),
-        parse_mode="HTML",
-    )
-    await callback.answer("Prestataire réactivé")
+    await _decide_provider(callback, "unsuspend")
 
 
 @router.callback_query(F.data.startswith("admin_reject_service_"))

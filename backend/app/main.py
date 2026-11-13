@@ -1,12 +1,13 @@
 import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import Annotated
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 from starlette.background import BackgroundTask
 
 import nexis_config
@@ -256,17 +257,6 @@ def _actor_account(
     return account_id
 
 
-class BotUserPayload(BaseModel):
-    telegram_id: int
-    first_name: str | None = None
-    phone_number: str | None = None
-    language: str = "fr"
-    # Vrai seulement si le numéro vient du bouton « Partager mon numéro »
-    # (contact de l'expéditeur, vérifié par le bot) : il est alors enregistré
-    # comme numéro prouvé du compte.
-    phone_verified: bool = False
-
-
 class MissionMediaPayload(BaseModel):
     kind: str
     id: str = Field(min_length=1, max_length=255)
@@ -293,25 +283,9 @@ class MissionCreatePayload(BaseModel):
     description: str = Field(default="", max_length=4000)
     urgent: bool = False
     media: list[MissionMediaPayload] = Field(default_factory=list, max_length=crud.MAX_MISSION_MEDIA)
-    # Prestataires à prévenir (choisis par le canal Telegram, seul canal des
-    # prestataires) ; le backend écarte le client lui-même.
-    alert_provider_telegram_ids: list[int] = Field(default_factory=list, max_length=crud.MAX_ALERTED_PROVIDERS)
     # Lieu exact (obligatoire) : point partagé par le client et repère écrit.
     # Vérifié par crud.checked_destination (zone servie, repère non vide).
     destination: MissionDestinationPayload
-
-
-class BotProviderPayload(BaseModel):
-    telegram_id: int
-    full_name: str
-    phone_number: str | None = None
-    services: list[str] | None = None
-    communes: list[str] | None = None
-    language: str = "fr"
-    id_document_file_id: str | None = None
-    selfie_file_id: str | None = None
-    portfolio_file_ids: list[str] | None = None
-    phone_verified: bool = False
 
 
 class ProviderServicesPayload(BaseModel):
@@ -391,13 +365,11 @@ class ReviewCreatePayload(BaseModel):
     comment: str | None = None
 
 
-class ProviderRankPayload(BaseModel):
-    telegram_ids: list[int] = Field(max_length=100)
-
-
 class ServiceRequestPayload(BaseModel):
-    service_name: str
-    description: str = ""
+    """Service que le prestataire propose d'ajouter au catalogue."""
+
+    service_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=100)]
+    description: Annotated[str, StringConstraints(strip_whitespace=True, min_length=10, max_length=1000)]
 
 
 class ServiceRequestStatusPayload(BaseModel):
@@ -552,13 +524,10 @@ def health_ready():
     return {"status": "ok"}
 
 
-# --- Profils : routes du bot Telegram d'aujourd'hui ---------------------------
-# Le bot les appelle avec l'identifiant Telegram dans l'adresse et la clé de
-# service. Elles appliquent les règles de `profils` (statuts, catalogue) sur
-# les profils rangés par compte Nexis, et rendent la réponse que le bot lit.
-# Chantier « profils au backend » : remplacées par des routes au nom de
-# l'acteur (étape 2), supprimées à la bascule du bot et de la Mini App
-# (étape 3).
+# --- Profils -------------------------------------------------------------------
+# Les profils se lisent et s'écrivent au nom de l'acteur (routes /api/me/*,
+# plus bas) ou par un admin (/api/admin/*). Aucune route ne prend
+# l'identifiant d'une autre personne dans l'adresse pour lire son profil.
 
 
 def _profile_refused(db, refusal: profils.ProfileRefused) -> HTTPException:
@@ -568,30 +537,6 @@ def _profile_refused(db, refusal: profils.ProfileRefused) -> HTTPException:
 
 def _telegram_account(db, telegram_id: int, *, create: bool = False) -> int | None:
     return ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=create)
-
-
-def _existing_provider(db, telegram_id: int) -> ProviderProfile:
-    provider = profils.provider_profile(db, _telegram_account(db, telegram_id))
-    if provider is None:
-        raise HTTPException(status_code=404, detail="provider_not_found")
-    return provider
-
-
-@router.post("/api/bot/users")
-def create_bot_user(payload: BotUserPayload):
-    with SessionLocal() as db:
-        try:
-            account_id = _telegram_account(db, payload.telegram_id, create=True)
-            client, _ = profils.save_client_profile(
-                db, account_id, first_name=payload.first_name or "Client", phone_number=payload.phone_number
-            )
-            profils.set_language(db, account_id, payload.language)
-            if payload.phone_verified:
-                profils.record_proven_phone(db, account_id, payload.phone_number)
-            db.commit()
-        except profils.ProfileRefused as refusal:
-            raise _profile_refused(db, refusal) from refusal
-        return {"status": "ok", "user": _user_to_dict(db, account_id, client)}
 
 
 class WhatsAppClientPayload(BaseModel):
@@ -709,7 +654,6 @@ def create_bot_mission(payload: MissionCreatePayload, actor: Actor = Depends(cur
                 description=payload.description,
                 urgent=payload.urgent,
                 media=[(item.kind, item.id) for item in payload.media],
-                alert_provider_telegram_ids=payload.alert_provider_telegram_ids,
                 destination_latitude=payload.destination.latitude,
                 destination_longitude=payload.destination.longitude,
                 destination_landmark=payload.destination.landmark,
@@ -723,9 +667,12 @@ def create_bot_mission(payload: MissionCreatePayload, actor: Actor = Depends(cur
 def _mission_view(db, mission: BotMission, role: str) -> dict:
     """Mission telle qu'une personne autorisée la lit : état, argent, médias
     et, pour le client, les prestataires prévenus."""
+    provider = profils.provider_profile(db, mission.provider_account_id)
     view = {
         "mission": {
             **_mission_to_dict(mission),
+            # Nom du prestataire choisi, affiché au client (notation, suivi).
+            "provider_name": provider.full_name if provider is not None else None,
             "media": [
                 {"channel": item.channel, "kind": item.kind, "id": item.external_id}
                 for item in crud.mission_media(db, mission.mission_id)
@@ -739,178 +686,6 @@ def _mission_view(db, mission: BotMission, role: str) -> dict:
             ledger.telegram_id_of(db, account_id) for account_id in crud.alerted_provider_account_ids(db, mission.mission_id)
         ]
     return view
-
-
-@router.post("/api/bot/providers")
-@provider_action
-def create_bot_provider(payload: BotProviderPayload):
-    with SessionLocal() as db:
-        try:
-            account_id = _telegram_account(db, payload.telegram_id, create=True)
-            provider, _ = profils.register_provider(
-                db,
-                account_id,
-                full_name=payload.full_name,
-                phone_number=payload.phone_number,
-                services=payload.services or [],
-                communes=payload.communes or [],
-                id_document_file_id=payload.id_document_file_id,
-                selfie_file_id=payload.selfie_file_id,
-                portfolio_file_ids=payload.portfolio_file_ids,
-            )
-            profils.set_language(db, account_id, payload.language)
-            if payload.phone_verified:
-                profils.record_proven_phone(db, account_id, payload.phone_number)
-            db.commit()
-        except profils.ProfileRefused as refusal:
-            raise _profile_refused(db, refusal) from refusal
-        return {"status": "ok", "provider": _provider_to_dict(db, provider)}
-
-
-@router.patch("/api/bot/users/{telegram_id}/language")
-def update_user_language(telegram_id: int, payload: LanguagePayload):
-    with SessionLocal() as db:
-        account_id = _telegram_account(db, telegram_id)
-        client = profils.client_profile(db, account_id)
-        if client is None:
-            raise HTTPException(status_code=404, detail="user_not_found")
-        try:
-            profils.set_language(db, account_id, payload.language)
-            db.commit()
-        except profils.ProfileRefused as refusal:
-            raise _profile_refused(db, refusal) from refusal
-        return {"status": "ok", "user": _user_to_dict(db, account_id, client)}
-
-
-@router.patch("/api/bot/users/{telegram_id}/name")
-def update_user_name(telegram_id: int, payload: NamePayload):
-    with SessionLocal() as db:
-        account_id = _telegram_account(db, telegram_id)
-        if profils.client_profile(db, account_id) is None:
-            raise HTTPException(status_code=404, detail="user_not_found")
-        try:
-            client = profils.rename_client(db, account_id, payload.first_name)
-            db.commit()
-        except profils.ProfileRefused as refusal:
-            raise _profile_refused(db, refusal) from refusal
-        return {"status": "ok", "user": _user_to_dict(db, account_id, client)}
-
-
-@router.patch("/api/bot/providers/{telegram_id}/language")
-@provider_action
-def update_provider_language(telegram_id: int, payload: LanguagePayload):
-    with SessionLocal() as db:
-        provider = _existing_provider(db, telegram_id)
-        try:
-            profils.set_language(db, provider.account_id, payload.language)
-            db.commit()
-        except profils.ProfileRefused as refusal:
-            raise _profile_refused(db, refusal) from refusal
-        return {"status": "ok", "provider": _provider_to_dict(db, provider)}
-
-
-@router.patch("/api/bot/providers/{telegram_id}/services")
-@provider_action
-def update_provider_services(telegram_id: int, payload: ProviderServicesPayload):
-    with SessionLocal() as db:
-        provider = _existing_provider(db, telegram_id)
-        try:
-            provider = profils.set_provider_services(db, provider.account_id, payload.services)
-            db.commit()
-        except profils.ProfileRefused as refusal:
-            raise _profile_refused(db, refusal) from refusal
-        return {"status": "ok", "provider": _provider_to_dict(db, provider)}
-
-
-@router.patch("/api/bot/providers/{telegram_id}/status")
-@provider_action
-def update_provider_status(telegram_id: int, payload: ProviderStatusPayload):
-    """Le bot demande un statut ; la règle de `profils` décide :
-    `available` / `offline` = le prestataire vérifié lui-même ; `rejected` =
-    refus de l'admin ; `pending_verification` = seulement s'il y est déjà
-    (une réinscription ne remet jamais un prestataire vérifié en attente)."""
-    with SessionLocal() as db:
-        provider = _existing_provider(db, telegram_id)
-        try:
-            if payload.status in profils.SELF_STATUSES:
-                provider = profils.set_own_availability(db, provider.account_id, payload.status)
-            elif payload.status == "rejected":
-                provider = profils.reject_provider(db, provider.account_id)
-            elif payload.status != "pending_verification" or provider.status != "pending_verification":
-                raise profils.ProfileRefused("status_not_allowed")
-            db.commit()
-        except profils.ProfileRefused as refusal:
-            raise _profile_refused(db, refusal) from refusal
-        return {"status": "ok", "provider": _provider_to_dict(db, provider)}
-
-
-@router.post("/api/bot/providers/{telegram_id}/verify")
-def verify_provider(telegram_id: int):
-    with SessionLocal() as db:
-        provider = _existing_provider(db, telegram_id)
-        try:
-            provider = profils.verify_provider(db, provider.account_id)
-            db.commit()
-        except profils.ProfileRefused as refusal:
-            raise _profile_refused(db, refusal) from refusal
-        return {"status": "ok", "provider": _provider_to_dict(db, provider)}
-
-
-def _set_suspended(telegram_id: int, suspended: bool) -> dict:
-    with SessionLocal() as db:
-        provider = _existing_provider(db, telegram_id)
-        provider = profils.set_suspended(db, provider.account_id, suspended)
-        db.commit()
-        return {"status": "ok", "provider": _provider_to_dict(db, provider)}
-
-
-@router.post("/api/bot/providers/{telegram_id}/suspend")
-def suspend_provider(telegram_id: int):
-    return _set_suspended(telegram_id, True)
-
-
-@router.post("/api/bot/providers/{telegram_id}/unsuspend")
-def unsuspend_provider(telegram_id: int):
-    return _set_suspended(telegram_id, False)
-
-
-@router.post("/api/bot/providers/{telegram_id}/ignored")
-def increment_provider_ignored(telegram_id: int):
-    with SessionLocal() as db:
-        provider = _existing_provider(db, telegram_id)
-        provider = profils.record_declined_alert(db, provider.account_id)
-        db.commit()
-        return {"status": "ok", "provider": _provider_to_dict(db, provider)}
-
-
-@router.post("/api/bot/providers/{telegram_id}/ignored/reset")
-def reset_provider_ignored(telegram_id: int):
-    with SessionLocal() as db:
-        provider = _existing_provider(db, telegram_id)
-        provider = profils.reset_declined_alerts(db, provider.account_id)
-        db.commit()
-        return {"status": "ok", "provider": _provider_to_dict(db, provider)}
-
-
-@router.get("/api/bot/providers/matching")
-def matching_providers(service: str, commune: str):
-    with SessionLocal() as db:
-        providers = profils.eligible_providers(db, service, commune)[:3]
-        return {"status": "ok", "providers": [_provider_to_dict(db, provider) for provider in providers]}
-
-
-@router.post("/api/bot/providers/rank")
-def rank_providers(payload: ProviderRankPayload):
-    # Ne renvoie que l'ordre (pas de téléphone ni de pièce d'identité) : le bot
-    # a déjà la liste des prestataires disponibles, il lui manque le score.
-    with SessionLocal() as db:
-        telegram_of_account = {}
-        for telegram_id in payload.telegram_ids:
-            account_id = _telegram_account(db, telegram_id)
-            if account_id is not None and account_id not in telegram_of_account:
-                telegram_of_account[account_id] = telegram_id
-        ranked = profils.rank(db, list(telegram_of_account))
-        return {"status": "ok", "telegram_ids": [telegram_of_account[account_id] for account_id in ranked]}
 
 
 @router.post("/api/bot/quotes")
@@ -1666,7 +1441,24 @@ def admin_list_missions(status: str | None = None, limit: int = 10, actor: Actor
 def admin_stats(actor: Actor = Depends(current_actor)):
     _require_admin(actor)
     with SessionLocal() as db:
-        return {"status": "ok", "stats": crud.mission_stats(db)}
+        return {
+            "status": "ok",
+            "stats": {
+                **crud.mission_stats(db),
+                **profils.profile_counts(db),
+                "pending_services": crud.pending_service_request_count(db),
+            },
+        }
+
+
+@router.get("/api/admin/clients")
+def admin_list_clients(limit: int = 20, actor: Actor = Depends(current_actor)):
+    _require_admin(actor)
+    with SessionLocal() as db:
+        return {
+            "status": "ok",
+            "clients": [_user_to_dict(db, client.account_id, client) for client in profils.admin_clients(db, limit=limit)],
+        }
 
 
 @router.get("/api/me/wallet")
@@ -1690,99 +1482,14 @@ def get_my_wallet(actor: Actor = Depends(current_actor)):
 @router.post("/api/bot/service-requests")
 @provider_action
 def create_service_request(payload: ServiceRequestPayload, actor: Actor = Depends(current_actor)):
+    """Le prestataire acteur propose un service manquant au catalogue ; un
+    admin l'accepte ou le refuse (/api/admin/service-requests)."""
     with SessionLocal() as db:
-        try:
-            req = crud.create_service_request(
-                db,
-                provider_account_id=ledger.account_id_for(db, actor.channel, actor.external_id),
-                service_name=payload.service_name,
-                description=payload.description,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        provider = _my_provider(db, actor)
+        req = crud.create_service_request(
+            db, provider_account_id=provider.account_id, service_name=payload.service_name, description=payload.description
+        )
         return {"status": "ok", "service_request": _service_request_to_dict(db, req)}
-
-
-@router.get("/api/bot/service-requests/pending")
-def get_pending_service_requests(limit: int = 10):
-    with SessionLocal() as db:
-        results = crud.get_pending_service_requests(db, limit=limit)
-        serialized = [_service_request_to_dict(db, req, provider) for req, provider in results]
-        return {"status": "ok", "service_requests": serialized}
-
-
-@router.get("/api/bot/service-requests/{request_id}")
-def get_service_request(request_id: int):
-    with SessionLocal() as db:
-        result = crud.get_service_request_by_id(db, request_id)
-        if result is None:
-            raise HTTPException(status_code=404, detail="service_request_not_found")
-        req, provider = result
-        return {"status": "ok", "service_request": _service_request_to_dict(db, req, provider)}
-
-
-@router.patch("/api/bot/service-requests/{request_id}/status")
-def update_service_request_status(request_id: int, payload: ServiceRequestStatusPayload):
-    with SessionLocal() as db:
-        try:
-            req = crud.update_service_request_status(
-                db,
-                request_id=request_id,
-                status=payload.status,
-                admin_note=payload.admin_note,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if req is None:
-            raise HTTPException(status_code=404, detail="service_request_not_found")
-        return {"status": "ok", "service_request": _service_request_to_dict(db, req)}
-
-
-@router.get("/api/profile/{telegram_id}")
-def profile(telegram_id: int):
-    with SessionLocal() as db:
-        account_id = _telegram_account(db, telegram_id)
-        client = profils.client_profile(db, account_id)
-        provider = profils.provider_profile(db, account_id)
-        client_missions = []
-        provider_missions = []
-        if account_id is not None:
-            client_missions = [
-                _mission_to_dict(mission)
-                for mission in db.query(BotMission)
-                .filter((BotMission.client_account_id == account_id) | (BotMission.telegram_id == telegram_id))
-                .order_by(BotMission.mission_id)
-                .all()
-            ]
-            for mission in (
-                db.query(BotMission)
-                .filter((BotMission.provider_account_id == account_id) | (BotMission.provider_telegram_id == telegram_id))
-                .order_by(BotMission.mission_id)
-                .all()
-            ):
-                mission_data = _mission_to_dict(mission)
-                # Nom du client, affiché au prestataire.
-                mission_client = profils.client_profile(
-                    db, mission.client_account_id or _telegram_account(db, mission.telegram_id)
-                )
-                mission_data["client_name"] = mission_client.first_name if mission_client else None
-                provider_missions.append(mission_data)
-
-        service_requests = []
-        if provider:
-            service_requests = [
-                _service_request_to_dict(db, req) for req in crud.get_provider_service_requests(db, account_id)
-            ]
-
-        return {
-            "telegram_id": telegram_id,
-            "client": _user_to_dict(db, account_id, client) if client else None,
-            "provider": _provider_to_dict(db, provider) if provider else None,
-            "client_missions": client_missions,
-            "provider_missions": provider_missions,
-            "service_requests": service_requests,
-            "profile_type": "client" if client else "provider" if provider else "guest",
-        }
 
 
 # --- Profils au nom de l'acteur ----------------------------------------------
@@ -1834,6 +1541,30 @@ def _my_provider(db, actor: Actor) -> ProviderProfile:
     if provider is None:
         raise HTTPException(status_code=404, detail={"code": "provider_not_found"})
     return provider
+
+
+@router.get("/api/me/service-requests")
+@provider_action
+def list_my_service_requests(actor: Actor = Depends(current_actor)):
+    """Les dernières propositions de service du prestataire acteur."""
+    with SessionLocal() as db:
+        provider = _my_provider(db, actor)
+        return {
+            "status": "ok",
+            "service_requests": [
+                _service_request_to_dict(db, req) for req in crud.get_provider_service_requests(db, provider.account_id)
+            ],
+        }
+
+
+@router.get("/api/bot/telegram/{telegram_id}/language")
+def telegram_person_language(telegram_id: int):
+    """Langue dans laquelle le bot écrit à cette personne (alerte de mission,
+    notification à l'autre partie). Rien d'autre de son profil. Personne
+    inconnue : `null`, le bot prend alors la langue de son Telegram."""
+    with SessionLocal() as db:
+        account_id = _telegram_account(db, telegram_id)
+        return {"status": "ok", "language": profils.language_of(db, account_id) if account_id is not None else None}
 
 
 @router.get("/api/services")

@@ -1,6 +1,7 @@
 """Phase 3, second flow : mission/devis extrait vers telegram_bot/mission.py.
 
-Couvre la double écriture backend + `db.py` du devis, et verrouille le bug i18n
+Profils, missions et devis vivent dans le seul backend (fixture `live_backend`),
+qui choisit les prestataires prévenus. Verrouille aussi le bug i18n
 corrigé pendant l'extraction : l'alerte envoyée aux prestataires matchés était figée
 en français (`get_message("new_mission_alert", "fr", ...)`), donc un prestataire
 lingala ou anglophone la recevait dans la mauvaise langue.
@@ -17,9 +18,8 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
-import db
 from messages import get_message
-from telegram_bot import backend_client, mission
+from telegram_bot import mission
 
 
 class DummyResponse:
@@ -159,20 +159,6 @@ class DummyState:
         self._data = {}
 
 
-def _init_db(tmp_path):
-    db.DB_PATH = tmp_path / "test_nexis_hub.db"
-    db.init_db()
-
-
-def _use_dummy_backend(monkeypatch):
-    monkeypatch.setattr(backend_client.httpx, "AsyncClient", DummyAsyncClient)
-    monkeypatch.setattr(backend_client, "fetch_backend_profile", lambda telegram_id: _async_return(None))
-
-
-async def _async_return(value):
-    return value
-
-
 def _mission_request(**fields):
     return {
         "service": "service_plomberie",
@@ -189,15 +175,11 @@ def _mission_request(**fields):
     }
 
 
-def test_mission_alert_is_sent_in_each_provider_language(monkeypatch, tmp_path, live_backend):
+def test_mission_alert_is_sent_in_each_provider_language(live_backend):
     """Régression : l'alerte était envoyée en français à tous les prestataires."""
-    _init_db(tmp_path)
-    db.create_user(900, "+243800000900", "Cliente", language="fr")
-    db.create_provider(901, "+243800000901", "Prestataire FR", ["service_plomberie"], ["Gombe"], language="fr")
-    db.create_provider(902, "+243800000902", "Prestataire EN", ["service_plomberie"], ["Gombe"], language="en")
-
-    langs = {901: "fr", 902: "en"}
-    monkeypatch.setattr(mission, "get_provider_language", lambda tid: _async_return(langs[tid]))
+    live_backend.client(900, first_name="Cliente")
+    live_backend.provider(901, "Prestataire FR", language="fr")
+    live_backend.provider(902, "Prestataire EN", language="en")
 
     bot = DummyBot()
     callback = DummyCallback(telegram_id=900, data="mission_confirmer", bot=bot)
@@ -209,18 +191,16 @@ def test_mission_alert_is_sent_in_each_provider_language(monkeypatch, tmp_path, 
     assert "New request" in sent_by_provider[902], "le prestataire anglophone recevait l'alerte en français"
 
 
-def test_confirming_twice_creates_one_mission_and_alerts_the_same_providers(monkeypatch, tmp_path, live_backend):
+def test_confirming_twice_creates_one_mission_and_alerts_the_same_providers(live_backend):
     """Double clic ou réponse perdue : la même clé de création, une seule mission."""
-    _init_db(tmp_path)
-    db.create_user(900, "+243800000900", "Cliente", language="fr")
-    db.create_provider(901, "+243800000901", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-    monkeypatch.setattr(mission, "get_provider_language", lambda tid: _async_return("fr"))
+    live_backend.client(900, first_name="Cliente")
+    live_backend.provider(901)
 
     first, second = DummyBot(), DummyBot()
     asyncio.run(mission.mission_confirmer(DummyCallback(900, data="mission_confirmer", bot=first), DummyState(data=_mission_request())))
     # Entre-temps un autre prestataire est devenu disponible : la liste
     # enregistrée avec la mission fait foi.
-    db.create_provider(903, "+243800000903", "Nouveau", ["service_plomberie"], ["Gombe"], language="fr")
+    live_backend.provider(903, "Nouveau")
     asyncio.run(mission.mission_confirmer(DummyCallback(900, data="mission_confirmer", bot=second), DummyState(data=_mission_request())))
 
     from backend.app.models import BotMission
@@ -231,11 +211,27 @@ def test_confirming_twice_creates_one_mission_and_alerts_the_same_providers(monk
     assert [m.chat_id for m in second.messages] == [901]
 
 
-def test_mission_is_not_created_while_the_backend_is_down(monkeypatch, tmp_path):
-    _init_db(tmp_path)
-    db.create_user(900, "+243800000900", "Cliente", language="fr")
-    db.create_provider(901, "+243800000901", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+def test_the_backend_alerts_the_best_available_providers_only(live_backend):
+    """Le backend choisit : trois au plus, les mieux classés, jamais un
+    prestataire passé indisponible (dans le bot ou la Mini App), en attente de
+    vérification, ou le client lui-même."""
+    live_backend.client(900, first_name="Cliente")
+    live_backend.provider(900, "Le client aussi prestataire")
+    live_backend.provider(941, "Débutant")
+    live_backend.provider(942, "Bien noté", average_rating=4.5)
+    live_backend.provider(943, "Partenaire", badge="partner")
+    live_backend.provider(944, "Expert", badge="expert")
+    live_backend.provider(945, "Indisponible", badge="partner", status="offline")
+    live_backend.provider(946, "En attente", verified=False)
 
+    bot = DummyBot()
+    asyncio.run(mission.mission_confirmer(DummyCallback(900, data="mission_confirmer", bot=bot), DummyState(data=_mission_request())))
+
+    assert live_backend.alerted(1) == [942, 943, 944], "note 4.5 (45 points), puis partenaire (30), puis expert (20)"
+    assert sorted(m.chat_id for m in bot.messages) == [942, 943, 944]
+
+
+def test_mission_is_not_created_while_the_backend_is_down():
     bot = DummyBot()
     callback = DummyCallback(telegram_id=900, data="mission_confirmer", bot=bot)
     state = DummyState(data=_mission_request())
@@ -246,14 +242,9 @@ def test_mission_is_not_created_while_the_backend_is_down(monkeypatch, tmp_path)
     assert state._data["creation_key"] == "demande-test-1", "la demande reste à l'écran pour un nouvel essai"
 
 
-def test_quote_is_recorded_by_the_backend_and_sent_to_the_client(monkeypatch, tmp_path, live_backend):
-    _init_db(tmp_path)
-    db.create_user(910, "+243800000910", "Cliente", language="fr")
-    db.create_provider(911, "+243800000911", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+def test_quote_is_recorded_by_the_backend_and_sent_to_the_client(live_backend):
+    live_backend.client(910, first_name="Cliente")
     mission_id = live_backend.new_mission(910, alert=(911,), service="service_plomberie")
-
-    monkeypatch.setattr(mission, "get_provider_language", lambda tid: _async_return("fr"))
-    monkeypatch.setattr(mission, "get_user_language", lambda tid: _async_return("fr"))
 
     bot = DummyBot()
     message = DummyMessage(telegram_id=911, text="Disponible demain", bot=bot)
@@ -278,11 +269,9 @@ def test_quote_is_recorded_by_the_backend_and_sent_to_the_client(monkeypatch, tm
     assert state.cleared is True
 
 
-def test_a_provider_who_was_not_alerted_cannot_quote(monkeypatch, tmp_path, live_backend):
-    _init_db(tmp_path)
-    db.create_provider(912, "+243800000912", "Pas prévenu", ["service_plomberie"], ["Gombe"], language="fr")
+def test_a_provider_who_was_not_alerted_cannot_quote(live_backend):
+    live_backend.provider(912, "Pas prévenu", communes=["Limete"])
     mission_id = live_backend.new_mission(910, alert=(911,))
-    monkeypatch.setattr(mission, "get_provider_language", lambda tid: _async_return("fr"))
 
     bot = DummyBot()
     message = DummyMessage(telegram_id=912, text="-", bot=bot)
@@ -294,27 +283,10 @@ def test_a_provider_who_was_not_alerted_cannot_quote(monkeypatch, tmp_path, live
     assert live_backend.mission(mission_id).status == "pending"
 
 
-def test_devis_message_recu_uses_backend_stats_when_available(monkeypatch, tmp_path, live_backend):
-    """rating côté backend reste toujours 0 (jamais alimenté) : le mapping
-    doit lire average_rating, pas rating, pour afficher la vraie note."""
-    _init_db(tmp_path)
-    db.create_user(930, "+243800000930", "Cliente", language="fr")
-    db.create_provider(931, "+243800000931", "Nom Local", ["service_plomberie"], ["Gombe"], language="fr")
+def test_the_quote_shows_the_provider_stats_held_by_the_backend(live_backend):
+    live_backend.client(930, first_name="Cliente")
+    live_backend.provider(931, "Nom Backend", average_rating=4.8, total_missions=12, success_rate=91, badge="partner")
     mission_id = live_backend.new_mission(930, alert=(931,))
-
-    monkeypatch.setattr(mission, "get_provider_language", lambda tid: _async_return("fr"))
-    monkeypatch.setattr(mission, "get_user_language", lambda tid: _async_return("fr"))
-    monkeypatch.setattr(mission, "fetch_backend_profile", lambda tid: _async_return({
-        "provider": {
-            "full_name": "Nom Backend",
-            "rating": 0,
-            "average_rating": 4.8,
-            "total_missions": 12,
-            "success_rate": 91,
-            "badge": "partner",
-            "is_verified": True,
-        }
-    }))
 
     bot = DummyBot()
     message = DummyMessage(telegram_id=931, text="Disponible demain", bot=bot)
@@ -332,76 +304,22 @@ def test_devis_message_recu_uses_backend_stats_when_available(monkeypatch, tmp_p
     assert "91% de réussite" in sent
 
 
-def test_provider_skip_increments_ignored_counter(monkeypatch, tmp_path):
-    _init_db(tmp_path)
-    _use_dummy_backend(monkeypatch)
-    db.create_provider(920, "+243800000920", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-    monkeypatch.setattr(mission, "get_provider_language", lambda tid: _async_return("fr"))
+def test_provider_skip_is_counted_by_the_backend_once(live_backend):
+    mission_id = live_backend.new_mission(42, alert=(920,))
 
+    for _ in range(2):
+        callback = DummyCallback(telegram_id=920, data=f"provider_skip_{mission_id}", bot=DummyBot())
+        asyncio.run(mission.passer_mission_prestataire(callback))
+
+    assert live_backend.profile(920)["provider"]["consecutive_ignored"] == 1
+
+
+def test_provider_skip_says_so_when_the_backend_is_down():
     callback = DummyCallback(telegram_id=920, data="provider_skip_1", bot=DummyBot())
     asyncio.run(mission.passer_mission_prestataire(callback))
 
-    assert db.get_provider_by_telegram_id(920)["consecutive_ignored"] == 1
-
-
-# --- matching "mélange" (étape D) : classement backend, disponibilité db.py ---
-
-
-def _matching_db(tmp_path, provider_ids):
-    db.DB_PATH = tmp_path / "test_matching.db"
-    db.init_db()
-    for telegram_id in provider_ids:
-        db.create_provider(telegram_id, f"+2438000{telegram_id}", f"P{telegram_id}", ["service_plomberie"], ["Gombe"], language="fr")
-        db.update_provider_status(telegram_id, "available")
-
-
-def _backend_ranking(monkeypatch, ranking):
-    async def fake(telegram_ids):
-        return None if ranking is None else [tid for tid in ranking if tid in telegram_ids]
-    monkeypatch.setattr(mission, "fetch_backend_provider_ranking", fake)
-
-
-def _ids(providers):
-    return [provider["telegram_id"] for provider in providers]
-
-
-def test_matching_follows_backend_ranking(tmp_path, monkeypatch):
-    _matching_db(tmp_path, [501, 502, 503, 504])
-    _backend_ranking(monkeypatch, [504, 503, 502, 501])
-
-    chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe", 1))
-
-    assert _ids(chosen) == [504, 503, 502], "le classement backend remplace l'ordre d'inscription"
-
-
-def test_matching_skips_provider_unavailable_locally(tmp_path, monkeypatch):
-    """Passé indisponible via la Mini App (db.py seulement) : jamais alerté,
-    même si le backend le classe premier."""
-    _matching_db(tmp_path, [511, 512, 513, 514])
-    db.update_provider_status(514, "unavailable")
-    _backend_ranking(monkeypatch, [514, 513, 512, 511])
-
-    chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe", 1))
-
-    assert _ids(chosen) == [513, 512, 511]
-
-
-def test_matching_keeps_local_provider_unknown_to_backend(tmp_path, monkeypatch):
-    _matching_db(tmp_path, [521, 522, 523])
-    _backend_ranking(monkeypatch, [523])  # 521/522 jamais synchronisés au backend
-
-    chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe", 1))
-
-    assert _ids(chosen) == [523, 521, 522]
-
-
-def test_matching_falls_back_to_local_order_when_backend_down(tmp_path, monkeypatch):
-    _matching_db(tmp_path, [531, 532, 533, 534])
-    _backend_ranking(monkeypatch, None)
-
-    chosen = asyncio.run(mission.choose_providers_to_alert("service_plomberie", "Gombe", 1))
-
-    assert _ids(chosen) == _ids(db.find_matching_providers("service_plomberie", "Gombe"))
+    assert callback.answered is not None
+    assert callback.message.edited_text is None
 
 
 class _VideoNote:
@@ -409,13 +327,11 @@ class _VideoNote:
         self.file_id = file_id
 
 
-def test_a_video_note_is_kept_with_the_mission_and_sent_to_the_providers(monkeypatch, tmp_path, live_backend):
+def test_a_video_note_is_kept_with_the_mission_and_sent_to_the_providers(live_backend):
     """Note vidéo ronde de Telegram : acceptée comme la note vocale, rangée
     dans le backend avec la mission, et transmise aux prestataires prévenus."""
-    _init_db(tmp_path)
-    db.create_user(900, "+243800000900", "Cliente", language="fr")
-    db.create_provider(901, "+243800000901", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-    monkeypatch.setattr(mission, "get_provider_language", lambda tid: _async_return("fr"))
+    live_backend.client(900, first_name="Cliente")
+    live_backend.provider(901)
 
     state = DummyState(data={**_mission_request(), "description_parts": [], "photo_file_ids": [], "voice_file_ids": []})
     message = DummyMessage(telegram_id=900)
@@ -435,8 +351,7 @@ def test_a_video_note_is_kept_with_the_mission_and_sent_to_the_providers(monkeyp
     assert get_message("mission_video_note_caption", "fr", mission_id=1) in [sent.text for sent in bot.messages]
 
 
-def test_an_unsupported_message_is_still_refused(monkeypatch, tmp_path):
-    _init_db(tmp_path)
+def test_an_unsupported_message_is_still_refused():
     state = DummyState(data={**_mission_request(), "description_parts": [], "photo_file_ids": [], "voice_file_ids": []})
     message = DummyMessage(telegram_id=900)  # ni texte, ni photo, ni note vocale ou vidéo (un autocollant, par exemple)
 

@@ -12,7 +12,6 @@ missions : backend injoignable, l'écran le dit (aucune copie locale).
 """
 
 import html
-import json
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -26,27 +25,17 @@ from aiogram.types import (
     Message,
 )
 
-from db import (
-    create_service_request,
-    get_provider_by_telegram_id,
-    get_provider_service_requests,
-    get_user_by_telegram_id,
-    set_service_request_backend_id,
-)
 from messages import MESSAGES, get_message
-from telegram_bot import backend_client
+from telegram_bot import backend_client, catalogue
 from telegram_bot.backend_client import (
     BackendUnavailable,
     MoneyRefused,
-    _safe_backend_call,
     detect_operator,
-    fetch_backend_profile,
     fetch_wallets,
-    get_provider_language,
-    get_user_language,
+    get_language,
     normalize_phone,
+    money_failure_text,
     request_payout,
-    sync_service_request_to_backend,
     wallet_balance,
 )
 from telegram_bot.keyboards import (
@@ -145,29 +134,32 @@ def format_mission_provider(mission) -> str:
     )
 
 
+async def _my_profile(callback: CallbackQuery) -> dict | None:
+    """Profil de la personne, ou None après lui avoir dit que le service ne
+    répond pas."""
+    me = await backend_client.my_profile(callback.from_user.id)
+    if me is None:
+        lang = backend_client.telegram_language(callback.from_user)
+        await callback.answer(get_message("service_unavailable", lang), show_alert=True)
+    return me
+
+
 @router.callback_query(F.data == "prest_services")
 async def afficher_services_prestataire(callback: CallbackQuery):
-    provider = get_provider_by_telegram_id(callback.from_user.id)
-    lang = await get_provider_language(callback.from_user.id)
-    if provider is None:
+    me = await _my_profile(callback)
+    if me is None:
+        return
+    lang = me["language"]
+    if me["provider"] is None:
         await callback.answer(get_message("provider_profile_required", lang), show_alert=True)
         return
+    try:
+        requests = await backend_client.my_service_requests(callback.from_user.id)
+    except (BackendUnavailable, MoneyRefused) as error:
+        await callback.answer(money_failure_text(0, error, lang, "service_unavailable"), show_alert=True)
+        return
 
-    # Lecture backend-first : `services` y est déjà une liste Python (colonne
-    # JSON SQLAlchemy), pas une chaîne à parser comme côté db.py. Repli local
-    # identique à avant si le backend ne répond pas.
-    backend_profile = await fetch_backend_profile(callback.from_user.id)
-    provider_data = (backend_profile or {}).get("provider") if backend_profile else None
-    if provider_data is not None:
-        selected_services = provider_data.get("services") or []
-    else:
-        try:
-            selected_services = json.loads(provider["services"] or "[]")
-        except json.JSONDecodeError:
-            selected_services = []
-
-    service_labels = [SERVICES.get(service, service) for service in selected_services]
-    requests = get_provider_service_requests(callback.from_user.id)
+    service_labels = [catalogue.service_label(service, lang) for service in me["provider"]["services"]]
     request_lines = [
         f"SRV-{request['id']:04d} | {html.escape(request['service_name'])} | {request['status']}"
         for request in requests
@@ -193,9 +185,11 @@ async def afficher_services_prestataire(callback: CallbackQuery):
 
 @router.callback_query(F.data == "prest_missing_service")
 async def proposer_service_manquant(callback: CallbackQuery, state: FSMContext):
-    provider = get_provider_by_telegram_id(callback.from_user.id)
-    lang = await get_provider_language(callback.from_user.id)
-    if provider is None:
+    me = await _my_profile(callback)
+    if me is None:
+        return
+    lang = me["language"]
+    if me["provider"] is None:
         await callback.answer(get_message("provider_profile_required", lang), show_alert=True)
         return
 
@@ -211,7 +205,7 @@ async def proposer_service_manquant(callback: CallbackQuery, state: FSMContext):
 @router.message(ProviderServiceRequest.service_name)
 async def recevoir_nom_service_manquant(message: Message, state: FSMContext):
     service_name = (message.text or "").strip()
-    lang = await get_provider_language(message.from_user.id)
+    lang = await get_language(message.from_user)
     if len(service_name) < 3:
         await message.answer(get_message("provider_missing_service_name_invalid", lang))
         return
@@ -226,36 +220,30 @@ async def recevoir_nom_service_manquant(message: Message, state: FSMContext):
 @router.message(ProviderServiceRequest.description)
 async def recevoir_description_service_manquant(message: Message, state: FSMContext):
     description = (message.text or "").strip()
-    lang = await get_provider_language(message.from_user.id)
+    lang = await get_language(message.from_user)
     if len(description) < 10:
         await message.answer(get_message("provider_missing_service_description_invalid", lang))
         return
 
     data = await state.get_data()
-    request_id = create_service_request(
-        telegram_id=message.from_user.id,
-        service_name=data["missing_service_name"],
-        description=description,
-    )
-    # Vidé avant l'appel backend (jusqu'à 5 s) : un second message pendant
-    # l'attente ne doit pas créer une seconde proposition.
+    try:
+        request = await backend_client.propose_service(message.from_user.id, data["missing_service_name"], description)
+    except BackendUnavailable as error:
+        # Rien n'est enregistré : l'étape reste ouverte, la personne renvoie
+        # sa description.
+        await message.answer(money_failure_text(0, error, lang, "service_unavailable"))
+        return
+    except MoneyRefused as error:
+        await state.clear()
+        await message.answer(money_failure_text(0, error, lang), reply_markup=clavier_prestataire(lang))
+        return
     await state.clear()
-    # Double écriture (étape C) : la Mini App crée et lit ses propositions
-    # uniquement dans db.py, donc l'écriture locale reste la référence (et le
-    # numéro SRV- affiché). On garde l'id backend pour que la décision admin
-    # puisse être recopiée au backend.
-    backend_result = await _safe_backend_call(
-        sync_service_request_to_backend(message.from_user.id, data["missing_service_name"], description)
-    )
-    backend_request = (backend_result or {}).get("service_request") if isinstance(backend_result, dict) else None
-    if isinstance(backend_request, dict) and backend_request.get("id") is not None:
-        set_service_request_backend_id(request_id, backend_request["id"])
     await message.answer(
         get_message(
             "provider_missing_service_created",
             lang,
-            reference=f"SRV-{request_id:04d}",
-            service=html.escape(data["missing_service_name"]),
+            reference=f"SRV-{request['id']:04d}",
+            service=html.escape(request["service_name"]),
         ),
         parse_mode="HTML",
         reply_markup=clavier_prestataire(lang),
@@ -276,7 +264,7 @@ async def wallet_text(telegram_id: int, title_key: str, lang: str) -> str:
 
 @router.callback_query(F.data == "client_missions")
 async def afficher_missions_client(callback: CallbackQuery):
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     missions = await fetch_my_missions(callback.from_user.id, "client")
     if missions is None:
         await callback.answer(get_message("service_unavailable", lang), show_alert=True)
@@ -304,12 +292,7 @@ async def afficher_missions_client(callback: CallbackQuery):
 
 @router.callback_query(F.data == "client_wallet")
 async def afficher_wallet_client(callback: CallbackQuery):
-    user = get_user_by_telegram_id(callback.from_user.id)
-    if user is None:
-        await callback.answer("Client introuvable.", show_alert=True)
-        return
-
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     await callback.message.edit_text(
         await wallet_text(callback.from_user.id, "wallet_title", lang),
         parse_mode="HTML",
@@ -320,7 +303,7 @@ async def afficher_wallet_client(callback: CallbackQuery):
 
 @router.callback_query(F.data == "prest_missions")
 async def afficher_missions_prestataire(callback: CallbackQuery):
-    lang = await get_provider_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     missions = await fetch_my_missions(callback.from_user.id, "provider")
     if missions is None:
         await callback.answer(get_message("service_unavailable", lang), show_alert=True)
@@ -347,12 +330,7 @@ async def afficher_missions_prestataire(callback: CallbackQuery):
 
 @router.callback_query(F.data == "prest_wallet")
 async def afficher_wallet_prestataire(callback: CallbackQuery):
-    provider = get_provider_by_telegram_id(callback.from_user.id)
-    lang = await get_provider_language(callback.from_user.id)
-    if provider is None:
-        await callback.answer(get_message("provider_not_found", lang), show_alert=True)
-        return
-
+    lang = await get_language(callback.from_user)
     await callback.message.edit_text(
         await wallet_text(callback.from_user.id, "provider_wallet_title", lang),
         parse_mode="HTML",
@@ -363,7 +341,7 @@ async def afficher_wallet_prestataire(callback: CallbackQuery):
 
 @router.callback_query(F.data == "client_historique")
 async def afficher_historique_client(callback: CallbackQuery):
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     missions = await fetch_my_missions(callback.from_user.id, "client")
     if missions is None:
         await callback.answer(get_message("service_unavailable", lang), show_alert=True)
@@ -448,7 +426,7 @@ def build_history_rich_message(lang: str, missions: list) -> InputRichMessage:
 
 @router.callback_query(F.data == "client_aide")
 async def afficher_aide_client(callback: CallbackQuery):
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     try:
         await callback.message.edit_text(
             rich_message=build_help_rich_message(lang),
@@ -470,14 +448,19 @@ async def afficher_aide_client(callback: CallbackQuery):
 
 
 async def _withdraw_language(telegram_id: int) -> str:
-    if get_provider_by_telegram_id(telegram_id) is not None:
-        return await get_provider_language(telegram_id)
-    return await get_user_language(telegram_id)
+    return await get_language(telegram_id)
 
 
-def _profile_phone(telegram_id: int):
-    profile = get_provider_by_telegram_id(telegram_id) or get_user_by_telegram_id(telegram_id)
-    return normalize_phone(profile["phone_number"] if profile else None)
+async def _profile_phone(telegram_id: int) -> str | None:
+    """Numéro du profil (prestataire s'il en a un, sinon client), lu dans le
+    backend ; None s'il n'y en a pas. `BackendUnavailable` si le backend ne
+    répond pas."""
+    try:
+        me = await backend_client.fetch_me(telegram_id)
+    except MoneyRefused as error:
+        raise BackendUnavailable(error.code) from error
+    profile = me.get("provider") or me.get("client")
+    return normalize_phone(profile.get("phone_number") if profile else None)
 
 
 def payout_status_text(payout: dict, lang: str) -> str:
@@ -526,7 +509,12 @@ async def retrait_montant_recu(message: Message, state: FSMContext):
     if amount <= 0:
         await message.answer(get_message("withdraw_invalid_amount", lang), parse_mode="HTML")
         return
-    phone = _profile_phone(message.from_user.id)
+    try:
+        phone = await _profile_phone(message.from_user.id)
+    except BackendUnavailable:
+        # Montant gardé : la personne le renvoie quand le service répond.
+        await message.answer(get_message("service_unavailable", lang))
+        return
     if phone is None:
         await state.clear()
         await message.answer(get_message("money_error_invalid_phone", lang), parse_mode="HTML")
