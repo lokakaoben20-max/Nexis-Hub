@@ -13,7 +13,7 @@ une dépense : elle attend l'accord de Ben.
   Appliqué une fois, à la main, avec l'état local (il ne contient aucun secret).
 - `modules/` : un module par sujet, sans valeur propre à un environnement.
   - `reseau` : VPC, sous-réseau, IP de sortie fixe (Cloud NAT).
-  - `base` : Cloud SQL Postgres 16, HA en prod, PITR, IP privée seule.
+  - `base` : Cloud SQL Postgres 17, HA en prod, PITR, IP privée seule.
   - `redis` : Memorystore Redis 7, AUTH et TLS.
   - `secrets` : déclarations Secret Manager (les valeurs ne passent jamais par Terraform).
   - `identites` : un compte de service par rôle, droits minimaux, identité GitHub.

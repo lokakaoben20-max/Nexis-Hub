@@ -177,7 +177,7 @@ Toujours lancer depuis la racine du dépôt (`messages` y est importé).
    `NEXIS_TEST_POSTGRES_URL=postgresql+psycopg://<utilisateur>@localhost:5432/<base>_test`
    (base jetable dont le nom finit par `_test` ; une base neuve est créée puis supprimée par test).
 4. La CI (`.github/workflows/ci.yml`) refait tout à chaque push : ruff, pip-audit, gitleaks,
-   tests sur Postgres 16 et sur SQLite (aucun test sauté), `alembic upgrade head` + `alembic check`
+   tests sur Postgres 17 et sur SQLite (aucun test sauté), `alembic upgrade head` + `alembic check`
    sur une base vide. Une PR ne se fusionne que si tout est vert.
 5. Vérifier la branche courante et le statut git (`git status`, `git branch`, `git remote -v`).
 6. Ne pas committer `.venv/`, `__pycache__/`, `*.db`, `.env` (voir `.gitignore`).

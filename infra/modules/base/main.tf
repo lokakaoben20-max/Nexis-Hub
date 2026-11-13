@@ -15,10 +15,10 @@
 
 resource "google_sql_database_instance" "postgres" {
   #checkov:skip=CKV_GCP_6:ssl_mode = ENCRYPTED_ONLY impose le chiffrement de toute connexion (remplace l'ancien réglage require_ssl).
-  #checkov:skip=CKV_GCP_79:PostgreSQL 16 est pris en charge. La montée en version 17 est une décision séparée (compatibilité de l'application, test préalable).
+  #checkov:skip=CKV_GCP_79:PostgreSQL 17 est la version testée par la CI et utilisée par l'application. La 18 reste à évaluer avant toute montée en version.
   name                = "${var.prefixe}-postgres"
   region              = var.region
-  database_version    = "POSTGRES_16"
+  database_version    = "POSTGRES_17"
   deletion_protection = var.protection_suppression
 
   settings {
