@@ -36,8 +36,8 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from backend.app import ledger, notify
-from backend.app.models import BotMission, BotProvider, MissionPresence, NexisAccount
+from backend.app import ledger, notify, profils
+from backend.app.models import BotMission, MissionPresence, NexisAccount
 from messages import get_message
 
 logger = logging.getLogger(__name__)
@@ -280,8 +280,7 @@ def notify_client_question(db: Session, mission_id: int) -> None:
     client_id, lang = _telegram_party(db, mission.client_account_id)
     if client_id is None:
         return
-    provider_id = ledger.telegram_id_of(db, mission.provider_account_id)
-    provider = db.get(BotProvider, provider_id) if provider_id is not None else None
+    provider = profils.provider_profile(db, mission.provider_account_id)
     name = (provider.full_name or "").split()[0] if provider is not None and provider.full_name else "—"
     text = get_message(
         "presence_question_client", lang, mission_id=mission_id, provider_name=escape(name), code=presence_code(mission_id)

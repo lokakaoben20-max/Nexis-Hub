@@ -13,11 +13,10 @@ from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 
 from backend.app import crud, ledger
+from backend.tests import profils_de_test
 
 BotMission = ledger.BotMission
-BotUser = crud.BotUser
 BotQuote = crud.BotQuote
-BotProvider = crud.BotProvider
 LedgerEntry = ledger.LedgerEntry
 MoneyOperation = ledger.MoneyOperation
 
@@ -35,9 +34,8 @@ def db(backend_db_url):
     engine = create_engine(backend_db_url, future=True)
     LedgerEntry.metadata.create_all(bind=engine)
     session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
-    session.add(BotUser(telegram_id=CLIENT_ID, first_name="Client"))
-    session.add(BotProvider(telegram_id=PROVIDER_ID, full_name="Prestataire"))
-    session.commit()
+    profils_de_test.client(session, CLIENT_ID)
+    profils_de_test.provider(session, PROVIDER_ID)
     yield session
     session.close()
     engine.dispose()
@@ -329,7 +327,7 @@ def test_client_confirmation_pays_the_provider_net_and_the_platform_commission(d
     assert bal(db, ledger.WALLET, PROVIDER_ID) == money(85)
     assert bal(db, ledger.PLATFORM, None) == money(15)
     assert bal(db, ledger.ESCROW, 1) == money(0)
-    assert db.get(BotProvider, PROVIDER_ID).total_missions == 1
+    assert profils_de_test.provider_of(db, PROVIDER_ID).total_missions == 1
     assert_books_balanced(db)
 
 
@@ -738,8 +736,7 @@ def test_one_person_has_a_single_wallet_whether_client_or_provider(db):
     même, il peut payer avec ce qu'il a gagné."""
     finished(db)
     ledger.confirm_completion(db, 1, acc(db, CLIENT_ID))
-    db.add(BotUser(telegram_id=PROVIDER_ID, first_name="Prestataire"))
-    db.commit()
+    profils_de_test.client(db, PROVIDER_ID, "Prestataire")
 
     quote_id = accepted_quote(db, mission_id=2, amount=40.0, quote_ref=9, client=PROVIDER_ID, provider_account=acc(db, CLIENT_ID))
     ledger.fund_mission(db, 2, method="wallet", client_account_id=acc(db, PROVIDER_ID), quote_id=quote_id)

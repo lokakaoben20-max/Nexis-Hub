@@ -119,12 +119,12 @@ def test_the_arrival_alone_starts_nothing_and_asks_the_client(backend_db_url, mo
 
 def test_the_question_shows_the_provider_photo_when_there_is_one(backend_db_url, monkeypatch, sent):
     test_client, database_module = _backend(monkeypatch, backend_db_url)
-    from backend.app.models import BotProvider
+    from backend.tests.profils_de_test import provider_of
 
     with test_client:
         mission_id = _paid_mission(test_client, database_module)
         with database_module.SessionLocal() as db:
-            db.get(BotProvider, PROVIDER).selfie_file_id = "selfie-file-id"
+            provider_of(db, PROVIDER).selfie_file_id = "selfie-file-id"
             db.commit()
         sent.clear()
         _post(test_client, mission_id, "arrived", PROVIDER)
@@ -135,13 +135,13 @@ def test_the_question_shows_the_provider_photo_when_there_is_one(backend_db_url,
 def test_the_question_still_leaves_when_telegram_refuses_the_photo(backend_db_url, monkeypatch, sent):
     test_client, database_module = _backend(monkeypatch, backend_db_url)
     from backend.app import notify
-    from backend.app.models import BotProvider
+    from backend.tests.profils_de_test import provider_of
 
     monkeypatch.setattr(notify, "send_telegram_photo", lambda *args, **kwargs: False)
     with test_client:
         mission_id = _paid_mission(test_client, database_module)
         with database_module.SessionLocal() as db:
-            db.get(BotProvider, PROVIDER).selfie_file_id = "expired"
+            provider_of(db, PROVIDER).selfie_file_id = "expired"
             db.commit()
         sent.clear()
         _post(test_client, mission_id, "arrived", PROVIDER)

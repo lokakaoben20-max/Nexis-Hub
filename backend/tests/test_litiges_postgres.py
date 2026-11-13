@@ -17,11 +17,10 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from backend.app import ledger
+from backend.tests import profils_de_test
 from backend.tests.test_ledger import (
     CLIENT_ID,
     PROVIDER_ID,
-    BotProvider,
-    BotUser,
     LedgerEntry,
     MoneyOperation,
     acc,
@@ -59,9 +58,8 @@ def db(pg_url):
     engine = create_engine(pg_url, future=True)
     LedgerEntry.metadata.create_all(bind=engine)
     session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
-    session.add(BotUser(telegram_id=CLIENT_ID, first_name="Client"))
-    session.add(BotProvider(telegram_id=PROVIDER_ID, full_name="Prestataire"))
-    session.commit()
+    profils_de_test.client(session, CLIENT_ID)
+    profils_de_test.provider(session, PROVIDER_ID)
     yield session
     session.close()
     engine.dispose()

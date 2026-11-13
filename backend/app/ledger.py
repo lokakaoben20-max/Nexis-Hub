@@ -972,8 +972,11 @@ def _recompute_stats(db: Session, mission: BotMission) -> None:
     # Import local : crud importe déjà les modèles, pas ce module.
     from backend.app.crud import _recompute_provider_stats
 
-    if mission.provider_telegram_id is not None:
-        _recompute_provider_stats(db, mission.provider_telegram_id, mission.provider_account_id)
+    provider_account_id = mission.provider_account_id
+    if provider_account_id is None and mission.provider_telegram_id is not None:
+        provider_account_id = account_id_for(db, TELEGRAM, mission.provider_telegram_id)
+    if provider_account_id is not None:
+        _recompute_provider_stats(db, provider_account_id)
 
 
 def _after_settlement(db: Session, mission_id: int) -> BotMission:
