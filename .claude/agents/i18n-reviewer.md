@@ -73,10 +73,5 @@ restent alignés.
 
 ## Collaboration
 
-- **`backend-parity-auditor`** : si un texte affiché dépend d'un champ qui
-  diffère entre `db.py` et le backend (ex. `provider['badge']` vs
-  `provider['average_rating']`), signaler aussi la divergence de données
-  sous-jacente à `backend-parity-auditor` plutôt que de la traiter comme un
-  simple problème de texte.
 - Indépendant de `security-reviewer` sauf si un message d'erreur
   d'authentification doit être traduit sans fuiter de détail technique.

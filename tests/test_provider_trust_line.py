@@ -8,7 +8,6 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("BOT_TOKEN", "123:ABC")
 
-import db
 from telegram_bot.mission import provider_trust_line
 
 
@@ -45,14 +44,3 @@ def test_badge_and_verification_are_appended_when_present():
 def test_pending_badge_is_not_shown_as_a_label():
     line = provider_trust_line(_provider(total_missions=5, rating=3.0, success_rate=80, badge="pending"))
     assert "pending" not in line.lower()
-
-
-def test_provider_trust_line_works_with_real_db_row(tmp_path):
-    db.DB_PATH = tmp_path / "test_nexis_hub.db"
-    db.init_db()
-    db.create_provider(3003, "+243800000003", "Chantal", ["service_peinture"], ["Gombe"], language="fr")
-
-    provider = db.get_provider_by_telegram_id(3003)
-    line = provider_trust_line(provider)
-
-    assert line == "🆕 Nouveau prestataire sur Nexis Hub"

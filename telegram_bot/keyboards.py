@@ -366,7 +366,7 @@ def clavier_alerte_mission(mission_id: int):
 
 # Devis et paiement : numéros du backend, seule mémoire des devis. Les anciens
 # boutons (`client_accept_quote_`, `pay_mobile_`…) portaient des numéros de
-# db.py : ils sont répondus « bouton plus actif » (payment.OLD_QUOTE_PREFIXES).
+# l'ancien db.py : ils sont répondus « bouton plus actif » (payment.OLD_QUOTE_PREFIXES).
 
 
 def clavier_devis_client(quote_id: int):

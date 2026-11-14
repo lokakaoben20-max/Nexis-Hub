@@ -63,10 +63,8 @@ C'est ce qui a permis de confirmer que `83f8778ff610` s'appliquait
 correctement avec le `server_default` attendu, plutôt que de supposer que le
 fichier généré faisait ce qu'on croyait.
 
-## Deux modèles à garder synchronisés
+## Un seul modèle
 
-`backend/app/models.py` (SQLAlchemy, table `bot_*`) et `db.py` (schéma SQLite
-legacy, table sans préfixe) décrivent souvent la même donnée sous deux formes
-différentes. Une migration qui ajoute un champ côté backend n'a pas
-d'équivalent automatique côté `db.py` — voir le skill `parite-donnees` pour la
-liste des fonctions à garder en parité entre les deux couches.
+`backend/app/models.py` est le seul schéma : `db.py` (SQLite legacy) a été
+supprimé le 2026-11-14. Une migration n'a plus d'équivalent à reporter
+ailleurs.

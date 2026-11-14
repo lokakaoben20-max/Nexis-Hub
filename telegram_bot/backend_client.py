@@ -41,8 +41,8 @@ def check_backend_key() -> None:
 
 def actor_headers(telegram_id: int) -> dict:
     """En-têtes d'une action faite au nom d'une personne : son identité
-    Telegram, toujours celle de l'expéditeur du message ou du clic (jamais lue
-    dans db.py). Le backend en déduit lui-même le compte Nexis."""
+    Telegram, toujours celle de l'expéditeur du message ou du clic, jamais une
+    copie locale. Le backend en déduit lui-même le compte Nexis."""
     return {**BACKEND_AUTH_HEADERS, "X-Actor-Channel": "telegram", "X-Actor-Id": str(int(telegram_id))}
 
 

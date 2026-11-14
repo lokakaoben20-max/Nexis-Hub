@@ -56,9 +56,10 @@ base de travail pour la suite.
   (évite les noms auto-générés type `xxx-xxx-xxx`).
 - Ne pousse jamais directement sur `main`. Travaille sur une branche (`feature/...`), ouvre une PR.
 
-## Profils : le backend est la seule mémoire (depuis l'étape 3 du chantier profils)
+## Profils : le backend est la seule mémoire (chantier profils terminé le 2026-11-14)
 
-Le bot Telegram et la Mini App ne lisent ni n'écrivent plus `db.py` : profils,
+Il n'y a plus de base locale : `db.py` et son fichier SQLite ne font plus partie du
+code (supprimés à l'étape 4). Profils,
 langue, disponibilité, services proposés, catalogue (services et communes) et choix
 des prestataires prévenus d'une mission passent tous par le backend, au nom de la
 personne (routes `/api/me/*`). Backend injoignable = « service indisponible », jamais
@@ -68,8 +69,8 @@ une copie locale. Le catalogue est lu une fois au démarrage du bot
 - La reprise des profils de l'ancien fichier SQLite se fait une seule fois, sur le PC,
   bot et Mini App arrêtés : `python -m outils.reprise_profils_sqlite nexis_hub.db`
   (rapport), puis la même commande avec `--appliquer`.
-- `db.py`, `backfill_*.py` et `audit_backend_parity.py` ne sont plus appelés par le bot
-  ni la Mini App ; ils disparaissent à l'étape 4 (nettoyage).
+- Le fichier `nexis_hub.db` d'un PC n'est ni lu ni effacé par le code : seul le script de
+  reprise l'ouvre, en lecture seule. Ne jamais le committer (`*.db` dans `.gitignore`).
 - Les tests du bot tournent contre le vrai backend en mémoire (fixture `live_backend`
   de `tests/conftest.py`) : lance toute la suite (`pytest -q`), pas seulement les tests
   du module que tu modifies.
@@ -100,9 +101,8 @@ image, un rôle par processus (`backend`, `miniapp`, `bot`, `webhook-setup`,
 `controle-registre`). Utilisateur non root, code en lecture seule,
 `APP_ENV=production` par défaut (donc configuration complète exigée).
 Derrière un répartiteur de charge, poser `FORWARDED_ALLOW_IPS` (lu par uvicorn)
-pour que l'adresse du client soit la bonne. Les rôles `bot` et `miniapp` ne
-tournent pas encore dans l'image : `db.py` écrit son SQLite à côté du code
-(chantier « profils au backend »).
+pour que l'adresse du client soit la bonne. Aucun rôle n'écrit à côté du code :
+le bot et la Mini App ne gardent rien en local, tout passe par le backend.
 
 **Tâches planifiées : plus de Celery.** `backend/app/taches.py` porte le
 calendrier (UTC) et un verrou par tâche (verrou consultatif Postgres) : une
@@ -127,7 +127,7 @@ Toujours lancer depuis la racine du dépôt (`messages` y est importé).
   `callback.bot` / `message.bot`, fournis par aiogram sur chaque événement. Un
   `from main import ...` réexécute tout `main.py` sous le nom `__main__` quand le bot
   tourne via `python main.py`, et crée un second `Bot`/`Dispatcher`.
-- `db.py` : couche de persistance legacy SQLite (fallback pendant la migration).
+- `outils/reprise_profils_sqlite.py` : reprise unique des profils de l'ancien fichier SQLite.
 - `messages.py` : textes du bot (fr / ln / en).
 - `backend/app/main.py` : backend V5 minimal (FastAPI), persistance JSON sur disque.
 - `mini_app/` : mini-app web liée au projet.
@@ -137,9 +137,8 @@ Toujours lancer depuis la racine du dépôt (`messages` y est importé).
 ## Fichiers à consulter en priorité
 
 - [main.py](main.py) : pour les flows bot et la synchronisation V5.
-- [db.py](db.py) : pour la logique legacy et les fonctions métier.
 - [backend/app/main.py](backend/app/main.py) : pour les endpoints V5.
-- [tests/test_bot_backend_sync.py](tests/test_bot_backend_sync.py) : pour les tests de synchronisation bot/backend.
+- [tests/conftest.py](tests/conftest.py) : fixture `live_backend`, le vrai backend en mémoire pour les tests du bot.
 - [backend/tests/test_main.py](backend/tests/test_main.py) : pour les tests backend.
 
 ## État actuel
@@ -149,7 +148,8 @@ Toujours lancer depuis la racine du dépôt (`messages` y est importé).
 - **Phase 0 de la migration V5 terminée** (voir [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md)) :
   le backend V5 persiste maintenant dans PostgreSQL (via SQLAlchemy + Alembic), plus dans un
   fichier JSON. Le contrat d'API vu par le bot (`main.py`) n'a pas changé.
-- La couche legacy SQLite (`db.py`) reste présente comme fallback pendant la migration.
+- Plus de couche SQLite legacy : `db.py` a été supprimé le 2026-11-14, le backend est la
+  seule mémoire (profils, missions, argent).
 - **Phase 2 terminée** (Celery + Redis, tâches asynchrones).
 - **Phase 3 en cours** : 3 flows sur 5 extraits vers `telegram_bot/` (inscription/profil,
   mission/devis, paiement/lifecycle/notation) + vérification obligatoire des prestataires
@@ -178,8 +178,7 @@ Toujours lancer depuis la racine du dépôt (`messages` y est importé).
 Le registre du backend (`backend/app/ledger.py`) est la seule source de
 vérité de l'argent : paiement, démarrage et fin de mission, confirmation,
 libération, litige, décision admin, soldes. Le bot et la Mini App demandent
-et recopient l'état renvoyé ; `db.py` ne contient aucun solde ni aucune règle
-d'argent. Backend injoignable = aucune action d'argent. Les wallets sont
+et recopient l'état renvoyé, sans aucune copie locale. Backend injoignable = aucune action d'argent. Les wallets sont
 rattachés à un compte Nexis (`accounts` + `channel_identities`), jamais à un
 canal. Détails : `CONCEPTION_ARGENT.md`.
 

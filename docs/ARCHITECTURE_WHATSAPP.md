@@ -34,7 +34,7 @@ Aucun code WhatsApp n'existe, et le backend est entièrement construit autour de
 | Le paiement mobile money est simulé | `telegram_bot/payment.py:142` (`operator="mobile_money_simulation"`) |
 | Le mot « WhatsApp » n'apparaît que pour demander le numéro de téléphone à l'inscription Telegram | `translations/fr.json:155`, `telegram_bot/keyboards.py:184` |
 
-En plus, `db.py` (SQLite) porte encore une partie de la vérité métier. Le canal WhatsApp ne peut pas s'appuyer sur `db.py` : il ne parle qu'au backend.
+(Mise à jour du 2026-11-14 : `db.py` est supprimé, le backend est la seule mémoire.) À l'époque, `db.py` (SQLite) portait encore une partie de la vérité métier. Le canal WhatsApp ne peut pas s'appuyer sur `db.py` : il ne parle qu'au backend.
 
 **Mise à jour du 2 octobre au soir.** Le chantier « backend seule source de vérité de l'argent » (branche `feature/argent-backend`, commit `0002b7e`, pas encore fusionnée) a déjà posé la base d'identité (`CONCEPTION_ARGENT.md`, section « Comptes Nexis ») :
 

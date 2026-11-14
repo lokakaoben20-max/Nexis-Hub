@@ -75,7 +75,7 @@ class DisputeContestFlow(StatesGroup):
 
 
 # Boutons envoyés avant que les devis ne vivent dans le backend : ils portent
-# des numéros de db.py, qui ne désignent plus rien. Jamais interprétés.
+# des numéros de l'ancien db.py, qui ne désignent plus rien. Jamais interprétés.
 OLD_QUOTE_PREFIXES = ("client_accept_quote_", "client_reject_quote_", "pay_mobile_", "pay_mm_", "pay_wallet_")
 
 

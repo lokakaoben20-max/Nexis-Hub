@@ -10,7 +10,7 @@ Les bases SQLite ouvertes par SQLAlchemy dans les tests (backend jetable) :
   documentée par SQLAlchemy pour que SQLite se comporte comme Postgres.
 
 Enregistré une seule fois ici : deux écouteurs « begin » émettraient BEGIN
-deux fois. Les connexions sqlite3 directes de db.py ne sont pas concernées.
+deux fois.
 """
 
 import sqlite3

@@ -7,7 +7,7 @@ devis** : acceptation du devis, paiement, lifecycle et notation restent dans `ma
 — la partie argent mérite son propre commit, séparé de celui-ci.
 
 Missions et devis vivent dans le backend, seule mémoire (CONCEPTION_MISSIONS.md) :
-le bot les crée et les lit par l'API, sans copie dans db.py. Backend injoignable :
+le bot les crée et les lit par l'API, sans copie locale. Backend injoignable :
 rien n'est créé, aucun prestataire n'est prévenu, la personne réessaie.
 
 `bot` n'est pas importé depuis `main.py` (ça réexécuterait tout le module) : aiogram 3
