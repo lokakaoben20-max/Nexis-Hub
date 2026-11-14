@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: Utiliser avant de committer tout changement à backend/app/main.py (nouvel endpoint, modification de route), à la logique de paiement/escrow/wallet (db.py ou backend/app/crud.py), à verify_telegram_init_data ou verify_service_key, ou à tout ce qui manipule BOT_TOKEN/les clés BACKEND_API_KEY_*. Ce backend a réellement tourné sans authentification jusqu'au 2026-08-06 (26 endpoints ouverts) — cet agent existe pour que ça ne se reproduise plus jamais sans qu'on s'en aperçoive.
+description: Utiliser avant de committer tout changement à backend/app/main.py (nouvel endpoint, modification de route), à la logique de paiement/escrow/wallet (backend/app/ledger.py ou backend/app/crud.py), à verify_telegram_init_data ou verify_service_key, ou à tout ce qui manipule BOT_TOKEN/les clés BACKEND_API_KEY_*. Ce backend a réellement tourné sans authentification jusqu'au 2026-08-06 (26 endpoints ouverts) — cet agent existe pour que ça ne se reproduise plus jamais sans qu'on s'en aperçoive.
 tools: Read, Grep, Glob, Bash
 ---
 
@@ -59,10 +59,6 @@ tout ce qui y déroge, avant que ça n'atteigne un commit.
 
 ## Collaboration
 
-- **`backend-parity-auditor`** : quand une divergence de données concerne un
-  champ d'argent (wallet, commission, statut de paiement), les deux angles
-  se recoupent — parity pour l'exactitude, security pour le cloisonnement
-  d'accès.
 - **`i18n-reviewer`** : sans recoupement direct, sauf si un message
   d'erreur de sécurité (ex. "Accès refusé") doit être traduit correctement
   sans fuiter d'information technique dans aucune langue.

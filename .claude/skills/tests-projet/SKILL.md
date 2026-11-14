@@ -5,20 +5,21 @@ description: À utiliser en écrivant ou modifiant des tests (dossiers tests/ et
 
 # Tests — conventions et réalités de ce projet
 
-99 tests, deux dossiers : `tests/` (legacy `db.py` + bot) et `backend/tests/`
-(FastAPI + SQLAlchemy). Zéro fixture partagée, zéro `conftest.py` — chaque
-fichier est autonome, à reproduire plutôt que d'introduire un nouveau
-mécanisme.
+Deux dossiers : `tests/` (bot Telegram, Mini App, outils) et `backend/tests/`
+(FastAPI + SQLAlchemy). Fixtures communes : `conftest.py` (base de test SQLite
+ou Postgres) et `tests/conftest.py` (backend coupé par défaut, `live_backend`).
 
 ## Style à reproduire
 
-**Legacy (`tests/`)** : fonctions simples, base SQLite pointée sur `tmp_path` :
+**Bot et Mini App (`tests/`)** : contre le vrai backend en mémoire, jamais une
+imitation ; sans la fixture, le backend est injoignable (cas « service
+indisponible ») :
 
 ```python
-def test_x(tmp_path):
-    db.DB_PATH = tmp_path / "test_nexis_hub.db"
-    db.init_db()
+def test_x(live_backend):
+    live_backend.provider(102)
     ...
+    assert live_backend.profile(102)["provider"]["status"] == "offline"
 ```
 
 **Backend (`backend/tests/`)** : `TestClient` + rechargement de module pour
@@ -76,8 +77,8 @@ l'antivirus Windows qui scannent chaque fichier SQLite temporaire créé sous
 - Avant de conclure qu'un changement a cassé un test, vérifier qu'on n'a pas
   simplement lu la sortie d'un run précédent ou tronqué.
 
-## Avant de committer un changement sur `crud.py` ou `db.py`
+## Avant de committer un changement sur `crud.py` ou `profils.py`
 
 Lancer la suite complète (`pytest -q`), pas seulement les tests du fichier
-touché : `crud.py` et `db.py` sont partagés entre plusieurs flows (voir le
-skill `parite-donnees`), un changement localisé peut casser un test ailleurs.
+touché : ces modules sont partagés entre plusieurs flows et canaux, un
+changement localisé peut casser un test ailleurs.

@@ -1,5 +1,9 @@
 # Plan de migration vers l'architecture cible (`nexis-hub-v5`)
 
+> **Mise à jour du 2026-11-14** : `db.py` (SQLite legacy) est supprimé. Profils, missions
+> et argent vivent dans le seul backend ; le bot et la Mini App n'ont plus de copie
+> locale. Les mentions de `db.py` ci-dessous sont l'historique de la migration.
+
 Ce document décrit comment passer du bot monolithique actuel (`Nexis-Hub`) à
 l'architecture cible définie dans le repo `nexis-hub-v5` (Postgres, Redis, Kafka,
 Celery, microservices Telegram/WhatsApp/backend, IA). Voir [AGENTS.md](AGENTS.md)

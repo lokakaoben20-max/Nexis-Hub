@@ -74,7 +74,7 @@ Plan complet : `/mnt/project-files/socle/plan-socle-missions-devis-2026-11-06.md
   déjà présente n'est jamais écrasée : le bot refuse alors de démarrer.
 - Le compteur « Missions totales » du profil vient du backend ; « ? » s'il
   ne répond pas.
-- Restent dans `db.py` : profils clients et prestataires, services, demandes
+- Restaient dans `db.py` (repris au backend par le chantier profils, puis `db.py` supprimé le 2026-11-14) : profils clients et prestataires, services, demandes
   de service (chantier profils, à faire ensuite).
 
 ## Lieu exact de la mission

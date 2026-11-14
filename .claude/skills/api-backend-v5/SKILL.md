@@ -58,11 +58,9 @@ erreur. Une route est fermée à WhatsApp par défaut (`@open_to` pour l'ouvrir,
 `securite-backend` pour le détail, en particulier avant un endpoint qui touche
 à l'argent (paiement, escrow, wallet) ou à des données personnelles.
 
-## Miroir côté legacy
+## Seule source de vérité
 
-La plupart de ces endpoints ont un équivalent dans `db.py` que le bot appelle
-en direct (le backend V5 est encore un miroir, pas la source de vérité — voir
-`AGENTS.md`). Un nouvel endpoint backend n'a de sens que si `main.py` (le bot)
-va effectivement l'appeler. Vérifier `V5_MIGRATION_PLAN.md` pour savoir si le
-flow concerné est déjà basculé côté lecture, ou seulement synchronisé en
-écriture.
+Le backend est la seule mémoire (profils, missions, argent) : le bot et la
+Mini App n'ont plus de copie locale (`db.py` supprimé le 2026-11-14). Un
+nouvel endpoint n'a de sens que si un canal (bot, Mini App, WhatsApp, app)
+l'appelle effectivement.
