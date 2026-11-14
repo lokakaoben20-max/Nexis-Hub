@@ -93,8 +93,12 @@ def test_mission_creation_is_numbered_by_the_backend_and_replayable(live_backend
         "destination_landmark": "Portail bleu après la poste",
     }
 
-    first = asyncio.run(backend_client.create_mission(42, data, "demande-a", [7, 42]))
-    replay = asyncio.run(backend_client.create_mission(42, data, "demande-a", [7, 42]))
+    # 7 et le client 42 sont tous deux plombiers vérifiés à Gombe : le
+    # backend prévient 7, jamais le client lui-même.
+    live_backend.provider(7, services=("service_plomberie",), communes=("Gombe",))
+    live_backend.provider(42, services=("service_plomberie",), communes=("Gombe",))
+    first = asyncio.run(backend_client.create_mission(42, data, "demande-a"))
+    replay = asyncio.run(backend_client.create_mission(42, data, "demande-a"))
 
     assert first["created"] is True and replay["created"] is False
     assert replay["mission"]["mission_id"] == first["mission"]["mission_id"]
@@ -102,7 +106,7 @@ def test_mission_creation_is_numbered_by_the_backend_and_replayable(live_backend
         {"channel": "telegram", "kind": "photo", "id": "photo-1"},
         {"channel": "telegram", "kind": "voice", "id": "voix-1"},
     ]
-    assert first["alerted_provider_telegram_ids"] == [7]  # jamais le client lui-même
+    assert first["alerted_provider_telegram_ids"] == [7]
     with pytest.raises(backend_client.MoneyRefused) as refused:
-        asyncio.run(backend_client.create_mission(42, {**data, "description": "Autre"}, "demande-a", [7]))
+        asyncio.run(backend_client.create_mission(42, {**data, "description": "Autre"}, "demande-a"))
     assert refused.value.code == "creation_key_reused"

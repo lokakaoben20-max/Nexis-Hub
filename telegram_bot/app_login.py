@@ -49,7 +49,7 @@ def is_app_login_start(args: str | None) -> bool:
 
 async def start_app_login(message: Message, state: FSMContext, args: str) -> None:
     """Appelé par /start quand le paramètre vient de l'application."""
-    lang = await backend_client.get_user_language(message.from_user.id)
+    lang = await backend_client.get_language(message.from_user)
     await state.clear()
     await state.set_state(AppLogin.contact)
     await state.update_data(app_login_token=args[len(START_PREFIX):], language=lang)
@@ -87,7 +87,7 @@ async def pas_moi(callback: CallbackQuery) -> None:
     """Bouton « Ce n'est pas moi » sous l'alerte « Nouvel appareil » (envoyée
     par le backend). Le backend coupe le téléphone s'il est bien sur le compte
     de cette personne."""
-    lang = await backend_client.get_user_language(callback.from_user.id)
+    lang = await backend_client.get_language(callback.from_user)
     raw_id = callback.data[len(NOT_ME_PREFIX):]
     if not raw_id.isdigit():
         await callback.answer()

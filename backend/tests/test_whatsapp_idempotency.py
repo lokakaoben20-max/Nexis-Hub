@@ -125,10 +125,10 @@ def test_the_same_key_from_another_person_is_refused(client, backend):
 
 
 def test_a_refused_action_records_no_key_and_is_evaluated_again(client, backend):
-    client.post(
-        "/api/bot/users",
-        json={"telegram_id": 42, "first_name": "Ben", "phone_number": "+243810000001", "phone_verified": True},
-        headers={"X-API-Key": TELEGRAM_KEY},
+    client.put(
+        "/api/me/client-profile",
+        json={"first_name": "Ben", "phone_number": "+243810000001", "phone_verified": True},
+        headers={"X-API-Key": TELEGRAM_KEY, "X-Actor-Channel": "telegram", "X-Actor-Id": "42"},
     )
     assert post(client).json()["detail"]["code"] == "phone_owned_by_account"
     assert counts(backend) == (1, 0)

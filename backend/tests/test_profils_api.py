@@ -87,7 +87,9 @@ def verified_provider(api, telegram_id=PROVIDER, **fields):
     return account_id
 
 
-def mission(api, client=CLIENT, alert=(PROVIDER,)):
+def mission(api, client=CLIENT):
+    """Mission de nettoyage à Gombe : le backend prévient les prestataires
+    vérifiés et disponibles qui font ce travail dans cette commune."""
     api.put("/api/me/client-profile", json={"first_name": "Client"}, headers=tg(client))
     response = api.post(
         "/api/bot/missions",
@@ -95,7 +97,6 @@ def mission(api, client=CLIENT, alert=(PROVIDER,)):
             "creation_key": f"demande-{next(_KEYS)}",
             "service": "service_nettoyage",
             "commune": "Gombe",
-            "alert_provider_telegram_ids": list(alert),
             "destination": {"latitude": -4.3076, "longitude": 15.3125, "landmark": "Portail bleu après la poste"},
         },
         headers=tg(client),
@@ -276,7 +277,7 @@ def test_the_admin_lists_verifies_rejects_and_suspends(api):
 
 def test_the_admin_decides_a_service_request_once(api):
     register(api)
-    created = api.post("/api/bot/service-requests", json={"service_name": "Peinture", "description": "Murs"}, headers=tg(PROVIDER))
+    created = api.post("/api/bot/service-requests", json={"service_name": "Peinture", "description": "Murs et plafonds"}, headers=tg(PROVIDER))
     assert created.status_code == 200, created.json()
     request_id = created.json()["service_request"]["id"]
     assert code(api.patch(f"/api/admin/service-requests/{request_id}", json={"status": "accepted"}, headers=tg(PROVIDER))) == "not_admin"
@@ -328,7 +329,7 @@ def test_a_quote_resets_the_declines_in_a_row(api):
 
 def test_decline_refusals(api):
     verified_provider(api)
-    verified_provider(api, 8)
+    verified_provider(api, 8, communes=("Lemba",))  # pas prévenu : autre commune
     mission_id = mission(api)
     assert (decline(api, mission_id, 8).status_code, code(decline(api, mission_id, 8))) == (403, "provider_not_alerted")
     assert code(decline(api, 9999)) == "provider_not_alerted"

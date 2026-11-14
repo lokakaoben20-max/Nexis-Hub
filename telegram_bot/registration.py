@@ -1,20 +1,13 @@
-"""Flow inscription/profil (Phase 3, pilote — voir V5_MIGRATION_PLAN.md).
+"""Flow inscription/profil : client, prestataire, disponibilité, services,
+réglages (langue, prénom).
 
-Handlers déplacés depuis `main.py`, sur un `Router` aiogram dédié plutôt qu'un import
-direct de `dp` (le pattern standard pour répartir des handlers entre fichiers sans
-état partagé implicite). `main.py` fait `dp.include_router(router)` après avoir défini
-tout ce dont ce module a besoin en retour — voir le commentaire à cet endroit.
-
-Double écriture maintenue (backend V5 + `db.py`) pour toutes les écritures : le flow
-mission/matching (`find_matching_providers`) et la Mini App lisent encore `db.py` pour
-le statut/les services/la langue du prestataire. Couper l'écriture locale ici les
-ferait lire une donnée périmée — ce sera fait quand ce flow sera migré à son tour.
-Lecture déjà backend-first (héritée de la Phase 1), sauf pour `profil_prestataire` et
-`modifier_services_prestataire`, corrigés dans cette extraction (voir commentaires).
+Router aiogram dédié, inclus par `main.py`. Les profils n'existent que dans le
+backend : chaque lecture et chaque écriture passe par les routes /api/me/*,
+au nom de la personne qui écrit. Backend injoignable ou refus : la personne
+le voit, rien n'est gardé de côté pour être recopié plus tard.
 """
 
 import html
-import json
 import logging
 
 from aiogram import F, Router
@@ -23,40 +16,16 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 from dotenv import load_dotenv
 
-from db import (
-    create_provider,
-    get_provider_by_telegram_id,
-    get_user_by_telegram_id,
-    provider_can_change_own_status,
-    reset_consecutive_ignored,
-    update_provider_language,
-    update_provider_services,
-    update_provider_status,
-    update_provider_verification_documents,
-    update_user_language,
-    update_user_name,
-)
 from messages import get_message
-from telegram_bot import backend_client
+from telegram_bot import backend_client, catalogue
 from telegram_bot.backend_client import (
-    _safe_backend_call,
-    fetch_backend_profile,
-    get_provider_language,
+    BackendUnavailable,
+    MoneyRefused,
+    get_language,
     get_state_language,
-    get_user_language,
-    load_profile_from_backend,
-    persist_client_registration,
-    sync_provider_ignored_reset_to_backend,
-    sync_provider_language_to_backend,
-    sync_provider_services_to_backend,
-    sync_provider_status_to_backend,
-    sync_provider_to_backend,
-    sync_user_language_to_backend,
-    sync_user_name_to_backend,
+    money_failure_text,
 )
 from telegram_bot.keyboards import (
-    COMMUNES,
-    SERVICES,
     clavier_admin_new_provider,
     clavier_client,
     clavier_communes_prestataire,
@@ -103,23 +72,31 @@ class ClientSettings(StatesGroup):
     name = State()
 
 
+async def _unavailable(callback: CallbackQuery, lang: str, error: Exception | None = None) -> None:
+    """Le backend n'a pas répondu (ou a refusé) : rien n'a changé, la personne
+    réessaie."""
+    text = money_failure_text(0, error, lang, "service_unavailable") if error else get_message("service_unavailable", lang)
+    await callback.answer(text, show_alert=True)
+
+
 async def _choisir_langue(callback: CallbackQuery, state: FSMContext, lang: str, intro: str):
     """Choix de langue à l'écran d'accueil.
 
-    La langue est gardée dans l'étape en cours, puis envoyée avec l'inscription
-    (persist_client_registration / sync_provider_to_backend). Les profils déjà
-    existants sont mis à jour tout de suite, localement et au backend ; on
-    n'envoie rien au backend pour un profil qui n'existe pas encore (avant, ces
-    appels partaient quand même et revenaient en 404).
+    La langue est gardée dans l'étape en cours, puis envoyée avec
+    l'inscription. Une personne déjà connue du backend (compte existant) voit
+    sa langue changée tout de suite ; une personne inconnue n'a encore rien
+    à changer (`account_not_found`).
     """
-    telegram_id = callback.from_user.id
+    try:
+        await backend_client.set_my_language(callback.from_user.id, lang)
+    except MoneyRefused as error:
+        if error.code != "account_not_found":
+            await _unavailable(callback, lang, error)
+            return
+    except BackendUnavailable:
+        await _unavailable(callback, lang)
+        return
     await state.update_data(language=lang)
-    if get_user_by_telegram_id(telegram_id) is not None:
-        update_user_language(telegram_id, lang)
-        await _safe_backend_call(sync_user_language_to_backend(telegram_id, lang))
-    if get_provider_by_telegram_id(telegram_id) is not None:
-        update_provider_language(telegram_id, lang)
-        await _safe_backend_call(sync_provider_language_to_backend(telegram_id, lang))
     await callback.message.edit_text(
         intro,
         parse_mode="HTML",
@@ -146,9 +123,12 @@ async def langue_en(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "profil_client")
 async def profil_client(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    user = get_user_by_telegram_id(callback.from_user.id)
-    lang = data.get("language") or (user["language"] if user else "fr")
-    if user is None:
+    me = await backend_client.my_profile(callback.from_user.id)
+    lang = data.get("language") or (me or {}).get("language") or backend_client.telegram_language(callback.from_user)
+    if me is None:
+        await _unavailable(callback, lang)
+        return
+    if me["client"] is None:
         await state.set_state(ClientRegistration.phone)
         await state.update_data(language=lang)
         await callback.message.answer(
@@ -159,7 +139,7 @@ async def profil_client(callback: CallbackQuery, state: FSMContext):
         return
 
     await state.clear()
-    prenom = html.escape(callback.from_user.first_name or "Client")
+    prenom = html.escape(me["client"].get("first_name") or callback.from_user.first_name or "Client")
     await callback.message.edit_text(
         get_message("client_menu", lang, prenom=prenom),
         parse_mode="HTML",
@@ -193,18 +173,22 @@ async def enregistrer_client(message: Message, state: FSMContext):
     if phone_number is None:
         return
 
-    data = await state.get_data()
-    await persist_client_registration(
-        telegram_id=message.from_user.id,
-        first_name=message.from_user.first_name or "",
-        phone_number=phone_number,
-        language=data.get("language", "fr"),
-        # Numéro reçu par « Partager mon numéro », contact de l'expéditeur.
-        phone_verified=True,
-    )
+    try:
+        me = await backend_client.save_client_profile(
+            message.from_user.id,
+            first_name=message.from_user.first_name or "Client",
+            phone_number=phone_number,
+            language=lang,
+            # Numéro reçu par « Partager mon numéro », contact de l'expéditeur.
+            phone_verified=True,
+        )
+    except (BackendUnavailable, MoneyRefused) as error:
+        # Rien n'est enregistré : l'étape reste ouverte, la personne renvoie
+        # son numéro.
+        await message.answer(money_failure_text(0, error, lang, "service_unavailable"), reply_markup=clavier_contact(lang))
+        return
     await state.clear()
-    prenom = html.escape(message.from_user.first_name or "Client")
-    lang = data.get("language", "fr")
+    prenom = html.escape(me["client"]["first_name"])
     await message.answer(
         get_message("client_registered", lang),
         reply_markup=ReplyKeyboardRemove(),
@@ -216,12 +200,28 @@ async def enregistrer_client(message: Message, state: FSMContext):
     )
 
 
+def _provider_menu_text(provider: dict, lang: str) -> str:
+    statut = "🟢 Disponible" if provider["status"] == "available" else "🔴 Indisponible"
+    return get_message(
+        "provider_menu",
+        lang,
+        prenom=html.escape(provider["full_name"] or "Prestataire"),
+        badge=provider["badge"],
+        note=f"{provider['average_rating'] or 0:.1f}",
+        missions=provider["total_missions"] or 0,
+        statut=statut,
+    )
+
+
 @router.callback_query(F.data == "profil_prestataire")
 async def profil_prestataire(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    provider = get_provider_by_telegram_id(callback.from_user.id)
-    lang = data.get("language") or await get_provider_language(callback.from_user.id)
-    if provider is None:
+    me = await backend_client.my_profile(callback.from_user.id)
+    lang = data.get("language") or (me or {}).get("language") or backend_client.telegram_language(callback.from_user)
+    if me is None:
+        await _unavailable(callback, lang)
+        return
+    if me["provider"] is None:
         await state.set_state(ProviderRegistration.phone)
         await state.update_data(language=lang)
         await callback.message.answer(
@@ -231,36 +231,9 @@ async def profil_prestataire(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
 
-    backend_profile = await fetch_backend_profile(callback.from_user.id)
-    provider_data = (backend_profile or {}).get("provider") if backend_profile else None
-
     await state.clear()
-    prenom = html.escape((provider_data or {}).get("full_name") or provider["full_name"] or callback.from_user.first_name or "Prestataire")
-    status = (provider_data or {}).get("status") or provider["status"]
-    statut = "🟢 Disponible" if status == "available" else "🔴 Indisponible"
-    # `badge`/`average_rating`/`total_missions` : réellement calculés côté backend
-    # (backend/app/crud.py._recompute_provider_stats, depuis avis/missions), contrairement
-    # au `rating` legacy de db.py, jamais alimenté (V5_MIGRATION_PLAN.md, audit du
-    # 2026-08-03). Ce menu affichait un 0 figé quand le backend n'a jamais été consulté ;
-    # il affiche maintenant la vraie valeur dès que le backend répond.
-    if provider_data:
-        badge = provider_data.get("badge") or provider["badge"]
-        note = provider_data.get("average_rating", provider["rating"])
-        missions = provider_data.get("total_missions", provider["total_missions"])
-    else:
-        badge = provider["badge"]
-        note = provider["rating"]
-        missions = provider["total_missions"]
     await callback.message.edit_text(
-        get_message(
-            "provider_menu",
-            lang,
-            prenom=prenom,
-            badge=badge,
-            note=f"{note:.1f}",
-            missions=missions,
-            statut=statut,
-        ),
+        _provider_menu_text(me["provider"], lang),
         parse_mode="HTML",
         reply_markup=clavier_prestataire(lang),
     )
@@ -332,8 +305,11 @@ async def terminer_services_prestataire(callback: CallbackQuery, state: FSMConte
 
 @router.callback_query(ProviderRegistration.communes, F.data.startswith("provider_commune_"))
 async def choisir_commune_prestataire(callback: CallbackQuery, state: FSMContext):
-    commune_callback = callback.data.replace("provider_", "", 1)
-    commune = next((label for label, data in COMMUNES if data == commune_callback), "Autre commune")
+    commune = catalogue.commune_from_callback(callback.data.replace("provider_", "", 1))
+    if commune is None:
+        # Bouton d'une commune qui n'est plus au catalogue.
+        await callback.answer()
+        return
     data = await state.get_data()
     selected = data.get("provider_communes", [])
 
@@ -418,47 +394,38 @@ async def recevoir_portfolio(message: Message, state: FSMContext):
 
 @router.callback_query(ProviderRegistration.portfolio, F.data == "provider_portfolio_done")
 async def finaliser_inscription_prestataire(callback: CallbackQuery, state: FSMContext):
+    """Inscription complète (pièce d'identité, selfie, réalisations) envoyée
+    au backend, qui met le prestataire en attente de vérification : invisible
+    des clients tant que l'équipe ne l'a pas validé."""
     data = await state.get_data()
     lang = data.get("language", "fr")
-
-    provider = create_provider(
-        telegram_id=callback.from_user.id,
-        phone_number=data["provider_phone"],
-        full_name=data["provider_full_name"],
-        services=data["provider_services"],
-        communes=data["provider_communes"],
-        language=lang,
-    )
-    # Vérification obligatoire (V5_MIGRATION_PLAN.md) : create_provider pose
-    # status="available" par défaut — on le fait repasser à "pending_verification"
-    # tout de suite après, avant que quiconque puisse voir ce prestataire matchable.
-    # find_matching_providers (db.py) ne filtre que sur status='available', donc ce
-    # seul champ suffit à le rendre invisible du matching sans toucher la requête.
-    provider = update_provider_status(callback.from_user.id, "pending_verification")
-
     portfolio_file_ids = data.get("provider_portfolio_file_ids", [])
-    provider = update_provider_verification_documents(
-        callback.from_user.id,
-        data["provider_id_document_file_id"],
-        data["provider_selfie_file_id"],
-        portfolio_file_ids,
-    )
-    await _safe_backend_call(
-        sync_provider_to_backend(
-            telegram_id=callback.from_user.id,
-            full_name=data["provider_full_name"],
-            phone_number=data["provider_phone"],
-            services=data["provider_services"],
-            communes=data["provider_communes"],
-            language=lang,
-            id_document_file_id=data["provider_id_document_file_id"],
-            selfie_file_id=data["provider_selfie_file_id"],
-            portfolio_file_ids=portfolio_file_ids,
-            # Numéro reçu par « Partager mon numéro » (enregistrer_tel_prestataire).
-            phone_verified=True,
+    try:
+        me = await backend_client.save_provider_profile(
+            callback.from_user.id,
+            {
+                "full_name": data["provider_full_name"],
+                "phone_number": data["provider_phone"],
+                "services": data["provider_services"],
+                "communes": data["provider_communes"],
+                "language": lang,
+                "id_document_file_id": data["provider_id_document_file_id"],
+                "selfie_file_id": data["provider_selfie_file_id"],
+                "portfolio_file_ids": portfolio_file_ids,
+                # Numéro reçu par « Partager mon numéro » (enregistrer_tel_prestataire).
+                "phone_verified": True,
+            },
         )
-    )
-    await _safe_backend_call(sync_provider_status_to_backend(callback.from_user.id, "pending_verification"))
+    except BackendUnavailable:
+        # Rien n'est enregistré : l'étape reste ouverte, le même bouton réessaie.
+        await _unavailable(callback, lang)
+        return
+    except MoneyRefused as error:
+        await state.clear()
+        await callback.message.edit_text(money_failure_text(0, error, lang), reply_markup=clavier_profil(lang))
+        await callback.answer()
+        return
+    provider = me["provider"]
 
     await state.clear()
     await callback.message.edit_text(
@@ -476,11 +443,11 @@ async def finaliser_inscription_prestataire(callback: CallbackQuery, state: FSMC
     await _notifier_admin_nouveau_prestataire(callback, provider, data["provider_id_document_file_id"], data["provider_selfie_file_id"], portfolio_file_ids)
 
 
-async def _notifier_admin_nouveau_prestataire(callback: CallbackQuery, provider, id_document_file_id: str, selfie_file_id: str, portfolio_file_ids: list[str]) -> None:
+async def _notifier_admin_nouveau_prestataire(callback: CallbackQuery, provider: dict, id_document_file_id: str, selfie_file_id: str, portfolio_file_ids: list[str]) -> None:
     """Prévient chaque admin (liste tenue par le backend) qu'un prestataire
     attend sa vérification. Un envoi raté ne fait jamais échouer l'inscription,
     et n'empêche pas les autres admins d'être prévenus : le prestataire reste
-    de toute façon dans la liste `admin_providers`.
+    de toute façon dans la liste des prestataires en attente.
     """
     for admin_id in await backend_client.admin_telegram_ids():
         try:
@@ -489,16 +456,16 @@ async def _notifier_admin_nouveau_prestataire(callback: CallbackQuery, provider,
             logger.warning("Dossier du nouveau prestataire non envoyé à un admin", exc_info=True)
 
 
-async def _envoyer_dossier_prestataire(callback: CallbackQuery, admin_id: int, provider, id_document_file_id: str, selfie_file_id: str, portfolio_file_ids: list[str]) -> None:
+async def _envoyer_dossier_prestataire(callback: CallbackQuery, admin_id: int, provider: dict, id_document_file_id: str, selfie_file_id: str, portfolio_file_ids: list[str]) -> None:
     # Langue de l'admin, pas celle du prestataire : c'est l'admin qui lit.
-    admin_lang = await get_user_language(admin_id)
+    admin_lang = await get_language(admin_id)
     summary = get_message(
         "admin_new_provider_summary",
         admin_lang,
         nom=html.escape(provider["full_name"]),
         telephone=html.escape(provider["phone_number"] or ""),
-        services=html.escape(", ".join(json.loads(provider["services"] or "[]"))),
-        communes=html.escape(", ".join(json.loads(provider["communes"] or "[]"))),
+        services=html.escape(", ".join(provider["services"])),
+        communes=html.escape(", ".join(provider["communes"])),
     )
     await callback.bot.send_message(admin_id, summary, parse_mode="HTML")
     await callback.bot.send_photo(admin_id, id_document_file_id, caption=get_message("admin_new_provider_id_caption", admin_lang))
@@ -508,16 +475,29 @@ async def _envoyer_dossier_prestataire(callback: CallbackQuery, admin_id: int, p
     await callback.bot.send_message(
         admin_id,
         get_message("admin_new_provider_approve_prompt", admin_lang),
-        reply_markup=clavier_admin_new_provider(provider["telegram_id"]),
+        reply_markup=clavier_admin_new_provider(provider["account_id"]),
     )
+
+
+async def _my_provider(callback: CallbackQuery) -> tuple[dict | None, str]:
+    """Profil prestataire de la personne, ou None après lui avoir dit
+    pourquoi (pas de profil, service indisponible)."""
+    me = await backend_client.my_profile(callback.from_user.id)
+    if me is None:
+        lang = backend_client.telegram_language(callback.from_user)
+        await _unavailable(callback, lang)
+        return None, lang
+    lang = me["language"]
+    if me["provider"] is None:
+        await callback.answer(get_message("provider_profile_required", lang), show_alert=True)
+        return None, lang
+    return me["provider"], lang
 
 
 @router.callback_query(F.data == "prest_dispo")
 async def disponibilite_prestataire(callback: CallbackQuery):
-    provider = get_provider_by_telegram_id(callback.from_user.id)
-    lang = await get_provider_language(callback.from_user.id)
+    provider, lang = await _my_provider(callback)
     if provider is None:
-        await callback.answer(get_message("provider_profile_required", lang), show_alert=True)
         return
 
     status_label = get_message(
@@ -532,53 +512,51 @@ async def disponibilite_prestataire(callback: CallbackQuery):
     await callback.answer()
 
 
+# Refus du backend quand le prestataire change sa disponibilité.
+AVAILABILITY_REFUSALS = {
+    "provider_not_verified": "provider_status_locked",
+    "provider_suspended": "provider_suspended_notice",
+    "provider_not_found": "provider_profile_required",
+}
+
+
 @router.callback_query(F.data.in_(["provider_status_available", "provider_status_offline"]))
 async def changer_disponibilite(callback: CallbackQuery):
+    """Disponible ou hors ligne : le backend décide (prestataire vérifié et
+    non suspendu seulement ; quitter la pause remet les refus à zéro)."""
     status = "available" if callback.data == "provider_status_available" else "offline"
-    if not provider_can_change_own_status(get_provider_by_telegram_id(callback.from_user.id)):
-        provider_lang = await get_provider_language(callback.from_user.id)
-        await callback.answer(get_message("provider_status_locked", provider_lang), show_alert=True)
+    lang = await get_language(callback.from_user)
+    try:
+        me = await backend_client.set_my_availability(callback.from_user.id, status)
+    except MoneyRefused as error:
+        key = AVAILABILITY_REFUSALS.get(error.code)
+        await callback.answer(get_message(key, lang) if key else money_failure_text(0, error, lang), show_alert=True)
         return
-    update_provider_status(callback.from_user.id, status)
-    await _safe_backend_call(sync_provider_status_to_backend(callback.from_user.id, status))
-    if status == "available":
-        reset_consecutive_ignored(callback.from_user.id)
-        await _safe_backend_call(sync_provider_ignored_reset_to_backend(callback.from_user.id))
-    provider_lang = await get_provider_language(callback.from_user.id)
+    except BackendUnavailable:
+        await _unavailable(callback, lang)
+        return
+    status = me["provider"]["status"]
     status_label = get_message(
         "provider_status_available" if status == "available" else "provider_status_offline",
-        provider_lang,
+        lang,
     )
     await callback.message.edit_text(
-        get_message("provider_availability_updated", provider_lang, status=status_label),
+        get_message("provider_availability_updated", lang, status=status_label),
         parse_mode="HTML",
-        reply_markup=clavier_disponibilite(status, provider_lang),
+        reply_markup=clavier_disponibilite(status, lang),
     )
-    await callback.answer(get_message("toast_status_updated", provider_lang))
+    await callback.answer(get_message("toast_status_updated", lang))
 
 
 @router.callback_query(F.data == "prest_edit_services")
 async def modifier_services_prestataire(callback: CallbackQuery, state: FSMContext):
-    provider = get_provider_by_telegram_id(callback.from_user.id)
-    lang = await get_provider_language(callback.from_user.id)
+    provider, lang = await _my_provider(callback)
     if provider is None:
-        await callback.answer(get_message("provider_profile_required", lang), show_alert=True)
         return
 
-    # Backend-first (comme afficher_profil_prestataire) : la liste de services
-    # affichée pour édition doit refléter le dernier état connu, backend ou local.
-    backend_profile = await fetch_backend_profile(callback.from_user.id)
-    provider_data = (backend_profile or {}).get("provider") if backend_profile else None
-    if provider_data and provider_data.get("services") is not None:
-        selected_services = provider_data["services"]
-    else:
-        try:
-            selected_services = json.loads(provider["services"] or "[]")
-        except json.JSONDecodeError:
-            selected_services = []
-
+    selected_services = list(provider["services"])
     await state.set_state(ProviderServicesEdit.services)
-    await state.update_data(provider_services_edit=selected_services)
+    await state.update_data(provider_services_edit=selected_services, language=lang)
     await callback.message.edit_text(
         get_message("provider_edit_services", lang),
         parse_mode="HTML",
@@ -599,7 +577,7 @@ async def choisir_service_modification(callback: CallbackQuery, state: FSMContex
         selected.append(service_key)
 
     await state.update_data(provider_services_edit=selected)
-    lang = await get_provider_language(callback.from_user.id)
+    lang = data.get("language", "fr")
     await callback.message.edit_reply_markup(reply_markup=clavier_modifier_services(selected, lang))
     await callback.answer()
 
@@ -608,53 +586,53 @@ async def choisir_service_modification(callback: CallbackQuery, state: FSMContex
 async def enregistrer_services_modifies(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     selected = data.get("provider_services_edit", [])
-    provider_lang = await get_provider_language(callback.from_user.id)
+    lang = data.get("language", "fr")
     if not selected:
-        await callback.answer(get_message("provider_select_service", provider_lang), show_alert=True)
+        await callback.answer(get_message("provider_select_service", lang), show_alert=True)
         return
 
-    update_provider_services(callback.from_user.id, selected)
-    await _safe_backend_call(sync_provider_services_to_backend(callback.from_user.id, selected))
+    try:
+        me = await backend_client.set_my_services(callback.from_user.id, selected)
+    except BackendUnavailable:
+        # La sélection reste à l'écran : le même bouton réessaie.
+        await _unavailable(callback, lang)
+        return
+    except MoneyRefused as error:
+        await _unavailable(callback, lang, error)
+        return
     await state.clear()
-    service_labels = [SERVICES.get(service, service) for service in selected]
+    service_labels = [catalogue.service_label(service, lang) for service in me["provider"]["services"]]
     await callback.message.edit_text(
-        get_message("provider_services_updated", provider_lang)
+        get_message("provider_services_updated", lang)
         + "\n\n"
         + "\n".join(f"• {label}" for label in service_labels),
         parse_mode="HTML",
-        reply_markup=clavier_prestataire(provider_lang),
+        reply_markup=clavier_prestataire(lang),
     )
-    await callback.answer(get_message("toast_services_saved", provider_lang))
+    await callback.answer(get_message("toast_services_saved", lang))
 
 
 @router.callback_query(F.data == "client_profil")
 async def afficher_profil_client(callback: CallbackQuery):
-    user = get_user_by_telegram_id(callback.from_user.id)
-    profile_data = await load_profile_from_backend(callback.from_user.id, fallback_user=user)
-
-    if user is None and not profile_data.get("client"):
-        await callback.answer("Client introuvable.", show_alert=True)
+    me = await backend_client.my_profile(callback.from_user.id)
+    if me is None:
+        await _unavailable(callback, backend_client.telegram_language(callback.from_user))
+        return
+    lang = me["language"]
+    client = me["client"]
+    if client is None:
+        await callback.answer(get_message("client_not_found", lang), show_alert=True)
         return
 
-    client_profile = profile_data.get("client") or {}
-    display_name = client_profile.get("first_name") or (user["first_name"] if user else "Client")
-    display_phone = client_profile.get("phone_number") or (user["phone_number"] if user else "Non renseigné")
-    # Compté dans le backend (seule mémoire des missions) ; inconnu s'il ne répond pas.
-    client_missions = profile_data.get("client_missions")
-    total_missions = len(client_missions) if client_missions is not None else "?"
-
-    lang = await get_user_language(callback.from_user.id)
     lang_labels = {"fr": "Français", "ln": "Lingala", "en": "English"}
-    lang_label = lang_labels.get(client_profile.get("language") or (user["language"] if user else "fr"), "Français")
-
     await callback.message.edit_text(
         get_message(
             "profile_title",
             lang,
-            name=html.escape(display_name or "Client"),
-            phone=html.escape(display_phone or "Non renseigné"),
-            lang_label=lang_label,
-            missions=total_missions,
+            name=html.escape(client["first_name"] or "Client"),
+            phone=html.escape(client["phone_number"] or get_message("not_provided", lang)),
+            lang_label=lang_labels.get(lang, "Français"),
+            missions=client["total_missions"],
         ),
         parse_mode="HTML",
         reply_markup=clavier_client(lang),
@@ -664,35 +642,27 @@ async def afficher_profil_client(callback: CallbackQuery):
 
 @router.callback_query(F.data == "prest_profil")
 async def afficher_profil_prestataire(callback: CallbackQuery):
-    provider = get_provider_by_telegram_id(callback.from_user.id)
-    backend_profile = await fetch_backend_profile(callback.from_user.id)
-    provider_data = (backend_profile or {}).get("provider") if backend_profile else None
-    lang = await get_provider_language(callback.from_user.id)
-
-    if provider is None and not provider_data:
-        await callback.answer(get_message("provider_not_found", lang), show_alert=True)
+    provider, lang = await _my_provider(callback)
+    if provider is None:
         return
 
-    display_name = provider_data.get("full_name") if provider_data else provider.get("full_name") if provider else get_message("provider_default_name", lang)
-    display_phone = provider_data.get("phone_number") if provider_data else provider.get("phone_number") if provider else get_message("not_provided", lang)
-    display_status = provider_data.get("status") if provider_data else provider.get("status") if provider else "available"
-    display_services = ", ".join(provider_data.get("services", [])) if provider_data else ""
     status_labels = {
         "available": get_message("provider_status_available", lang),
         "offline": get_message("provider_status_offline", lang),
         "paused": get_message("provider_status_paused", lang),
     }
-    status_label = status_labels.get(display_status, display_status)
+    status_label = status_labels.get(provider["status"], provider["status"])
+    services = ", ".join(catalogue.service_label(service, lang) for service in provider["services"])
 
     text = get_message(
         "provider_profile_title",
         lang,
-        name=html.escape(display_name or get_message("provider_default_name", lang)),
-        phone=html.escape(display_phone or get_message("not_provided", lang)),
+        name=html.escape(provider["full_name"] or get_message("provider_default_name", lang)),
+        phone=html.escape(provider["phone_number"] or get_message("not_provided", lang)),
         status=html.escape(status_label),
     )
-    if display_services:
-        text += "\n" + get_message("provider_profile_services", lang, services=html.escape(display_services))
+    if services:
+        text += "\n" + get_message("provider_profile_services", lang, services=html.escape(services))
 
     await callback.message.edit_text(
         text,
@@ -705,7 +675,7 @@ async def afficher_profil_prestataire(callback: CallbackQuery):
 @router.callback_query(F.data == "client_parametres")
 async def afficher_parametres_client(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     await callback.message.edit_text(
         get_message("settings_title", lang),
         parse_mode="HTML",
@@ -716,7 +686,7 @@ async def afficher_parametres_client(callback: CallbackQuery, state: FSMContext)
 
 @router.callback_query(F.data == "client_menu_from_settings")
 async def retour_menu_client(callback: CallbackQuery):
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     prenom = html.escape(callback.from_user.first_name or "Client")
     await callback.message.edit_text(
         get_message("client_menu", lang, prenom=prenom),
@@ -728,7 +698,7 @@ async def retour_menu_client(callback: CallbackQuery):
 
 @router.callback_query(F.data == "client_settings_language")
 async def demander_nouvelle_langue(callback: CallbackQuery):
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     await callback.message.edit_text(
         get_message("settings_language_prompt", lang),
         parse_mode="HTML",
@@ -738,8 +708,11 @@ async def demander_nouvelle_langue(callback: CallbackQuery):
 
 
 async def _appliquer_nouvelle_langue(callback: CallbackQuery, new_lang: str):
-    update_user_language(callback.from_user.id, new_lang)
-    await _safe_backend_call(sync_user_language_to_backend(callback.from_user.id, new_lang))
+    try:
+        await backend_client.set_my_language(callback.from_user.id, new_lang)
+    except (BackendUnavailable, MoneyRefused) as error:
+        await _unavailable(callback, await get_language(callback.from_user), error)
+        return
     prenom = html.escape(callback.from_user.first_name or "Client")
     await callback.message.edit_text(
         f"{get_message('settings_language_updated', new_lang)}\n\n"
@@ -767,7 +740,7 @@ async def modifier_langue_en(callback: CallbackQuery):
 
 @router.callback_query(F.data == "client_settings_name")
 async def demander_nouveau_nom(callback: CallbackQuery, state: FSMContext):
-    lang = await get_user_language(callback.from_user.id)
+    lang = await get_language(callback.from_user)
     await state.set_state(ClientSettings.name)
     await callback.message.edit_text(
         get_message("settings_name_prompt", lang),
@@ -778,17 +751,21 @@ async def demander_nouveau_nom(callback: CallbackQuery, state: FSMContext):
 
 @router.message(ClientSettings.name)
 async def nouveau_nom_recu(message: Message, state: FSMContext):
-    lang = await get_user_language(message.from_user.id)
+    lang = await get_language(message.from_user)
     new_name = (message.text or "").strip()
     if not new_name:
         await message.answer(get_message("settings_name_prompt", lang), parse_mode="HTML")
         return
 
+    try:
+        me = await backend_client.set_my_name(message.from_user.id, new_name)
+    except (BackendUnavailable, MoneyRefused) as error:
+        # L'étape reste ouverte : la personne renvoie son prénom.
+        await message.answer(money_failure_text(0, error, lang, "service_unavailable"))
+        return
     await state.clear()
-    update_user_name(message.from_user.id, new_name)
-    await _safe_backend_call(sync_user_name_to_backend(message.from_user.id, new_name))
     await message.answer(
-        get_message("settings_name_updated", lang, name=html.escape(new_name)),
+        get_message("settings_name_updated", lang, name=html.escape(me["client"]["first_name"])),
         parse_mode="HTML",
         reply_markup=clavier_client(lang),
     )

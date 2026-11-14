@@ -344,5 +344,7 @@
   "money_error_invalid_percentage": "Pourcentage invalide : il doit être entre 0 et 100.",
   "money_error_already_decided": "Nexis Hub a déjà pris une décision sur ce litige : un accord n'est plus possible.",
   "money_error_not_disputed": "Cette mission n'est pas en litige.",
-  "dispute_offer_hint": "🤝 Vous trouvez un arrangement avec le prestataire ? Proposez-lui un accord : le litige peut se régler sans attendre la décision de Nexis Hub."
+  "dispute_offer_hint": "🤝 Vous trouvez un arrangement avec le prestataire ? Proposez-lui un accord : le litige peut se régler sans attendre la décision de Nexis Hub.",
+  "client_not_found": "Profil client introuvable. Choisissez « Client » dans le menu pour vous inscrire.",
+  "money_error_already_quoted": "Vous avez déjà envoyé un devis pour cette mission."
 }

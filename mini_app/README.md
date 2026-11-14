@@ -35,9 +35,10 @@ client/prestataire et via la commande `/app`.
 
 ## Note d'architecture
 
-La Mini App lit et écrit **directement dans `db.py`** (SQLite legacy) — elle n'est pas
-encore passée par le backend V5, contrairement au bot. C'est un chantier de migration
-à part entière, pas encore lancé (voir `V5_MIGRATION_PLAN.md`).
+La Mini App ne garde rien : profils, catalogue, services proposés, disponibilité et
+missions sont lus et écrits par le backend, au nom de la personne vérifiée par
+Telegram (signature `initData`). Backend injoignable : réponse 503, la page dit que le
+service est indisponible.
 
 Elle ne couvre aujourd'hui que le **côté prestataire** (inscription, services, statut,
 démarrage/fin de mission). Aucun parcours client n'y est implémenté.
@@ -50,11 +51,9 @@ cloisonnement par utilisateur, validation d'entrée). Un test de mutation a
 confirmé que les tests d'auth échouent vraiment si la vérification est
 cassée. Ce qui reste, par ordre décroissant d'impact :
 
-1. **Ré-inscription = écrasement silencieux.** `POST
-   /api/provider/{id}/register` fait un `UPSERT` (`create_provider` dans
-   `db.py`) sans distinguer une première inscription d'une modification —
-   un prestataire qui se réinscrit voit son profil écrasé et son statut
-   remis à `available`, sans confirmation ni avertissement.
+1. ~~**Ré-inscription = écrasement silencieux.**~~ Corrigé : l'inscription
+   passe par le backend, qui ne change jamais le statut d'un prestataire
+   vérifié et met tout nouveau prestataire en attente de vérification.
 2. **Expiration de session fragile.** `mini_app/app.py:139` :
    `if auth_date and time.time() - auth_date > 86400:` — si `auth_date`
    vaut `0` ou est absent, la vérification d'expiration est simplement
@@ -64,10 +63,8 @@ cassée. Ce qui reste, par ordre décroissant d'impact :
    l'expiration réactiverait ce trou silencieusement.
 3. **Fenêtre de session de 24h** — longue pour une WebApp qui ne fait que
    des actions ponctuelles (inscription, changement de statut).
-4. **Listes dupliquées et divergentes.** `COMMUNES` (`mini_app/app.py:58`)
-   et `FALLBACK_SERVICES` (`mini_app/app.py:38`) sont recopiées en dur,
-   séparément des listes utilisées par `main.py` (le bot) — un service ou
-   une commune ajoutée d'un côté ne l'est pas forcément de l'autre.
+4. ~~**Listes dupliquées et divergentes.**~~ Corrigé : services et
+   communes viennent du catalogue du backend, le même pour le bot.
 
 Aucun de ces 4 points n'a de correctif appliqué à ce jour — décision
 volontaire de prioriser les tests d'abord (fait) avant la correction.

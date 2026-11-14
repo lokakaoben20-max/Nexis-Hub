@@ -4,7 +4,7 @@
 - réponse aux messages et boutons qu'aucun handler ne prend (avant : silence) ;
 - « Partager mon numéro » obligatoire, et seulement pour son propre numéro ;
 - textes de l'inscription prestataire traduits (erreur de nom, notification admin) ;
-- langue envoyée au backend seulement pour un profil qui existe (avant : 404).
+- langue gardée par le compte au backend, ou pour l'inscription à venir.
 """
 
 import asyncio
@@ -23,7 +23,6 @@ os.environ.setdefault("BOT_TOKEN", "123:ABC")
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.fsm.storage.redis import RedisStorage
 
-import db
 from messages import get_message
 from telegram_bot import backend_client, fallback, fsm_storage, registration
 
@@ -142,25 +141,10 @@ class RecordingBot:
         self.sent.append(("photo", chat_id, caption))
 
 
-async def _async_return(value):
-    return value
-
-
-@pytest.fixture
-def local_db(tmp_path, monkeypatch):
-    db.DB_PATH = tmp_path / "test_nexis_hub.db"
-    db.init_db()
-    RecordingAsyncClient.requests = []
-    monkeypatch.setattr(backend_client.httpx, "AsyncClient", RecordingAsyncClient)
-    # Force la lecture de langue sur db.py, sans dépendre du backend.
-    monkeypatch.setattr(backend_client, "fetch_backend_profile", lambda telegram_id: _async_return(None))
-    return db
-
-
 # --- « Partager mon numéro » obligatoire ------------------------------------
 
 
-def test_provider_typed_phone_number_is_refused(local_db):
+def test_provider_typed_phone_number_is_refused():
     state = State({"language": "fr"})
     message = Message(601, text="+243810000601")
 
@@ -171,7 +155,7 @@ def test_provider_typed_phone_number_is_refused(local_db):
     assert message.answers[-1][0] == get_message("phone_required", "fr")
 
 
-def test_provider_cannot_share_someone_elses_contact(local_db):
+def test_provider_cannot_share_someone_elses_contact():
     state = State({"language": "en"})
     message = Message(602, contact=Contact("+243810000999", user_id=999))
 
@@ -182,7 +166,7 @@ def test_provider_cannot_share_someone_elses_contact(local_db):
     assert message.answers[-1][0] == get_message("phone_contact_not_own", "en")
 
 
-def test_provider_contact_without_user_id_is_refused(local_db):
+def test_provider_contact_without_user_id_is_refused():
     """Une fiche contact sans compte Telegram (user_id absent) ne prouve rien."""
     state = State({"language": "fr"})
     message = Message(605, contact=Contact("+243810000605", user_id=None))
@@ -192,7 +176,7 @@ def test_provider_contact_without_user_id_is_refused(local_db):
     assert "provider_phone" not in state._data
 
 
-def test_provider_own_shared_number_is_accepted(local_db):
+def test_provider_own_shared_number_is_accepted():
     state = State({"language": "fr"})
     message = Message(603, contact=Contact("+243810000603", user_id=603))
 
@@ -202,30 +186,29 @@ def test_provider_own_shared_number_is_accepted(local_db):
     assert state.state == registration.ProviderRegistration.full_name
 
 
-def test_client_typed_phone_number_creates_no_account(local_db):
+def test_client_typed_phone_number_creates_no_account(live_backend):
     state = State({"language": "ln"})
     message = Message(604, text="0810000604")
 
     asyncio.run(registration.enregistrer_client(message, state))
 
-    assert db.get_user_by_telegram_id(604) is None
-    assert RecordingAsyncClient.requests == []
+    assert live_backend.profile(604)["client"] is None
     assert message.answers[-1][0] == get_message("phone_required", "ln")
 
 
-def test_client_own_shared_number_creates_account(local_db):
+def test_client_own_shared_number_creates_account(live_backend):
     state = State({"language": "fr"})
     message = Message(606, contact=Contact("+243810000606", user_id=606))
 
     asyncio.run(registration.enregistrer_client(message, state))
 
-    assert db.get_user_by_telegram_id(606)["phone_number"] == "+243810000606"
+    assert live_backend.profile(606)["client"]["phone_number"] == "+243810000606"
 
 
 # --- Textes traduits ---------------------------------------------------------
 
 
-def test_invalid_provider_name_error_follows_language(local_db):
+def test_invalid_provider_name_error_follows_language():
     state = State({"language": "en"})
     message = Message(610, text="A")
 
@@ -235,20 +218,21 @@ def test_invalid_provider_name_error_follows_language(local_db):
     assert state.state is None
 
 
-def test_new_provider_admin_notification_uses_admin_language(local_db, monkeypatch):
-    admin_id = 700
-    db.create_user(admin_id, "+243810000700", "Admin", language="en")
-    monkeypatch.setattr(backend_client, "admin_telegram_ids", lambda: _async_return([admin_id]))
-    provider = {
-        "telegram_id": 611,
-        "full_name": "Alice <Plombier>",
-        "phone_number": "+243810000611",
-        "services": '["service_plomberie"]',
-        "communes": '["Gombe"]',
-    }
+PROVIDER = {
+    "account_id": 42,
+    "full_name": "Alice <Plombier>",
+    "phone_number": "+243810000611",
+    "services": ["service_plomberie"],
+    "communes": ["Gombe"],
+}
+
+
+def test_new_provider_admin_notification_uses_admin_language(live_backend):
+    live_backend.client(700, first_name="Admin", language="en")
+    live_backend.grant_admin(700)
     bot = RecordingBot()
 
-    asyncio.run(registration._notifier_admin_nouveau_prestataire(Callback(611, bot=bot), provider, "id_doc", "selfie", ["p1"]))
+    asyncio.run(registration._notifier_admin_nouveau_prestataire(Callback(611, bot=bot), PROVIDER, "id_doc", "selfie", ["p1"]))
 
     summary = bot.sent[0][2]
     assert summary.startswith("🆕 <b>New provider awaiting approval</b>")
@@ -274,18 +258,12 @@ class FailingFirstBot(RecordingBot):
         await super().send_message(chat_id, text, parse_mode, reply_markup)
 
 
-def test_new_provider_reaches_every_admin_even_if_one_send_fails(local_db, monkeypatch):
-    monkeypatch.setattr(backend_client, "admin_telegram_ids", lambda: _async_return([701, 702]))
-    provider = {
-        "telegram_id": 612,
-        "full_name": "Bob",
-        "phone_number": "+243810000612",
-        "services": '["service_plomberie"]',
-        "communes": '["Gombe"]',
-    }
+def test_new_provider_reaches_every_admin_even_if_one_send_fails(live_backend):
+    live_backend.grant_admin(701)
+    live_backend.grant_admin(702)
     bot = FailingFirstBot(blocked=701)
 
-    asyncio.run(registration._notifier_admin_nouveau_prestataire(Callback(612, bot=bot), provider, "id_doc", "selfie", []))
+    asyncio.run(registration._notifier_admin_nouveau_prestataire(Callback(612, bot=bot), PROVIDER, "id_doc", "selfie", []))
 
     assert {chat_id for _, chat_id, _ in bot.sent} == {702}
     assert bot.sent[-1][2] == get_message("admin_new_provider_approve_prompt", "fr")
@@ -296,43 +274,39 @@ class _UnreachableBackend(RecordingAsyncClient):
         raise backend_client.httpx.ConnectError("backend injoignable")
 
 
-def test_without_backend_answer_no_admin_is_notified(local_db, monkeypatch):
-    monkeypatch.setattr(backend_client.httpx, "AsyncClient", _UnreachableBackend)
+def test_without_backend_answer_no_admin_is_notified():
     bot = RecordingBot()
-    provider = {"telegram_id": 613, "full_name": "C", "phone_number": "", "services": "[]", "communes": "[]"}
 
-    asyncio.run(registration._notifier_admin_nouveau_prestataire(Callback(613, bot=bot), provider, "id_doc", "selfie", []))
+    asyncio.run(registration._notifier_admin_nouveau_prestataire(Callback(613, bot=bot), PROVIDER, "id_doc", "selfie", []))
 
     assert bot.sent == []
 
 
-# --- Langue envoyée au backend seulement pour un profil existant -------------
+# --- Langue : celle du compte, gardée pour l'inscription sinon ---------------
 
 
-def test_language_choice_before_registration_sends_nothing_to_backend(local_db):
+def test_language_choice_before_registration_creates_no_profile(live_backend):
     state = State()
 
     asyncio.run(registration.langue_ln(Callback(620, data="lang_ln"), state))
 
     assert state._data["language"] == "ln", "gardée pour l'inscription"
-    assert RecordingAsyncClient.requests == []
+    assert live_backend.profile(620)["profile_type"] == "guest"
 
 
-def test_language_choice_updates_existing_client_only(local_db):
-    db.create_user(621, "+243810000621", "Eve", language="fr")
+def test_language_choice_updates_an_existing_client(live_backend):
+    live_backend.client(621, first_name="Eve", language="fr")
 
     asyncio.run(registration.langue_en(Callback(621, data="lang_en"), State()))
 
-    assert db.get_user_by_telegram_id(621)["language"] == "en"
-    urls = [url for _, url, _ in RecordingAsyncClient.requests]
-    assert len(urls) == 1 and "/users/621/language" in urls[0]
+    assert live_backend.profile(621)["language"] == "en"
 
 
 # --- Messages et boutons sans handler ----------------------------------------
 
 
-def test_unexpected_message_gets_an_answer_in_user_language(local_db):
-    db.create_user(630, "+243810000630", "Eve", language="ln")
+def test_unexpected_message_gets_an_answer_in_user_language(live_backend):
+    live_backend.client(630, first_name="Eve", language="ln")
     message = Message(630, text="bonjour")
 
     asyncio.run(fallback.message_inattendu(message))
@@ -340,7 +314,7 @@ def test_unexpected_message_gets_an_answer_in_user_language(local_db):
     assert message.answers == [(get_message("unexpected_message", "ln"), None)]
 
 
-def test_inactive_button_gets_an_alert(local_db):
+def test_inactive_button_gets_an_alert():
     callback = Callback(631, data="provider_service_service_plomberie")
 
     asyncio.run(fallback.bouton_inactif(callback))

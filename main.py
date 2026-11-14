@@ -13,7 +13,6 @@ from aiogram.exceptions import TelegramBadRequest
 import nexis_config
 import nexis_logs
 from messages import get_message
-from db import init_db
 # Phase 3 (voir V5_MIGRATION_PLAN.md) : tous les flows métier vivent
 # maintenant dans telegram_bot/ (modules séparés, même process — pas encore
 # des services à part, voir dp.include_router ci-dessous). Il ne reste dans
@@ -21,12 +20,13 @@ from db import init_db
 # ces modules (aucun pour l'instant).
 from telegram_bot import admin
 from telegram_bot import app_login
+from telegram_bot import catalogue
 from telegram_bot import fallback
 from telegram_bot import dashboard
 from telegram_bot import mission as mission_flow
 from telegram_bot import payment
 from telegram_bot import registration
-from telegram_bot.backend_client import check_backend_key, get_user_language
+from telegram_bot.backend_client import BACKEND_AUTH_HEADERS, BACKEND_BASE_URL, check_backend_key, get_language
 from telegram_bot.fsm_storage import build_fsm_storage, ensure_fsm_storage_ready
 from telegram_bot.keyboards import MINI_APP_URL, button_label, clavier_langue
 from telegram_bot.webhook_server import run_webhook
@@ -93,7 +93,7 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
 
 @dp.message(Command("app"))
 async def cmd_app(message: Message):
-    lang = await get_user_language(message.from_user.id)
+    lang = await get_language(message.from_user)
     if not MINI_APP_URL:
         await message.answer(
             "La Mini App est prête côté code, mais il manque encore MINI_APP_URL dans le fichier .env."
@@ -122,7 +122,8 @@ async def main():
     nexis_config.verifier("bot")
     nexis_logs.configurer("bot")
     check_backend_key()
-    init_db()
+    # Services et communes : ceux du backend, seule source du catalogue.
+    await catalogue.load(BACKEND_BASE_URL, BACKEND_AUTH_HEADERS)
     await ensure_fsm_storage_ready(dp.storage)
     mode = os.getenv("BOT_RUN_MODE", "polling").strip().lower()
     if mode == "webhook":

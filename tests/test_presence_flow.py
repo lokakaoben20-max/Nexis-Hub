@@ -69,8 +69,8 @@ def _type_code(state, text):
     return message
 
 
-def test_arrival_then_the_client_yes_starts_the_mission(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_arrival_then_the_client_yes_starts_the_mission(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     live_backend.sent.clear()
 
     arrived = _tap(payment.prestataire_arrive, PROVIDER_ID, f"presence_arrived_{mission_id}")
@@ -92,8 +92,8 @@ def test_arrival_then_the_client_yes_starts_the_mission(tmp_path, monkeypatch, l
     assert live_backend.sent[-1] == (PROVIDER_ID, get_message("presence_confirmed_provider", "fr", mission_id=mission_id))
 
 
-def test_a_second_arrival_tap_soon_after_does_not_ask_again(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_a_second_arrival_tap_soon_after_does_not_ask_again(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     live_backend.sent.clear()
 
     _tap(payment.prestataire_arrive, PROVIDER_ID, f"presence_arrived_{mission_id}")
@@ -103,8 +103,8 @@ def test_a_second_arrival_tap_soon_after_does_not_ask_again(tmp_path, monkeypatc
     assert len(live_backend.sent) == 1
 
 
-def test_an_old_start_button_only_declares_the_arrival(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_an_old_start_button_only_declares_the_arrival(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     live_backend.sent.clear()
 
     _tap(payment.prestataire_arrive, PROVIDER_ID, f"mission_start_{mission_id}")
@@ -113,8 +113,8 @@ def test_an_old_start_button_only_declares_the_arrival(tmp_path, monkeypatch, li
     assert [chat_id for chat_id, _ in live_backend.sent] == [CLIENT_ID]
 
 
-def test_the_provider_types_the_client_code(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_the_provider_types_the_client_code(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     live_backend.sent.clear()
     state = DummyState()
     asked = DummyCallback(PROVIDER_ID, data=f"presence_code_{mission_id}")
@@ -137,8 +137,8 @@ def test_the_provider_types_the_client_code(tmp_path, monkeypatch, live_backend)
     assert live_backend.sent == [(CLIENT_ID, get_message("presence_confirmed_client", "fr", mission_id=mission_id))]
 
 
-def test_five_wrong_codes_end_the_code_entry(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_five_wrong_codes_end_the_code_entry(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     state = DummyState({"presence_mission_id": mission_id})
     wrong = "0000" if _code(mission_id) != "0000" else "1111"
 
@@ -150,8 +150,8 @@ def test_five_wrong_codes_end_the_code_entry(tmp_path, monkeypatch, live_backend
     assert live_backend.mission(mission_id).status == "confirmed"
 
 
-def test_not_yet_keeps_the_buttons_and_warns_the_provider(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_not_yet_keeps_the_buttons_and_warns_the_provider(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _tap(payment.prestataire_arrive, PROVIDER_ID, f"presence_arrived_{mission_id}")
     live_backend.sent.clear()
 
@@ -163,8 +163,8 @@ def test_not_yet_keeps_the_buttons_and_warns_the_provider(tmp_path, monkeypatch,
     assert live_backend.mission(mission_id).status == "confirmed"
 
 
-def test_that_is_not_him_asks_to_confirm_then_freezes_the_mission(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_that_is_not_him_asks_to_confirm_then_freezes_the_mission(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
 
     first = _tap(payment.client_presence_pas_lui, CLIENT_ID, f"presence_wrong_{mission_id}")
     assert first.answered == get_message("presence_wrong_confirm_prompt", "fr")
@@ -183,8 +183,8 @@ def test_that_is_not_him_asks_to_confirm_then_freezes_the_mission(tmp_path, monk
     assert mission_id in live_backend.disputed_ids()
 
 
-def test_the_arrival_says_so_when_the_backend_is_down(tmp_path, monkeypatch, live_backend):
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
+def test_the_arrival_says_so_when_the_backend_is_down(monkeypatch, live_backend):
+    mission_id = _paid_mission(live_backend)
     _go_offline(monkeypatch)
 
     arrived = _tap(payment.prestataire_arrive, PROVIDER_ID, f"presence_arrived_{mission_id}")

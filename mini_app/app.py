@@ -15,17 +15,6 @@ from pydantic import BaseModel, Field
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from db import (
-    create_provider,
-    create_service_request,
-    get_active_services,
-    get_provider_by_telegram_id,
-    get_provider_service_requests,
-    get_user_by_telegram_id,
-    provider_can_change_own_status,
-    update_provider_services,
-    update_provider_status,
-)
 import nexis_config
 import nexis_logs
 from telegram_bot import backend_client
@@ -49,39 +38,6 @@ async def _lifespan(_app: FastAPI):
 
 app = FastAPI(title="Nexis Hub Mini App", lifespan=_lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
-
-FALLBACK_SERVICES = {
-    "service_plomberie": "Plomberie",
-    "service_electricite": "Electricite",
-    "service_climatisation": "Climatisation",
-    "service_informatique": "Informatique",
-    "service_graphisme": "Graphisme",
-    "service_coiffure": "Coiffure",
-    "service_nettoyage": "Nettoyage",
-    "service_jardinage": "Jardinage",
-    "service_autre": "Autre service",
-}
-
-
-def active_services():
-    try:
-        services = get_active_services("fr", include_icon=False)
-        return services or FALLBACK_SERVICES
-    except Exception:
-        return FALLBACK_SERVICES
-
-COMMUNES = [
-    "Gombe",
-    "Kinshasa",
-    "Limete",
-    "Ngaliema",
-    "Lemba",
-    "Kalamu",
-    "Barumbu",
-    "Lingwala",
-    "Autre commune",
-]
-
 
 class ServicesUpdate(BaseModel):
     services: list[str]
@@ -129,22 +85,6 @@ async def health_ready():
     except httpx.HTTPError:
         return JSONResponse({"status": "indisponible", "problemes": ["backend injoignable"]}, status_code=503)
     return {"status": "ok"}
-
-
-def row_to_dict(row):
-    if row is None:
-        return None
-    return dict(row)
-
-
-def load_json_list(value):
-    if not value:
-        return []
-    try:
-        parsed = json.loads(value)
-        return parsed if isinstance(parsed, list) else []
-    except json.JSONDecodeError:
-        return []
 
 
 def verify_telegram_init_data(
@@ -212,121 +152,125 @@ async def my_missions(telegram_id: int, role: str) -> list[dict] | None:
         return None
 
 
+# Profils et catalogue : ceux du backend, lus et écrits au nom de la personne
+# vérifiée par Telegram (signature initData). La Mini App ne garde rien.
+UNAVAILABLE = "Service momentanément indisponible. Rien n'a changé, réessayez dans un instant."
+PROFILE_REFUSALS = {
+    "unknown_service": "Service invalide",
+    "services_required": "Choisis au moins un service",
+    "invalid_services": "Service invalide",
+    "unknown_commune": "Commune invalide",
+    "communes_required": "Choisis au moins une commune",
+    "invalid_communes": "Commune invalide",
+    "invalid_name": "Nom complet invalide",
+    "invalid_phone": "Numero WhatsApp invalide",
+    "provider_not_found": "Prestataire introuvable",
+    "provider_not_verified": "Profil en attente de validation par Nexis",
+    "provider_suspended": "Profil suspendu par Nexis",
+}
+
+
+async def _backend(call):
+    """Résultat d'une demande au backend, ou l'erreur HTTP que la page affiche
+    (texte de `detail`)."""
+    try:
+        return await call
+    except MoneyRefused as error:
+        status = 404 if error.code == "provider_not_found" else 403 if error.code in ("provider_not_verified", "provider_suspended") else 400
+        raise HTTPException(status_code=status, detail=PROFILE_REFUSALS.get(error.code, "Action refusee"))
+    except BackendUnavailable:
+        raise HTTPException(status_code=503, detail=UNAVAILABLE)
+
+
+def page_provider(provider: dict | None) -> dict | None:
+    """Profil prestataire du backend, dans la forme que la page lit."""
+    if provider is None:
+        return None
+    return {**provider, "rating": provider.get("average_rating") or 0}
+
+
 @app.get("/api/profile/{telegram_id}")
 async def profile(telegram_id: int, telegram_user: dict = Depends(verify_telegram_init_data)):
     require_same_telegram_user(telegram_id, telegram_user)
-    # Soldes lus dans le registre du backend, au nom de la personne vérifiée
-    # par Telegram : seule source de vérité. Backend injoignable = None, la
+    me = await _backend(backend_client.fetch_me(telegram_id))
+    catalogue = await _backend(backend_client.fetch_catalogue())
+    service_requests = await _backend(backend_client.my_service_requests(telegram_id)) if me["provider"] else []
+    # Soldes lus dans le registre du backend : backend injoignable = None, la
     # page affiche « indisponible », jamais un chiffre par défaut.
     wallets = await backend_client.fetch_wallets(telegram_id)
     wallet = wallets.get("wallet") if isinstance(wallets, dict) else None
-    user = row_to_dict(get_user_by_telegram_id(telegram_id))
-    provider = row_to_dict(get_provider_by_telegram_id(telegram_id))
-    user_missions = await my_missions(telegram_id, "client")
-    provider_missions = await my_missions(telegram_id, "provider")
-    service_requests = [row_to_dict(row) for row in get_provider_service_requests(telegram_id)]
-
-    if provider:
-        provider["services"] = load_json_list(provider.get("services"))
-        provider["communes"] = load_json_list(provider.get("communes"))
-        provider["languages_spoken"] = load_json_list(provider.get("languages_spoken"))
 
     return {
         "telegram_id": telegram_id,
-        "client": user,
-        "provider": provider,
-        "client_missions": user_missions,
-        "provider_missions": provider_missions,
+        "client": me["client"],
+        "provider": page_provider(me["provider"]),
+        "client_missions": await my_missions(telegram_id, "client"),
+        "provider_missions": await my_missions(telegram_id, "provider"),
         "service_requests": service_requests,
         "wallet": wallet if isinstance(wallet, dict) else None,
-        "available_services": active_services(),
-        "available_communes": COMMUNES,
+        "available_services": {service["key"]: service["names"]["fr"] for service in catalogue["services"]},
+        "available_communes": catalogue["communes"],
     }
 
 
 @app.post("/api/provider/{telegram_id}/register")
-def register_provider(
+async def register_provider(
     telegram_id: int,
     payload: ProviderRegistrationCreate,
     telegram_user: dict = Depends(verify_telegram_init_data),
 ):
+    """Inscription prestataire depuis la Mini App. Le backend le met en
+    attente de vérification, comme depuis le bot : il ne reçoit aucune mission
+    tant que l'équipe ne l'a pas validé. La Mini App ne collecte pas encore
+    les documents d'identité (chantier séparé) ; le numéro tapé n'est pas
+    prouvé."""
     require_same_telegram_user(telegram_id, telegram_user)
     full_name = payload.full_name.strip()
     phone_number = payload.phone_number.strip()
-    services = payload.services
-    communes = payload.communes
-
     if len(full_name) < 3:
         raise HTTPException(status_code=400, detail="Nom complet trop court")
     if len(phone_number) < 8:
         raise HTTPException(status_code=400, detail="Numero WhatsApp invalide")
-    if not services:
+    if not payload.services:
         raise HTTPException(status_code=400, detail="Choisis au moins un service")
-    if not communes:
+    if not payload.communes:
         raise HTTPException(status_code=400, detail="Choisis au moins une commune")
-    available_services = active_services()
-    if any(service not in available_services for service in services):
-        raise HTTPException(status_code=400, detail="Service invalide")
-    if any(commune not in COMMUNES for commune in communes):
-        raise HTTPException(status_code=400, detail="Commune invalide")
 
-    create_provider(
-        telegram_id=telegram_id,
-        phone_number=phone_number,
-        full_name=full_name,
-        services=services,
-        communes=communes,
-        language=payload.language,
+    me = await _backend(
+        backend_client.save_provider_profile(
+            telegram_id,
+            {
+                "full_name": full_name,
+                "phone_number": phone_number,
+                "services": payload.services,
+                "communes": payload.communes,
+                "language": payload.language,
+            },
+        )
     )
-    # Vérification obligatoire à l'inscription (V5_MIGRATION_PLAN.md) : create_provider
-    # remet toujours status="available" — la Mini App ne collecte pas encore les
-    # documents d'identité (contrairement au bot Telegram, voir
-    # telegram_bot/registration.py), mais un prestataire inscrit ici ne doit pas
-    # pouvoir contourner la validation admin pour autant. Reste non-matchable comme
-    # côté bot ; la collecte de documents via la Mini App est un chantier séparé.
-    provider = row_to_dict(update_provider_status(telegram_id, "pending_verification"))
-    provider["services"] = load_json_list(provider.get("services"))
-    provider["communes"] = load_json_list(provider.get("communes"))
-    provider["languages_spoken"] = load_json_list(provider.get("languages_spoken"))
-    return {"status": "ok", "provider": provider}
+    return {"status": "ok", "provider": page_provider(me["provider"])}
 
 
 @app.post("/api/provider/{telegram_id}/services")
-def save_provider_services(
+async def save_provider_services(
     telegram_id: int,
     payload: ServicesUpdate,
     telegram_user: dict = Depends(verify_telegram_init_data),
 ):
     require_same_telegram_user(telegram_id, telegram_user)
-    provider = get_provider_by_telegram_id(telegram_id)
-    if provider is None:
-        raise HTTPException(status_code=404, detail="Prestataire introuvable")
-
-    available_services = active_services()
-    invalid_services = [service for service in payload.services if service not in available_services]
-    if invalid_services:
-        raise HTTPException(status_code=400, detail="Service invalide")
     if not payload.services:
         raise HTTPException(status_code=400, detail="Choisis au moins un service")
-
-    updated_provider = row_to_dict(update_provider_services(telegram_id, payload.services))
-    updated_provider["services"] = load_json_list(updated_provider.get("services"))
-    updated_provider["communes"] = load_json_list(updated_provider.get("communes"))
-    updated_provider["languages_spoken"] = load_json_list(updated_provider.get("languages_spoken"))
-    return {"status": "ok", "provider": updated_provider}
+    me = await _backend(backend_client.set_my_services(telegram_id, payload.services))
+    return {"status": "ok", "provider": page_provider(me["provider"])}
 
 
 @app.post("/api/provider/{telegram_id}/service-requests")
-def request_missing_service(
+async def request_missing_service(
     telegram_id: int,
     payload: ServiceRequestCreate,
     telegram_user: dict = Depends(verify_telegram_init_data),
 ):
     require_same_telegram_user(telegram_id, telegram_user)
-    provider = get_provider_by_telegram_id(telegram_id)
-    if provider is None:
-        raise HTTPException(status_code=404, detail="Prestataire introuvable")
-
     service_name = payload.service_name.strip()
     description = payload.description.strip()
     if len(service_name) < 3:
@@ -334,31 +278,25 @@ def request_missing_service(
     if len(description) < 10:
         raise HTTPException(status_code=400, detail="Description trop courte")
 
-    request_id = create_service_request(telegram_id, service_name, description)
-    service_requests = [row_to_dict(row) for row in get_provider_service_requests(telegram_id)]
-    return {"status": "ok", "request_id": request_id, "service_requests": service_requests}
+    request = await _backend(backend_client.propose_service(telegram_id, service_name, description))
+    service_requests = await _backend(backend_client.my_service_requests(telegram_id))
+    return {"status": "ok", "request_id": request["id"], "service_requests": service_requests}
 
 
 @app.post("/api/provider/{telegram_id}/status")
-def save_provider_status(
+async def save_provider_status(
     telegram_id: int,
     payload: StatusUpdate,
     telegram_user: dict = Depends(verify_telegram_init_data),
 ):
+    """Disponible ou hors ligne : le backend décide (prestataire vérifié et
+    non suspendu seulement). C'est ce statut qui compte pour les alertes de
+    mission, que le changement vienne du bot ou de la Mini App."""
     require_same_telegram_user(telegram_id, telegram_user)
-    provider = get_provider_by_telegram_id(telegram_id)
-    if provider is None:
-        raise HTTPException(status_code=404, detail="Prestataire introuvable")
     if payload.status not in {"available", "offline"}:
         raise HTTPException(status_code=400, detail="Statut invalide")
-    if not provider_can_change_own_status(provider):
-        raise HTTPException(status_code=403, detail="Profil en attente de validation par Nexis")
-
-    updated_provider = row_to_dict(update_provider_status(telegram_id, payload.status))
-    updated_provider["services"] = load_json_list(updated_provider.get("services"))
-    updated_provider["communes"] = load_json_list(updated_provider.get("communes"))
-    updated_provider["languages_spoken"] = load_json_list(updated_provider.get("languages_spoken"))
-    return {"status": "ok", "provider": updated_provider}
+    me = await _backend(backend_client.set_my_availability(telegram_id, payload.status))
+    return {"status": "ok", "provider": page_provider(me["provider"])}
 
 
 async def _mission_action(mission_id: int, action) -> dict:

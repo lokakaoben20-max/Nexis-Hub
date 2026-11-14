@@ -17,11 +17,8 @@ from tests.test_dispute_flow import (
     DummyMessage,
     DummyMessageObject,
     DummyState,
-    _async_return,
     _paid_mission,
 )
-
-import db
 
 
 class SlowGateway(mobile_money.get_gateway().__class__):
@@ -36,23 +33,16 @@ class SlowGateway(mobile_money.get_gateway().__class__):
         return GatewayResult(SUCCEEDED, f"SLOW-{intent.id}", intent.amount, intent.currency, 0)
 
 
-def _accepted_quote(tmp_path, monkeypatch, live):
+def _accepted_quote(live):
     """Mission avec devis accepté dans le backend, pas encore payée (même jeu que _paid_mission)."""
-    from tests.test_dispute_flow import _languages
-
-    db.DB_PATH = tmp_path / "test_nexis_hub.db"
-    db.init_db()
-    _languages(monkeypatch, live)
-    for module in (dashboard,):
-        monkeypatch.setattr(module, "get_user_language", lambda tid: _async_return("fr"))
-        monkeypatch.setattr(module, "get_provider_language", lambda tid: _async_return("fr"))
-    db.create_user(CLIENT_ID, "0810000100", "Cliente", language="fr")
-    db.create_provider(PROVIDER_ID, "+243970000200", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
+    live.grant_admin(ADMIN_ID)
+    live.client(CLIENT_ID, first_name="Cliente", phone="0810000100")
+    live.provider(PROVIDER_ID, "Prestataire", phone="+243970000200")
     return live.accepted_quote(CLIENT_ID, PROVIDER_ID, amount=100.0, service="service_plomberie")
 
 
-def test_mobile_money_asks_the_operator_with_the_detected_one_first(tmp_path, monkeypatch, live_backend):
-    _, quote_id = _accepted_quote(tmp_path, monkeypatch, live_backend)
+def test_mobile_money_asks_the_operator_with_the_detected_one_first(monkeypatch, live_backend):
+    _, quote_id = _accepted_quote(live_backend)
     callback = DummyCallback(CLIENT_ID, data=f"qpay_mobile_{quote_id}")
 
     asyncio.run(payment.paiement_mobile_money(callback))
@@ -61,10 +51,10 @@ def test_mobile_money_asks_the_operator_with_the_detected_one_first(tmp_path, mo
     assert callback.message.edited_markup.inline_keyboard[0][0].callback_data == f"qpay_op_{quote_id}_mpesa"
 
 
-def test_a_payment_waits_for_the_phone_then_the_backend_confirms_and_notifies(tmp_path, monkeypatch, live_backend):
+def test_a_payment_waits_for_the_phone_then_the_backend_confirms_and_notifies(monkeypatch, live_backend):
     SlowGateway.validated = False
     monkeypatch.setattr(mobile_money, "get_gateway", lambda: SlowGateway())
-    mission_id, quote_id = _accepted_quote(tmp_path, monkeypatch, live_backend)
+    mission_id, quote_id = _accepted_quote(live_backend)
 
     callback = DummyCallback(CLIENT_ID, data=f"qpay_op_{quote_id}_mpesa")
     asyncio.run(payment.paiement_mobile_money_operateur(callback))
@@ -83,10 +73,10 @@ def test_a_payment_waits_for_the_phone_then_the_backend_confirms_and_notifies(tm
     assert check.bot.messages == []
 
 
-def test_only_the_client_can_check_their_payment(tmp_path, monkeypatch, live_backend):
+def test_only_the_client_can_check_their_payment(monkeypatch, live_backend):
     SlowGateway.validated = False
     monkeypatch.setattr(mobile_money, "get_gateway", lambda: SlowGateway())
-    _, quote_id = _accepted_quote(tmp_path, monkeypatch, live_backend)
+    _, quote_id = _accepted_quote(live_backend)
     callback = DummyCallback(CLIENT_ID, data=f"qpay_op_{quote_id}_mpesa")
     asyncio.run(payment.paiement_mobile_money_operateur(callback))
     intent_id = int(callback.message.edited_markup.inline_keyboard[0][0].callback_data.removeprefix("check_mm_"))
@@ -97,12 +87,9 @@ def test_only_the_client_can_check_their_payment(tmp_path, monkeypatch, live_bac
     assert intruder.answered == get_message("money_error_not_mission_client", "fr")
 
 
-def _earned(tmp_path, monkeypatch, live_backend):
+def _earned(live_backend):
     """Le prestataire a gagné 90 USD (mission payée, faite, confirmée)."""
-    mission_id = _paid_mission(tmp_path, monkeypatch, live_backend)
-    for module in (dashboard,):
-        monkeypatch.setattr(module, "get_user_language", lambda tid: _async_return("fr"))
-        monkeypatch.setattr(module, "get_provider_language", lambda tid: _async_return("fr"))
+    mission_id = _paid_mission(live_backend)
     # Arrivée confirmée par le client : la mission démarre.
     asyncio.run(payment.client_confirme_presence(DummyCallback(CLIENT_ID, data=f"presence_yes_{mission_id}")))
     asyncio.run(payment.prestataire_termine_mission(DummyCallback(PROVIDER_ID, data=f"mission_finish_{mission_id}")))
@@ -120,8 +107,8 @@ def _withdraw(amount_text="50"):
     return message, final, state
 
 
-def test_a_withdrawal_is_reserved_then_sent_after_admin_approval(tmp_path, monkeypatch, live_backend):
-    _earned(tmp_path, monkeypatch, live_backend)
+def test_a_withdrawal_is_reserved_then_sent_after_admin_approval(monkeypatch, live_backend):
+    _earned(live_backend)
 
     message, final, state = _withdraw("50")
     assert state.cleared
@@ -140,8 +127,8 @@ def test_a_withdrawal_is_reserved_then_sent_after_admin_approval(tmp_path, monke
     assert "envoyé" in bot.messages[0].text
 
 
-def test_a_rejected_withdrawal_gives_the_money_back(tmp_path, monkeypatch, live_backend):
-    _earned(tmp_path, monkeypatch, live_backend)
+def test_a_rejected_withdrawal_gives_the_money_back(monkeypatch, live_backend):
+    _earned(live_backend)
     _withdraw("50")
 
     bot = DummyBot()
@@ -151,8 +138,8 @@ def test_a_rejected_withdrawal_gives_the_money_back(tmp_path, monkeypatch, live_
     assert "revenu" in bot.messages[0].text
 
 
-def test_withdrawal_amount_is_checked_by_the_backend(tmp_path, monkeypatch, live_backend):
-    _earned(tmp_path, monkeypatch, live_backend)
+def test_withdrawal_amount_is_checked_by_the_backend(monkeypatch, live_backend):
+    _earned(live_backend)
 
     _, final, _ = _withdraw("500")
     assert final.message.edited_text == get_message("money_error_insufficient_balance", "fr")
@@ -161,8 +148,8 @@ def test_withdrawal_amount_is_checked_by_the_backend(tmp_path, monkeypatch, live
     assert live_backend.balance(PROVIDER_ID) == 90.0
 
 
-def test_only_the_admin_sees_and_decides_withdrawals(tmp_path, monkeypatch, live_backend):
-    _earned(tmp_path, monkeypatch, live_backend)
+def test_only_the_admin_sees_and_decides_withdrawals(monkeypatch, live_backend):
+    _earned(live_backend)
     _withdraw("50")
 
     callback = DummyCallback(PROVIDER_ID, data="admin_payout_ok_1")
@@ -199,24 +186,24 @@ def _admin_cards():
     return listing.message.answers
 
 
-def _mismatched_payment(tmp_path, monkeypatch, live_backend, received):
+def _mismatched_payment(monkeypatch, live_backend, received):
     ReceivedGateway.received = received
     monkeypatch.setattr(mobile_money, "get_gateway", lambda: ReceivedGateway())
-    mission_id, quote_id = _accepted_quote(tmp_path, monkeypatch, live_backend)
+    mission_id, quote_id = _accepted_quote(live_backend)
     callback = DummyCallback(CLIENT_ID, data=f"qpay_op_{quote_id}_mpesa")
     asyncio.run(payment.paiement_mobile_money_operateur(callback))
     return mission_id, callback
 
 
-def test_a_different_amount_tells_the_client_the_money_is_safe_and_alerts_the_admin(tmp_path, monkeypatch, live_backend):
-    mission_id, callback = _mismatched_payment(tmp_path, monkeypatch, live_backend, "99.00")
+def test_a_different_amount_tells_the_client_the_money_is_safe_and_alerts_the_admin(monkeypatch, live_backend):
+    mission_id, callback = _mismatched_payment(monkeypatch, live_backend, "99.00")
 
     assert callback.message.edited_text == get_message("payment_mismatch_client", "fr", mission_id=mission_id)
     assert live_backend.mission(mission_id).payment_status is None
 
 
-def test_the_admin_pays_the_mission_from_a_larger_amount_received(tmp_path, monkeypatch, live_backend):
-    mission_id, _ = _mismatched_payment(tmp_path, monkeypatch, live_backend, "105.00")
+def test_the_admin_pays_the_mission_from_a_larger_amount_received(monkeypatch, live_backend):
+    mission_id, _ = _mismatched_payment(monkeypatch, live_backend, "105.00")
 
     card, markup = _admin_cards()[0]
     assert "Demandé : 100.00 USD" in card and "Reçu : 105.00 USD" in card
@@ -238,8 +225,8 @@ def test_the_admin_pays_the_mission_from_a_larger_amount_received(tmp_path, monk
     assert live_backend.sent == []
 
 
-def test_a_smaller_amount_can_only_go_to_the_client_wallet(tmp_path, monkeypatch, live_backend):
-    mission_id, _ = _mismatched_payment(tmp_path, monkeypatch, live_backend, "99.00")
+def test_a_smaller_amount_can_only_go_to_the_client_wallet(monkeypatch, live_backend):
+    mission_id, _ = _mismatched_payment(monkeypatch, live_backend, "99.00")
 
     assert [row[0].callback_data for row in _admin_cards()[0][1].inline_keyboard] == ["admin_mismatch_wallet_1"]
 
@@ -252,8 +239,8 @@ def test_a_smaller_amount_can_only_go_to_the_client_wallet(tmp_path, monkeypatch
     assert live_backend.mission(mission_id).payment_status is None
 
 
-def test_only_the_admin_settles_a_different_amount(tmp_path, monkeypatch, live_backend):
-    _mismatched_payment(tmp_path, monkeypatch, live_backend, "105.00")
+def test_only_the_admin_settles_a_different_amount(monkeypatch, live_backend):
+    _mismatched_payment(monkeypatch, live_backend, "105.00")
 
     for handler, data in ((admin.admin_montants_differents, "admin_mismatches"), (admin.admin_regler_montant_different, "admin_mismatch_pay_1")):
         intruder = DummyCallback(CLIENT_ID, data=data)
@@ -261,7 +248,7 @@ def test_only_the_admin_settles_a_different_amount(tmp_path, monkeypatch, live_b
         assert intruder.answered == "Accès admin refusé."
 
     # Le backend revérifie : un bot qui croirait à tort que c'est un admin ne suffit pas.
-    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: _async_return(True))
+    monkeypatch.setattr(admin, "admin_status", lambda telegram_id: asyncio.sleep(0, result=True))
     live_backend.revoke_admin(ADMIN_ID)
     refused = DummyCallback(ADMIN_ID, data="admin_mismatch_pay_1")
     asyncio.run(admin.admin_regler_montant_different(refused))

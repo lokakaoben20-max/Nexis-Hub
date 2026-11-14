@@ -27,7 +27,7 @@ service dans cette commune, et qui n'est pas le client lui-même.
 
 from datetime import datetime
 
-from sqlalchemy import case, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.orm import Session
 
 from backend.app import app_auth
@@ -491,6 +491,24 @@ def admin_providers(db: Session, status: str | None = None, limit: int = 20) -> 
     if status is not None:
         query = query.where(ProviderProfile.status == status)
     return list(db.scalars(query.limit(max(1, min(limit, 50)))))
+
+
+def admin_clients(db: Session, limit: int = 20) -> list[ClientProfile]:
+    """Clients pour l'écran admin : les plus récents d'abord."""
+    query = select(ClientProfile).order_by(ClientProfile.created_at.desc(), ClientProfile.account_id.desc())
+    return list(db.scalars(query.limit(max(1, min(limit, 50)))))
+
+
+def profile_counts(db: Session) -> dict:
+    """Comptes affichés au tableau de bord admin."""
+    return {
+        "users": db.scalar(select(func.count()).select_from(ClientProfile)) or 0,
+        "providers": db.scalar(select(func.count()).select_from(ProviderProfile)) or 0,
+        "providers_pending": db.scalar(
+            select(func.count()).select_from(ProviderProfile).where(ProviderProfile.status == "pending_verification")
+        )
+        or 0,
+    }
 
 
 # --- Matching ----------------------------------------------------------------

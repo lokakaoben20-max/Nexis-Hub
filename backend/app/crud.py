@@ -127,7 +127,9 @@ MEDIA_KINDS = ("photo", "voice", "video_note")  # 10 caractères au plus (missio
 # Une mission reçoit des devis tant qu'aucun n'est accepté.
 QUOTABLE_STATUSES = {"pending", "quoted"}
 MAX_MISSION_MEDIA = 20
-MAX_ALERTED_PROVIDERS = 20
+# Prestataires prévenus d'une nouvelle mission : les mieux classés parmi les
+# vérifiés, disponibles et non suspendus qui font ce service dans cette commune.
+ALERTS_PER_MISSION = 3
 
 # Lieu exact de la mission (CONCEPTION_MISSIONS.md, « Lieu exact de la mission »).
 # Rectangle large autour de la ville-province de Kinshasa, seule zone servie :
@@ -163,7 +165,6 @@ def create_mission(
     description: str = "",
     urgent: bool = False,
     media: list[tuple[str, str]] | None = None,
-    alert_provider_telegram_ids: list[int] | None = None,
     destination_latitude: float | None = None,
     destination_longitude: float | None = None,
     destination_landmark: str | None = None,
@@ -172,6 +173,11 @@ def create_mission(
     personne pour qui le canal agit. Mission, médias et prestataires prévenus
     sont écrits dans une seule transaction.
 
+    Le backend choisit seul qui est prévenu (`ALERTS_PER_MISSION` au plus) :
+    les prestataires vérifiés, disponibles, non suspendus, qui font ce service
+    dans cette commune, du mieux classé au moins bien classé
+    (`profils.eligible_providers`). Le canal ne propose personne.
+
     Le lieu exact (point et repère) est obligatoire : sans lui, le prestataire
     ne sait pas où aller (`invalid_destination` sinon).
 
@@ -179,7 +185,6 @@ def create_mission(
     déjà créée (second élément `False`), ou un refus si la demande diffère.
     Le client n'est jamais prévenu de sa propre mission comme prestataire."""
     media = list(media or [])
-    alert_ids = list(dict.fromkeys(alert_provider_telegram_ids or []))
     if not creation_key or len(creation_key) > 64:
         raise MissionRefused("invalid_creation_key", 400)
     if not service or not commune:
@@ -190,8 +195,8 @@ def create_mission(
         raise MissionRefused("too_many_media", 400)
     if any(kind not in MEDIA_KINDS or not external_id for kind, external_id in media):
         raise MissionRefused("invalid_media", 400)
-    if len(alert_ids) > MAX_ALERTED_PROVIDERS:
-        raise MissionRefused("too_many_alerts", 400)
+    if service not in {item.key for item in profils.active_services(db)} or commune not in profils.communes(db):
+        raise MissionRefused("invalid_mission", 400)
     latitude, longitude, landmark = checked_destination(destination_latitude, destination_longitude, destination_landmark)
 
     client_account_id = ledger.account_id_for(db, channel, client_external_id, create=True)
@@ -252,11 +257,16 @@ def create_mission(
     db.flush()
     for position, (kind, external_id) in enumerate(media):
         db.add(MissionMedia(mission_id=mission.mission_id, channel=channel, kind=kind, external_id=external_id, position=position))
-    for provider_telegram_id in alert_ids:
-        provider_account_id = ledger.account_id_for(db, ledger.TELEGRAM, provider_telegram_id, create=True)
-        if provider_account_id == client_account_id:
+    alerted = 0
+    for provider in profils.eligible_providers(db, service, commune, exclude_account_id=client_account_id):
+        if alerted == ALERTS_PER_MISSION:
+            break
+        # Un prestataire est prévenu sur Telegram (seul canal des prestataires
+        # aujourd'hui) : sans identité Telegram, personne ne le préviendrait.
+        if ledger.telegram_id_of(db, provider.account_id) is None:
             continue
-        db.add(MissionAlert(mission_id=mission.mission_id, provider_account_id=provider_account_id))
+        db.add(MissionAlert(mission_id=mission.mission_id, provider_account_id=provider.account_id))
+        alerted += 1
     try:
         db.commit()
     except IntegrityError:
@@ -384,6 +394,10 @@ def admin_missions(db: Session, status: str | None = None, limit: int = 10) -> l
     if status is not None:
         query = query.filter(BotMission.status == status)
     return query.order_by(BotMission.mission_id.desc()).limit(limit).all()
+
+
+def pending_service_request_count(db: Session) -> int:
+    return db.query(func.count(ProviderServiceRequest.id)).filter(ProviderServiceRequest.status == "pending").scalar() or 0
 
 
 def mission_stats(db: Session) -> dict:

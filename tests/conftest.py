@@ -37,6 +37,24 @@ def _backend_offline(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _catalogue():
+    """Le catalogue que le bot charge du backend au démarrage : ici celui de
+    la migration (`catalogue_initial`), le même que le backend de test."""
+    from backend.app import catalogue_initial
+    from telegram_bot import catalogue
+
+    catalogue.fill(
+        {
+            "services": [
+                {"key": key, "icon": icon, "names": {"fr": fr, "ln": ln, "en": en}}
+                for key, fr, ln, en, _category, icon, *_rest in catalogue_initial.SERVICES
+            ],
+            "communes": list(catalogue_initial.COMMUNES),
+        }
+    )
+
+
+@pytest.fixture(autouse=True)
 def _fast_sqlite(monkeypatch):
     """Sous Windows, chaque écriture SQLite sur disque (fsync du fichier et de
     son journal) coûtait ~0,1 s -- l'essentiel de la durée de la suite. Les
@@ -58,6 +76,47 @@ class LiveBackend:
         # Notifications que le backend enverrait lui-même par Telegram.
         self.sent = []
         self.markups = []
+
+    def client(self, telegram_id: int, first_name: str = "Client", language: str = "fr", phone: str | None = None) -> int:
+        """Profil client, comme après l'inscription dans le bot."""
+        from backend.app import ledger, profils
+
+        with self.database.SessionLocal() as session:
+            account_id = ledger.account_id_for(session, ledger.TELEGRAM, telegram_id, create=True)
+            profils.save_client_profile(session, account_id, first_name=first_name, phone_number=phone)
+            profils.set_language(session, account_id, language)
+            session.commit()
+            return account_id
+
+    def provider(
+        self, telegram_id: int, full_name: str = "Prestataire", *, verified: bool = True, language: str = "fr", phone: str | None = None, **fields
+    ):
+        """Profil prestataire (vérifié par défaut, donc disponible)."""
+        from backend.tests import profils_de_test
+
+        with self.database.SessionLocal() as session:
+            return profils_de_test.provider(session, telegram_id, full_name, verified=verified, language=language, phone_number=phone, **fields).account_id
+
+    def reject_provider(self, telegram_id: int) -> None:
+        """Refus de l'équipe Nexis (documents insuffisants)."""
+        from backend.app import ledger, profils
+
+        with self.database.SessionLocal() as session:
+            profils.reject_provider(session, ledger.account_id_for(session, ledger.TELEGRAM, telegram_id))
+            session.commit()
+
+    def profile(self, telegram_id: int) -> dict:
+        """Profil tel que le backend le rend à la personne (`/api/me/profile`)."""
+        from fastapi.testclient import TestClient
+
+        from backend.app import main
+
+        with TestClient(main.app) as client:
+            response = client.get(
+                "/api/me/profile",
+                headers={"X-API-Key": TEST_BACKEND_API_KEY, "X-Actor-Channel": "telegram", "X-Actor-Id": str(telegram_id)},
+            )
+        return response.json()
 
     def grant_admin(self, telegram_id: int) -> None:
         """Rôle admin en base, comme `python -m backend.app.admins ajouter`."""
@@ -96,18 +155,22 @@ class LiveBackend:
         self,
         client: int,
         alert=(),
-        service: str = "service_menage",
+        service: str = "service_nettoyage",
         commune: str = "Gombe",
         currency: str = "USD",
         urgent: bool = False,
         description: str = "Test",
     ) -> int:
-        """Mission créée par le backend, comme le ferait le bot ; renvoie son numéro."""
+        """Mission créée par le backend, comme le ferait le bot ; renvoie son
+        numéro. Les personnes `alert` sont d'abord des prestataires vérifiés
+        pour ce service dans cette commune : le backend les prévient."""
         import uuid
 
         from backend.app import crud, ledger
+        from backend.tests import profils_de_test
 
         with self.database.SessionLocal() as session:
+            profils_de_test.alerted(session, alert, service, commune)
             mission, _ = crud.create_mission(
                 session,
                 channel=ledger.TELEGRAM,
@@ -118,12 +181,18 @@ class LiveBackend:
                 currency=currency,
                 description=description,
                 urgent=urgent,
-                alert_provider_telegram_ids=list(alert),
                 destination_latitude=-4.3076,
                 destination_longitude=15.3125,
                 destination_landmark="Portail bleu après la poste",
             )
             return mission.mission_id
+
+    def alerted(self, mission_id: int) -> list[int]:
+        """Telegram ids des prestataires que le backend a prévenus, dans l'ordre."""
+        from backend.app import crud, ledger
+
+        with self.database.SessionLocal() as session:
+            return [ledger.telegram_id_of(session, account_id) for account_id in crud.alerted_provider_account_ids(session, mission_id)]
 
     def quote(self, mission_id: int, provider: int, amount: float = 100.0, currency: str = "USD", delay_hours: int = 2) -> int:
         """Devis envoyé par un prestataire prévenu ; renvoie son numéro."""

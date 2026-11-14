@@ -22,7 +22,6 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import db
 from telegram_bot import backend_client
 from mini_app import app as mini_app_module
 
@@ -44,14 +43,23 @@ def _build_init_data(user_id: int, token: str = TEST_TOKEN, auth_date: int | Non
     return urlencode(fields)
 
 
-@pytest.fixture
-def client(tmp_path, monkeypatch):
-    """TestClient branché sur une base jetable et un BOT_TOKEN de test."""
-    db.DB_PATH = tmp_path / "test_mini_app.db"
-    db.init_db()
+def _mini_app(monkeypatch):
     monkeypatch.setattr(mini_app_module, "BOT_TOKEN", TEST_TOKEN)
     monkeypatch.setattr(backend_client, "BACKEND_API_KEY", "test-backend-api-key-not-a-secret")
-    with TestClient(mini_app_module.app) as test_client:
+    return TestClient(mini_app_module.app)
+
+
+@pytest.fixture
+def client(monkeypatch, live_backend):
+    """La Mini App, avec un BOT_TOKEN de test, devant le vrai backend."""
+    with _mini_app(monkeypatch) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def offline_client(monkeypatch):
+    """La Mini App quand le backend ne répond pas."""
+    with _mini_app(monkeypatch) as test_client:
         yield test_client
 
 
@@ -172,8 +180,7 @@ def test_provider_registration_persists_services_and_communes(client):
     assert provider["services"] == ["service_plomberie"]
     assert provider["communes"] == ["Gombe"]
 
-    stored = db.get_provider_by_telegram_id(CLIENT_ID)
-    assert stored is not None
+    assert provider["status"] == "pending_verification", "en attente de l'équipe Nexis, comme depuis le bot"
 
 
 def test_registration_rejects_unknown_service(client):
@@ -229,9 +236,8 @@ def test_status_update_rejects_unknown_value(client):
     assert response.status_code == 400
 
 
-def test_status_can_be_set_to_offline(client):
-    _register(client)
-    db.update_provider_status(CLIENT_ID, "available")  # validé par l'admin
+def test_status_can_be_set_to_offline(client, live_backend):
+    live_backend.provider(CLIENT_ID)  # validé par l'équipe Nexis
     response = client.post(
         f"/api/provider/{CLIENT_ID}/status",
         json={"status": "offline"},
@@ -241,7 +247,7 @@ def test_status_can_be_set_to_offline(client):
     assert response.json()["provider"]["status"] == "offline"
 
 
-def test_unvalidated_provider_cannot_make_itself_available(client):
+def test_unvalidated_provider_cannot_make_itself_available(client, live_backend):
     """Inscrit via la Mini App : pending_verification jusqu'à validation admin.
     Se remettre "available" (ou "offline" puis "available") l'aurait fait
     entrer dans le matching sans vérification."""
@@ -249,15 +255,15 @@ def test_unvalidated_provider_cannot_make_itself_available(client):
     for status in ("available", "offline"):
         response = client.post(f"/api/provider/{CLIENT_ID}/status", json={"status": status}, headers=_auth())
         assert response.status_code == 403
-    assert db.get_provider_by_telegram_id(CLIENT_ID)["status"] == "pending_verification"
+    assert live_backend.profile(CLIENT_ID)["provider"]["status"] == "pending_verification"
 
 
-def test_rejected_provider_cannot_make_itself_available(client):
+def test_rejected_provider_cannot_make_itself_available(client, live_backend):
     _register(client)
-    db.update_provider_status(CLIENT_ID, "rejected")
+    live_backend.reject_provider(CLIENT_ID)
     response = client.post(f"/api/provider/{CLIENT_ID}/status", json={"status": "available"}, headers=_auth())
     assert response.status_code == 403
-    assert db.get_provider_by_telegram_id(CLIENT_ID)["status"] == "rejected"
+    assert live_backend.profile(CLIENT_ID)["provider"]["status"] == "rejected"
 
 
 # ── Demande de service manquant ─────────────────────────────────
@@ -302,7 +308,6 @@ def _paid_mission_for_provider(live, provider_id: int = CLIENT_ID) -> int:
 
     from telegram_bot import backend_client
 
-    db.create_provider(provider_id, "+243800004242", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
     mission_id, quote_id = live.accepted_quote(OTHER_ID, provider_id, amount=30.0)
     asyncio.run(backend_client.create_payment_intent(mission_id, quote_id, "+243810000000", "mpesa", OTHER_ID))
     return mission_id
@@ -341,10 +346,8 @@ def test_mission_actions_are_refused_with_a_code(client, live_backend):
     assert early_finish.json()["detail"] == {"code": "invalid_state"}
 
 
-def test_mission_actions_fail_safe_when_the_backend_is_down(client):
-    db.create_provider(CLIENT_ID, "+243800004242", "Prestataire", ["service_plomberie"], ["Gombe"], language="fr")
-
-    response = client.post(f"/api/provider/{CLIENT_ID}/missions/1/arrived", headers=_auth())
+def test_mission_actions_fail_safe_when_the_backend_is_down(offline_client):
+    response = offline_client.post(f"/api/provider/{CLIENT_ID}/missions/1/arrived", headers=_auth())
 
     assert response.status_code == 503
     assert response.json()["detail"] == {"code": "backend_unavailable"}
@@ -373,14 +376,29 @@ def test_profile_lists_the_backend_missions_by_role(client, live_backend):
     assert body["provider_missions"][0]["payment_status"] == "paid_escrow"
 
 
-def test_profile_missions_are_unknown_when_the_backend_is_down(client):
+def test_profile_says_unavailable_when_the_backend_is_down(offline_client):
+    """Ni profil inventé ni solde par défaut : la page affiche « indisponible »."""
+    response = offline_client.get(f"/api/profile/{CLIENT_ID}", headers=_auth())
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == mini_app_module.UNAVAILABLE
+
+
+def test_registration_writes_nothing_when_the_backend_is_down(offline_client):
+    response = _register(offline_client)
+
+    assert response.status_code == 503
+
+
+def test_profile_reads_the_backend_catalogue_and_profile(client, live_backend):
+    live_backend.provider(CLIENT_ID, "Alice", services=["service_electricite"], communes=["Limete"])
+
     body = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth()).json()
 
-    assert body["client_missions"] is None and body["provider_missions"] is None
-
-
-def test_profile_wallet_is_unknown_when_the_backend_is_down(client):
-    response = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth())
-
-    assert response.status_code == 200
-    assert response.json()["wallet"] is None
+    assert body["client"] is None
+    assert (body["provider"]["full_name"], body["provider"]["services"], body["provider"]["communes"]) == (
+        "Alice", ["service_electricite"], ["Limete"]
+    )
+    assert body["available_services"]["service_electricite"] == "Electricité"
+    assert "Limete" in body["available_communes"]
+    assert body["service_requests"] == []

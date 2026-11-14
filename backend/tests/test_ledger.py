@@ -79,9 +79,12 @@ def fund(db, mission_id=1, method="mobile_money", amount=100.0, currency="USD", 
 
 def new_mission(db, client=CLIENT_ID, key="demande-1", alert=()):
     """Mission créée par le backend ; renvoie le numéro qu'il lui donne."""
+    from backend.tests import profils_de_test
+
+    profils_de_test.alerted(db, alert)
     mission, _ = crud.create_mission(
         db, channel=ledger.TELEGRAM, client_external_id=str(client), creation_key=key,
-        service="service_plomberie", commune="Gombe", alert_provider_telegram_ids=list(alert),
+        service="service_plomberie", commune="Gombe",
         destination_latitude=-4.3076, destination_longitude=15.3125, destination_landmark="Portail bleu après la poste",
     )
     return mission.mission_id

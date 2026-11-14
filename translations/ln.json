@@ -338,5 +338,7 @@
   "money_error_invalid_percentage": "Pourcentage ebongi te : esengeli kozala kati na 0 mpe 100.",
   "money_error_already_decided": "Nexis Hub asi azwi mokano na likambo oyo : boyokani ekoki lisusu te.",
   "money_error_not_disputed": "Mission oyo ezali na likambo te.",
-  "dispute_offer_hint": "🤝 Bozwi boyokani na prestataire ? Pesa ye likanisi ya boyokani : likambo ekoki kosila kozela mokano ya Nexis Hub te."
+  "dispute_offer_hint": "🤝 Bozwi boyokani na prestataire ? Pesa ye likanisi ya boyokani : likambo ekoki kosila kozela mokano ya Nexis Hub te.",
+  "client_not_found": "Profil ya client ezwami te. Pona « Client » na menu mpo na komikomisa.",
+  "money_error_already_quoted": "Otindaki déjà devis mpo na mosala oyo."
 }

@@ -336,5 +336,7 @@
   "money_error_invalid_percentage": "Invalid percentage: it must be between 0 and 100.",
   "money_error_already_decided": "Nexis Hub has already decided on this dispute: an agreement is no longer possible.",
   "money_error_not_disputed": "This mission is not in dispute.",
-  "dispute_offer_hint": "🤝 Found an arrangement with the provider? Propose an agreement: the dispute can be settled without waiting for Nexis Hub's decision."
+  "dispute_offer_hint": "🤝 Found an arrangement with the provider? Propose an agreement: the dispute can be settled without waiting for Nexis Hub's decision.",
+  "client_not_found": "Client profile not found. Choose \"Client\" in the menu to sign up.",
+  "money_error_already_quoted": "You have already sent a quote for this mission."
 }

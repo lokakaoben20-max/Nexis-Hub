@@ -32,6 +32,7 @@ def provider(
     communes=("Gombe",),
     verified: bool = True,
     language: str = "fr",
+    phone_number: str | None = None,
     **stats,
 ):
     """Profil prestataire (vérifié par défaut, donc disponible). `stats` :
@@ -39,7 +40,7 @@ def provider(
     ensure_catalogue(db)
     account_id = ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
     profile, _ = profils.register_provider(
-        db, account_id, full_name=full_name, phone_number=None, services=list(services), communes=list(communes)
+        db, account_id, full_name=full_name, phone_number=phone_number, services=list(services), communes=list(communes)
     )
     profils.set_language(db, account_id, language)
     if verified:
@@ -48,6 +49,24 @@ def provider(
         setattr(profile, name, value)
     db.commit()
     return profile
+
+
+def alerted(db, telegram_ids, service: str = "service_plomberie", commune: str = "Gombe") -> None:
+    """Ces personnes sont des prestataires vérifiés et disponibles pour ce
+    service dans cette commune : le backend les choisira à la création d'une
+    mission. Un profil existant garde ses services et communes, complétés."""
+    ensure_catalogue(db)
+    for telegram_id in telegram_ids:
+        existing = provider_of(db, telegram_id)
+        if existing is None:
+            provider(db, telegram_id, f"Prestataire {telegram_id}", services=(service,), communes=(commune,))
+            continue
+        account_id = existing.account_id
+        services = list(dict.fromkeys([*profils.provider_services(db, account_id), service]))
+        communes = list(dict.fromkeys([*profils.provider_communes(db, account_id), commune]))
+        profils.set_provider_services(db, account_id, services)
+        profils.set_provider_communes(db, account_id, communes)
+        db.commit()
 
 
 def admin(db, telegram_id: int):
