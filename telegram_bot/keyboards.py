@@ -74,7 +74,7 @@ BUTTON_LABELS = {
         "change_name": "✏️ Modifier mon nom",
     },
     "ln": {
-        "client": "👤 Client",
+        "client": "👤 Mosengi",
         "provider": "🔧 Mosali",
         "request_service": "🔍 Kosenga service",
         "my_missions": "📋 Misala na ngai",
