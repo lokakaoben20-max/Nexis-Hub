@@ -78,7 +78,7 @@ BUTTON_LABELS = {
         "provider": "🔧 Mosali",
         "request_service": "🔍 Kosenga mosala",
         "my_missions": "📋 Misala na ngai",
-        "history": "📜 Historique",
+        "history": "📜 Makambo ya kala",
         "wallet": "👛 Esika na ngai ya mbongo",
         "profile": "👤 Makambo na ngai",
         "help": "❓ Lisungi",
