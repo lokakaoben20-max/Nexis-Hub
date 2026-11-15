@@ -372,6 +372,17 @@ class ServiceRequestPayload(BaseModel):
     description: Annotated[str, StringConstraints(strip_whitespace=True, min_length=10, max_length=1000)]
 
 
+class ClientRequestPayload(BaseModel):
+    """Besoin d'un client hors catalogue (longueur vérifiée par crud)."""
+
+    description: str
+
+
+class ClientRequestDecisionPayload(BaseModel):
+    status: str
+    admin_note: str = ""
+
+
 class ServiceRequestStatusPayload(BaseModel):
     status: str
     admin_note: str = ""
@@ -486,6 +497,31 @@ def _review_to_dict(review: BotReview) -> dict:
         "comment": review.comment,
         "created_at": review.created_at.isoformat() if review.created_at else None,
     }
+
+
+def _client_request_to_dict(db, request, admin: bool = False) -> dict:
+    data = {
+        "id": request.id,
+        "description": request.description,
+        "status": request.status,
+        "admin_note": request.admin_note,
+        "created_at": request.created_at.isoformat() if request.created_at else None,
+        "reviewed_at": request.reviewed_at.isoformat() if request.reviewed_at else None,
+    }
+    if admin:
+        # Pour répondre au client dans sa langue, sur son canal.
+        client = profils.client_profile(db, request.account_id)
+        data.update(
+            client_name=client.first_name if client is not None else None,
+            client_telegram_id=ledger.telegram_id_of(db, request.account_id),
+            client_language=profils.language_of(db, request.account_id),
+        )
+    return data
+
+
+def _mission_refused(db, refusal) -> HTTPException:
+    db.rollback()
+    return HTTPException(status_code=refusal.http_status, detail={"code": refusal.code})
 
 
 def _service_request_to_dict(db, req: ProviderServiceRequest, provider: ProviderProfile | None = None) -> dict:
@@ -1447,6 +1483,7 @@ def admin_stats(actor: Actor = Depends(current_actor)):
                 **crud.mission_stats(db),
                 **profils.profile_counts(db),
                 "pending_services": crud.pending_service_request_count(db),
+                "pending_client_requests": crud.pending_client_request_count(db),
             },
         }
 
@@ -1490,6 +1527,26 @@ def get_my_wallet_history(limit: int = 20, actor: Actor = Depends(current_actor)
     with SessionLocal() as db:
         account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
         return {"status": "ok", "entries": ledger.wallet_history(db, account_id, limit)}
+
+
+@router.post("/api/me/client-requests")
+def create_client_request(payload: ClientRequestPayload, actor: Actor = Depends(current_actor)):
+    """Le client envoie à l'équipe un besoin qui n'est dans aucun service."""
+    with SessionLocal() as db:
+        account_id = ledger.account_id_for(db, actor.channel, actor.external_id, create=True)
+        try:
+            request = crud.create_client_request(db, account_id, payload.description)
+        except crud.MissionRefused as refusal:
+            raise _mission_refused(db, refusal) from refusal
+        return {"status": "ok", "client_request": _client_request_to_dict(db, request)}
+
+
+@router.get("/api/me/client-requests")
+def list_my_client_requests(actor: Actor = Depends(current_actor)):
+    with SessionLocal() as db:
+        account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
+        requests = crud.client_requests_of(db, account_id) if account_id is not None else []
+        return {"status": "ok", "client_requests": [_client_request_to_dict(db, request) for request in requests]}
 
 
 @router.post("/api/bot/service-requests")
@@ -1606,6 +1663,7 @@ def list_services():
             # canaux n'affichent que ce que le backend acceptera.
             "provider_max_services": profils.MAX_PROVIDER_SERVICES,
             "provider_excluded_services": list(profils.PROVIDER_EXCLUDED_SERVICES),
+            "client_excluded_services": list(profils.CLIENT_EXCLUDED_SERVICES),
         }
 
 
@@ -1825,6 +1883,27 @@ def admin_suspend_provider(account_id: int, actor: Actor = Depends(current_actor
 @router.post("/api/admin/providers/{account_id}/unsuspend")
 def admin_unsuspend_provider(account_id: int, actor: Actor = Depends(current_actor)):
     return _admin_provider_decision(account_id, actor, lambda db, account: profils.set_suspended(db, account, False))
+
+
+@router.get("/api/admin/client-requests")
+def admin_list_client_requests(limit: int = 10, actor: Actor = Depends(current_actor)):
+    _require_admin(actor)
+    with SessionLocal() as db:
+        requests = crud.pending_client_requests(db, limit=limit)
+        return {"status": "ok", "client_requests": [_client_request_to_dict(db, request, admin=True) for request in requests]}
+
+
+@router.post("/api/admin/client-requests/{request_id}/decision")
+def admin_decide_client_request(request_id: int, payload: ClientRequestDecisionPayload, actor: Actor = Depends(current_actor)):
+    """Réponse de l'équipe à un besoin de client, une seule fois : le canal
+    prévient le client avec ce que renvoie cette route."""
+    _require_admin(actor)
+    with SessionLocal() as db:
+        try:
+            request = crud.decide_client_request(db, request_id, payload.status, payload.admin_note.strip()[:500])
+        except crud.MissionRefused as refusal:
+            raise _mission_refused(db, refusal) from refusal
+        return {"status": "ok", "client_request": _client_request_to_dict(db, request, admin=True)}
 
 
 @router.get("/api/admin/service-requests")

@@ -47,6 +47,7 @@ from telegram_bot.keyboards import (
     clavier_fin_explication,
     clavier_prestataire,
     clavier_recapitulatif,
+    clavier_retour_services,
     clavier_services,
     clavier_urgence,
 )
@@ -69,6 +70,15 @@ MAX_LANDMARK_LENGTH = 300
 # Refus du backend qui portent sur le lieu : la personne renvoie le lieu,
 # le reste de la demande est gardé.
 DESTINATION_REFUSALS = {"destination_outside_service_area", "invalid_destination"}
+
+
+class ClientNeed(StatesGroup):
+    description = State()
+
+
+# Mêmes bornes que le backend (crud.MIN_CLIENT_REQUEST_LENGTH / MAX_…).
+MIN_CLIENT_NEED_LENGTH = 10
+MAX_CLIENT_NEED_LENGTH = 1000
 
 
 class QuoteCreation(StatesGroup):
@@ -172,8 +182,52 @@ async def client_demande(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+# ── Besoin hors catalogue : envoyé à l'équipe, ni mission ni paiement ──────
+
+
+async def _ask_client_need(callback: CallbackQuery, state: FSMContext) -> None:
+    lang = await get_state_language(state)
+    await state.set_state(ClientNeed.description)
+    await callback.message.edit_text(
+        get_message("client_need_prompt", lang),
+        parse_mode="HTML",
+        reply_markup=clavier_retour_services(lang),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "client_need")
+async def client_need(callback: CallbackQuery, state: FSMContext):
+    await _ask_client_need(callback, state)
+
+
+@router.message(ClientNeed.description)
+async def client_need_received(message: Message, state: FSMContext):
+    lang = await get_state_language(state)
+    description = " ".join((message.text or "").split())
+    if not MIN_CLIENT_NEED_LENGTH <= len(description) <= MAX_CLIENT_NEED_LENGTH:
+        await message.answer(get_message("client_need_invalid", lang))
+        return
+    try:
+        request = await backend_client.create_client_request(message.from_user.id, description)
+    except (BackendUnavailable, MoneyRefused) as error:
+        # Rien n'est envoyé : la personne garde l'étape et peut renvoyer.
+        await message.answer(money_failure_text(0, error, lang, "service_unavailable"))
+        return
+    await state.clear()
+    await message.answer(
+        get_message("client_need_sent", lang, reference=f"BES-{request['id']:04d}"),
+        parse_mode="HTML",
+        reply_markup=clavier_client(lang),
+    )
+
+
 @router.callback_query(F.data.func(catalogue.is_service_key))
 async def service_selectionne(callback: CallbackQuery, state: FSMContext):
+    if callback.data in catalogue.CLIENT_EXCLUDED_SERVICES:
+        # Ancien bouton « Autre service » : le besoin part à l'équipe.
+        await _ask_client_need(callback, state)
+        return
     await state.update_data(service=callback.data)
     lang = await get_state_language(state)
     service_choisi = catalogue.service_label(callback.data, lang)

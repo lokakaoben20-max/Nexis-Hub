@@ -63,3 +63,26 @@ def test_the_bot_loads_the_catalogue_from_the_live_backend(live_backend):
 
     assert "service_plomberie" in catalogue.SERVICES
     assert ("Gombe", "commune_gombe") in catalogue.COMMUNES
+
+
+def test_the_service_rules_come_from_the_backend_and_shape_the_buttons(live_backend):
+    """« Autre service » : ni mission pour un client (son besoin part à
+    l'équipe), ni choix pour un prestataire ; au plus 3 services."""
+    from telegram_bot import keyboards
+    from telegram_bot.backend_client import BACKEND_AUTH_HEADERS, BACKEND_BASE_URL
+
+    asyncio.run(catalogue.load(BACKEND_BASE_URL, BACKEND_AUTH_HEADERS, attempts=1))
+
+    assert catalogue.PROVIDER_RULES == {"max_services": 3, "excluded_services": ("service_autre",)}
+    assert "service_autre" not in catalogue.client_service_keys()
+    assert "service_autre" not in catalogue.provider_service_keys()
+    assert "service_autre" in catalogue.provider_service_keys(["service_autre"]), "profil d'avant la règle"
+    assert catalogue.provider_service_refusal(["service_plomberie"], "service_autre") == "service_not_for_providers"
+    three = ["service_plomberie", "service_electricite", "service_nettoyage"]
+    assert catalogue.provider_service_refusal(three, "service_coiffure") == "too_many_services"
+    assert catalogue.provider_service_refusal(three, "service_coiffure", original=["service_coiffure"]) is None
+
+    client_buttons = [button.callback_data for row in keyboards.clavier_services().inline_keyboard for button in row]
+    assert "service_autre" not in client_buttons and "client_need" in client_buttons
+    provider_buttons = [button.callback_data for row in keyboards.clavier_modifier_services([]).inline_keyboard for button in row]
+    assert "edit_service_service_autre" not in provider_buttons

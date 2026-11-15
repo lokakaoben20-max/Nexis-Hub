@@ -46,6 +46,7 @@ from telegram_bot.backend_client import (
 )
 from telegram_bot.keyboards import (
     SERVICES,
+    clavier_admin_client_request,
     clavier_admin_dispute,
     clavier_admin_menu,
     clavier_admin_mismatch,
@@ -84,7 +85,7 @@ class AdminDisputeSplit(StatesGroup):
     percentage = State()
 
 
-STAT_KEYS = ("users", "providers", "providers_pending", "missions", "pending_services", "disputes")
+STAT_KEYS = ("users", "providers", "providers_pending", "missions", "pending_services", "pending_client_requests", "disputes")
 
 
 async def _admin_stats(admin_telegram_id: int) -> dict:
@@ -110,6 +111,7 @@ async def cmd_admin(message: Message):
         f"🔧 Prestataires : <b>{stats['providers']}</b> (à vérifier : <b>{stats['providers_pending']}</b>)\n"
         f"📋 Missions : <b>{stats['missions']}</b>\n"
         f"➕ Services en attente : <b>{stats['pending_services']}</b>\n"
+        f"🙋 Besoins des clients : <b>{stats['pending_client_requests']}</b>\n"
         f"⚠️ Litiges : <b>{stats['disputes']}</b>",
         parse_mode="HTML",
         reply_markup=clavier_admin_menu(),
@@ -156,6 +158,7 @@ async def admin_home(callback: CallbackQuery):
         f"🔧 Prestataires : <b>{stats['providers']}</b> (à vérifier : <b>{stats['providers_pending']}</b>)\n"
         f"📋 Missions : <b>{stats['missions']}</b>\n"
         f"➕ Services en attente : <b>{stats['pending_services']}</b>\n"
+        f"🙋 Besoins des clients : <b>{stats['pending_client_requests']}</b>\n"
         f"⚠️ Litiges : <b>{stats['disputes']}</b>",
         parse_mode="HTML",
         reply_markup=clavier_admin_menu(),
@@ -599,6 +602,82 @@ async def admin_service_requests(callback: CallbackQuery):
             reply_markup=clavier_admin_service_request(request["id"]),
         )
     await callback.answer()
+
+
+# --- Besoins des clients hors catalogue -----------------------------------------
+
+
+@router.callback_query(F.data == "admin_client_requests")
+async def admin_client_requests(callback: CallbackQuery):
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
+        return
+    try:
+        requests = await backend_client.admin_client_requests(callback.from_user.id)
+    except (BackendUnavailable, MoneyRefused) as error:
+        await callback.answer(money_failure_text(0, error, "fr", "service_unavailable"), show_alert=True)
+        return
+    if not requests:
+        await callback.message.edit_text("✅ Aucun besoin de client en attente.", reply_markup=clavier_admin_menu())
+        await callback.answer()
+        return
+    await callback.message.edit_text(
+        f"🙋 <b>Besoins des clients</b>\n\n{len(requests)} besoin(s) hors catalogue en attente de réponse.",
+        parse_mode="HTML",
+        reply_markup=clavier_admin_menu(),
+    )
+    for request in requests:
+        await callback.message.answer(
+            "🙋 <b>Besoin d'un client</b>\n\n"
+            f"Référence : <b>BES-{request['id']:04d}</b>\n"
+            f"Client : <b>{html.escape(request['client_name'] or 'Client')}</b>\n\n"
+            f"{html.escape(request['description'])}",
+            parse_mode="HTML",
+            reply_markup=clavier_admin_client_request(request["id"]),
+        )
+    await callback.answer()
+
+
+CLIENT_REQUEST_REFUSALS = {
+    "already_reviewed": "Ce besoin a déjà reçu une réponse.",
+    "client_request_not_found": "Besoin introuvable.",
+}
+
+
+@router.callback_query(F.data.startswith("admin_client_need_ok_") | F.data.startswith("admin_client_need_no_"))
+async def admin_answer_client_request(callback: CallbackQuery):
+    """Réponse appliquée une seule fois par le backend : un second appui (ou
+    un second admin) reçoit « déjà répondu » et le client n'est prévenu
+    qu'une fois."""
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
+        return
+    accepted = callback.data.startswith("admin_client_need_ok_")
+    request_id = int(callback.data.rsplit("_", 1)[1])
+    try:
+        request = await backend_client.admin_decide_client_request(
+            callback.from_user.id, request_id, "accepted" if accepted else "rejected"
+        )
+    except MoneyRefused as error:
+        await callback.answer(CLIENT_REQUEST_REFUSALS.get(error.code) or money_failure_text(0, error, "fr"), show_alert=True)
+        return
+    except BackendUnavailable as error:
+        await callback.answer(money_failure_text(0, error, "fr", "service_unavailable"), show_alert=True)
+        return
+    reference = f"BES-{request_id:04d}"
+    await callback.message.edit_text(
+        f"{'✅ On s’en occupe' if accepted else '❌ Pas encore disponible'} : <b>{reference}</b>\n\n"
+        f"{html.escape(request['description'])}",
+        parse_mode="HTML",
+    )
+    if request.get("client_telegram_id"):
+        lang = request.get("client_language") or "fr"
+        await callback.bot.send_message(
+            request["client_telegram_id"],
+            get_message("client_need_accepted" if accepted else "client_need_rejected", lang, reference=reference),
+            parse_mode="HTML",
+        )
+    await callback.answer("Réponse envoyée au client")
 
 
 SERVICE_REQUEST_REFUSALS = {

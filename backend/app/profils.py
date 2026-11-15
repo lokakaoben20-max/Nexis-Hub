@@ -59,6 +59,10 @@ MAX_CONSECUTIVE_DECLINES = 3
 # Un profil d'avant la règle garde ce qu'il a : il peut retirer, pas ajouter.
 MAX_PROVIDER_SERVICES = 3
 PROVIDER_EXCLUDED_SERVICES = ("service_autre",)
+# Un client ne crée plus de mission « Autre service » : un besoin hors
+# catalogue part à l'équipe (crud.create_client_request). Les anciennes
+# missions gardent leur service.
+CLIENT_EXCLUDED_SERVICES = ("service_autre",)
 
 # Classement des prestataires éligibles.
 BADGE_SCORES = {"partner": 30, "expert": 20, "premium": 10, "verified": 5, "pending": 0}
