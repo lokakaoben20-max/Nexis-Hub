@@ -402,3 +402,91 @@ def test_profile_reads_the_backend_catalogue_and_profile(client, live_backend):
     assert body["available_services"]["service_electricite"] == "Electricité"
     assert "Limete" in body["available_communes"]
     assert body["service_requests"] == []
+
+
+# --- Ce que la nouvelle page lit : langue, noms traduits, codes de refus ----------
+
+
+def test_profile_gives_the_account_language_and_translated_service_names(client, live_backend):
+    live_backend.provider(CLIENT_ID, "Alice", language="ln", services=["service_electricite"])
+
+    body = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth()).json()
+
+    assert body["language"] == "ln"
+    names = body["service_names"]["service_electricite"]
+    assert set(names) == {"fr", "ln", "en"}
+    assert names["fr"] == body["available_services"]["service_electricite"]
+
+
+def test_profile_language_is_none_for_an_unknown_person(client):
+    body = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth()).json()
+
+    assert body["language"] is None, "la page prend alors la langue de Telegram"
+
+
+def test_profile_never_sends_the_identity_document_file_ids(client, live_backend):
+    live_backend.provider(
+        CLIENT_ID, "Alice", id_document_file_id="photo-piece-secrete", selfie_file_id="photo-selfie-secrete", portfolio_file_ids='["p1"]'
+    )
+
+    response = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth())
+    provider = response.json()["provider"]
+
+    for field in mini_app_module.PRIVATE_PROVIDER_FIELDS:
+        assert field not in provider
+    assert "secrete" not in response.text
+    assert provider["has_documents"] is True
+
+
+def test_profile_says_when_the_documents_are_still_missing(client, live_backend):
+    live_backend.provider(CLIENT_ID, "Alice", verified=False)
+
+    provider = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth()).json()["provider"]
+
+    assert provider["has_documents"] is False
+    assert provider["is_verified"] is False
+
+
+def test_refusals_carry_a_translation_code(client):
+    too_short = _register(client, full_name="Al")
+    no_commune = _register(client, communes=[])
+    unknown = _register(client, communes=["Bruxelles"])
+
+    assert too_short.status_code == 400 and too_short.headers["X-Nexis-Code"] == "name_too_short"
+    assert no_commune.status_code == 400 and no_commune.headers["X-Nexis-Code"] == "communes_required"
+    assert unknown.status_code == 400 and unknown.headers["X-Nexis-Code"] in ("unknown_commune", "invalid_communes")
+
+
+def test_unavailable_backend_carries_its_code(offline_client):
+    response = _register(offline_client)
+
+    assert response.status_code == 503
+    assert response.headers["X-Nexis-Code"] == "backend_unavailable"
+
+
+def test_provider_missions_show_the_providers_share(client, live_backend):
+    mission_id = _paid_mission_for_provider(live_backend)
+
+    mission = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth()).json()["provider_missions"][0]
+
+    assert mission["id"] == mission_id
+    assert mission["net_provider"] == live_backend.mission(mission_id).net_provider
+
+
+def test_every_error_code_of_the_mini_app_has_a_text_in_each_language():
+    """Chaque code renvoyé par le serveur (en-tête ou corps) a son texte
+    dans i18n.js, en français, lingala et anglais."""
+    import re
+
+    texts = (ROOT / "mini_app" / "static" / "i18n.js").read_text(encoding="utf-8")
+    codes = set(mini_app_module.PROFILE_REFUSALS) | {
+        "backend_unavailable", "refused", "name_too_short", "invalid_phone", "services_required", "communes_required",
+        "service_name_too_short", "description_too_short", "invalid_status",
+        "not_paid", "invalid_state", "mission_disputed", "already_settled", "not_mission_provider", "mission_not_found",
+        "invalid_presence_code", "wrong_presence_code", "presence_code_locked", "presence_not_configured",
+    }
+    blocks = re.findall(r"errors: \{(.*?)\n    \}", texts, re.S)
+    assert len(blocks) == 3
+    for block in blocks:
+        missing = [code for code in codes if not re.search(rf"\b{code}:", block)]
+        assert not missing, missing

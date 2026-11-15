@@ -1,571 +1,820 @@
+"use strict";
+
+// Mini App Nexis Hub, côté prestataire (mosali). La page n'invente aucun
+// chiffre : profils, missions, soldes et refus viennent du backend, seule
+// source de vérité, à travers mini_app/app.py. Tout texte affiché passe par
+// textContent (jamais innerHTML avec des données) et par NEXIS_TEXTS.
+
 const tg = window.Telegram?.WebApp;
-let telegramUser = null;
-let missionFilter = "all";
-let availableServices = {
-  service_plomberie: "Plomberie",
-  service_electricite: "Electricite",
-  service_climatisation: "Climatisation",
-  service_informatique: "Informatique",
-  service_graphisme: "Graphisme",
-  service_coiffure: "Coiffure",
-  service_nettoyage: "Nettoyage",
-  service_jardinage: "Jardinage",
-  service_autre: "Autre service",
+const telegramUser = tg?.initDataUnsafe?.user || null;
+
+const SERVICE_ICONS = {
+  service_plomberie: ["f-plomberie", "#0350E6"],
+  service_electricite: ["f-electricite", "#C98200"],
+  service_climatisation: ["f-clim", "#0A84D6"],
+  service_informatique: ["f-info", "#021937"],
+  service_graphisme: ["f-graph", "#494C95"],
+  service_coiffure: ["f-coiffure", "#C2416B"],
+  service_nettoyage: ["f-nettoyage", "#1E8A4C"],
+  service_jardinage: ["f-jardin", "#4F8A10"],
+  service_autre: ["f-autre", "#5B667A"],
 };
-const defaultCommunes = ["Gombe", "Kinshasa", "Limete", "Ngaliema", "Lemba", "Kalamu", "Barumbu", "Lingwala", "Autre commune"];
+const ACTIVE_STATUSES = ["pending", "quoted", "confirmed", "in_progress", "awaiting_confirmation"];
+const DONE_STATUSES = ["completed", "cancelled", "disputed"];
+const LOCALES = { fr: "fr-FR", ln: "fr-FR", en: "en-US" };
 
-if (tg) {
-  tg.ready();
-  tg.expand();
-
-  telegramUser = tg.initDataUnsafe?.user;
-  if (telegramUser?.first_name) {
-    document.getElementById("hello").textContent = `Bonjour ${telegramUser.first_name}`;
-  }
-}
-
-document.querySelectorAll("[data-role]").forEach((button) => {
-  button.addEventListener("click", () => {
-    document.querySelectorAll("[data-role]").forEach((item) => item.classList.remove("primary"));
-    button.classList.add("primary");
-    renderRole(button.dataset.role, window.nexisProfile);
-  });
-});
-
-document.querySelectorAll("[data-mission-filter]").forEach((button) => {
-  button.addEventListener("click", () => {
-    document.querySelectorAll("[data-mission-filter]").forEach((item) => item.classList.remove("active"));
-    button.classList.add("active");
-    missionFilter = button.dataset.missionFilter;
-    renderRole(currentRole(), window.nexisProfile);
-  });
-});
-
-function serviceLabel(key) {
-  return availableServices[key] || key;
-}
-
-function setText(id, value) {
-  document.getElementById(id).textContent = value;
-}
-
-function telegramHeaders(extraHeaders = {}) {
-  return {
-    ...extraHeaders,
-    "X-Telegram-Init-Data": tg?.initData || "",
-  };
-}
-
-function apiFetch(url, options = {}) {
-  return fetch(url, {
-    ...options,
-    headers: telegramHeaders(options.headers || {}),
-  });
-}
-
-function renderRows(containerId, rows, emptyText) {
-  const container = document.getElementById(containerId);
-  container.innerHTML = "";
-
-  if (!rows.length) {
-    container.innerHTML = `<div class="row"><strong>${emptyText}</strong><span>Les donnees apparaitront ici.</span></div>`;
-    return;
-  }
-
-  rows.forEach((row) => {
-    const item = document.createElement("div");
-    item.className = "row";
-    item.innerHTML = `<strong>${row.title}</strong><span>${row.subtitle}</span>`;
-    container.appendChild(item);
-  });
-}
-
-function renderMissions(containerId, missions, emptyText, role) {
-  const container = document.getElementById(containerId);
-  container.innerHTML = "";
-
-  if (!missions.length) {
-    container.innerHTML = `<div class="row"><strong>${emptyText}</strong><span>Les donnees apparaitront ici.</span></div>`;
-    return;
-  }
-
-  missions.forEach((mission) => {
-    const item = document.createElement("div");
-    item.className = "row mission-row";
-    const canStart = role === "provider" && mission.status === "confirmed" && mission.payment_status === "paid_escrow";
-    const canFinish = role === "provider" && mission.status === "in_progress";
-    const action = canStart
-      ? `<button class="inline-button" type="button" data-mission-action="arrived" data-mission-id="${mission.id}">Je suis arrivé</button>`
-      : canFinish
-        ? `<button class="inline-button" type="button" data-mission-action="finish" data-mission-id="${mission.id}">Terminer</button>`
-        : "";
-
-    item.innerHTML = `
-      <div>
-        <strong>NXH-${String(mission.id).padStart(4, "0")} | ${serviceLabel(mission.service)}</strong>
-        <span>${mission.commune} | ${missionStatusLabel(mission.status)} | ${paymentStatusLabel(mission.payment_status)}</span>
-      </div>
-      ${action}
-    `;
-    container.appendChild(item);
-  });
-}
-
-function currentRole() {
-  return document.querySelector("[data-role].primary")?.dataset.role || "client";
-}
-
-function renderRole(role, data) {
-  if (!data) return;
-
-  const isProvider = role === "provider";
-  const profile = isProvider ? data.provider : data.client;
-  // null : le backend (seule mémoire des missions) n'a pas répondu.
-  const missionsUnavailable = (isProvider ? data.provider_missions : data.client_missions) == null;
-  const missions = (isProvider ? data.provider_missions : data.client_missions) || [];
-  const services = data.provider?.services || [];
-  const hasProvider = Boolean(data.provider);
-
-  setText("profile-type", profile ? (isProvider ? "Prestataire" : "Client") : "Non enregistre");
-  setText("missions-count", missionsUnavailable ? "?" : String(missions.length));
-  setText("services-count", isProvider ? String(services.length) : "-");
-  document.querySelectorAll(".provider-only").forEach((panel) => {
-    panel.hidden = !isProvider;
-  });
-  document.querySelectorAll("#provider-overview, #provider-wallet, #provider-tools, #missing-service-panel").forEach((panel) => {
-    panel.hidden = !isProvider || !hasProvider;
-  });
-  document.getElementById("provider-registration").hidden = !isProvider || hasProvider;
-  document.querySelectorAll(".client-only").forEach((panel) => {
-    panel.hidden = isProvider;
-  });
-
-  if (!profile) {
-    renderRows("profile-details", [{ title: "Profil introuvable", subtitle: "L'inscription se fait encore dans le bot Telegram." }], "");
-  } else if (isProvider) {
-    renderRows("profile-details", [
-      { title: profile.full_name || "Prestataire", subtitle: `Statut: ${profile.status} | Badge: ${profile.badge}` },
-      { title: "Services", subtitle: services.map(serviceLabel).join(", ") || "Aucun service" },
-      { title: "Communes", subtitle: (profile.communes || []).join(", ") || "Aucune commune" },
-    ], "Aucune information");
-  } else {
-    renderRows("profile-details", [
-      { title: profile.first_name || "Client", subtitle: `Telephone: ${profile.phone_number || "Non renseigne"}` },
-      { title: "Wallet", subtitle: `${walletAmount(data.wallet, "USD")} | ${walletAmount(data.wallet, "CDF")}` },
-    ], "Aucune information");
-  }
-
-  const visibleMissions = filteredMissions(missions, role);
-  updateMissionFilterStatus(role, missions.length, visibleMissions.length);
-
-  renderMissions(
-    "missions-list",
-    visibleMissions,
-    missionsUnavailable ? "Missions indisponibles pour le moment" : "Aucune mission recente",
-    role
-  );
-
-  if (isProvider && hasProvider) {
-    renderProviderOverview(data);
-    renderServicesEditor(data);
-    renderServiceRequests(data.service_requests || []);
-  } else if (isProvider) {
-    renderProviderRegistration(data);
-  }
-}
-
-function money(value, currency) {
-  const amount = Number(value || 0);
-  return `${amount.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} ${currency}`;
-}
-
-// Solde du registre du backend ; jamais de chiffre par défaut quand il est
-// inconnu (backend injoignable).
-function walletAmount(wallet, currency) {
-  const value = wallet ? wallet[currency === "USD" ? "wallet_balance_usd" : "wallet_balance_cdf"] : null;
-  return typeof value === "number" ? money(value, currency) : "Solde indisponible";
-}
-
-function statusLabel(status) {
-  const labels = {
-    available: "Disponible",
-    paused: "En pause",
-    offline: "Indisponible",
-  };
-  return labels[status] || status || "Statut inconnu";
-}
-
-function badgeLabel(badge) {
-  const labels = {
-    pending: "En attente",
-    verified: "Verifie",
-    premium: "Premium",
-    expert: "Expert",
-    partner: "Partner",
-  };
-  return labels[badge] || badge || "En attente";
-}
-
-function missionStatusLabel(status) {
-  const labels = {
-    pending: "En attente",
-    quoted: "Devis recu",
-    confirmed: "Confirmee",
-    in_progress: "En cours",
-    awaiting_confirmation: "Attente client",
-    completed: "Terminee",
-    cancelled: "Annulee",
-    disputed: "Litige",
-  };
-  return labels[status] || status || "Statut inconnu";
-}
-
-function paymentStatusLabel(status) {
-  const labels = {
-    unpaid: "Non paye",
-    paid_escrow: "Paiement securise",
-    released: "Paiement libere",
-    refunded: "Rembourse",
-  };
-  return labels[status] || status || "Paiement inconnu";
-}
-
-function filteredMissions(missions, role) {
-  if (role !== "provider" || missionFilter === "all") return missions;
-  if (missionFilter === "active") {
-    return missions.filter((mission) => ["pending", "quoted", "confirmed", "in_progress", "awaiting_confirmation"].includes(mission.status));
-  }
-  if (missionFilter === "done") {
-    return missions.filter((mission) => ["completed", "cancelled", "disputed"].includes(mission.status));
-  }
-  return missions;
-}
-
-function updateMissionFilterStatus(role, total, visible) {
-  if (role !== "provider") {
-    setText("missions-filter-status", "Toutes les missions visibles.");
-    return;
-  }
-  const label = {
-    all: "Toutes les missions visibles.",
-    active: "Missions en attente ou en cours.",
-    done: "Missions terminees, annulees ou en litige.",
-  }[missionFilter];
-  setText("missions-filter-status", `${label} ${visible}/${total}`);
-}
-
-function renderProviderOverview(data) {
-  const provider = data.provider;
-  const statusButton = document.getElementById("toggle-provider-status");
-  if (!provider) {
-    setText("provider-name", "Profil prestataire introuvable");
-    setText("provider-meta", "Inscris-toi comme prestataire dans le bot Telegram.");
-    setText("provider-status-pill", "Non inscrit");
-    statusButton.disabled = true;
-    statusButton.textContent = "Inscription requise";
-    return;
-  }
-
-  setText("provider-name", provider.full_name || "Prestataire");
-  setText("provider-meta", `Badge: ${badgeLabel(provider.badge)} | Module ${provider.module || "A"}`);
-  setText("provider-status-pill", statusLabel(provider.status));
-  setText("provider-missions-total", String(provider.total_missions || 0));
-  setText("provider-rating", Number(provider.rating || 0).toFixed(1));
-  setText("provider-success-rate", `${Number(provider.success_rate || 0).toFixed(0)}%`);
-  setText("provider-wallet-usd", walletAmount(data.wallet, "USD"));
-  setText("provider-wallet-cdf", walletAmount(data.wallet, "CDF"));
-  statusButton.disabled = false;
-  statusButton.textContent = provider.status === "available" ? "Me rendre indisponible" : "Me rendre disponible";
-}
-
-function renderServicesEditor(data) {
-  const container = document.getElementById("services-editor");
-  const selected = new Set(data.provider?.services || []);
-  const services = data.available_services || availableServices;
-  container.innerHTML = "";
-
-  Object.entries(services).forEach(([key, label]) => {
-    const row = document.createElement("label");
-    row.className = "check-row";
-    row.innerHTML = `<input type="checkbox" value="${key}" ${selected.has(key) ? "checked" : ""} /><span>${label}</span>`;
-    container.appendChild(row);
-  });
-}
-
-function renderCheckList(containerId, items, selectedValues = []) {
-  const container = document.getElementById(containerId);
-  const selected = new Set(selectedValues);
-  container.innerHTML = "";
-
-  Object.entries(items).forEach(([key, label]) => {
-    const row = document.createElement("label");
-    row.className = "check-row";
-    row.innerHTML = `<input type="checkbox" value="${key}" ${selected.has(key) ? "checked" : ""} /><span>${label}</span>`;
-    container.appendChild(row);
-  });
-}
-
-function renderProviderRegistration(data) {
-  renderCheckList("provider-register-services", data.available_services || availableServices);
-  const communes = data.available_communes || defaultCommunes;
-  const communeItems = Object.fromEntries(communes.map((commune) => [commune, commune]));
-  renderCheckList("provider-register-communes", communeItems);
-}
-
-function selectedServices() {
-  return Array.from(document.querySelectorAll("#services-editor input:checked")).map((input) => input.value);
-}
-
-function renderServiceRequests(requests) {
-  renderRows(
-    "service-requests-list",
-    requests.map((request) => ({
-      title: request.service_name,
-      subtitle: `Statut: ${request.status}${request.admin_note ? ` | Note: ${request.admin_note}` : ""}`,
-    })),
-    "Aucune proposition envoyee"
-  );
-}
-
-async function saveServices() {
-  if (!telegramUser?.id) {
-    setText("services-status", "Ouvre la Mini App depuis Telegram pour enregistrer.");
-    return;
-  }
-
-  const services = selectedServices();
-  if (!services.length) {
-    setText("services-status", "Choisis au moins un service.");
-    return;
-  }
-
-  const button = document.getElementById("save-services");
-  button.disabled = true;
-  setText("services-status", "Enregistrement...");
-
-  try {
-    const response = await apiFetch(`/api/provider/${telegramUser.id}/services`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ services }),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.detail || "Erreur");
-
-    window.nexisProfile.provider = result.provider;
-    setText("services-status", "Services enregistres.");
-    renderRole("provider", window.nexisProfile);
-  } catch (error) {
-    setText("services-status", error.message || "Impossible d'enregistrer.");
-  } finally {
-    button.disabled = false;
-  }
-}
-
-async function sendMissingService() {
-  if (!telegramUser?.id) {
-    setText("missing-service-status", "Ouvre la Mini App depuis Telegram pour envoyer.");
-    return;
-  }
-
-  const serviceName = document.getElementById("missing-service-name").value.trim();
-  const description = document.getElementById("missing-service-description").value.trim();
-  const button = document.getElementById("send-missing-service");
-
-  button.disabled = true;
-  setText("missing-service-status", "Envoi...");
-
-  try {
-    const response = await apiFetch(`/api/provider/${telegramUser.id}/service-requests`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ service_name: serviceName, description }),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.detail || "Erreur");
-
-    window.nexisProfile.service_requests = result.service_requests;
-    document.getElementById("missing-service-name").value = "";
-    document.getElementById("missing-service-description").value = "";
-    setText("missing-service-status", "Proposition envoyee a Nexis Hub.");
-    renderServiceRequests(result.service_requests);
-  } catch (error) {
-    setText("missing-service-status", error.message || "Impossible d'envoyer.");
-  } finally {
-    button.disabled = false;
-  }
-}
-
-async function toggleProviderStatus() {
-  if (!telegramUser?.id || !window.nexisProfile?.provider) return;
-
-  const currentStatus = window.nexisProfile.provider.status;
-  const nextStatus = currentStatus === "available" ? "offline" : "available";
-  const button = document.getElementById("toggle-provider-status");
-
-  button.disabled = true;
-  button.textContent = "Mise a jour...";
-
-  try {
-    const response = await apiFetch(`/api/provider/${telegramUser.id}/status`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: nextStatus }),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.detail || "Erreur");
-
-    window.nexisProfile.provider = result.provider;
-    renderRole("provider", window.nexisProfile);
-  } catch (error) {
-    button.disabled = false;
-    button.textContent = currentStatus === "available" ? "Me rendre indisponible" : "Me rendre disponible";
-  }
-}
-
-function replaceProviderMission(updatedMission) {
-  const missions = window.nexisProfile?.provider_missions || [];
-  window.nexisProfile.provider_missions = missions.map((mission) => (
-    mission.id === updatedMission.id ? { ...mission, ...updatedMission } : mission
-  ));
-}
-
-// Codes de refus du registre d'argent (backend), voir CONCEPTION_ARGENT.md.
-const MISSION_ACTION_ERRORS = {
-  backend_unavailable: "Service de paiement momentanément indisponible. Rien n'a changé, réessayez dans un instant.",
-  not_paid: "Cette mission n'est pas encore payée.",
-  invalid_state: "Action impossible à cette étape de la mission.",
-  mission_disputed: "Mission en litige : la décision revient à l'équipe Nexis Hub.",
-  already_settled: "Cette mission est déjà réglée.",
-  not_mission_provider: "Vous n'êtes pas le prestataire de cette mission.",
-  mission_not_found: "Mission introuvable.",
-  invalid_presence_code: "Le code de présence a 4 chiffres.",
-  wrong_presence_code: "Code incorrect. Vérifiez le code avec le client.",
-  presence_code_locked: "Trop de codes incorrects : seul le client peut maintenant confirmer votre arrivée.",
-  presence_not_configured: "Service momentanément indisponible. Rien n'a changé, réessayez dans un instant.",
+const state = {
+  data: null,
+  lang: "fr",
+  tab: "home",
+  sub: null, // sous-écran : { name: "mission" | "propose" | "register", missionId }
+  missionFilter: "active",
+  missionRole: "provider",
+  currency: "CDF",
+  selectedServices: null,
 };
 
-async function postMissionAction(missionId, endpoint, body) {
-  const response = await apiFetch(`/api/provider/${telegramUser.id}/missions/${missionId}/${endpoint}`, {
-    method: "POST",
-    ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
-  });
-  const result = await response.json();
+// --- Langue et textes --------------------------------------------------------
+
+function pickLanguage(profileLanguage) {
+  if (NEXIS_TEXTS[profileLanguage]) return profileLanguage;
+  const telegramLanguage = (telegramUser?.language_code || "").slice(0, 2);
+  return NEXIS_TEXTS[telegramLanguage] ? telegramLanguage : "fr";
+}
+
+function lookup(texts, key) {
+  return key.split(".").reduce((node, part) => (node == null ? undefined : node[part]), texts);
+}
+
+function t(key, vars = {}) {
+  let text = lookup(NEXIS_TEXTS[state.lang], key);
+  if (typeof text !== "string") text = lookup(NEXIS_TEXTS.fr, key);
+  if (typeof text !== "string") return key;
+  return text.replace(/\{(\w+)\}/g, (match, name) => (name in vars ? String(vars[name]) : match));
+}
+
+function serviceName(key) {
+  const names = state.data?.service_names?.[key];
+  return names?.[state.lang] || names?.fr || state.data?.available_services?.[key] || key;
+}
+
+function missionRef(id) {
+  return `NXH-${String(id).padStart(4, "0")}`;
+}
+
+// Montants : jamais calculés ici, seulement mis en forme. USD avec deux
+// décimales, francs congolais sans décimales.
+function formatMoney(value, currency) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const isUsd = currency === "USD";
+  const digits = isUsd ? 2 : 0;
+  const number = new Intl.NumberFormat(LOCALES[state.lang] || "fr-FR", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(value);
+  return `${number} ${isUsd ? "USD" : "FC"}`;
+}
+
+function formatDate(iso) {
+  const date = iso ? new Date(iso) : null;
+  if (!date || Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(LOCALES[state.lang] || "fr-FR", { day: "numeric", month: "long" }).format(date);
+}
+
+// --- Construction du DOM -----------------------------------------------------
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function icon(id) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  const use = document.createElementNS(SVG_NS, "use");
+  use.setAttribute("href", `#${id}`);
+  svg.appendChild(use);
+  return svg;
+}
+
+function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props)) {
+    if (value == null || value === false) continue;
+    if (key === "class") node.className = value;
+    else if (key === "text") node.textContent = value;
+    else if (key === "style") node.setAttribute("style", value);
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else if (key in node && typeof value !== "string") node[key] = value;
+    else node.setAttribute(key, value === true ? "" : value);
+  }
+  for (const child of children.flat()) {
+    if (child == null || child === false) continue;
+    node.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
+  }
+  return node;
+}
+
+function serviceIcon(key, size) {
+  const [symbol, color] = SERVICE_ICONS[key] || SERVICE_ICONS.service_autre;
+  return el("span", { class: "svc", style: `--c:${color}${size ? `;width:${size}px;height:${size}px` : ""}` }, icon(symbol));
+}
+
+function button(label, onclick, { cls = "btn", iconId = null, type = "button" } = {}) {
+  return el("button", { class: cls, type, onclick }, iconId ? icon(iconId) : null, el("span", { text: label }));
+}
+
+let toastTimer = null;
+function toast(message, isError = false) {
+  const box = document.getElementById("toast");
+  box.textContent = message;
+  box.className = isError ? "toast error" : "toast";
+  box.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { box.hidden = true; }, 4500);
+  try {
+    tg?.HapticFeedback?.notificationOccurred(isError ? "error" : "success");
+  } catch (error) {
+    // Ancienne version de Telegram : pas de vibration.
+  }
+}
+
+// --- Échanges avec le serveur de la Mini App --------------------------------
+
+class ApiError extends Error {
+  constructor(code, attemptsLeft) {
+    super(code || "generic");
+    this.code = code;
+    this.attemptsLeft = attemptsLeft;
+  }
+}
+
+async function api(path, body) {
+  let response;
+  try {
+    response = await fetch(path, {
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        "X-Telegram-Init-Data": tg?.initData || "",
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (error) {
+    throw new ApiError("backend_unavailable");
+  }
+  let result = null;
+  try {
+    result = await response.json();
+  } catch (error) {
+    result = null;
+  }
   if (!response.ok) {
-    const code = result.detail?.code;
-    let text = MISSION_ACTION_ERRORS[code] || (typeof result.detail === "string" ? result.detail : "Action impossible");
-    if (code === "wrong_presence_code" && result.detail?.attempts_left !== undefined) {
-      text += ` Essais restants : ${result.detail.attempts_left}.`;
-    }
-    alert(text);
-    return null;
+    const detail = result?.detail;
+    const code = response.headers.get("X-Nexis-Code") || (detail && typeof detail === "object" ? detail.code : null);
+    throw new ApiError(code, detail && typeof detail === "object" ? detail.attempts_left : undefined);
   }
   return result;
 }
 
-async function updateMissionAction(action, missionId) {
-  if (!telegramUser?.id) return;
-
-  let result;
-  if (action === "arrived") {
-    // Le client reçoit la question « votre prestataire est-il arrivé ? ».
-    // La mission démarre à sa réponse, ou au code de présence qu'il donne.
-    result = await postMissionAction(missionId, "arrived");
-    if (!result) return;
-    if (!result.presence?.confirmed) {
-      const code = prompt(
-        "Le client a été prévenu. Sa réponse démarrera la mission.\n\n" +
-          "Vous pouvez aussi taper ici son code de présence à 4 chiffres (ou Annuler pour attendre sa réponse) :"
-      );
-      if (code) {
-        const confirmed = await postMissionAction(missionId, "presence-code", { code: code.trim() });
-        if (confirmed) result = confirmed;
-      }
-    }
-  } else {
-    result = await postMissionAction(missionId, "finish");
-    if (!result) return;
+function errorText(error) {
+  const code = error instanceof ApiError ? error.code : null;
+  let text = code && typeof lookup(NEXIS_TEXTS.fr, `errors.${code}`) === "string" ? t(`errors.${code}`) : t("errors.generic");
+  if (code === "wrong_presence_code" && typeof error.attemptsLeft === "number") {
+    text += ` ${t("errors.attempts_left", { n: error.attemptsLeft })}`;
   }
-  replaceProviderMission(result.mission);
-  renderRole("provider", window.nexisProfile);
+  return text;
 }
 
-function checkedValues(containerId) {
-  return Array.from(document.querySelectorAll(`#${containerId} input:checked`)).map((input) => input.value);
-}
-
-async function registerProvider() {
-  if (!telegramUser?.id) {
-    setText("provider-registration-status", "Ouvre la Mini App depuis Telegram pour t'inscrire.");
-    return;
-  }
-
-  const fullName = document.getElementById("provider-register-name").value.trim();
-  const phoneNumber = document.getElementById("provider-register-phone").value.trim();
-  const services = checkedValues("provider-register-services");
-  const communes = checkedValues("provider-register-communes");
-  const button = document.getElementById("register-provider");
-
-  button.disabled = true;
-  setText("provider-registration-status", "Creation du profil...");
-
+// Bouton occupé le temps d'une demande : un seul envoi à la fois.
+async function busy(buttonNode, busyLabel, work) {
+  if (buttonNode.disabled) return;
+  const label = buttonNode.querySelector("span");
+  const previous = label?.textContent;
+  buttonNode.disabled = true;
+  if (label && busyLabel) label.textContent = busyLabel;
   try {
-    const response = await apiFetch(`/api/provider/${telegramUser.id}/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        full_name: fullName,
-        phone_number: phoneNumber,
-        services,
-        communes,
-        language: "fr",
-      }),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.detail || "Erreur");
-
-    window.nexisProfile.provider = result.provider;
-    window.nexisProfile.provider_missions = [];
-    window.nexisProfile.service_requests = [];
-    setText("provider-registration-status", "Profil prestataire cree.");
-    renderRole("provider", window.nexisProfile);
-  } catch (error) {
-    setText("provider-registration-status", error.message || "Impossible de creer le profil.");
+    await work();
   } finally {
-    button.disabled = false;
+    if (buttonNode.isConnected) {
+      buttonNode.disabled = false;
+      if (label) label.textContent = previous;
+    }
   }
 }
 
-async function loadProfile() {
-  if (!telegramUser?.id) {
-    setText("profile-status", "Mode test local : ouvre la Mini App depuis Telegram pour voir tes vraies donnees.");
-    renderRole("client", {
-      client: null,
-      provider: null,
-      client_missions: [],
-      provider_missions: [],
+// --- Navigation --------------------------------------------------------------
+
+function provider() {
+  return state.data?.provider || null;
+}
+
+function show(tab) {
+  state.tab = tab;
+  state.sub = null;
+  render();
+  window.scrollTo(0, 0);
+}
+
+function open(sub) {
+  state.sub = sub;
+  render();
+  window.scrollTo(0, 0);
+}
+
+function goBack() {
+  state.sub = null;
+  render();
+}
+
+function updateChrome() {
+  const nav = document.getElementById("nav");
+  const tabs = Boolean(provider()) && !state.sub;
+  nav.hidden = !tabs;
+  document.body.classList.toggle("with-nav", tabs);
+  nav.querySelectorAll("[data-tab]").forEach((item) => {
+    if (item.dataset.tab === state.tab) item.setAttribute("aria-current", "page");
+    else item.removeAttribute("aria-current");
+  });
+  nav.querySelectorAll("[data-text]").forEach((item) => { item.textContent = t(item.dataset.text); });
+  try {
+    if (state.sub && (state.sub.name !== "register" || state.data?.client)) tg?.BackButton?.show();
+    else tg?.BackButton?.hide();
+  } catch (error) {
+    // BackButton absent des très anciennes versions de Telegram.
+  }
+}
+
+function render() {
+  const view = document.getElementById("view");
+  let screen;
+  if (state.sub?.name === "mission") screen = missionScreen(state.sub.missionId);
+  else if (state.sub?.name === "propose") screen = proposeScreen();
+  else if (state.sub?.name === "register") screen = registerScreen();
+  else if (!provider()) screen = state.data?.client ? clientHomeScreen() : registerScreen();
+  else if (state.tab === "missions") screen = missionsScreen();
+  else if (state.tab === "services") screen = servicesScreen();
+  else if (state.tab === "profile") screen = profileScreen();
+  else screen = homeScreen();
+  view.replaceChildren(...screen);
+  updateChrome();
+}
+
+function subHeader(title, subtitle) {
+  return el("div", { class: "top" },
+    el("button", { class: "back", type: "button", "aria-label": t("back"), onclick: goBack }, icon("i-back")),
+    el("div", {}, el("b", { text: title }), subtitle ? el("small", { text: subtitle }) : null),
+    el("span"));
+}
+
+// --- Éléments communs --------------------------------------------------------
+
+function walletCard() {
+  const wallet = state.data?.wallet;
+  const key = state.currency === "USD" ? "wallet_balance_usd" : "wallet_balance_cdf";
+  const amount = wallet ? formatMoney(wallet[key], state.currency) : null;
+  const currencyLabel = state.currency === "USD" ? "USD" : "FC";
+  return el("button", {
+    class: "wallet",
+    type: "button",
+    "aria-label": `${t("wallet")} · ${currencyLabel}. ${t("wallet_switch")}`,
+    onclick: () => { state.currency = state.currency === "USD" ? "CDF" : "USD"; render(); },
+  },
+  el("small", { text: `${t("wallet")} · ${currencyLabel}` }),
+  el("span", { class: "big", text: amount || t("balance_unknown") }),
+  el("span", { class: "row2" }, icon("i-shield"), el("span", { text: t("wallet_note") })),
+  el("span", { class: "dots", "aria-hidden": "true" },
+    el("i", { class: state.currency === "CDF" ? "on" : "" }),
+    el("i", { class: state.currency === "USD" ? "on" : "" })));
+}
+
+function paymentPill(mission) {
+  const amount = formatMoney(mission.net_provider, mission.currency);
+  if (mission.payment_status === "paid_escrow") {
+    return el("span", { class: "pill p-sec" }, icon("i-shield"), el("span", { text: amount || t("payment_secured") }));
+  }
+  if (mission.payment_status === "released") {
+    return el("span", { class: "pill p-ok" }, icon("i-check"), el("span", { text: amount || t("payment_released") }));
+  }
+  if (mission.payment_status === "refunded") return el("span", { class: "pill p-wait", text: t("payment_refunded") });
+  return el("span", { class: "pill p-wait" }, icon("i-clock"), el("span", { text: t("payment_unpaid") }));
+}
+
+function statusText(status) {
+  return t(`mission_status.${status}`) === `mission_status.${status}` ? status : t(`mission_status.${status}`);
+}
+
+function canArrive(mission) {
+  return mission.status === "confirmed" && mission.payment_status === "paid_escrow";
+}
+
+function canFinish(mission) {
+  return mission.status === "in_progress";
+}
+
+function missionCard(mission, asProvider) {
+  const other = asProvider ? mission.client_name : mission.provider_name;
+  const card = el("div", { class: "card" },
+    el("div", { class: "row" },
+      serviceIcon(mission.service),
+      el("div", {},
+        el("b", { text: `${serviceName(mission.service)} · ${mission.commune || ""}` }),
+        el("small", { class: "wrap", text: [missionRef(mission.id), statusText(mission.status), other].filter(Boolean).join(" · ") })),
+      paymentPill(mission)));
+  if (asProvider && canArrive(mission)) {
+    card.appendChild(button(t("btn_arrived"), (event) => declareArrival(event.currentTarget, mission.id), { cls: "btn sm", iconId: "i-arrived" }));
+  } else if (asProvider && canFinish(mission)) {
+    card.appendChild(button(t("btn_finish"), (event) => finishMission(event.currentTarget, mission.id), { cls: "btn sm", iconId: "i-check" }));
+  }
+  return card;
+}
+
+function replaceMission(updated) {
+  const missions = state.data.provider_missions || [];
+  state.data.provider_missions = missions.map((mission) => (mission.id === updated.id ? { ...mission, ...updated } : mission));
+}
+
+// --- Actions sur les missions (le backend décide, la page affiche) ----------
+
+async function declareArrival(buttonNode, missionId) {
+  await busy(buttonNode, null, async () => {
+    try {
+      const result = await api(`/api/provider/${telegramUser.id}/missions/${missionId}/arrived`, {});
+      replaceMission(result.mission);
+      if (result.presence?.confirmed) {
+        toast(t("started"));
+        render();
+      } else {
+        open({ name: "mission", missionId });
+      }
+    } catch (error) {
+      toast(errorText(error), true);
+    }
+  });
+}
+
+async function finishMission(buttonNode, missionId) {
+  await busy(buttonNode, null, async () => {
+    try {
+      const result = await api(`/api/provider/${telegramUser.id}/missions/${missionId}/finish`, {});
+      replaceMission(result.mission);
+      toast(t("finished_ok"));
+      render();
+    } catch (error) {
+      toast(errorText(error), true);
+    }
+  });
+}
+
+// --- Écrans du prestataire ---------------------------------------------------
+
+function homeScreen() {
+  const me = provider();
+  const verified = Boolean(me.is_verified);
+  const hello = el("div", { class: "hello" },
+    el("div", {}, el("small", { text: t("hello") }), el("b", { text: me.full_name || telegramUser?.first_name || "" })),
+    verified ? el("span", { class: "badge" }, icon("i-check"), el("span", { text: t("verified") })) : null);
+
+  if (!verified) return [hello, ...pendingBlock(me)];
+
+  const available = me.status === "available";
+  const locked = Boolean(me.is_suspended);
+  const communes = (me.communes || []).join(", ");
+  const hint = locked ? t("suspended_hint") : available ? t("available_hint", { communes }) : t("unavailable_hint");
+  const toggle = el("button", {
+    class: "toggle",
+    type: "button",
+    role: "switch",
+    "aria-checked": available ? "true" : "false",
+    "aria-label": t("available"),
+    disabled: locked,
+    onclick: (event) => toggleAvailability(event.currentTarget),
+  });
+  const availability = el("div", { class: "switch" },
+    el("span", { class: available && !locked ? "dot on" : "dot" }),
+    el("div", {}, el("b", { text: available && !locked ? t("available") : t("unavailable") }), el("small", { text: hint })),
+    toggle);
+
+  const rating = Number(me.rating || 0).toLocaleString(LOCALES[state.lang], { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const stats = el("div", { class: "stats" },
+    el("div", {}, el("b", { text: String(me.total_missions || 0) }), el("small", { text: t("stat_missions") })),
+    el("div", {}, el("b", { text: rating }), el("small", { text: t("stat_rating") })),
+    el("div", {}, el("b", { text: `${Math.round(Number(me.success_rate || 0))} %` }), el("small", { text: t("stat_success") })));
+
+  const missions = state.data.provider_missions;
+  const todo = (missions || []).filter((mission) => canArrive(mission) || canFinish(mission));
+  const todoLabel = el("div", { class: "lbl" }, el("span", { text: t("todo") }),
+    el("button", { class: "link", type: "button", text: t("see_all"), onclick: () => show("missions") }));
+  const todoList = missions == null
+    ? [el("p", { class: "empty", text: t("missions_unavailable") })]
+    : todo.length
+      ? todo.slice(0, 3).map((mission) => missionCard(mission, true))
+      : [el("p", { class: "empty", text: t("todo_empty") })];
+
+  return [hello, availability, walletCard(), stats, todoLabel, ...todoList];
+}
+
+function pendingBlock(me) {
+  const docs = Boolean(me.has_documents);
+  const step = (cls, title, sub) => el("div", { class: `step ${cls}` },
+    el("span", { class: "d" }, cls === "done" ? icon("i-check") : null),
+    el("div", {}, el("b", { text: title }), sub ? el("small", { text: sub }) : null));
+  return [
+    el("div", { class: "wait" },
+      el("span", { class: "bigic" }, icon("i-clock")),
+      el("h1", { class: "h1", text: t("pending_title") }),
+      el("p", { class: "note", text: t("pending_intro") })),
+    el("div", { class: "card" }, el("div", { class: "steps" },
+      step("done", t("step_created")),
+      docs ? step("done", t("step_docs")) : step("now", t("step_docs_todo"), t("step_docs_todo_sub")),
+      step(docs ? "now" : "", t("step_review")),
+      step("", t("step_first")))),
+    me.is_suspended ? el("p", { class: "msg error", text: t("suspended_hint") }) : null,
+  ].filter(Boolean);
+}
+
+async function toggleAvailability(toggle) {
+  const me = provider();
+  const next = me.status === "available" ? "offline" : "available";
+  await busy(toggle, null, async () => {
+    try {
+      const result = await api(`/api/provider/${telegramUser.id}/status`, { status: next });
+      state.data.provider = result.provider;
+      render();
+    } catch (error) {
+      toast(errorText(error), true);
+    }
+  });
+}
+
+function missionsScreen() {
+  const clientMissions = state.data.client_missions || [];
+  const both = clientMissions.length > 0;
+  const asProvider = !both || state.missionRole === "provider";
+  const all = asProvider ? state.data.provider_missions : state.data.client_missions;
+  const nodes = [el("h1", { class: "h1", text: t("missions_title") })];
+
+  if (both) {
+    nodes.push(el("div", { class: "seg role", style: "--n:2" },
+      ["provider", "client"].map((role) => el("button", {
+        type: "button",
+        "aria-pressed": state.missionRole === role ? "true" : "false",
+        text: t(`role_${role}`),
+        onclick: () => { state.missionRole = role; render(); },
+      }))));
+  }
+
+  const active = (all || []).filter((mission) => ACTIVE_STATUSES.includes(mission.status));
+  const done = (all || []).filter((mission) => DONE_STATUSES.includes(mission.status));
+  const tabs = [["active", t("tab_active"), active], ["done", t("tab_done"), done], ["all", t("tab_all"), all || []]];
+  nodes.push(el("div", { class: "seg" }, tabs.map(([key, label, list]) => el("button", {
+    type: "button",
+    "aria-pressed": state.missionFilter === key ? "true" : "false",
+    text: key === "all" ? label : `${label} · ${list.length}`,
+    onclick: () => { state.missionFilter = key; render(); },
+  }))));
+
+  if (all == null) {
+    nodes.push(el("p", { class: "empty", text: t("missions_unavailable") }));
+  } else {
+    const shown = tabs.find(([key]) => key === state.missionFilter)[2];
+    nodes.push(...(shown.length ? shown.map((mission) => missionCard(mission, asProvider)) : [el("p", { class: "empty", text: t("missions_empty") })]));
+  }
+  return nodes;
+}
+
+function missionScreen(missionId) {
+  const mission = (state.data.provider_missions || []).find((item) => item.id === missionId);
+  if (!mission) {
+    state.sub = null;
+    return missionsScreen();
+  }
+  const started = mission.status !== "confirmed";
+  const step = (cls, title, sub) => el("div", { class: `step ${cls}` },
+    el("span", { class: "d" }, cls === "done" ? icon("i-check") : null),
+    el("div", {}, el("b", { text: title }), sub ? el("small", { text: sub }) : null));
+  const nodes = [
+    subHeader(t("mission_title", { ref: missionRef(mission.id) }), `${serviceName(mission.service)} · ${mission.commune || ""}`),
+    el("div", { class: "card" }, el("div", { class: "steps" },
+      step("done", t("step_paid"), formatMoney(mission.net_provider, mission.currency) || t("step_paid_sub")),
+      step("done", t("step_arrived"), t("step_arrived_sub")),
+      step(started ? "done" : "now", t("step_code"), t("step_code_sub")),
+      step(mission.status === "in_progress" ? "now" : "", t("step_finish")))),
+  ];
+
+  if (started) {
+    nodes.push(el("p", { class: "msg ok", text: t("started") }));
+    if (canFinish(mission)) nodes.push(button(t("btn_finish"), (event) => finishMission(event.currentTarget, mission.id), { iconId: "i-check" }));
+    return nodes;
+  }
+
+  const input = el("input", {
+    type: "text",
+    inputmode: "numeric",
+    autocomplete: "one-time-code",
+    maxlength: "4",
+    pattern: "[0-9]*",
+    "aria-label": t("code_label"),
+  });
+  const boxes = [0, 1, 2, 3].map(() => el("span", { "aria-hidden": "true" }));
+  const otp = el("div", { class: "otp" }, boxes, input);
+  const message = el("p", { class: "msg error", role: "alert" });
+  const validate = button(t("btn_validate"), () => submitCode(validate, input, message, otp, mission.id));
+  validate.disabled = true;
+
+  const paint = () => {
+    input.value = input.value.replace(/\D/g, "").slice(0, 4);
+    boxes.forEach((box, index) => {
+      box.textContent = input.value[index] || "";
+      box.className = index < input.value.length ? "f" : index === input.value.length ? "cur" : "";
     });
+    validate.disabled = input.value.length !== 4 || otp.classList.contains("locked");
+  };
+  input.addEventListener("input", () => { message.textContent = ""; paint(); });
+  input.addEventListener("focus", () => otp.classList.add("focus"));
+  input.addEventListener("blur", () => otp.classList.remove("focus"));
+  input.addEventListener("keydown", (event) => { if (event.key === "Enter" && !validate.disabled) validate.click(); });
+  paint();
+
+  nodes.push(el("div", { class: "lbl" }, el("span", { text: t("code_label") })), otp,
+    el("p", { class: "note", text: t("code_note") }), message, validate);
+  return nodes;
+}
+
+async function submitCode(buttonNode, input, message, otp, missionId) {
+  await busy(buttonNode, null, async () => {
+    try {
+      const result = await api(`/api/provider/${telegramUser.id}/missions/${missionId}/presence-code`, { code: input.value });
+      replaceMission(result.mission);
+      toast(t("started"));
+      render();
+    } catch (error) {
+      input.value = "";
+      input.dispatchEvent(new Event("input")); // vide les cases
+      const locked = error.code === "presence_code_locked";
+      if (locked) {
+        otp.classList.add("locked");
+        input.disabled = true;
+      }
+      message.textContent = locked ? `${errorText(error)} ${t("code_locked_note")}` : errorText(error);
+    }
+  });
+  if (otp.classList.contains("locked") || input.value.length !== 4) buttonNode.disabled = true;
+}
+
+function serviceKeys() {
+  const names = state.data.service_names || {};
+  const keys = Object.keys(names).length ? Object.keys(names) : Object.keys(state.data.available_services || {});
+  return keys;
+}
+
+function servicesScreen() {
+  const me = provider();
+  if (!state.selectedServices) state.selectedServices = new Set(me.services || []);
+  const selected = state.selectedServices;
+  const status = el("p", { class: "msg", role: "status" });
+  const grid = el("div", { class: "sgrid" }, serviceKeys().map((key) => el("button", {
+    type: "button",
+    "aria-pressed": selected.has(key) ? "true" : "false",
+    onclick: (event) => {
+      if (selected.has(key)) selected.delete(key); else selected.add(key);
+      event.currentTarget.setAttribute("aria-pressed", selected.has(key) ? "true" : "false");
+      status.textContent = "";
+      status.className = "msg";
+    },
+  }, serviceIcon(key, 40), el("span", { text: serviceName(key) }))));
+
+  const save = button(t("save"), () => busy(save, t("saving"), async () => {
+    if (!selected.size) {
+      status.className = "msg error";
+      status.textContent = t("errors.services_required");
+      return;
+    }
+    try {
+      const result = await api(`/api/provider/${telegramUser.id}/services`, { services: [...selected] });
+      state.data.provider = result.provider;
+      state.selectedServices = new Set(result.provider.services || []);
+      status.className = "msg ok";
+      status.textContent = t("saved");
+    } catch (error) {
+      status.className = "msg error";
+      status.textContent = errorText(error);
+    }
+  }));
+
+  return [
+    el("h1", { class: "h1", text: t("services_title") }),
+    grid,
+    el("div", { class: "lbl" }, el("span", { text: t("communes_label") })),
+    el("div", { class: "chips" }, (me.communes || []).map((commune) => el("span", { class: "on", text: commune }))),
+    el("p", { class: "note", text: t("communes_note") }),
+    el("button", { class: "linkcard", type: "button", onclick: () => open({ name: "propose" }) },
+      el("span", { text: t("missing_link") }), el("b", { text: t("missing_cta") })),
+    status,
+    save,
+  ];
+}
+
+function proposeScreen() {
+  const name = el("input", { type: "text", maxlength: "80", autocomplete: "off" });
+  const description = el("textarea", { rows: "3", maxlength: "500" });
+  const status = el("p", { class: "msg", role: "status" });
+  const send = button(t("propose_send"), () => busy(send, t("sending"), async () => {
+    try {
+      const result = await api(`/api/provider/${telegramUser.id}/service-requests`, {
+        service_name: name.value.trim(),
+        description: description.value.trim(),
+      });
+      state.data.service_requests = result.service_requests;
+      render();
+      toast(t("propose_sent"));
+    } catch (error) {
+      status.className = "msg error";
+      status.textContent = errorText(error);
+    }
+  }));
+
+  const requests = state.data.service_requests || [];
+  const pillFor = (requestStatus) => {
+    const cls = requestStatus === "accepted" ? "p-ok" : requestStatus === "rejected" ? "p-bad" : "p-wait";
+    const iconId = requestStatus === "accepted" ? "i-check" : requestStatus === "pending" ? "i-clock" : null;
+    const label = t(`request_status.${requestStatus}`);
+    return el("span", { class: `pill ${cls}` }, iconId ? icon(iconId) : null, el("span", { text: label.startsWith("request_status.") ? requestStatus : label }));
+  };
+  const list = requests.length
+    ? el("div", { class: "card list" }, requests.map((request) => el("div", { class: "row" },
+      el("div", {},
+        el("b", { text: request.service_name }),
+        el("small", { class: "wrap", text: [formatDate(request.created_at) ? t("sent_on", { date: formatDate(request.created_at) }) : "", request.admin_note || ""].filter(Boolean).join(" · ") })),
+      pillFor(request.status))))
+    : el("p", { class: "empty", text: t("requests_empty") });
+
+  return [
+    subHeader(t("propose_title")),
+    el("p", { class: "note", text: t("propose_intro") }),
+    el("label", { class: "field" }, el("span", { text: t("propose_name") }), name),
+    el("label", { class: "field" }, el("span", { text: t("propose_desc") }), description),
+    status,
+    send,
+    el("div", { class: "lbl" }, el("span", { text: t("my_requests") })),
+    list,
+  ];
+}
+
+function initials(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  return (parts.slice(0, 2).map((part) => part[0]).join("") || "N").toUpperCase();
+}
+
+function profileScreen() {
+  const me = provider();
+  const badgeKey = me.is_verified ? (me.badge && me.badge !== "pending" ? me.badge : "verified") : "pending";
+  const badgeText = t(`badge.${badgeKey}`);
+  const row = (label, value, note) => el("div", { class: "row" },
+    el("div", {}, el("small", { text: label }), el("b", { class: "wrap", text: value || "–" }), note ? el("small", { class: "wrap", text: note }) : null));
+  return [
+    el("div", { class: "prof" },
+      el("span", { class: "avatar", "aria-hidden": "true", text: initials(me.full_name) }),
+      el("b", { text: me.full_name || "" }),
+      el("span", { class: me.is_verified ? "badge" : "badge wait" }, icon(me.is_verified ? "i-check" : "i-clock"), el("span", { text: badgeText }))),
+    el("div", { class: "card list" },
+      row(t("phone"), me.phone_number),
+      row(t("services"), (me.services || []).map(serviceName).join(", ")),
+      row(t("communes"), (me.communes || []).join(", ")),
+      row(t("language"), LANGUAGE_NAMES[state.lang], t("language_note"))),
+    el("div", { class: "info" }, icon("i-shield"), el("span", { text: t("id_note") })),
+  ];
+}
+
+// --- Inscription d'un nouveau prestataire -----------------------------------
+
+function registerScreen() {
+  const client = state.data?.client;
+  const fullName = el("input", { type: "text", autocomplete: "name", maxlength: "80", value: client?.first_name || "" });
+  const phone = el("input", { type: "tel", autocomplete: "tel", inputmode: "tel", maxlength: "20", placeholder: "+243…", value: client?.phone_number || "" });
+  const services = new Set();
+  const communes = new Set();
+  const chip = (set, value, label) => el("button", {
+    type: "button",
+    "aria-pressed": "false",
+    text: label,
+    onclick: (event) => {
+      if (set.has(value)) set.delete(value); else set.add(value);
+      event.currentTarget.setAttribute("aria-pressed", set.has(value) ? "true" : "false");
+    },
+  });
+  const status = el("p", { class: "msg error", role: "alert" });
+  const create = button(t("create"), () => busy(create, t("creating"), async () => {
+    status.textContent = "";
+    try {
+      const result = await api(`/api/provider/${telegramUser.id}/register`, {
+        full_name: fullName.value.trim(),
+        phone_number: phone.value.trim(),
+        services: [...services],
+        communes: [...communes],
+        language: state.lang,
+      });
+      state.data.provider = result.provider;
+      state.data.provider_missions = [];
+      state.data.service_requests = [];
+      state.selectedServices = null;
+      show("home");
+    } catch (error) {
+      status.textContent = errorText(error);
+    }
+  }));
+
+  return [
+    state.data?.client ? subHeader(t("become_provider")) : null,
+    el("h1", { class: "h1", text: t("register_title") }),
+    el("p", { class: "h1s", text: t("register_intro") }),
+    el("label", { class: "field" }, el("span", { text: t("full_name") }), fullName),
+    el("label", { class: "field" }, el("span", { text: t("phone_label") }), phone),
+    el("div", { class: "lbl" }, el("span", { text: t("your_services") })),
+    el("div", { class: "chips" }, serviceKeys().map((key) => chip(services, key, serviceName(key)))),
+    el("div", { class: "lbl" }, el("span", { text: t("your_communes") })),
+    el("div", { class: "chips" }, (state.data?.available_communes || []).map((commune) => chip(communes, commune, commune))),
+    status,
+    create,
+  ].filter(Boolean);
+}
+
+// --- Personne seulement cliente ---------------------------------------------
+
+function clientHomeScreen() {
+  const client = state.data.client;
+  const missions = state.data.client_missions;
+  const list = missions == null
+    ? [el("p", { class: "empty", text: t("missions_unavailable") })]
+    : missions.length
+      ? missions.map((mission) => missionCard(mission, false))
+      : [el("p", { class: "empty", text: t("missions_empty") })];
+  return [
+    el("div", { class: "hello" }, el("div", {}, el("small", { text: t("hello") }), el("b", { text: client.first_name || telegramUser?.first_name || "" }))),
+    walletCard(),
+    el("div", { class: "lbl" }, el("span", { text: t("client_requests") })),
+    ...list,
+    el("div", { class: "info" }, icon("i-info"), el("span", { text: t("client_note") })),
+    el("button", { class: "pick", type: "button", onclick: () => open({ name: "register" }) },
+      el("span", { class: "pi" }, icon("i-toolbox")),
+      el("div", {}, el("b", { text: t("become_provider") }), el("small", { text: t("become_provider_sub") })),
+      icon("i-chev")),
+  ];
+}
+
+// --- Démarrage ---------------------------------------------------------------
+
+function applyTheme() {
+  const dark = tg?.colorScheme ? tg.colorScheme === "dark" : window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  try {
+    const background = dark ? "#0B1424" : "#F6F8FB";
+    tg?.setBackgroundColor?.(background);
+    tg?.setHeaderColor?.(background);
+  } catch (error) {
+    // Couleurs d'en-tête non prises en charge par cette version de Telegram.
+  }
+}
+
+function messageScreen(text, withRetry) {
+  document.getElementById("view").replaceChildren(el("div", { class: "center" },
+    el("span", { class: "bigic" }, icon("i-info")),
+    el("p", { class: "note", text }),
+    withRetry ? button(t("retry"), () => load(), { cls: "btn sm" }) : null));
+  updateChrome();
+}
+
+async function load() {
+  document.getElementById("view").replaceChildren(el("div", { class: "center" },
+    el("span", { class: "spin", "aria-hidden": "true" }), el("p", { class: "note", text: t("loading") })));
+  try {
+    const data = await api(`/api/profile/${telegramUser.id}`);
+    state.data = data;
+    state.lang = pickLanguage(data.language);
+    document.documentElement.lang = state.lang;
+    state.selectedServices = null;
+    render();
+  } catch (error) {
+    messageScreen(errorText(error), true);
+  }
+}
+
+function start() {
+  state.lang = pickLanguage(null);
+  document.documentElement.lang = state.lang;
+  applyTheme();
+  document.querySelectorAll("#nav [data-tab]").forEach((item) => {
+    item.addEventListener("click", () => show(item.dataset.tab));
+  });
+  if (tg) {
+    tg.ready();
+    tg.expand();
+    tg.onEvent?.("themeChanged", applyTheme);
+    tg.BackButton?.onClick?.(goBack);
+  }
+  if (!telegramUser?.id || !tg?.initData) {
+    messageScreen(t("outside_telegram"), false);
     return;
   }
-
-  const response = await apiFetch(`/api/profile/${telegramUser.id}`);
-  const data = await response.json();
-  availableServices = data.available_services || availableServices;
-  window.nexisProfile = data;
-  setText("profile-status", "Donnees connectees a Nexis Hub.");
-  renderRole(currentRole(), data);
+  load();
 }
 
-loadProfile().catch(() => {
-  setText("profile-status", "Impossible de charger les donnees pour le moment.");
-});
-
-document.getElementById("save-services").addEventListener("click", saveServices);
-document.getElementById("send-missing-service").addEventListener("click", sendMissingService);
-document.getElementById("toggle-provider-status").addEventListener("click", toggleProviderStatus);
-document.getElementById("register-provider").addEventListener("click", registerProvider);
-document.getElementById("missions-list").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-mission-action]");
-  if (!button) return;
-  updateMissionAction(button.dataset.missionAction, Number(button.dataset.missionId));
-});
+start();
