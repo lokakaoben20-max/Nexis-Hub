@@ -46,6 +46,7 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiohttp import web
 from dotenv import load_dotenv
 
+from telegram_bot import webhook_watch
 from telegram_bot.update_ledger import Claim, UpdateLedger
 
 load_dotenv()
@@ -172,6 +173,7 @@ async def ensure_webhook_registered(bot: Bot) -> None:
 
 async def run_webhook(bot: Bot, dp: Dispatcher) -> None:
     expected_webhook_url()
+    webhook_watch.interval_seconds()  # réglage invalide : refus de démarrer
     app = build_webhook_app(bot, dp)  # lève RuntimeError si WEBHOOK_SECRET_TOKEN manquant
     await ensure_webhook_registered(bot)
 
@@ -189,8 +191,11 @@ async def run_webhook(bot: Bot, dp: Dispatcher) -> None:
             loop.add_signal_handler(sig, stop.set)
         except NotImplementedError:  # Windows : Ctrl+C lève KeyboardInterrupt
             pass
+    # Alerte les admins si l'adresse publique ne mène plus ici (tunnel coupé).
+    watch = asyncio.create_task(webhook_watch.watch_forever(bot, dp.storage.redis, expected_webhook_url()))
     try:
         await stop.wait()
     finally:
+        watch.cancel()
         # Ferme l'écoute puis attend les updates en cours (shutdown_timeout).
         await runner.cleanup()

@@ -233,6 +233,8 @@
   "phone_contact_not_own": "Contact oyo ezali ya yo te. Fina « Kotinda motango na ngai » mpo na kotinda motango ya compte na yo moko.",
   "provider_full_name_invalid": "Tinda kombo mobimba ya malamu (ata mikomo 2).",
   "admin_new_provider_summary": "🆕 <b>Mosali ya sika azali kozela validation</b>\n\nKombo : <b>{nom}</b>\nTelefone : <b>{telephone}</b>\nMisala : {services}\nBakomine : {communes}",
+  "admin_webhook_down": "⚠️ <b>Nexis Hub ezali kokoma te na Internet</b>\n\nAdresi {url} ekomaka lisusu te epai ya bot ({raison}). Bamesaje oyo batindi na bot mpe Mini App ekomaka lisusu te na serveur.\n\nSoki bot ezali kotambola na PC : fungola PowerShell lokola administrateur mpe koma <code>Restart-Service cloudflared</code>.",
+  "admin_webhook_recovered": "✅ <b>Nexis Hub ezali kokoma lisusu</b>\n\nAdresi {url} ezali koyanola lisusu. Ekataki pene na miniti {minutes}.",
   "admin_new_provider_id_caption": "Mokanda ya identité",
   "admin_new_provider_selfie_caption": "Selfie",
   "admin_new_provider_portfolio_caption": "Portfolio",
