@@ -231,6 +231,8 @@
   "phone_contact_not_own": "This contact isn't yours. Tap the \"Share my number\" button to send your own account's number.",
   "provider_full_name_invalid": "Please send a valid full name (at least 2 characters).",
   "admin_new_provider_summary": "🆕 <b>New provider awaiting approval</b>\n\nName: <b>{nom}</b>\nPhone: <b>{telephone}</b>\nServices: {services}\nAreas: {communes}",
+  "admin_webhook_down": "⚠️ <b>Nexis Hub unreachable from the Internet</b>\n\nThe address {url} no longer reaches the bot ({raison}). Messages sent to the bot and the Mini App no longer reach the server.\n\nIf the bot runs on the PC: open PowerShell as administrator and type <code>Restart-Service cloudflared</code>.",
+  "admin_webhook_recovered": "✅ <b>Nexis Hub reachable again</b>\n\nThe address {url} answers again. Outage of about {minutes} min.",
   "admin_new_provider_id_caption": "ID document",
   "admin_new_provider_selfie_caption": "Selfie",
   "admin_new_provider_portfolio_caption": "Portfolio",
