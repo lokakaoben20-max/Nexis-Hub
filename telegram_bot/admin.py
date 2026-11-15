@@ -666,7 +666,7 @@ async def admin_answer_client_request(callback: CallbackQuery):
         return
     reference = f"BES-{request_id:04d}"
     await callback.message.edit_text(
-        f"{'✅ On s’en occupe' if accepted else '❌ Pas possible pour le moment'} : <b>{reference}</b>\n\n"
+        f"{'✅ On s’en occupe' if accepted else '❌ Pas encore disponible'} : <b>{reference}</b>\n\n"
         f"{html.escape(request['description'])}",
         parse_mode="HTML",
     )

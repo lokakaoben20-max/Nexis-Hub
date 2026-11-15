@@ -578,7 +578,7 @@ def clavier_admin_service_request(request_id: int):
 def clavier_admin_client_request(request_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ On s'en occupe", callback_data=f"admin_client_need_ok_{request_id}")
-    builder.button(text="❌ Pas possible", callback_data=f"admin_client_need_no_{request_id}")
+    builder.button(text="❌ Pas encore disponible", callback_data=f"admin_client_need_no_{request_id}")
     builder.adjust(2)
     return builder.as_markup()
 
