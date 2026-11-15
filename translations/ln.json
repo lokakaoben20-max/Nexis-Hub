@@ -22,6 +22,7 @@
   "provider_service_not_for_providers": "Mosala oyo ekoki kopona te. Soki mosala na yo ezali te, tindela yango Nexis Hub.",
   "money_error_too_many_services": "Osili kozala na misala nyonso oyo epesami. Eloko moko ebongwani te.",
   "money_error_service_not_for_providers": "Mosali akoki kopona mosala oyo te. Eloko moko ebongwani te.",
+  "money_error_service_needs_review": "Mpo na kobakisa mosala, tinda bosengi na Mini App (Misala na ngai → Bakisa mosala). Ekipi ya Nexis Hub ekotala yango. Eloko moko ebongwani te.",
   "provider_choose_communes": "📍 Na bakomine nini okoki kosala ?\n\nOkoki kopona ebele.",
   "choose_one_commune": "Pona ata komine moko.",
   "provider_registered": "✅ <b>Makambo ya mosali esalemi.</b>\n\nEzalela : <b>{status}</b>\nBadge : <b>{badge}</b>\n\nMakambo na yo ebombami. Validation admin mpe matching ekoya sima.",

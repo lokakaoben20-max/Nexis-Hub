@@ -156,6 +156,7 @@
   "provider_service_not_for_providers": "This service cannot be chosen. If your trade is missing, suggest it to Nexis Hub.",
   "money_error_too_many_services": "You already have the maximum number of services. Nothing has changed.",
   "money_error_service_not_for_providers": "A provider cannot choose this service. Nothing has changed.",
+  "money_error_service_needs_review": "To add a service, send a request from the Mini App (My services → Add a service). The Nexis Hub team will review it. Nothing has changed.",
   "client_registered": "✅ Your client registration is complete.",
   "mission_saved": "✅ <b>Request saved.</b>\n\nMission reference: <b>NXH-{mission_id:04d}</b>\n\n{matching_text}",
   "phone_required": "A typed number is not accepted. Tap the \"Share my number\" button at the bottom of the screen to continue.",

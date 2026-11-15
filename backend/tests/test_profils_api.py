@@ -219,8 +219,11 @@ def test_a_provider_changes_his_services_and_communes(api):
 
 def test_re_registering_never_changes_a_verified_status(api):
     verified_provider(api)
-    again = register(api, services=["service_plomberie"])
-    assert (again.json()["provider"]["status"], again.json()["provider"]["services"]) == ("available", ["service_plomberie"])
+    again = register(api, communes=["Lemba"])
+    assert (again.json()["provider"]["status"], again.json()["provider"]["communes"]) == ("available", ["Lemba"])
+    # Un service de plus passe par une demande à l'équipe, jamais directement.
+    added = register(api, services=["service_nettoyage", "service_plomberie"])
+    assert (added.status_code, code(added)) == (400, "service_needs_review")
 
 
 # --- Admin ------------------------------------------------------------------------
@@ -235,6 +238,7 @@ def test_re_registering_never_changes_a_verified_status(api):
         ("post", "/api/admin/providers/1/suspend"),
         ("post", "/api/admin/providers/1/unsuspend"),
         ("get", "/api/admin/service-requests"),
+        ("get", "/api/admin/service-additions"),
     ],
 )
 def test_admin_routes_refuse_anyone_but_the_configured_admin(api, method, path):
@@ -390,3 +394,119 @@ def test_a_client_cannot_pile_up_unanswered_needs(api, backend):
         assert api.post("/api/me/client-requests", json={"description": f"Besoin numéro {index}"}, headers=tg(CLIENT)).status_code == 200
     refused = api.post("/api/me/client-requests", json={"description": "Un besoin de trop"}, headers=tg(CLIENT))
     assert (refused.status_code, code(refused)) == (409, "too_many_pending_requests")
+
+
+# --- Ajout d'un service : demande approuvée par l'équipe (2026-11-15) -------
+
+
+JPEG = b"\xff\xd8\xff\xe0" + b"realisation" * 20
+
+
+@pytest.fixture(autouse=True)
+def _files_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("FILES_DIR", str(tmp_path / "fichiers"))
+    monkeypatch.delenv("FILES_ENCRYPTION_KEY", raising=False)
+
+
+def upload(api, data=JPEG, telegram_id=PROVIDER):
+    return api.post(
+        "/api/me/files/service-photos", content=data, headers={**tg(telegram_id), "Content-Type": "image/jpeg"}
+    )
+
+
+def ask(api, service="service_coiffure", telegram_id=PROVIDER, **fields):
+    return api.post(
+        "/api/me/provider-profile/service-additions", json={"service_key": service, **fields}, headers=tg(telegram_id)
+    )
+
+
+def test_a_verified_provider_asks_for_a_service_and_the_admin_approves_it_once(api):
+    verified_provider(api)
+    direct = api.put("/api/me/provider-profile/services", json={"services": ["service_nettoyage", "service_coiffure"]}, headers=tg(PROVIDER))
+    assert (direct.status_code, code(direct)) == (400, "service_needs_review")
+
+    photos = [upload(api).json()["file"]["id"] for _ in range(2)]
+    asked = ask(api, description="Coiffeur depuis 5 ans", photo_ids=photos)
+    assert asked.status_code == 200, asked.json()
+    addition = asked.json()["service_addition"]
+    assert (addition["status"], addition["photo_count"]) == ("pending", 2)
+    assert "photo_ids" not in addition, "les photos ne reviennent qu'à l'admin"
+    me = api.get("/api/me/profile", headers=tg(PROVIDER)).json()["provider"]
+    assert (me["services"], me["pending_services"]) == (["service_nettoyage"], ["service_coiffure"])
+    assert api.get("/api/admin/stats", headers=tg(ADMIN)).json()["stats"]["pending_service_additions"] == 1
+
+    listed = api.get("/api/admin/service-additions", headers=tg(ADMIN)).json()["service_additions"]
+    assert [(item["id"], item["provider_telegram_id"], sorted(item["photo_ids"])) for item in listed] == [
+        (addition["id"], PROVIDER, sorted(photos))
+    ]
+    seen = api.get(f"/api/admin/files/{photos[0]}", headers=tg(ADMIN))
+    assert (seen.status_code, seen.content, seen.headers["content-type"]) == (200, JPEG, "image/jpeg")
+    assert seen.headers["cache-control"] == "no-store"
+    for intruder in (PROVIDER, CLIENT):
+        blocked = api.get(f"/api/admin/files/{photos[0]}", headers=tg(intruder))
+        assert (blocked.status_code, code(blocked)) == (403, "not_admin")
+    assert (listed[0]["provider_language"], listed[0]["provider_services"], listed[0]["previously_rejected"]) == ("fr", ["service_nettoyage"], False)
+
+    url = f"/api/admin/service-additions/{addition['id']}/decision"
+    refused = api.post(url, json={"decision": "approve"}, headers=tg(PROVIDER))
+    assert (refused.status_code, code(refused)) == (403, "not_admin")
+    approved = api.post(url, json={"decision": "approve"}, headers=tg(ADMIN))
+    assert (approved.json()["decided_now"], approved.json()["service_addition"]["status"]) == (True, "approved")
+    again = api.post(url, json={"decision": "approve"}, headers=tg(ADMIN))
+    assert again.json()["decided_now"] is False, "double clic : le prestataire n'est pas prévenu deux fois"
+    other = api.post(url, json={"decision": "reject"}, headers=tg(ADMIN))
+    assert (other.status_code, code(other)) == (409, "already_decided")
+    me = api.get("/api/me/profile", headers=tg(PROVIDER)).json()["provider"]
+    assert (sorted(me["services"]), me["pending_services"]) == (["service_coiffure", "service_nettoyage"], [])
+    assert api.get("/api/admin/service-additions", headers=tg(ADMIN)).json()["service_additions"] == []
+
+
+def test_a_rejected_request_is_shown_to_the_admin_when_asked_again(api):
+    verified_provider(api)
+    first = ask(api).json()["service_addition"]
+    api.post(f"/api/admin/service-additions/{first['id']}/decision", json={"decision": "reject", "admin_note": "Aucune photo"}, headers=tg(ADMIN))
+    mine = api.get("/api/me/provider-profile/service-additions", headers=tg(PROVIDER)).json()["service_additions"]
+    assert [(item["status"], item["admin_note"]) for item in mine] == [("rejected", "Aucune photo")]
+    assert ask(api).status_code == 200
+    listed = api.get("/api/admin/service-additions", headers=tg(ADMIN)).json()["service_additions"]
+    assert (listed[0]["previously_rejected"], listed[0]["previous_rejection_note"]) == (True, "Aucune photo")
+
+
+def test_a_provider_cancels_his_request_and_never_someone_else_s(api):
+    verified_provider(api)
+    verified_provider(api, 8)
+    addition = ask(api).json()["service_addition"]
+    url = f"/api/me/provider-profile/service-additions/{addition['id']}/cancel"
+    stranger = api.post(url, headers=tg(8))
+    assert (stranger.status_code, code(stranger)) == (404, "service_addition_not_found")
+    assert api.post(url, headers=tg(PROVIDER)).json()["service_addition"]["status"] == "cancelled"
+    assert api.get("/api/me/profile", headers=tg(PROVIDER)).json()["provider"]["pending_services"] == []
+
+
+def test_service_addition_refusals(api):
+    register(api)
+    assert code(ask(api)) == "provider_not_verified"
+    verified_provider(api, 8, services=("service_nettoyage", "service_plomberie"))
+    assert ask(api, telegram_id=8).status_code == 200
+    assert code(ask(api, telegram_id=8)) == "service_addition_pending"
+    assert code(ask(api, "service_jardinage", telegram_id=8)) == "too_many_services"
+    assert code(ask(api, "service_nettoyage", telegram_id=8)) == "service_already_offered"
+    assert code(ask(api, telegram_id=9)) == "provider_not_found"
+    whatsapp = api.post("/api/me/provider-profile/service-additions", json={"service_key": "service_coiffure"}, headers=wa_write())
+    assert whatsapp.status_code == 403
+
+
+def test_photo_upload_refusals(api):
+    verified_provider(api)
+    assert code(upload(api, b"%PDF-1.7")) == "unsupported_file_type"
+    big = upload(api, b"\xff\xd8\xff" + b"0" * (5 * 1024 * 1024))
+    assert (big.status_code, code(big)) == (413, "file_too_large")
+    assert code(upload(api, telegram_id=CLIENT)) == "provider_not_found"
+    whatsapp = api.post("/api/me/files/service-photos", content=JPEG, headers={**wa_write(), "Content-Type": "image/jpeg"})
+    assert whatsapp.status_code == 403
+    missing = api.get("/api/admin/files/" + "0" * 32, headers=tg(ADMIN))
+    assert (missing.status_code, code(missing)) == (404, "file_not_found")
+    # La photo d'un autre ne se joint pas à sa demande.
+    verified_provider(api, 8)
+    foreign = upload(api, telegram_id=8).json()["file"]["id"]
+    assert code(ask(api, photo_ids=[foreign])) == "invalid_photos"

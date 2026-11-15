@@ -268,6 +268,7 @@ def test_admin_lists_and_counts_missions(tmp_path, monkeypatch, backend_db_url):
             "providers_pending": 0,
             "pending_services": 0,
             "pending_client_requests": 0,
+            "pending_service_additions": 0,
         }
 
 

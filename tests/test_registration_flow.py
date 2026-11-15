@@ -147,7 +147,8 @@ def test_changer_disponibilite_when_the_backend_is_down_changes_nothing():
 
 
 def test_enregistrer_services_modifies_writes_the_backend(live_backend):
-    live_backend.provider(504)
+    # Vérifié : il retire librement (un ajout passe par une demande à l'équipe).
+    live_backend.provider(504, services=("service_plomberie", "service_electricite", "service_informatique"))
 
     callback = DummyCallback(telegram_id=504, data="edit_services_done")
     state = DummyState(data={"provider_services_edit": ["service_electricite", "service_informatique"], "language": "fr"})
@@ -156,6 +157,17 @@ def test_enregistrer_services_modifies_writes_the_backend(live_backend):
 
     assert live_backend.profile(504)["provider"]["services"] == ["service_electricite", "service_informatique"]
     assert state.cleared is True
+
+
+def test_a_verified_provider_adding_a_service_in_the_bot_is_told_to_send_a_request(live_backend):
+    live_backend.provider(506)
+    callback = DummyCallback(telegram_id=506, data="edit_services_done")
+    state = DummyState(data={"provider_services_edit": ["service_plomberie", "service_coiffure"], "language": "fr"})
+
+    asyncio.run(registration.enregistrer_services_modifies(callback, state))
+
+    assert live_backend.profile(506)["provider"]["services"] == ["service_plomberie"]
+    assert "envoyez une demande" in callback.answered
 
 
 def test_enregistrer_services_keeps_the_choice_when_the_backend_is_down():

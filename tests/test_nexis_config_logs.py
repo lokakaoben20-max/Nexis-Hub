@@ -41,6 +41,8 @@ def _backend_complet(env, app_env="production", passerelle="flexpay"):
         APP_CODE_HMAC_KEY=SECRET,
         BOT_TOKEN="123:abc",
         PAYMENT_GATEWAY=passerelle,
+        FILES_DIR="/var/nexis/fichiers",
+        FILES_ENCRYPTION_KEY="A" * 43 + "=",
         **ARGENT,
     )
 
@@ -68,6 +70,15 @@ def test_en_production_aucun_reglage_d_argent_ne_prend_de_valeur_par_defaut(env)
     assert "PAYOUT_MINIMUM_CDF manquant" in erreurs
     assert "COLLECTION_FEE_RATE hors limites" in erreurs
     assert "PAYOUT_FEE_RATE n'est pas un nombre" in erreurs
+
+
+def test_les_photos_exigent_un_dossier_et_une_cle_de_32_octets(env):
+    _backend_complet(env)
+    env(FILES_ENCRYPTION_KEY="trop-courte")
+    assert any("FILES_ENCRYPTION_KEY doit être 32 octets" in erreur for erreur in nexis_config.problemes("backend"))
+    env(FILES_DIR="", FILES_ENCRYPTION_KEY="")
+    erreurs = nexis_config.problemes("backend")
+    assert {"FILES_DIR manquant", "FILES_ENCRYPTION_KEY manquant"} <= set(erreurs)
 
 
 def test_toutes_les_erreurs_sont_donnees_d_un_coup_sans_les_valeurs(env):

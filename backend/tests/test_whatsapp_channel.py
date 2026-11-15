@@ -48,6 +48,11 @@ PROVIDER_ROUTES = {
     ("PATCH", "/api/me/provider-profile/status"),
     ("GET", "/api/me/service-requests"),
     ("POST", "/api/bot/missions/{mission_id}/decline"),
+    # Ajout d'un service : photos puis demande à l'équipe (2026-11-15).
+    ("POST", "/api/me/files/service-photos"),
+    ("POST", "/api/me/provider-profile/service-additions"),
+    ("GET", "/api/me/provider-profile/service-additions"),
+    ("POST", "/api/me/provider-profile/service-additions/{addition_id}/cancel"),
 }
 
 

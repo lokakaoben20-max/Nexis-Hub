@@ -30,7 +30,7 @@ from datetime import datetime
 from sqlalchemy import case, func, select, update
 from sqlalchemy.orm import Session
 
-from backend.app import app_auth
+from backend.app import app_auth, fichiers
 from backend.app.models import (
     PROVIDER_STATUSES,
     ClientProfile,
@@ -39,6 +39,7 @@ from backend.app.models import (
     ProviderCommune,
     ProviderProfile,
     ProviderService,
+    ProviderServiceAddition,
     Service,
 )
 
@@ -63,6 +64,11 @@ PROVIDER_EXCLUDED_SERVICES = ("service_autre",)
 # catalogue part à l'équipe (crud.create_client_request). Les anciennes
 # missions gardent leur service.
 CLIENT_EXCLUDED_SERVICES = ("service_autre",)
+# Un prestataire vérifié n'ajoute pas un service lui-même : il envoie une
+# demande que l'équipe approuve, comme à l'inscription (décision de Ben,
+# 2026-11-15). Les demandes en attente comptent dans la limite.
+MAX_ADDITION_DESCRIPTION_LENGTH = 500
+MAX_ADMIN_NOTE_LENGTH = 500
 
 # Classement des prestataires éligibles.
 BADGE_SCORES = {"partner": 30, "expert": 20, "premium": 10, "verified": 5, "pending": 0}
@@ -320,6 +326,7 @@ def register_provider(
     id_document_file_id=None,
     selfie_file_id=None,
     portfolio_file_ids=None,
+    added_services_reviewed: bool = False,
 ) -> tuple[ProviderProfile, bool]:
     """Inscription, ou nouvelle inscription, d'un prestataire.
 
@@ -330,8 +337,11 @@ def register_provider(
     - en attente ou vérifié : nom, numéro, services, communes et documents
       mis à jour, **statut inchangé**.
 
-    Documents absents (None) : ceux déjà fournis sont gardés. Renvoie
-    (profil, créé)."""
+    Documents absents (None) : ceux déjà fournis sont gardés. Un vérifié
+    n'ajoute pas de service ici (`service_needs_review`) : il envoie une
+    demande. `added_services_reviewed` : seulement pour un outil d'admin qui
+    reprend un état déjà validé par l'équipe (reprise SQLite), jamais pour un
+    canal. Renvoie (profil, créé)."""
     account = _locked_account(db, account_id)
     full_name = _checked_name(full_name)
     phone_number = _checked_phone(phone_number)
@@ -347,6 +357,8 @@ def register_provider(
         portfolio_file_ids = [_checked_file_id(file_id) for file_id in portfolio_file_ids]
 
     provider = db.get(ProviderProfile, account_id, with_for_update=True)
+    if provider is not None and not added_services_reviewed:
+        _refuse_unreviewed_additions(provider, service_keys, _current_services(db, account_id))
     created = provider is None
     if created:
         provider = ProviderProfile(
@@ -385,11 +397,190 @@ def register_provider(
 
 
 def set_provider_services(db: Session, account_id: int, services) -> ProviderProfile:
+    """Liste de services d'un prestataire. Vérifié : il ne peut que retirer
+    (un ajout passe par `request_service_addition`). En attente de
+    vérification : tout son profil sera revu, il modifie librement."""
     provider = _locked_provider(db, account_id)
-    _replace_services(db, account_id, _checked_provider_services(db, services, _current_services(db, account_id)))
+    current = _current_services(db, account_id)
+    keys = _checked_provider_services(db, services, current)
+    _refuse_unreviewed_additions(provider, keys, current)
+    _replace_services(db, account_id, keys)
     provider.updated_at = _now()
     db.flush()
     return provider
+
+
+def _refuse_unreviewed_additions(provider: ProviderProfile, keys: list[str], current: list[str]) -> None:
+    if is_verified(provider) and any(key not in current for key in keys):
+        raise ProfileRefused("service_needs_review", 400)
+
+
+# --- Prestataire : demandes d'ajout de service -------------------------------
+
+
+def pending_addition_keys(db: Session, account_id: int) -> list[str]:
+    return list(
+        db.scalars(
+            select(ProviderServiceAddition.service_key)
+            .where(ProviderServiceAddition.account_id == account_id, ProviderServiceAddition.status == "pending")
+            .order_by(ProviderServiceAddition.id)
+        )
+    )
+
+
+def service_additions_of(db: Session, account_id: int, limit: int = 20) -> list[ProviderServiceAddition]:
+    return list(
+        db.scalars(
+            select(ProviderServiceAddition)
+            .where(ProviderServiceAddition.account_id == account_id)
+            .order_by(ProviderServiceAddition.id.desc())
+            .limit(max(1, min(limit, 50)))
+        )
+    )
+
+
+def pending_service_additions(db: Session, limit: int = 10) -> list[ProviderServiceAddition]:
+    """Plus anciennes d'abord : l'équipe les traite dans l'ordre d'arrivée."""
+    return list(
+        db.scalars(
+            select(ProviderServiceAddition)
+            .where(ProviderServiceAddition.status == "pending")
+            .order_by(ProviderServiceAddition.id)
+            .limit(max(1, min(limit, 50)))
+        )
+    )
+
+
+def pending_service_addition_count(db: Session) -> int:
+    return db.scalar(
+        select(func.count()).select_from(ProviderServiceAddition).where(ProviderServiceAddition.status == "pending")
+    ) or 0
+
+
+def previous_rejection(db: Session, addition: ProviderServiceAddition) -> ProviderServiceAddition | None:
+    """Dernier refus du même service pour ce prestataire, montré à l'admin."""
+    return db.scalars(
+        select(ProviderServiceAddition)
+        .where(
+            ProviderServiceAddition.account_id == addition.account_id,
+            ProviderServiceAddition.service_key == addition.service_key,
+            ProviderServiceAddition.status == "rejected",
+            ProviderServiceAddition.id < addition.id,
+        )
+        .order_by(ProviderServiceAddition.id.desc())
+        .limit(1)
+    ).first()
+
+
+def request_service_addition(
+    db: Session, account_id: int, service_key, description="", photo_ids=None
+) -> ProviderServiceAddition:
+    """Demande d'un prestataire vérifié pour proposer un service de plus.
+
+    Le verrou sur le profil sérialise les demandes d'une même personne : la
+    limite (services actifs + demandes en attente) ne peut pas être dépassée
+    par deux demandes simultanées. L'index unique partiel le garantit aussi
+    pour un même service."""
+    provider = _locked_provider(db, account_id)
+    if not is_verified(provider):
+        raise ProfileRefused("provider_not_verified")
+    if not isinstance(service_key, str) or service_key not in {service.key for service in active_services(db)}:
+        raise ProfileRefused("unknown_service", 400)
+    if service_key in PROVIDER_EXCLUDED_SERVICES:
+        raise ProfileRefused("service_not_for_providers", 400)
+    current = _current_services(db, account_id)
+    if service_key in current:
+        raise ProfileRefused("service_already_offered")
+    pending = pending_addition_keys(db, account_id)
+    if service_key in pending:
+        raise ProfileRefused("service_addition_pending")
+    if len(current) + len(pending) >= MAX_PROVIDER_SERVICES:
+        raise ProfileRefused("too_many_services", 400)
+    if description is None:
+        description = ""
+    if not isinstance(description, str):
+        raise ProfileRefused("invalid_description", 400)
+    description = description.strip()
+    if len(description) > MAX_ADDITION_DESCRIPTION_LENGTH:
+        raise ProfileRefused("invalid_description", 400)
+
+    addition = ProviderServiceAddition(
+        account_id=account_id,
+        service_key=service_key,
+        description=description,
+        status="pending",
+        created_at=_now(),
+    )
+    db.add(addition)
+    db.flush()
+    try:
+        fichiers.attach_to_addition(db, account_id, photo_ids if photo_ids is not None else [], addition.id)
+    except fichiers.FileRefused as refusal:
+        raise ProfileRefused(refusal.code, 400) from refusal
+    return addition
+
+
+def _locked_addition(db: Session, addition_id: int) -> ProviderServiceAddition:
+    addition = db.get(ProviderServiceAddition, addition_id, with_for_update=True, populate_existing=True)
+    if addition is None:
+        raise ProfileRefused("service_addition_not_found", 404)
+    return addition
+
+
+def cancel_service_addition(db: Session, account_id: int, addition_id: int) -> ProviderServiceAddition:
+    """Le prestataire retire sa propre demande en attente. Déjà retirée :
+    rien ne change. Verrous dans l'ordre profil puis demande, comme partout."""
+    _locked_provider(db, account_id)
+    addition = _locked_addition(db, addition_id)
+    if addition.account_id != account_id:
+        # Jamais la demande de quelqu'un d'autre, sans dire qu'elle existe.
+        raise ProfileRefused("service_addition_not_found", 404)
+    if addition.status == "cancelled":
+        return addition
+    if addition.status != "pending":
+        raise ProfileRefused("already_decided")
+    addition.status = "cancelled"
+    addition.decided_at = _now()
+    db.flush()
+    return addition
+
+
+def decide_service_addition(
+    db: Session, addition_id: int, approve: bool, admin_account_id: int | None, admin_note=None
+) -> tuple[ProviderServiceAddition, bool]:
+    """Décision de l'équipe, une seule fois. Approuver ajoute le service dans
+    la même transaction ; la même décision répétée (double clic) ne refait
+    rien et renvoie (demande, False). Renvoie (demande, décidée maintenant)."""
+    found = db.get(ProviderServiceAddition, addition_id)
+    if found is None:
+        raise ProfileRefused("service_addition_not_found", 404)
+    provider = _locked_provider(db, found.account_id)
+    addition = _locked_addition(db, addition_id)
+    target = "approved" if approve else "rejected"
+    if addition.status == target:
+        return addition, False
+    if addition.status != "pending":
+        raise ProfileRefused("already_decided")
+    note = None
+    if admin_note is not None:
+        if not isinstance(admin_note, str):
+            raise ProfileRefused("invalid_note", 400)
+        note = admin_note.strip()[:MAX_ADMIN_NOTE_LENGTH] or None
+    if approve:
+        if addition.service_key not in {service.key for service in active_services(db)}:
+            raise ProfileRefused("unknown_service", 400)
+        current = _current_services(db, provider.account_id)
+        if addition.service_key not in current:
+            if len(current) >= MAX_PROVIDER_SERVICES:
+                raise ProfileRefused("too_many_services")
+            db.add(ProviderService(account_id=provider.account_id, service_key=addition.service_key))
+        provider.updated_at = _now()
+    addition.status = target
+    addition.admin_note = note
+    addition.decided_by_account_id = admin_account_id
+    addition.decided_at = _now()
+    db.flush()
+    return addition, True
 
 
 def set_provider_communes(db: Session, account_id: int, communes) -> ProviderProfile:

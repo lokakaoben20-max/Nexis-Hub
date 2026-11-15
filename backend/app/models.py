@@ -678,6 +678,9 @@ PROVIDER_STATUSES = ("pending_verification", "rejected", "available", "offline",
 PROVIDER_VERIFIED_STATUSES = ("available", "offline", "paused")
 PROVIDER_BADGES = ("pending", "verified", "premium", "expert", "partner")
 SERVICE_REQUEST_STATUSES = ("pending", "accepted", "rejected")
+SERVICE_ADDITION_STATUSES = ("pending", "approved", "rejected", "cancelled")
+STORED_FILE_PURPOSES = ("service_photo",)
+STORED_FILE_TYPES = ("image/jpeg", "image/png", "image/webp")
 
 
 def _sql_in(values) -> str:
@@ -825,6 +828,76 @@ class ProviderServiceRequest(Base):
     admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ProviderServiceAddition(Base):
+    """Demande d'un prestataire vérifié pour proposer un service de plus
+    (décision de Ben, 2026-11-15) : le service n'est actif qu'une fois
+    approuvé par l'équipe, comme à l'inscription. Photos de réalisations
+    facultatives : des `StoredFile` jointes à la demande.
+
+    pending ──admin──> approved (service ajouté dans la même transaction)
+       │ ──admin──> rejected
+       └──le prestataire──> cancelled
+
+    Une seule demande en attente par prestataire et par service (index
+    unique partiel)."""
+
+    __tablename__ = "provider_service_additions"
+    __table_args__ = (
+        CheckConstraint(f"status IN {_sql_in(SERVICE_ADDITION_STATUSES)}", name="ck_provider_service_additions_status"),
+        CheckConstraint(
+            "(status = 'pending' AND decided_at IS NULL) OR (status <> 'pending' AND decided_at IS NOT NULL)",
+            name="ck_provider_service_additions_decided",
+        ),
+        Index(
+            "uq_provider_service_additions_pending",
+            "account_id",
+            "service_key",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("provider_profiles.account_id"), index=True)
+    service_key: Mapped[str] = mapped_column(String(64), ForeignKey("services.key"))
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decided_by_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class StoredFile(Base):
+    """Fichier envoyé par une personne et gardé chiffré par le backend
+    (backend/app/fichiers.py). Le contenu est sur disque sous `id` ; la ligne
+    garde le type réel, la taille et l'empreinte du contenu en clair.
+
+    `id` : 128 bits aléatoires, jamais un compteur. Jointe à une demande
+    d'ajout de service au plus une fois (`service_addition_id`)."""
+
+    __tablename__ = "stored_files"
+    __table_args__ = (
+        CheckConstraint(f"purpose IN {_sql_in(STORED_FILE_PURPOSES)}", name="ck_stored_files_purpose"),
+        CheckConstraint(f"content_type IN {_sql_in(STORED_FILE_TYPES)}", name="ck_stored_files_content_type"),
+        CheckConstraint("size_bytes > 0", name="ck_stored_files_size"),
+        Index("ix_stored_files_owner_created", "owner_account_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
+    purpose: Mapped[str] = mapped_column(String(30))
+    content_type: Mapped[str] = mapped_column(String(30))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    service_addition_id: Mapped[int | None] = mapped_column(
+        ForeignKey("provider_service_additions.id"), nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ClientServiceRequest(Base):

@@ -17,6 +17,7 @@ from backend.app import (
     app_auth,
     app_sessions,
     crud,
+    fichiers,
     idempotency,
     ledger,
     mobile_money,
@@ -27,7 +28,7 @@ from backend.app import (
     service_keys,
 )
 from backend.app.database import SessionLocal
-from backend.app.models import BotMission, BotQuote, BotReview, DisputeSettlementOffer, PaymentIntent, Payout, ProviderProfile, ProviderServiceRequest
+from backend.app.models import BotMission, BotQuote, BotReview, DisputeSettlementOffer, PaymentIntent, Payout, ProviderProfile, ProviderServiceRequest, StoredFile
 
 load_dotenv()
 
@@ -422,6 +423,8 @@ def _provider_to_dict(db, provider: ProviderProfile) -> dict:
         "full_name": provider.full_name,
         "phone_number": provider.phone_number,
         "services": profils.provider_services(db, provider.account_id),
+        # Demandes d'ajout en attente de l'équipe : pas encore actives.
+        "pending_services": profils.pending_addition_keys(db, provider.account_id),
         "communes": profils.provider_communes(db, provider.account_id),
         "language": profils.language_of(db, provider.account_id),
         "status": provider.status,
@@ -515,6 +518,34 @@ def _client_request_to_dict(db, request, admin: bool = False) -> dict:
             client_name=client.first_name if client is not None else None,
             client_telegram_id=ledger.telegram_id_of(db, request.account_id),
             client_language=profils.language_of(db, request.account_id),
+        )
+    return data
+
+
+def _service_addition_to_dict(db, addition, admin: bool = False) -> dict:
+    data = {
+        "id": addition.id,
+        "service_key": addition.service_key,
+        "description": addition.description,
+        "photo_count": len(fichiers.photos_of_addition(db, addition.id)),
+        "status": addition.status,
+        "admin_note": addition.admin_note,
+        "created_at": addition.created_at.isoformat() if addition.created_at else None,
+        "decided_at": addition.decided_at.isoformat() if addition.decided_at else None,
+    }
+    if admin:
+        # Pour juger la demande et prévenir le prestataire dans sa langue.
+        provider = db.get(ProviderProfile, addition.account_id)
+        previous = profils.previous_rejection(db, addition)
+        data.update(
+            photo_ids=[photo.id for photo in fichiers.photos_of_addition(db, addition.id)],
+            provider_account_id=addition.account_id,
+            provider_name=provider.full_name if provider is not None else None,
+            provider_services=profils.provider_services(db, addition.account_id),
+            provider_telegram_id=ledger.telegram_id_of(db, addition.account_id),
+            provider_language=profils.language_of(db, addition.account_id),
+            previous_rejection_note=previous.admin_note if previous is not None else None,
+            previously_rejected=previous is not None,
         )
     return data
 
@@ -1484,6 +1515,7 @@ def admin_stats(actor: Actor = Depends(current_actor)):
                 **profils.profile_counts(db),
                 "pending_services": crud.pending_service_request_count(db),
                 "pending_client_requests": crud.pending_client_request_count(db),
+                "pending_service_additions": profils.pending_service_addition_count(db),
             },
         }
 
@@ -1787,6 +1819,94 @@ def set_my_services(payload: ProviderServicesPayload, actor: Actor = Depends(cur
         return _me(db, actor, provider.account_id)
 
 
+class ServiceAdditionPayload(BaseModel):
+    service_key: str = Field(max_length=64)
+    description: str = Field(default="", max_length=profils.MAX_ADDITION_DESCRIPTION_LENGTH)
+    photo_ids: list[str] = Field(default_factory=list, max_length=fichiers.MAX_PHOTOS_PER_ADDITION)
+
+
+class ServiceAdditionDecisionPayload(BaseModel):
+    decision: str = Field(pattern="^(approve|reject)$")
+    admin_note: str = Field(default="", max_length=profils.MAX_ADMIN_NOTE_LENGTH)
+
+
+async def _bounded_body(request: Request, limit: int) -> bytes:
+    """Corps de la requête, sans jamais garder plus de `limit` + 1 octets."""
+    declared = request.headers.get("content-length")
+    if declared is not None and declared.isdigit() and int(declared) > limit:
+        raise HTTPException(status_code=413, detail={"code": "file_too_large"})
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            raise HTTPException(status_code=413, detail={"code": "file_too_large"})
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+@router.post("/api/me/files/service-photos")
+@provider_action
+async def upload_service_photo(request: Request, actor: Actor = Depends(current_actor)):
+    """Une photo de réalisation, envoyée telle quelle dans le corps (octets de
+    l'image). Le type réel est lu dans le contenu. Renvoie son identifiant, à
+    joindre ensuite à une demande d'ajout de service."""
+    data = await _bounded_body(request, fichiers.MAX_PHOTO_BYTES)
+    with SessionLocal() as db:
+        provider = _my_provider(db, actor)
+        try:
+            stored = fichiers.store_photo(db, provider.account_id, data)
+            db.commit()
+        except fichiers.FileRefused as refusal:
+            db.rollback()
+            raise HTTPException(status_code=refusal.http_status, detail={"code": refusal.code}) from refusal
+        except fichiers.StorageNotConfigured as exc:
+            db.rollback()
+            raise HTTPException(status_code=503, detail={"code": "file_storage_unavailable"}) from exc
+        return {
+            "status": "ok",
+            "file": {"id": stored.id, "content_type": stored.content_type, "size_bytes": stored.size_bytes},
+        }
+
+
+@router.post("/api/me/provider-profile/service-additions")
+@provider_action
+def request_my_service_addition(payload: ServiceAdditionPayload, actor: Actor = Depends(current_actor)):
+    """Le prestataire vérifié demande à proposer un service de plus ; il ne
+    devient actif qu'après l'approbation de l'équipe."""
+    with SessionLocal() as db:
+        provider = _my_provider(db, actor)
+        try:
+            addition = profils.request_service_addition(
+                db, provider.account_id, payload.service_key, payload.description, payload.photo_ids
+            )
+            db.commit()
+        except profils.ProfileRefused as refusal:
+            raise _profile_refused(db, refusal) from refusal
+        return {"status": "ok", "service_addition": _service_addition_to_dict(db, addition)}
+
+
+@router.get("/api/me/provider-profile/service-additions")
+@provider_action
+def list_my_service_additions(actor: Actor = Depends(current_actor)):
+    with SessionLocal() as db:
+        provider = _my_provider(db, actor)
+        additions = profils.service_additions_of(db, provider.account_id)
+        return {"status": "ok", "service_additions": [_service_addition_to_dict(db, addition) for addition in additions]}
+
+
+@router.post("/api/me/provider-profile/service-additions/{addition_id}/cancel")
+@provider_action
+def cancel_my_service_addition(addition_id: int, actor: Actor = Depends(current_actor)):
+    with SessionLocal() as db:
+        provider = _my_provider(db, actor)
+        try:
+            addition = profils.cancel_service_addition(db, provider.account_id, addition_id)
+            db.commit()
+        except profils.ProfileRefused as refusal:
+            raise _profile_refused(db, refusal) from refusal
+        return {"status": "ok", "service_addition": _service_addition_to_dict(db, addition)}
+
+
 @router.put("/api/me/provider-profile/communes")
 @provider_action
 def set_my_communes(payload: ProviderCommunesPayload, actor: Actor = Depends(current_actor)):
@@ -1904,6 +2024,57 @@ def admin_decide_client_request(request_id: int, payload: ClientRequestDecisionP
         except crud.MissionRefused as refusal:
             raise _mission_refused(db, refusal) from refusal
         return {"status": "ok", "client_request": _client_request_to_dict(db, request, admin=True)}
+
+
+@router.get("/api/admin/files/{file_id}")
+def admin_read_file(file_id: str, actor: Actor = Depends(current_actor)):
+    """Contenu déchiffré d'un fichier, pour un admin seulement."""
+    _require_admin(actor)
+    with SessionLocal() as db:
+        stored = db.get(StoredFile, file_id) if len(file_id) == 32 else None
+        if stored is None:
+            raise HTTPException(status_code=404, detail={"code": "file_not_found"})
+        try:
+            data = fichiers.read(stored)
+        except fichiers.FileRefused as refusal:
+            raise HTTPException(status_code=refusal.http_status, detail={"code": refusal.code}) from refusal
+        except fichiers.StorageNotConfigured as exc:
+            raise HTTPException(status_code=503, detail={"code": "file_storage_unavailable"}) from exc
+        return Response(
+            content=data,
+            media_type=stored.content_type,
+            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+        )
+
+
+@router.get("/api/admin/service-additions")
+def admin_list_service_additions(limit: int = 10, actor: Actor = Depends(current_actor)):
+    _require_admin(actor)
+    with SessionLocal() as db:
+        additions = profils.pending_service_additions(db, limit=limit)
+        return {"status": "ok", "service_additions": [_service_addition_to_dict(db, addition, admin=True) for addition in additions]}
+
+
+@router.post("/api/admin/service-additions/{addition_id}/decision")
+def admin_decide_service_addition(addition_id: int, payload: ServiceAdditionDecisionPayload, actor: Actor = Depends(current_actor)):
+    """Décision de l'équipe sur une demande d'ajout de service, une seule fois.
+    `decided_now` faux : la même décision était déjà prise (double clic), le
+    canal ne prévient pas le prestataire une seconde fois."""
+    admin_telegram_id = _require_admin(actor)
+    with SessionLocal() as db:
+        admin_account_id = _telegram_account(db, admin_telegram_id)
+        try:
+            addition, decided_now = profils.decide_service_addition(
+                db, addition_id, payload.decision == "approve", admin_account_id, payload.admin_note
+            )
+            db.commit()
+        except profils.ProfileRefused as refusal:
+            raise _profile_refused(db, refusal) from refusal
+        return {
+            "status": "ok",
+            "decided_now": decided_now,
+            "service_addition": _service_addition_to_dict(db, addition, admin=True),
+        }
 
 
 @router.get("/api/admin/service-requests")

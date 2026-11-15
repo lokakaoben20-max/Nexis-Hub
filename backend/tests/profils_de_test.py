@@ -62,11 +62,22 @@ def alerted(db, telegram_ids, service: str = "service_plomberie", commune: str =
             provider(db, telegram_id, f"Prestataire {telegram_id}", services=(service,), communes=(commune,))
             continue
         account_id = existing.account_id
-        services = list(dict.fromkeys([*profils.provider_services(db, account_id), service]))
+        if service not in profils.provider_services(db, account_id):
+            add_service(db, account_id, service)
         communes = list(dict.fromkeys([*profils.provider_communes(db, account_id), commune]))
-        profils.set_provider_services(db, account_id, services)
         profils.set_provider_communes(db, account_id, communes)
         db.commit()
+
+
+def add_service(db, account_id: int, service: str) -> None:
+    """Service de plus pour un prestataire : comme en vrai, demande puis
+    approbation de l'équipe quand il est vérifié."""
+    if profils.is_verified(profils.provider_profile(db, account_id)):
+        addition = profils.request_service_addition(db, account_id, service)
+        profils.decide_service_addition(db, addition.id, True, None)
+    else:
+        profils.set_provider_services(db, account_id, [*profils.provider_services(db, account_id), service])
+    db.commit()
 
 
 def admin(db, telegram_id: int):

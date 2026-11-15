@@ -89,13 +89,15 @@ def test_registering_again_never_changes_the_status_of_a_verified_provider(db):
     profils.set_own_availability(db, provider.account_id, "offline")
     db.commit()
 
-    provider, created = register(db, 7, full_name="Jean P.", services=["service_nettoyage"], communes=["Lemba"])
+    # Mêmes services : un nouveau service d'un vérifié passe par une demande
+    # (test_a_verified_provider_cannot_add_a_service_without_review).
+    provider, created = register(db, 7, full_name="Jean P.", communes=["Lemba"])
 
     assert not created
     assert provider.status == "offline"
     assert provider.verified_at is not None
     assert provider.full_name == "Jean P."
-    assert profils.provider_services(db, provider.account_id) == ["service_nettoyage"]
+    assert profils.provider_services(db, provider.account_id) == ["service_plomberie"]
     assert profils.provider_communes(db, provider.account_id) == ["Lemba"]
 
 
@@ -494,3 +496,164 @@ def test_the_catalogue_refuses_inconsistent_visit_fees(db):
             )
             db.commit()
         db.rollback()
+
+
+# --- Ajout d'un service : demande approuvée par l'équipe (2026-11-15) -------
+
+ProviderServiceAddition = profils.ProviderServiceAddition
+StoredFile = profils.fichiers.StoredFile
+JPEG = b"\xff\xd8\xff\xe0" + b"photo" * 10
+
+
+@pytest.fixture(autouse=True)
+def _files_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("FILES_DIR", str(tmp_path / "fichiers"))
+    monkeypatch.delenv("FILES_ENCRYPTION_KEY", raising=False)
+
+
+def photo(db, account_id):
+    stored = profils.fichiers.store_photo(db, account_id, JPEG)
+    db.commit()
+    return stored.id
+
+
+def verified(db, telegram_id, services=("service_plomberie",)):
+    provider, _ = register(db, telegram_id, services=list(services))
+    profils.verify_provider(db, provider.account_id)
+    db.commit()
+    return provider.account_id
+
+
+def test_a_verified_provider_cannot_add_a_service_without_review(db):
+    account_id = verified(db, 7)
+    refused("service_needs_review", profils.set_provider_services, db, account_id, ["service_plomberie", "service_coiffure"])
+    db.rollback()
+    refused("service_needs_review", register, db, 7, services=["service_plomberie", "service_coiffure"])
+    db.rollback()
+    assert profils.provider_services(db, account_id) == ["service_plomberie"], "refus : rien d'ajouté"
+    # Retirer reste libre, et une réinscription identique passe.
+    profils.set_provider_services(db, account_id, ["service_plomberie"])
+    register(db, 7)
+
+
+def test_a_provider_waiting_for_verification_still_edits_freely(db):
+    provider, _ = register(db, 7)
+    profils.set_provider_services(db, provider.account_id, ["service_plomberie", "service_coiffure"])
+    db.commit()
+    assert sorted(profils.provider_services(db, provider.account_id)) == ["service_coiffure", "service_plomberie"]
+
+
+def test_an_approved_request_adds_the_service_once(db):
+    account_id = verified(db, 7)
+    admin_id = account(db, 900)
+    photo_id = photo(db, account_id)
+    addition = profils.request_service_addition(db, account_id, "service_coiffure", " Coiffeur depuis 5 ans ", [photo_id])
+    db.commit()
+    assert (addition.status, addition.description) == ("pending", "Coiffeur depuis 5 ans")
+    assert [stored.id for stored in profils.fichiers.photos_of_addition(db, addition.id)] == [photo_id]
+    assert profils.provider_services(db, account_id) == ["service_plomberie"], "en attente : pas encore actif"
+    assert profils.pending_addition_keys(db, account_id) == ["service_coiffure"]
+
+    decided, now = profils.decide_service_addition(db, addition.id, True, admin_id)
+    db.commit()
+    assert (decided.status, now, decided.decided_by_account_id) == ("approved", True, admin_id)
+    assert sorted(profils.provider_services(db, account_id)) == ["service_coiffure", "service_plomberie"]
+    # Double clic : rien de refait.
+    again, now = profils.decide_service_addition(db, addition.id, True, admin_id)
+    db.commit()
+    assert (again.status, now) == ("approved", False)
+    assert sorted(profils.provider_services(db, account_id)) == ["service_coiffure", "service_plomberie"]
+    # L'autre décision ensuite : refusée.
+    refused("already_decided", profils.decide_service_addition, db, addition.id, False, admin_id)
+    db.rollback()
+
+
+def test_a_rejected_request_adds_nothing_and_may_be_asked_again(db):
+    account_id = verified(db, 7)
+    first = profils.request_service_addition(db, account_id, "service_coiffure")
+    db.commit()
+    profils.decide_service_addition(db, first.id, False, None, "  Pas de photo  ")
+    db.commit()
+    assert (first.status, first.admin_note) == ("rejected", "Pas de photo")
+    assert profils.provider_services(db, account_id) == ["service_plomberie"]
+    second = profils.request_service_addition(db, account_id, "service_coiffure", photo_ids=[photo(db, account_id)])
+    db.commit()
+    assert profils.previous_rejection(db, second).id == first.id
+
+
+def test_pending_requests_count_in_the_limit_and_are_never_doubled(db):
+    account_id = verified(db, 7, services=["service_plomberie", "service_electricite"])
+    profils.request_service_addition(db, account_id, "service_coiffure")
+    db.commit()
+    refused("service_addition_pending", profils.request_service_addition, db, account_id, "service_coiffure")
+    db.rollback()
+    refused("too_many_services", profils.request_service_addition, db, account_id, "service_jardinage")
+    db.rollback()
+    refused("service_already_offered", profils.request_service_addition, db, account_id, "service_plomberie")
+    db.rollback()
+    refused("service_not_for_providers", profils.request_service_addition, db, account_id, "service_autre")
+    db.rollback()
+    refused("unknown_service", profils.request_service_addition, db, account_id, "service_x")
+    db.rollback()
+    assert profils.pending_addition_keys(db, account_id) == ["service_coiffure"]
+
+
+def test_only_a_verified_provider_requests_and_inputs_are_checked(db):
+    provider, _ = register(db, 7)
+    refused("provider_not_verified", profils.request_service_addition, db, provider.account_id, "service_coiffure")
+    db.rollback()
+    account_id = verified(db, 8)
+    refused("invalid_description", profils.request_service_addition, db, account_id, "service_coiffure", "x" * 501)
+    db.rollback()
+    refused("invalid_photos", profils.request_service_addition, db, account_id, "service_coiffure", "", ["inconnue"])
+    db.rollback()
+    mine = photo(db, account_id)
+    refused("invalid_photos", profils.request_service_addition, db, account_id, "service_coiffure", "", [mine, mine])
+    db.rollback()
+    other = verified(db, 10)
+    refused("invalid_photos", profils.request_service_addition, db, other, "service_coiffure", "", [mine])
+    db.rollback()
+    assert profils.pending_addition_keys(db, other) == [], "refus : aucune demande écrite"
+    # Une photo déjà jointe ne repart pas dans une autre demande.
+    profils.request_service_addition(db, account_id, "service_coiffure", "", [mine])
+    db.commit()
+    refused("invalid_photos", profils.request_service_addition, db, account_id, "service_jardinage", "", [mine])
+    db.rollback()
+    refused("provider_not_found", profils.request_service_addition, db, account(db, 9), "service_coiffure")
+    db.rollback()
+
+
+def test_a_provider_cancels_only_his_own_pending_request(db):
+    account_id = verified(db, 7)
+    other_id = verified(db, 8)
+    addition = profils.request_service_addition(db, account_id, "service_coiffure")
+    db.commit()
+    refused("service_addition_not_found", profils.cancel_service_addition, db, other_id, addition.id)
+    db.rollback()
+    profils.cancel_service_addition(db, account_id, addition.id)
+    db.commit()
+    assert addition.status == "cancelled" and addition.decided_at is not None
+    assert profils.cancel_service_addition(db, account_id, addition.id).status == "cancelled", "idempotent"
+    refused("already_decided", profils.decide_service_addition, db, addition.id, True, None)
+    db.rollback()
+    assert profils.pending_addition_keys(db, account_id) == []
+    # La place libérée sert à une nouvelle demande.
+    profils.request_service_addition(db, account_id, "service_coiffure")
+    db.commit()
+
+
+def test_the_database_refuses_two_pending_requests_for_the_same_service(db):
+    account_id = verified(db, 7)
+    for _ in range(2):
+        db.add(ProviderServiceAddition(account_id=account_id, service_key="service_coiffure", description="", status="pending", created_at=datetime.utcnow()))
+    with pytest.raises(IntegrityError):
+        db.flush()
+    db.rollback()
+
+
+def test_the_database_refuses_a_decision_without_its_date(db):
+    account_id = verified(db, 7)
+    db.add(ProviderServiceAddition(account_id=account_id, service_key="service_coiffure", description="", status="approved", created_at=datetime.utcnow()))
+    with pytest.raises(IntegrityError):
+        db.flush()
+    db.rollback()
