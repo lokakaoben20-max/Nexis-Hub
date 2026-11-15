@@ -254,6 +254,7 @@ function render() {
   else if (state.sub?.name === "propose") screen = proposeScreen();
   else if (state.sub?.name === "history") screen = historyScreen();
   else if (state.sub?.name === "add_service") screen = addServiceScreen();
+  else if (state.sub?.name === "request_service") screen = requestServiceScreen();
   else if (state.sub?.name === "add_commune") screen = addCommuneScreen();
   else if (state.sub?.name === "register") screen = registerScreen();
   else if (!provider()) screen = state.data?.client ? clientHomeScreen() : registerScreen();
@@ -713,11 +714,31 @@ async function removeFrom(kind, value, label, buttonNode) {
   });
 }
 
+// Demandes d'ajout de service (le backend les garde) : en attente de
+// l'équipe, ou dernier refus d'un service sans nouvelle demande.
+function pendingAdditions() {
+  return (state.data.service_additions || []).filter((item) => item.status === "pending");
+}
+
+function lastRejections() {
+  const pending = new Set(pendingAdditions().map((item) => item.service_key));
+  const seen = new Set();
+  const result = [];
+  for (const item of state.data.service_additions || []) { // plus récentes d'abord
+    if (seen.has(item.service_key)) continue;
+    seen.add(item.service_key);
+    if (item.status === "rejected" && !pending.has(item.service_key)) result.push(item);
+  }
+  return result;
+}
+
 function servicesScreen() {
   const me = provider();
   const services = me.services || [];
   const communes = me.communes || [];
   const limit = state.data.max_services;
+  const pending = pendingAdditions();
+  const rejected = lastRejections();
   // Profil créé avant la limite : il garde ses services, sans « 4 sur 3 ».
   const countKey = typeof limit === "number" && services.length > limit ? "services_count_over" : "services_count";
   return [
@@ -725,6 +746,14 @@ function servicesScreen() {
     typeof limit === "number" ? el("p", { class: "h1s", text: t(countKey, { n: services.length, max: limit }) }) : null,
     el("div", { class: "card list" },
       services.map((key) => removable(serviceName(key), serviceIcon(key, 36), (event) => removeFrom("services", key, serviceName(key), event.currentTarget)))),
+    pending.length || rejected.length
+      ? el("div", { class: "lbl" }, el("span", { text: t("pending_additions_label") }))
+      : null,
+    pending.length || rejected.length
+      ? el("div", { class: "card list" },
+        pending.map((item) => additionRow(item)),
+        rejected.map((item) => additionRow(item)))
+      : null,
     button(t("add_service"), () => open({ name: "add_service" }), { cls: "btn ghost", iconId: "i-plus" }),
     el("div", { class: "lbl" }, el("span", { text: t("communes_label") })),
     el("div", { class: "card list" },
@@ -735,38 +764,221 @@ function servicesScreen() {
   ].filter(Boolean);
 }
 
+function additionRow(item) {
+  const isPending = item.status === "pending";
+  const detail = isPending
+    ? t("addition_waiting", { date: formatDate(item.created_at) })
+    : [t("addition_rejected"), item.admin_note || ""].filter(Boolean).join(" · ");
+  return el("div", { class: "row" },
+    serviceIcon(item.service_key, 36),
+    el("div", {}, el("b", { text: serviceName(item.service_key) }), el("small", { class: "wrap", text: detail })),
+    isPending
+      ? el("button", { class: "textbtn", type: "button", onclick: (event) => cancelAddition(item, event.currentTarget) }, el("span", { text: t("addition_cancel") }))
+      : el("span", { class: "pill p-bad" }, el("span", { text: t("addition_rejected_pill") })));
+}
+
+async function cancelAddition(item, buttonNode) {
+  if (!(await confirmAction(t("confirm_cancel_addition", { name: serviceName(item.service_key) })))) return;
+  await busy(buttonNode, null, async () => {
+    try {
+      const result = await api(`/api/provider/${telegramUser.id}/service-additions/${item.id}/cancel`, {});
+      state.data.provider = result.provider;
+      state.data.service_additions = result.service_additions;
+      toast(t("addition_cancelled"));
+      render();
+    } catch (error) {
+      toast(errorText(error), true);
+    }
+  });
+}
+
 function addServiceScreen() {
   const mine = new Set(provider().services || []);
-  const choices = providerServiceKeys().filter((key) => !mine.has(key));
+  const waiting = new Set(pendingAdditions().map((item) => item.service_key));
+  const used = mine.size + waiting.size; // les demandes en attente comptent
+  const choices = providerServiceKeys().filter((key) => !mine.has(key) && !waiting.has(key));
   const limit = state.data.max_services;
-  if (typeof limit === "number" && mine.size >= limit) {
+  if (typeof limit === "number" && used >= limit) {
     // Limite atteinte : on le dit ici, là où la personne cherche à ajouter.
+    let text = t("services_full", { max: limit });
+    if (mine.size > limit) text = t("services_over", { n: mine.size, max: limit, k: mine.size - limit + 1 });
+    else if (waiting.size) text = t("services_full_pending", { max: limit });
     return [
       subHeader(t("add_service")),
-      el("div", { class: "card notice" },
-        el("b", { text: t("services_limit_title") }),
-        el("p", { text: mine.size > limit
-          ? t("services_over", { n: mine.size, max: limit, k: mine.size - limit + 1 })
-          : t("services_full", { max: limit }) })),
+      el("div", { class: "card notice" }, el("b", { text: t("services_limit_title") }), el("p", { text })),
       button(t("back_to_services"), () => goBack(), { cls: "btn ghost" }),
     ];
   }
-  const nodes = [subHeader(t("add_service")), el("p", { class: "note", text: t("add_service_intro") })];
+  const nodes = [subHeader(t("add_service")), el("p", { class: "note", text: t("add_service_review_intro") })];
   if (!choices.length) return [...nodes, el("p", { class: "empty", text: t("nothing_to_add") })];
   nodes.push(el("div", { class: "sgrid" }, choices.map((key) => el("button", {
     type: "button",
-    onclick: (event) => busy(event.currentTarget, null, async () => {
-      try {
-        await saveProfileList("services", [...mine, key], t("service_added", { name: serviceName(key) }));
-        goBack();
-      } catch (error) {
-        toast(errorText(error), true);
-      }
-    }),
+    onclick: () => open({ name: "request_service", key, photos: [], description: "" }),
   }, serviceIcon(key, 40), el("span", { text: serviceName(key) })))));
   nodes.push(el("button", { class: "linkcard", type: "button", onclick: () => open({ name: "propose" }) },
     el("span", { text: t("missing_link") }), el("b", { text: t("missing_cta") })));
   return nodes;
+}
+
+// --- Demande d'un nouveau service, avec photos -------------------------------
+// Les photos sont réduites ici (côté le plus long MAX_PHOTO_SIDE, JPEG) : plus
+// légères à envoyer, et sans leurs métadonnées (position GPS de la photo).
+// Le serveur revérifie de toute façon le type réel et la taille.
+
+const MAX_PHOTO_SIDE = 1600;
+const MAX_PHOTOS = 10;
+
+async function decodeImage(file) {
+  if (window.createImageBitmap) {
+    try {
+      return await createImageBitmap(file, { imageOrientation: "from-image" });
+    } catch (error) {
+      // Navigateur sans cette option : on passe par une balise image.
+    }
+  }
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    return image;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function shrinkPhoto(file) {
+  let image;
+  try {
+    image = await decodeImage(file);
+  } catch (error) {
+    throw new ApiError("unsupported_file_type");
+  }
+  const width = image.width || image.naturalWidth;
+  const height = image.height || image.naturalHeight;
+  const scale = Math.min(1, MAX_PHOTO_SIDE / Math.max(width, height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+  if (image.close) image.close();
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+  if (!blob) throw new ApiError("unsupported_file_type");
+  return blob;
+}
+
+async function uploadPhoto(blob) {
+  let response;
+  try {
+    response = await fetch(`/api/provider/${telegramUser.id}/photos`, {
+      method: "POST",
+      headers: { "X-Telegram-Init-Data": tg?.initData || "", "Content-Type": "image/jpeg" },
+      body: blob,
+    });
+  } catch (error) {
+    throw new ApiError("backend_unavailable");
+  }
+  let result = null;
+  try {
+    result = await response.json();
+  } catch (error) {
+    result = null;
+  }
+  if (!response.ok || typeof result?.photo_id !== "string") {
+    throw new ApiError(response.headers.get("X-Nexis-Code") || result?.detail?.code || null);
+  }
+  return result.photo_id;
+}
+
+async function addPhotos(files) {
+  const sub = state.sub;
+  for (const file of Array.from(files)) {
+    if (sub.photos.length >= MAX_PHOTOS) {
+      toast(t("photos_max", { max: MAX_PHOTOS }), true);
+      break;
+    }
+    const photo = { url: URL.createObjectURL(file), status: "uploading", id: null };
+    sub.photos.push(photo);
+    if (state.sub === sub) render();
+    try {
+      photo.id = await uploadPhoto(await shrinkPhoto(file));
+      photo.status = "ok";
+    } catch (error) {
+      photo.status = "error";
+      toast(errorText(error), true);
+    }
+    if (state.sub === sub) render();
+  }
+}
+
+function removePhoto(photo) {
+  const sub = state.sub;
+  sub.photos = sub.photos.filter((item) => item !== photo);
+  URL.revokeObjectURL(photo.url);
+  render();
+}
+
+function requestServiceScreen() {
+  const sub = state.sub;
+  const key = sub.key;
+  const picker = el("input", {
+    type: "file",
+    accept: "image/*",
+    multiple: true,
+    hidden: true,
+    onchange: (event) => { addPhotos(event.target.files); event.target.value = ""; },
+  });
+  const description = el("textarea", {
+    rows: "3",
+    maxlength: "500",
+    placeholder: t("addition_desc_hint"),
+    oninput: (event) => { sub.description = event.target.value; },
+  });
+  description.value = sub.description || "";
+  const uploading = sub.photos.some((photo) => photo.status === "uploading");
+  const status = el("p", { class: "msg", role: "status" });
+  const send = button(t("addition_send"), () => busy(send, t("sending"), async () => {
+    if (sub.photos.some((photo) => photo.status === "uploading")) return;
+    try {
+      const result = await api(`/api/provider/${telegramUser.id}/service-additions`, {
+        service_key: key,
+        description: (sub.description || "").trim(),
+        photo_ids: sub.photos.filter((photo) => photo.status === "ok").map((photo) => photo.id),
+      });
+      state.data.provider = result.provider;
+      state.data.service_additions = result.service_additions;
+      sub.photos.forEach((photo) => URL.revokeObjectURL(photo.url));
+      state.tab = "services";
+      state.sub = null;
+      render();
+      toast(t("addition_sent"));
+    } catch (error) {
+      status.className = "msg error";
+      status.textContent = errorText(error);
+    }
+  }));
+  send.disabled = uploading;
+
+  const thumbs = sub.photos.map((photo) => el("div", { class: `thumb ${photo.status}` },
+    el("img", { src: photo.url, alt: "" }),
+    photo.status === "uploading" ? el("span", { class: "thumb-state", text: t("photo_uploading") }) : null,
+    photo.status === "error" ? el("span", { class: "thumb-state", text: t("photo_failed") }) : null,
+    el("button", { class: "thumb-x", type: "button", "aria-label": t("photo_remove"), onclick: () => removePhoto(photo) }, icon("i-close"))));
+
+  return [
+    subHeader(t("addition_title"), serviceName(key)),
+    el("p", { class: "note", text: t("addition_intro") }),
+    el("div", { class: "lbl" }, el("span", { text: t("photos_label", { n: sub.photos.length, max: MAX_PHOTOS }) })),
+    el("div", { class: "thumbs" },
+      thumbs,
+      sub.photos.length < MAX_PHOTOS
+        ? el("button", { class: "thumb add", type: "button", "aria-label": t("photos_add"), onclick: () => picker.click() }, icon("i-plus"), el("span", { text: t("photos_add") }))
+        : null),
+    picker,
+    el("label", { class: "field" }, el("span", { text: t("addition_desc") }), description),
+    status,
+    send,
+  ];
 }
 
 function addCommuneScreen() {
