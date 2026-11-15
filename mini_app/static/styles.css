@@ -120,6 +120,8 @@ button:disabled { cursor: default; }
 
 /* Cartes, lignes */
 .card { background: var(--surface); border-radius: 20px; padding: 14px; box-shadow: 0 0 0 1px var(--line); display: grid; gap: 10px; }
+.card.notice { background: var(--brand-soft); box-shadow: 0 0 0 1px var(--brand-ring); color: var(--brand-soft-ink); }
+.card.notice p { margin: 0; }
 .row { display: flex; align-items: center; gap: 12px; }
 .row > div { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .row b, .row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -678,13 +678,31 @@ function removable(label, iconNode, onRemove) {
     el("button", { class: "remove", type: "button", "aria-label": t("remove_item", { name: label }), onclick: onRemove }, icon("i-close")));
 }
 
-async function removeFrom(kind, value, buttonNode) {
+// Retrait : toujours après une confirmation, pour qu'un toucher par erreur
+// ne retire rien. Fenêtre native de Telegram, sinon celle du navigateur.
+function confirmAction(message) {
+  return new Promise((resolve) => {
+    if (tg?.showConfirm) {
+      try {
+        tg.showConfirm(message, (ok) => resolve(Boolean(ok)));
+        return;
+      } catch (error) {
+        // Telegram trop ancien : on retombe sur la fenêtre du navigateur.
+      }
+    }
+    resolve(window.confirm(message));
+  });
+}
+
+async function removeFrom(kind, value, label, buttonNode) {
   const me = provider();
   const remaining = (me[kind] || []).filter((item) => item !== value);
   if (!remaining.length) {
     toast(t(kind === "services" ? "errors.services_required" : "errors.communes_required"), true);
     return;
   }
+  const question = t(kind === "services" ? "confirm_remove_service" : "confirm_remove_commune", { name: label });
+  if (!(await confirmAction(question))) return;
   await busy(buttonNode, null, async () => {
     try {
       await saveProfileList(kind, remaining, t(kind === "services" ? "service_removed" : "commune_removed"));
@@ -700,18 +718,17 @@ function servicesScreen() {
   const services = me.services || [];
   const communes = me.communes || [];
   const limit = state.data.max_services;
-  const full = typeof limit === "number" && services.length >= limit;
+  // Profil créé avant la limite : il garde ses services, sans « 4 sur 3 ».
+  const countKey = typeof limit === "number" && services.length > limit ? "services_count_over" : "services_count";
   return [
     el("h1", { class: "h1", text: t("services_title") }),
-    typeof limit === "number" ? el("p", { class: "h1s", text: t("services_count", { n: services.length, max: limit }) }) : null,
+    typeof limit === "number" ? el("p", { class: "h1s", text: t(countKey, { n: services.length, max: limit }) }) : null,
     el("div", { class: "card list" },
-      services.map((key) => removable(serviceName(key), serviceIcon(key, 36), (event) => removeFrom("services", key, event.currentTarget)))),
-    full
-      ? el("p", { class: "note", text: t("services_full", { max: limit }) })
-      : button(t("add_service"), () => open({ name: "add_service" }), { cls: "btn ghost", iconId: "i-plus" }),
+      services.map((key) => removable(serviceName(key), serviceIcon(key, 36), (event) => removeFrom("services", key, serviceName(key), event.currentTarget)))),
+    button(t("add_service"), () => open({ name: "add_service" }), { cls: "btn ghost", iconId: "i-plus" }),
     el("div", { class: "lbl" }, el("span", { text: t("communes_label") })),
     el("div", { class: "card list" },
-      communes.map((commune) => removable(commune, el("span", { class: "mv out" }, icon("i-arrived")), (event) => removeFrom("communes", commune, event.currentTarget)))),
+      communes.map((commune) => removable(commune, el("span", { class: "mv out" }, icon("i-arrived")), (event) => removeFrom("communes", commune, commune, event.currentTarget)))),
     button(t("add_commune"), () => open({ name: "add_commune" }), { cls: "btn ghost", iconId: "i-plus" }),
     el("button", { class: "linkcard", type: "button", onclick: () => open({ name: "propose" }) },
       el("span", { text: t("missing_link") }), el("b", { text: t("missing_cta") })),
@@ -721,6 +738,17 @@ function servicesScreen() {
 function addServiceScreen() {
   const mine = new Set(provider().services || []);
   const choices = providerServiceKeys().filter((key) => !mine.has(key));
+  const limit = state.data.max_services;
+  if (typeof limit === "number" && mine.size >= limit) {
+    // Limite atteinte : on le dit ici, là où la personne cherche à ajouter.
+    return [
+      subHeader(t("add_service")),
+      el("div", { class: "card notice" },
+        el("b", { text: t("services_limit_title") }),
+        el("p", { text: t("services_full", { max: limit }) })),
+      button(t("back_to_services"), () => goBack(), { cls: "btn ghost" }),
+    ];
+  }
   const nodes = [subHeader(t("add_service")), el("p", { class: "note", text: t("add_service_intro") })];
   if (!choices.length) return [...nodes, el("p", { class: "empty", text: t("nothing_to_add") })];
   nodes.push(el("div", { class: "sgrid" }, choices.map((key) => el("button", {
