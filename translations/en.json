@@ -354,5 +354,8 @@
   "money_error_not_disputed": "This mission is not in dispute.",
   "dispute_offer_hint": "🤝 Found an arrangement with the provider? Propose an agreement: the dispute can be settled without waiting for Nexis Hub's decision.",
   "client_not_found": "Client profile not found. Choose \"Client\" in the menu to sign up.",
-  "money_error_already_quoted": "You have already sent a quote for this mission."
+  "money_error_already_quoted": "You have already sent a quote for this mission.",
+  "service_addition_approved": "✅ <b>New service approved</b>\n\nThe Nexis Hub team approved “{service}”. You will now receive missions for this service.",
+  "service_addition_rejected": "<b>Service request reviewed</b>\n\nThe Nexis Hub team has not approved “{service}” for now. You can send a new request from the Mini App, with other photos of your work.",
+  "service_addition_rejected_note": "<b>Service request reviewed</b>\n\nThe Nexis Hub team has not approved “{service}” for now.\n\nReason: {note}\n\nYou can send a new request from the Mini App, with other photos of your work."
 }

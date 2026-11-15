@@ -362,5 +362,8 @@
   "money_error_not_disputed": "Cette mission n'est pas en litige.",
   "dispute_offer_hint": "🤝 Vous trouvez un arrangement avec le prestataire ? Proposez-lui un accord : le litige peut se régler sans attendre la décision de Nexis Hub.",
   "client_not_found": "Profil client introuvable. Choisissez « Client » dans le menu pour vous inscrire.",
-  "money_error_already_quoted": "Vous avez déjà envoyé un devis pour cette mission."
+  "money_error_already_quoted": "Vous avez déjà envoyé un devis pour cette mission.",
+  "service_addition_approved": "✅ <b>Nouveau service validé</b>\n\nL'équipe Nexis Hub a validé « {service} ». Vous recevrez désormais les missions de ce service.",
+  "service_addition_rejected": "<b>Demande de service examinée</b>\n\nL'équipe Nexis Hub n'a pas validé « {service} » pour le moment. Vous pouvez envoyer une nouvelle demande depuis la Mini App, avec d'autres photos de vos réalisations.",
+  "service_addition_rejected_note": "<b>Demande de service examinée</b>\n\nL'équipe Nexis Hub n'a pas validé « {service} » pour le moment.\n\nMotif : {note}\n\nVous pouvez envoyer une nouvelle demande depuis la Mini App, avec d'autres photos de vos réalisations."
 }

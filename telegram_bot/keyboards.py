@@ -575,6 +575,16 @@ def clavier_admin_service_request(request_id: int):
     return builder.as_markup()
 
 
+def clavier_admin_service_addition(addition_id: int):
+    """Décision sur une demande d'ajout de service d'un prestataire vérifié."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Approuver", callback_data=f"admin_addition_ok_{addition_id}")
+    builder.button(text="❌ Refuser", callback_data=f"admin_addition_no_{addition_id}")
+    builder.button(text="✍️ Refuser avec un motif", callback_data=f"admin_addition_why_{addition_id}")
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
 def clavier_admin_client_request(request_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ On s'en occupe", callback_data=f"admin_client_need_ok_{request_id}")
@@ -590,6 +600,7 @@ def clavier_admin_menu():
     builder.button(text="📋 Missions", callback_data="admin_missions")
     builder.button(text="👥 Clients", callback_data="admin_clients")
     builder.button(text="⚠️ Litiges", callback_data="admin_disputes")
+    builder.button(text="🆕 Services à valider", callback_data="admin_service_additions")
     builder.button(text="➕ Services proposés", callback_data="admin_service_requests")
     builder.button(text="🙋 Besoins des clients", callback_data="admin_client_requests")
     builder.button(text="💸 Retraits", callback_data="admin_payouts")
