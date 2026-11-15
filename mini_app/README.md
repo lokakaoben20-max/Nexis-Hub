@@ -68,3 +68,21 @@ cassée. Ce qui reste, par ordre décroissant d'impact :
 
 Aucun de ces 4 points n'a de correctif appliqué à ce jour — décision
 volontaire de prioriser les tests d'abord (fait) avant la correction.
+
+## Écrans et langues
+
+La page (`static/index.html`, `styles.css`, `main.js`) reprend la charte de l'app
+mobile (`design/` : bleu #0350E6, polices Unbounded et Inter, icônes Phosphor sous
+licence MIT, voir `static/phosphor-icons-MIT.txt`). Thème sombre quand Telegram est
+en sombre.
+
+Textes en français, lingala et anglais dans `static/i18n.js`. Langue : celle du
+compte Nexis (`language` dans `/api/profile`), sinon celle de Telegram, sinon le
+français. Les refus du serveur portent leur code dans l'en-tête `X-Nexis-Code`
+(ou `detail.code` pour les actions de mission) ; la page affiche le texte de ce
+code dans la langue de la personne. Tout texte ajouté va dans les trois langues.
+
+La page affiche, sans jamais les calculer, les montants et soldes du backend :
+USD avec deux décimales, francs congolais sans décimales. Les identifiants des
+photos de la pièce d'identité et du selfie ne quittent jamais le serveur
+(`has_documents` seulement).

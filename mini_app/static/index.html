@@ -2,151 +2,60 @@
 <html lang="fr">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
     <title>Nexis Hub</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Unbounded:wght@500;600;700&amp;display=swap" />
     <link rel="stylesheet" href="/static/styles.css" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
   <body>
-    <main class="app-shell">
-      <section class="topbar">
-        <div>
-          <p class="eyebrow">Nexis Hub</p>
-          <h1 id="hello">Bienvenue</h1>
-        </div>
-        <span class="status">Mini App</span>
-      </section>
+    <!-- Icônes Phosphor (licence MIT, voir phosphor-icons-MIT.txt) et icônes
+         de services de la charte Nexis Hub. -->
+    <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-home" viewBox="0 0 256 256" fill="currentColor"><path fill="currentColor" stroke="none" d="M224,120v96a8,8,0,0,1-8,8H160a8,8,0,0,1-8-8V164a4,4,0,0,0-4-4H108a4,4,0,0,0-4,4v52a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V120a16,16,0,0,1,4.69-11.31l80-80a16,16,0,0,1,22.62,0l80,80A16,16,0,0,1,224,120Z"/></symbol>
+      <symbol id="i-missions" viewBox="0 0 256 256" fill="currentColor"><path fill="currentColor" stroke="none" d="M168,152a8,8,0,0,1-8,8H96a8,8,0,0,1,0-16h64A8,8,0,0,1,168,152Zm-8-40H96a8,8,0,0,0,0,16h64a8,8,0,0,0,0-16Zm56-64V216a16,16,0,0,1-16,16H56a16,16,0,0,1-16-16V48A16,16,0,0,1,56,32H92.26a47.92,47.92,0,0,1,71.48,0H200A16,16,0,0,1,216,48ZM96,64h64a32,32,0,0,0-64,0ZM200,48H173.25A47.93,47.93,0,0,1,176,64v8a8,8,0,0,1-8,8H88a8,8,0,0,1-8-8V64a47.93,47.93,0,0,1,2.75-16H56V216H200Z"/></symbol>
+      <symbol id="i-toolbox" viewBox="0 0 256 256" fill="currentColor"><path fill="currentColor" stroke="none" d="M232,120v72a8,8,0,0,1-8,8H32a8,8,0,0,1-8-8V120Z" opacity="0.2"/><path fill="currentColor" stroke="none" d="M224,64H176V56a24,24,0,0,0-24-24H104A24,24,0,0,0,80,56v8H32A16,16,0,0,0,16,80V192a16,16,0,0,0,16,16H224a16,16,0,0,0,16-16V80A16,16,0,0,0,224,64ZM96,56a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96ZM32,80H224v32H192v-8a8,8,0,0,0-16,0v8H80v-8a8,8,0,0,0-16,0v8H32ZM224,192H32V128H64v8a8,8,0,0,0,16,0v-8h96v8a8,8,0,0,0,16,0v-8h32v64Z"/></symbol>
+      <symbol id="i-profile" viewBox="0 0 256 256" fill="currentColor"><path fill="currentColor" stroke="none" d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24ZM74.08,197.5a64,64,0,0,1,107.84,0,87.83,87.83,0,0,1-107.84,0ZM96,120a32,32,0,1,1,32,32A32,32,0,0,1,96,120Zm97.76,66.41a79.66,79.66,0,0,0-36.06-28.75,48,48,0,1,0-59.4,0,79.66,79.66,0,0,0-36.06,28.75,88,88,0,1,1,131.52,0Z"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 256 256" fill="currentColor"><path fill="currentColor" stroke="none" d="M208,40H48A16,16,0,0,0,32,56v56c0,52.72,25.52,84.67,46.93,102.19,23.06,18.86,46,25.26,47,25.53a8,8,0,0,0,4.2,0c1-.27,23.91-6.67,47-25.53C198.48,196.67,224,164.72,224,112V56A16,16,0,0,0,208,40Zm-34.32,69.66-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35a8,8,0,0,1,11.32,11.32Z"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 256 256" fill="currentColor"><path fill="currentColor" stroke="none" d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm64-88a8,8,0,0,1-8,8H128a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v48h48A8,8,0,0,1,192,128Z"/></symbol>
+      <symbol id="i-check" viewBox="0 0 256 256" fill="currentColor"><path fill="currentColor" stroke="none" d="M232.49,80.49l-128,128a12,12,0,0,1-17,0l-56-56a12,12,0,1,1,17-17L96,183,215.51,63.51a12,12,0,0,1,17,17Z"/></symbol>
+      <symbol id="i-arrived" viewBox="0 0 256 256" fill="currentColor"><path fill="currentColor" stroke="none" d="M128,16a88.1,88.1,0,0,0-88,88c0,75.3,80,132.17,83.41,134.55a8,8,0,0,0,9.18,0C136,236.17,216,179.3,216,104A88.1,88.1,0,0,0,128,16Zm0,56a32,32,0,1,1-32,32A32,32,0,0,1,128,72Z"/></symbol>
+      <symbol id="i-back" viewBox="0 0 256 256" fill="currentColor"><path fill="currentColor" stroke="none" d="M165.66,202.34a8,8,0,0,1-11.32,11.32l-80-80a8,8,0,0,1,0-11.32l80-80a8,8,0,0,1,11.32,11.32L91.31,128Z"/></symbol>
+      <symbol id="i-wallet" viewBox="0 0 256 256" fill="currentColor"><path fill="currentColor" stroke="none" d="M216,64H56a8,8,0,0,1,0-16H192a8,8,0,0,0,0-16H56A24,24,0,0,0,32,56V184a24,24,0,0,0,24,24H216a16,16,0,0,0,16-16V80A16,16,0,0,0,216,64Zm0,128H56a8,8,0,0,1-8-8V78.63A23.84,23.84,0,0,0,56,80H216Zm-48-60a12,12,0,1,1,12,12A12,12,0,0,1,168,132Z"/></symbol>
+      <symbol id="f-plomberie" viewBox="0 0 256 256"><path fill="currentColor" stroke="none" d="M220.28,55l-.17-.17-44.9-42.28a16,16,0,0,0-22.5.08L108.17,56.87l-1.54-1.56A25,25,0,0,0,71.27,90.58l1.46,1.48L52.69,112a16,16,0,0,0,0,22.63l12.68,12.68a16,16,0,0,0,22.59,0l19.93-19.65L120,140h0l0,0L55.31,205.37a25,25,0,1,0,35.34,35.29l88.67-89.35a16,16,0,0,0,0-22.6L143.63,92.66,156.56,80l.1.09L194,115.4a16,16,0,0,0,22.53-.09l3.71-3.71a40,40,0,0,0,0-56.57ZM76.69,136,64,123.33l20-19.88,12.69,12.86ZM209,100.28,205.25,104a1.21,1.21,0,0,0-.16-.16L167.69,68.5a16.05,16.05,0,0,0-22.39.12L132.37,81.29,119.43,68.23,164,24l.17.16,44.88,42.26a24,24,0,0,1-.08,33.86Z"/></symbol>
+      <symbol id="f-electricite" viewBox="0 0 256 256"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M80 20a12 12 0 0 1 12 12v44H68V32a12 12 0 0 1 12-12zM176 20a12 12 0 0 1 12 12v44h-24V32a12 12 0 0 1 12-12zM56 88h144a8 8 0 0 1 8 8v32a72 72 0 0 1-64 71.6V236a16 16 0 0 1-32 0v-36.4A72 72 0 0 1 48 128V96a8 8 0 0 1 8-8zM140 104 102 152h26l-12 36 40-50h-26z"/></symbol>
+      <symbol id="f-clim" viewBox="0 0 256 256"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M36 40h184a20 20 0 0 1 20 20v76a20 20 0 0 1-20 20H36a20 20 0 0 1-20-20V60a20 20 0 0 1 20-20zM56 120a8 8 0 0 0 0 16h144a8 8 0 0 0 0-16zM196 68a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path fill="none" stroke="currentColor" stroke-width="16" stroke-linecap="round" d="M84 180c-10 12 10 20 0 34M128 180c-10 12 10 20 0 34s10 20 0 30M172 180c-10 12 10 20 0 34"/></symbol>
+      <symbol id="f-info" viewBox="0 0 256 256"><path fill="currentColor" stroke="none" fill-rule="evenodd" d="M40 32h176a24 24 0 0 1 24 24v104a24 24 0 0 1-24 24H40a24 24 0 0 1-24-24V56a24 24 0 0 1 24-24zM110 82a8 8 0 0 0-11.3 0l-24 24a8 8 0 0 0 0 11.3l24 24a8 8 0 0 0 11.3-11.3L91.3 112l18.7-18.7a8 8 0 0 0 0-11.3zM146 82a8 8 0 0 0 0 11.3l18.7 18.7L146 130.7a8 8 0 0 0 11.3 11.3l24-24a8 8 0 0 0 0-11.3l-24-24a8 8 0 0 0-11.3 0zM116 184h24v24h28a12 12 0 0 1 0 24H88a12 12 0 0 1 0-24h28z"/></symbol>
+      <symbol id="f-graph" viewBox="0 0 256 256"><path fill="currentColor" stroke="none" d="M200.77,53.89A103.27,103.27,0,0,0,128,24h-1.07A104,104,0,0,0,24,128c0,43,26.58,79.06,69.36,94.17A32,32,0,0,0,136,192a16,16,0,0,1,16-16h46.21a31.81,31.81,0,0,0,31.2-24.88,104.43,104.43,0,0,0,2.59-24A103.28,103.28,0,0,0,200.77,53.89ZM84,168a12,12,0,1,1,12-12A12,12,0,0,1,84,168Zm0-56a12,12,0,1,1,12-12A12,12,0,0,1,84,112Zm44-24a12,12,0,1,1,12-12A12,12,0,0,1,128,88Zm44,24a12,12,0,1,1,12-12A12,12,0,0,1,172,112Z"/></symbol>
+      <symbol id="f-coiffure" viewBox="0 0 256 256"><path fill="currentColor" stroke="none" d="M236.52,187.09l-143-97.87a36,36,0,1,0-14.38,17.27l21.39,21.69L79.15,149.54l0,0a35.91,35.91,0,1,0,14.38,17.27l26.91-18.41L170,198.64a32.26,32.26,0,0,0,22.7,9.37,31.52,31.52,0,0,0,4.11-.27l.28,0,36.27-6.11a8,8,0,0,0,3.19-14.5Zm-162.38-97A20,20,0,1,1,80,76,20,20,0,0,1,74.14,90.13Zm0,104A20,20,0,1,1,80,180,20,20,0,0,1,74.14,194.15Zm61-101.5L169.94,57.4a32.19,32.19,0,0,1,26.84-9.14l.28,0,36,6.07a8.21,8.21,0,0,1,6.09,4.42,8,8,0,0,1-2.67,10.12l-69.93,47.85a4,4,0,0,1-4.51,0l-26.31-18A4,4,0,0,1,135.18,92.65Z"/></symbol>
+      <symbol id="f-nettoyage" viewBox="0 0 256 256"><path fill="currentColor" stroke="none" d="M235.29,216.7C212.86,205.69,200,182.12,200,152V134.69a15.94,15.94,0,0,0-10.09-14.87l-28.65-11.46A8,8,0,0,1,156.79,98l22.32-56.67C184,28.79,178,14.21,165.34,9.51a24,24,0,0,0-30.7,13.71L112.25,80.08a8,8,0,0,1-10.41,4.5L73.11,73.08a15.91,15.91,0,0,0-17.38,3.66C34.68,98.4,24,123.71,24,152a111.53,111.53,0,0,0,31.15,77.53A8.06,8.06,0,0,0,61,232H232a8,8,0,0,0,8-7.51A8.21,8.21,0,0,0,235.29,216.7ZM115.11,216a87.52,87.52,0,0,1-24.26-41.71,8.21,8.21,0,0,0-9.25-6.18A8,8,0,0,0,75.28,178a105.33,105.33,0,0,0,18.36,38H64.44A95.62,95.62,0,0,1,40,152a85.92,85.92,0,0,1,7.73-36.3l137.8,55.13c3,18.06,10.55,33.5,21.89,45.19Z"/></symbol>
+      <symbol id="f-jardin" viewBox="0 0 256 256"><path fill="currentColor" stroke="none" d="M205.41,159.07a60.9,60.9,0,0,1-31.83,8.86,71.71,71.71,0,0,1-27.36-5.66A55.55,55.55,0,0,0,136,194.51V224a8,8,0,0,1-8.53,8,8.18,8.18,0,0,1-7.47-8.25V211.31L81.38,172.69A52.5,52.5,0,0,1,63.44,176a45.82,45.82,0,0,1-23.92-6.67C17.73,156.09,6,125.62,8.27,87.79a8,8,0,0,1,7.52-7.52c37.83-2.23,68.3,9.46,81.5,31.25A46,46,0,0,1,103.74,140a4,4,0,0,1-6.89,2.43l-19.2-20.1a8,8,0,0,0-11.31,11.31l53.88,55.25c.06-.78.13-1.56.21-2.33a68.56,68.56,0,0,1,18.64-39.46l50.59-53.46a8,8,0,0,0-11.31-11.32l-49,51.82a4,4,0,0,1-6.78-1.74c-4.74-17.48-2.65-34.88,6.4-49.82,17.86-29.48,59.42-45.26,111.18-42.22a8,8,0,0,1,7.52,7.52C250.67,99.65,234.89,141.21,205.41,159.07Z"/></symbol>
+      <symbol id="f-autre" viewBox="0 0 256 256"><path fill="currentColor" stroke="none" d="M128,24A104,104,0,1,0,232,128,104.13,104.13,0,0,0,128,24Zm40,112H136v32a8,8,0,0,1-16,0V136H88a8,8,0,0,1,0-16h32V88a8,8,0,0,1,16,0v32h32a8,8,0,0,1,0,16Z"/></symbol>
+      <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke="currentColor" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></symbol>
+    </svg>
 
-      <section class="quick-actions" aria-label="Choix du profil">
-        <button class="action" type="button" data-role="provider">
-          <span>Prestataire</span>
-          <small>Tableau de bord</small>
-        </button>
-        <button class="action primary" type="button" data-role="client">
-          <span>Client</span>
-          <small>Demander un service</small>
-        </button>
-      </section>
-
-      <section class="panel provider-only" id="provider-overview" hidden>
-        <div class="section-head">
-          <div>
-            <h2 id="provider-name">Prestataire</h2>
-            <p id="provider-meta" class="muted">Chargement du profil...</p>
-          </div>
-          <span class="pill" id="provider-status-pill">Statut</span>
-        </div>
-        <button class="secondary-button" id="toggle-provider-status" type="button">Changer ma disponibilite</button>
-        <div class="grid" id="provider-stats">
-          <article>
-            <strong id="provider-missions-total">0</strong>
-            <span>Missions</span>
-          </article>
-          <article>
-            <strong id="provider-rating">0.0</strong>
-            <span>Note</span>
-          </article>
-          <article>
-            <strong id="provider-success-rate">0%</strong>
-            <span>Reussite</span>
-          </article>
-        </div>
-      </section>
-
-      <section class="panel provider-only" id="provider-registration" hidden>
-        <h2>Inscription prestataire</h2>
-        <p id="provider-registration-status" class="muted">Cree ton profil pour recevoir des demandes.</p>
-        <label>
-          Nom complet
-          <input id="provider-register-name" type="text" placeholder="Ex: Jean Lokaka" />
-        </label>
-        <label>
-          WhatsApp
-          <input id="provider-register-phone" type="tel" placeholder="Ex: +243..." />
-        </label>
-        <h3>Services</h3>
-        <div id="provider-register-services" class="checks"></div>
-        <h3>Communes</h3>
-        <div id="provider-register-communes" class="checks"></div>
-        <button class="primary-button" id="register-provider" type="button">Creer mon profil prestataire</button>
-      </section>
-
-      <section class="panel provider-only" id="provider-wallet" hidden>
-        <h2>Portefeuille</h2>
-        <div class="wallet-row">
-          <div>
-            <strong id="provider-wallet-usd">0 USD</strong>
-            <span>Solde USD</span>
-          </div>
-          <div>
-            <strong id="provider-wallet-cdf">0 CDF</strong>
-            <span>Solde CDF</span>
-          </div>
-        </div>
-      </section>
-
-      <section class="panel client-only">
-        <h2>Tableau de bord</h2>
-        <p id="profile-status" class="muted">Connexion aux donnees...</p>
-        <div class="grid" id="stats-grid">
-          <article>
-            <strong>Profil</strong>
-            <span id="profile-type">Chargement</span>
-          </article>
-          <article>
-            <strong>Missions</strong>
-            <span id="missions-count">0</span>
-          </article>
-          <article>
-            <strong>Services</strong>
-            <span id="services-count">0</span>
-          </article>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>Mes informations</h2>
-        <div id="profile-details" class="list"></div>
-      </section>
-
-      <section class="panel">
-        <div class="section-head compact">
-          <div>
-            <h2>Missions recentes</h2>
-            <p id="missions-filter-status" class="muted">Toutes les missions visibles.</p>
-          </div>
-        </div>
-        <div class="tabs provider-only" id="provider-mission-tabs" hidden>
-          <button class="tab active" type="button" data-mission-filter="all">Toutes</button>
-          <button class="tab" type="button" data-mission-filter="active">En cours</button>
-          <button class="tab" type="button" data-mission-filter="done">Terminees</button>
-        </div>
-        <div id="missions-list" class="list"></div>
-      </section>
-
-      <section class="panel provider-only" id="provider-tools" hidden>
-        <h2>Mes services</h2>
-        <p id="services-status" class="muted">Choisis les domaines que tu veux proposer.</p>
-        <div id="services-editor" class="checks"></div>
-        <button class="primary-button" id="save-services" type="button">Enregistrer mes services</button>
-      </section>
-
-      <section class="panel provider-only" id="missing-service-panel" hidden>
-        <h2>Service manquant</h2>
-        <p id="missing-service-status" class="muted">Propose un service que Nexis Hub pourra analyser.</p>
-        <label>
-          Nom du service
-          <input id="missing-service-name" type="text" placeholder="Ex: Reparation TV" />
-        </label>
-        <label>
-          Description
-          <textarea id="missing-service-description" rows="4" placeholder="Explique ce service et quand un client pourrait en avoir besoin."></textarea>
-        </label>
-        <button class="primary-button" id="send-missing-service" type="button">Envoyer la proposition</button>
-        <div id="service-requests-list" class="list"></div>
-      </section>
+    <main id="view" class="view" aria-live="polite">
+      <div class="center"><span class="spin" aria-hidden="true"></span><p class="note">Chargement…</p></div>
     </main>
 
+    <nav class="nav" id="nav" hidden>
+      <div class="nav-inner">
+        <button type="button" data-tab="home"><svg aria-hidden="true"><use href="#i-home"/></svg><span data-text="nav_home"></span></button>
+        <button type="button" data-tab="missions"><svg aria-hidden="true"><use href="#i-missions"/></svg><span data-text="nav_missions"></span></button>
+        <button type="button" data-tab="services"><svg aria-hidden="true"><use href="#i-toolbox"/></svg><span data-text="nav_services"></span></button>
+        <button type="button" data-tab="profile"><svg aria-hidden="true"><use href="#i-profile"/></svg><span data-text="nav_profile"></span></button>
+      </div>
+    </nav>
+
+    <div class="toast" id="toast" role="status" hidden></div>
+
+    <script src="/static/i18n.js"></script>
     <script src="/static/main.js"></script>
   </body>
 </html>

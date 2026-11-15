@@ -139,6 +139,7 @@ def compact_mission(mission: dict) -> dict:
         "status": mission["status"],
         "payment_status": mission["payment_status"],
         "currency": mission["currency"],
+        "net_provider": mission.get("net_provider"),
         "provider_name": mission.get("provider_name"),
         "client_name": mission.get("client_name"),
     }
@@ -170,6 +171,13 @@ PROFILE_REFUSALS = {
 }
 
 
+def refused(status_code: int, code: str, detail: str) -> HTTPException:
+    """Refus que la page affiche dans la langue du compte : `detail` reste le
+    texte français (lisible dans les journaux), l'en-tête X-Nexis-Code donne
+    la clé de traduction."""
+    return HTTPException(status_code=status_code, detail=detail, headers={"X-Nexis-Code": code})
+
+
 async def _backend(call):
     """Résultat d'une demande au backend, ou l'erreur HTTP que la page affiche
     (texte de `detail`)."""
@@ -177,16 +185,26 @@ async def _backend(call):
         return await call
     except MoneyRefused as error:
         status = 404 if error.code == "provider_not_found" else 403 if error.code in ("provider_not_verified", "provider_suspended") else 400
-        raise HTTPException(status_code=status, detail=PROFILE_REFUSALS.get(error.code, "Action refusee"))
+        code = error.code if error.code in PROFILE_REFUSALS else "refused"
+        raise refused(status, code, PROFILE_REFUSALS.get(error.code, "Action refusee"))
     except BackendUnavailable:
-        raise HTTPException(status_code=503, detail=UNAVAILABLE)
+        raise refused(503, "backend_unavailable", UNAVAILABLE)
+
+
+PRIVATE_PROVIDER_FIELDS = ("id_document_file_id", "selfie_file_id", "portfolio_file_ids")
+LANGUAGES = ("fr", "ln", "en")
 
 
 def page_provider(provider: dict | None) -> dict | None:
     """Profil prestataire du backend, dans la forme que la page lit."""
     if provider is None:
         return None
-    return {**provider, "rating": provider.get("average_rating") or 0}
+    page = {key: value for key, value in provider.items() if key not in PRIVATE_PROVIDER_FIELDS}
+    # Seulement « documents envoyés ou non » : les identifiants Telegram des
+    # photos (pièce d'identité, selfie) ne quittent pas le serveur.
+    page["has_documents"] = bool(provider.get("id_document_file_id") and provider.get("selfie_file_id"))
+    page["rating"] = provider.get("average_rating") or 0
+    return page
 
 
 @app.get("/api/profile/{telegram_id}")
@@ -200,8 +218,12 @@ async def profile(telegram_id: int, telegram_user: dict = Depends(verify_telegra
     wallets = await backend_client.fetch_wallets(telegram_id)
     wallet = wallets.get("wallet") if isinstance(wallets, dict) else None
 
+    # Personne encore inconnue (ni cliente ni prestataire) : pas de langue
+    # choisie, la page prend celle de Telegram.
+    language = me.get("language") if me.get("profile_type") != "guest" else None
     return {
         "telegram_id": telegram_id,
+        "language": language if language in LANGUAGES else None,
         "client": me["client"],
         "provider": page_provider(me["provider"]),
         "client_missions": await my_missions(telegram_id, "client"),
@@ -209,6 +231,7 @@ async def profile(telegram_id: int, telegram_user: dict = Depends(verify_telegra
         "service_requests": service_requests,
         "wallet": wallet if isinstance(wallet, dict) else None,
         "available_services": {service["key"]: service["names"]["fr"] for service in catalogue["services"]},
+        "service_names": {service["key"]: service["names"] for service in catalogue["services"]},
         "available_communes": catalogue["communes"],
     }
 
@@ -228,13 +251,13 @@ async def register_provider(
     full_name = payload.full_name.strip()
     phone_number = payload.phone_number.strip()
     if len(full_name) < 3:
-        raise HTTPException(status_code=400, detail="Nom complet trop court")
+        raise refused(400, "name_too_short", "Nom complet trop court")
     if len(phone_number) < 8:
-        raise HTTPException(status_code=400, detail="Numero WhatsApp invalide")
+        raise refused(400, "invalid_phone", "Numero WhatsApp invalide")
     if not payload.services:
-        raise HTTPException(status_code=400, detail="Choisis au moins un service")
+        raise refused(400, "services_required", "Choisis au moins un service")
     if not payload.communes:
-        raise HTTPException(status_code=400, detail="Choisis au moins une commune")
+        raise refused(400, "communes_required", "Choisis au moins une commune")
 
     me = await _backend(
         backend_client.save_provider_profile(
@@ -259,7 +282,7 @@ async def save_provider_services(
 ):
     require_same_telegram_user(telegram_id, telegram_user)
     if not payload.services:
-        raise HTTPException(status_code=400, detail="Choisis au moins un service")
+        raise refused(400, "services_required", "Choisis au moins un service")
     me = await _backend(backend_client.set_my_services(telegram_id, payload.services))
     return {"status": "ok", "provider": page_provider(me["provider"])}
 
@@ -274,9 +297,9 @@ async def request_missing_service(
     service_name = payload.service_name.strip()
     description = payload.description.strip()
     if len(service_name) < 3:
-        raise HTTPException(status_code=400, detail="Nom du service trop court")
+        raise refused(400, "service_name_too_short", "Nom du service trop court")
     if len(description) < 10:
-        raise HTTPException(status_code=400, detail="Description trop courte")
+        raise refused(400, "description_too_short", "Description trop courte")
 
     request = await _backend(backend_client.propose_service(telegram_id, service_name, description))
     service_requests = await _backend(backend_client.my_service_requests(telegram_id))
@@ -294,7 +317,7 @@ async def save_provider_status(
     mission, que le changement vienne du bot ou de la Mini App."""
     require_same_telegram_user(telegram_id, telegram_user)
     if payload.status not in {"available", "offline"}:
-        raise HTTPException(status_code=400, detail="Statut invalide")
+        raise refused(400, "invalid_status", "Statut invalide")
     me = await _backend(backend_client.set_my_availability(telegram_id, payload.status))
     return {"status": "ok", "provider": page_provider(me["provider"])}
 
