@@ -31,7 +31,6 @@ const state = {
   missionFilter: "active",
   missionRole: "provider",
   currency: "CDF",
-  selectedServices: null,
 };
 
 // --- Langue et textes --------------------------------------------------------
@@ -235,6 +234,11 @@ function updateChrome() {
     else item.removeAttribute("aria-current");
   });
   nav.querySelectorAll("[data-text]").forEach((item) => { item.textContent = t(item.dataset.text); });
+  const count = todoCount();
+  const badge = nav.querySelector("[data-tab=missions] .count");
+  badge.hidden = count === 0;
+  badge.textContent = count > 9 ? "9+" : String(count);
+  nav.querySelector("[data-tab=missions]").setAttribute("aria-label", count ? `${t("nav_missions")}, ${t("todo_badge", { n: count })}` : t("nav_missions"));
   try {
     if (state.sub && (state.sub.name !== "register" || state.data?.client)) tg?.BackButton?.show();
     else tg?.BackButton?.hide();
@@ -248,6 +252,9 @@ function render() {
   let screen;
   if (state.sub?.name === "mission") screen = missionScreen(state.sub.missionId);
   else if (state.sub?.name === "propose") screen = proposeScreen();
+  else if (state.sub?.name === "history") screen = historyScreen();
+  else if (state.sub?.name === "add_service") screen = addServiceScreen();
+  else if (state.sub?.name === "add_commune") screen = addCommuneScreen();
   else if (state.sub?.name === "register") screen = registerScreen();
   else if (!provider()) screen = state.data?.client ? clientHomeScreen() : registerScreen();
   else if (state.tab === "missions") screen = missionsScreen();
@@ -280,10 +287,26 @@ function walletCard() {
   },
   el("small", { text: `${t("wallet")} · ${currencyLabel}` }),
   el("span", { class: "big", text: amount || t("balance_unknown") }),
-  el("span", { class: "row2" }, icon("i-shield"), el("span", { text: t("wallet_note") })),
+  el("span", { class: "row2" }, icon("i-shield"), el("span", { text: securedText(wallet) || t("wallet_note") })),
   el("span", { class: "dots", "aria-hidden": "true" },
     el("i", { class: state.currency === "CDF" ? "on" : "" }),
     el("i", { class: state.currency === "USD" ? "on" : "" })));
+}
+
+// Part du prestataire encore en escrow (backend : provider_secured) : pas
+// dans le solde, versée quand le client confirme.
+function securedText(wallet) {
+  const value = wallet?.[state.currency === "USD" ? "secured_usd" : "secured_cdf"];
+  return typeof value === "number" && value > 0 ? t("secured_note", { amount: formatMoney(value, state.currency) }) : null;
+}
+
+function historyLink() {
+  return el("button", { class: "linkcard", type: "button", onclick: () => open({ name: "history" }) },
+    el("span", { text: t("history_link") }), icon("i-chev"));
+}
+
+function todoCount() {
+  return (state.data?.provider_missions || []).filter((mission) => canArrive(mission) || canFinish(mission)).length;
 }
 
 function paymentPill(mission) {
@@ -313,12 +336,18 @@ function canFinish(mission) {
 function missionCard(mission, asProvider) {
   const other = asProvider ? mission.client_name : mission.provider_name;
   const card = el("div", { class: "card" },
-    el("div", { class: "row" },
-      serviceIcon(mission.service),
-      el("div", {},
-        el("b", { text: `${serviceName(mission.service)} · ${mission.commune || ""}` }),
-        el("small", { class: "wrap", text: [missionRef(mission.id), statusText(mission.status), other].filter(Boolean).join(" · ") })),
-      paymentPill(mission)));
+    el("button", {
+      class: "row open",
+      type: "button",
+      "aria-label": `${t("open_mission")} ${missionRef(mission.id)}`,
+      onclick: () => open({ name: "mission", missionId: mission.id, role: asProvider ? "provider" : "client" }),
+    },
+    serviceIcon(mission.service),
+    el("div", {},
+      el("b", { text: `${serviceName(mission.service)} · ${mission.commune || ""}` }),
+      el("small", { class: "wrap", text: [missionRef(mission.id), statusText(mission.status), other].filter(Boolean).join(" · ") })),
+    asProvider ? paymentPill(mission) : el("span", { class: "pill p-wait", text: statusText(mission.status) }),
+    icon("i-chev")));
   if (asProvider && canArrive(mission)) {
     card.appendChild(button(t("btn_arrived"), (event) => declareArrival(event.currentTarget, mission.id), { cls: "btn sm", iconId: "i-arrived" }));
   } else if (asProvider && canFinish(mission)) {
@@ -343,7 +372,7 @@ async function declareArrival(buttonNode, missionId) {
         toast(t("started"));
         render();
       } else {
-        open({ name: "mission", missionId });
+        open({ name: "mission", missionId, role: "provider", arrived: true });
       }
     } catch (error) {
       toast(errorText(error), true);
@@ -409,7 +438,7 @@ function homeScreen() {
       ? todo.slice(0, 3).map((mission) => missionCard(mission, true))
       : [el("p", { class: "empty", text: t("todo_empty") })];
 
-  return [hello, availability, walletCard(), stats, todoLabel, ...todoList];
+  return [hello, availability, walletCard(), historyLink(), stats, todoLabel, ...todoList];
 }
 
 function pendingBlock(me) {
@@ -481,31 +510,71 @@ function missionsScreen() {
   return nodes;
 }
 
-function missionScreen(missionId) {
-  const mission = (state.data.provider_missions || []).find((item) => item.id === missionId);
-  if (!mission) {
-    state.sub = null;
-    return missionsScreen();
-  }
-  const started = mission.status !== "confirmed";
-  const step = (cls, title, sub) => el("div", { class: `step ${cls}` },
+function step(cls, title, sub) {
+  return el("div", { class: `step ${cls}` },
     el("span", { class: "d" }, cls === "done" ? icon("i-check") : null),
     el("div", {}, el("b", { text: title }), sub ? el("small", { text: sub }) : null));
+}
+
+const PAID_STATUSES = ["paid_escrow", "released", "split"];
+const STARTED_STATUSES = ["in_progress", "awaiting_confirmation", "completed"];
+
+// Chemin de la mission vu par le prestataire : chaque étape est « faite »,
+// « en cours » ou à venir, d'après l'état renvoyé par le backend.
+function providerSteps(mission, arrivalDeclared) {
+  const paid = PAID_STATUSES.includes(mission.payment_status);
+  const started = STARTED_STATUSES.includes(mission.status);
+  const finished = ["awaiting_confirmation", "completed"].includes(mission.status);
+  const paidOut = mission.payment_status === "released";
+  const arrived = started || arrivalDeclared;
+  const releaseDate = formatDate(mission.release_after);
+  const now = (done, current) => (done ? "done" : current ? "now" : "");
+  return el("div", { class: "card" }, el("div", { class: "steps" },
+    step(now(paid, !paid), t("step_paid"), paid ? formatMoney(mission.net_provider, mission.currency) || t("step_paid_sub") : null),
+    step(now(arrived, paid && !arrived), t("step_arrived"), arrived ? t("step_arrived_sub") : null),
+    step(now(started, arrived && !started), t("step_code"), t("step_code_sub")),
+    step(now(finished, mission.status === "in_progress"), t("step_finish")),
+    step(now(paidOut, mission.status === "awaiting_confirmation"), t("step_paid_out"),
+      mission.status === "awaiting_confirmation" && releaseDate ? t("release_on", { date: releaseDate }) : t("step_client_confirms"))));
+}
+
+function missionScreen(missionId) {
+  const asProvider = state.sub.role !== "client";
+  const list = asProvider ? state.data.provider_missions : state.data.client_missions;
+  const mission = (list || []).find((item) => item.id === missionId);
+  if (!mission) {
+    state.sub = null;
+    return provider() ? missionsScreen() : clientHomeScreen();
+  }
+  const row = (label, value) => (value ? el("div", { class: "row" }, el("div", {}, el("small", { text: label }), el("b", { class: "wrap", text: value }))) : null);
   const nodes = [
     subHeader(t("mission_title", { ref: missionRef(mission.id) }), `${serviceName(mission.service)} · ${mission.commune || ""}`),
-    el("div", { class: "card" }, el("div", { class: "steps" },
-      step("done", t("step_paid"), formatMoney(mission.net_provider, mission.currency) || t("step_paid_sub")),
-      step("done", t("step_arrived"), t("step_arrived_sub")),
-      step(started ? "done" : "now", t("step_code"), t("step_code_sub")),
-      step(mission.status === "in_progress" ? "now" : "", t("step_finish")))),
+    el("div", { class: "pills" },
+      el("span", { class: "pill p-wait", text: statusText(mission.status) }),
+      asProvider ? paymentPill(mission) : null,
+      mission.urgent ? el("span", { class: "pill p-bad", text: t("urgent") }) : null),
+    el("div", { class: "card list" },
+      row(asProvider ? t("client_label") : t("provider_label"), asProvider ? mission.client_name : mission.provider_name),
+      row(t("commune_label"), mission.commune),
+      row(t("description_label"), mission.description),
+      asProvider ? row(t("amount_label"), formatMoney(mission.net_provider, mission.currency)) : null),
   ];
+  if (!asProvider) return nodes;
 
-  if (started) {
-    nodes.push(el("p", { class: "msg ok", text: t("started") }));
-    if (canFinish(mission)) nodes.push(button(t("btn_finish"), (event) => finishMission(event.currentTarget, mission.id), { iconId: "i-check" }));
-    return nodes;
+  const arrivalDeclared = Boolean(state.sub.arrived);
+  nodes.push(el("div", { class: "lbl" }, el("span", { text: t("details") })), providerSteps(mission, arrivalDeclared));
+
+  if (canFinish(mission)) {
+    nodes.push(button(t("btn_finish"), (event) => finishMission(event.currentTarget, mission.id), { iconId: "i-check" }));
+  } else if (canArrive(mission) && !arrivalDeclared) {
+    nodes.push(button(t("btn_arrived"), (event) => declareArrival(event.currentTarget, mission.id), { iconId: "i-arrived" }));
+  } else if (canArrive(mission)) {
+    nodes.push(...codeEntry(mission));
   }
+  return nodes;
+}
 
+function codeEntry(mission) {
   const input = el("input", {
     type: "text",
     inputmode: "numeric",
@@ -534,8 +603,29 @@ function missionScreen(missionId) {
   input.addEventListener("keydown", (event) => { if (event.key === "Enter" && !validate.disabled) validate.click(); });
   paint();
 
-  nodes.push(el("div", { class: "lbl" }, el("span", { text: t("code_label") })), otp,
-    el("p", { class: "note", text: t("code_note") }), message, validate);
+  return [el("div", { class: "lbl" }, el("span", { text: t("code_label") })), otp,
+    el("p", { class: "note", text: t("code_note") }), message, validate];
+}
+
+// Mouvements du wallet lus dans le registre : le montant est signé par le
+// backend, la page ne fait que le mettre en forme.
+function historyScreen() {
+  const entries = state.data.wallet_history;
+  const nodes = [subHeader(t("history_title"))];
+  if (entries == null) return [...nodes, el("p", { class: "empty", text: t("history_unavailable") })];
+  if (!entries.length) return [...nodes, el("p", { class: "empty", text: t("history_empty") })];
+  nodes.push(el("div", { class: "card list" }, entries.map((entry) => {
+    const value = Number(entry.amount);
+    const credit = value > 0;
+    const label = t(`history_kind.${entry.kind}`);
+    const amount = formatMoney(Math.abs(value), entry.currency);
+    return el("div", { class: "row" },
+      el("span", { class: credit ? "mv in" : "mv out", "aria-hidden": "true" }, icon(credit ? "i-check" : "i-wallet")),
+      el("div", {},
+        el("b", { text: label.startsWith("history_kind.") ? t("history_kind.other") : label }),
+        el("small", { text: [formatDate(entry.created_at), entry.mission_id ? missionRef(entry.mission_id) : ""].filter(Boolean).join(" · ") })),
+      el("span", { class: credit ? "amt in" : "amt out", text: `${credit ? "+" : "−"} ${amount || ""}` }));
+  })));
   return nodes;
 }
 
@@ -566,51 +656,107 @@ function serviceKeys() {
   return keys;
 }
 
+// Services qu'un prestataire peut prendre (le backend refuse les autres).
+function providerServiceKeys() {
+  const excluded = state.data.provider_excluded_services || [];
+  return serviceKeys().filter((key) => !excluded.includes(key));
+}
+
+// Mes services et mes communes : chaque ajout ou retrait est enregistré tout
+// de suite par le backend, qui vérifie le catalogue (et la limite de
+// services) ; la page affiche ce qu'il renvoie.
+async function saveProfileList(kind, values, okText) {
+  const result = await api(`/api/provider/${telegramUser.id}/${kind}`, { [kind]: values });
+  state.data.provider = result.provider;
+  if (okText) toast(okText);
+}
+
+function removable(label, iconNode, onRemove) {
+  return el("div", { class: "row" },
+    iconNode,
+    el("div", {}, el("b", { text: label })),
+    el("button", { class: "remove", type: "button", "aria-label": t("remove_item", { name: label }), onclick: onRemove }, icon("i-close")));
+}
+
+async function removeFrom(kind, value, buttonNode) {
+  const me = provider();
+  const remaining = (me[kind] || []).filter((item) => item !== value);
+  if (!remaining.length) {
+    toast(t(kind === "services" ? "errors.services_required" : "errors.communes_required"), true);
+    return;
+  }
+  await busy(buttonNode, null, async () => {
+    try {
+      await saveProfileList(kind, remaining, t(kind === "services" ? "service_removed" : "commune_removed"));
+      render();
+    } catch (error) {
+      toast(errorText(error), true);
+    }
+  });
+}
+
 function servicesScreen() {
   const me = provider();
-  if (!state.selectedServices) state.selectedServices = new Set(me.services || []);
-  const selected = state.selectedServices;
-  const status = el("p", { class: "msg", role: "status" });
-  const grid = el("div", { class: "sgrid" }, serviceKeys().map((key) => el("button", {
-    type: "button",
-    "aria-pressed": selected.has(key) ? "true" : "false",
-    onclick: (event) => {
-      if (selected.has(key)) selected.delete(key); else selected.add(key);
-      event.currentTarget.setAttribute("aria-pressed", selected.has(key) ? "true" : "false");
-      status.textContent = "";
-      status.className = "msg";
-    },
-  }, serviceIcon(key, 40), el("span", { text: serviceName(key) }))));
-
-  const save = button(t("save"), () => busy(save, t("saving"), async () => {
-    if (!selected.size) {
-      status.className = "msg error";
-      status.textContent = t("errors.services_required");
-      return;
-    }
-    try {
-      const result = await api(`/api/provider/${telegramUser.id}/services`, { services: [...selected] });
-      state.data.provider = result.provider;
-      state.selectedServices = new Set(result.provider.services || []);
-      status.className = "msg ok";
-      status.textContent = t("saved");
-    } catch (error) {
-      status.className = "msg error";
-      status.textContent = errorText(error);
-    }
-  }));
-
+  const services = me.services || [];
+  const communes = me.communes || [];
+  const limit = state.data.max_services;
+  const full = typeof limit === "number" && services.length >= limit;
   return [
     el("h1", { class: "h1", text: t("services_title") }),
-    grid,
+    typeof limit === "number" ? el("p", { class: "h1s", text: t("services_count", { n: services.length, max: limit }) }) : null,
+    el("div", { class: "card list" },
+      services.map((key) => removable(serviceName(key), serviceIcon(key, 36), (event) => removeFrom("services", key, event.currentTarget)))),
+    full
+      ? el("p", { class: "note", text: t("services_full", { max: limit }) })
+      : button(t("add_service"), () => open({ name: "add_service" }), { cls: "btn ghost", iconId: "i-plus" }),
     el("div", { class: "lbl" }, el("span", { text: t("communes_label") })),
-    el("div", { class: "chips" }, (me.communes || []).map((commune) => el("span", { class: "on", text: commune }))),
-    el("p", { class: "note", text: t("communes_note") }),
+    el("div", { class: "card list" },
+      communes.map((commune) => removable(commune, el("span", { class: "mv out" }, icon("i-arrived")), (event) => removeFrom("communes", commune, event.currentTarget)))),
+    button(t("add_commune"), () => open({ name: "add_commune" }), { cls: "btn ghost", iconId: "i-plus" }),
     el("button", { class: "linkcard", type: "button", onclick: () => open({ name: "propose" }) },
       el("span", { text: t("missing_link") }), el("b", { text: t("missing_cta") })),
-    status,
-    save,
-  ];
+  ].filter(Boolean);
+}
+
+function addServiceScreen() {
+  const mine = new Set(provider().services || []);
+  const choices = providerServiceKeys().filter((key) => !mine.has(key));
+  const nodes = [subHeader(t("add_service")), el("p", { class: "note", text: t("add_service_intro") })];
+  if (!choices.length) return [...nodes, el("p", { class: "empty", text: t("nothing_to_add") })];
+  nodes.push(el("div", { class: "sgrid" }, choices.map((key) => el("button", {
+    type: "button",
+    onclick: (event) => busy(event.currentTarget, null, async () => {
+      try {
+        await saveProfileList("services", [...mine, key], t("service_added", { name: serviceName(key) }));
+        goBack();
+      } catch (error) {
+        toast(errorText(error), true);
+      }
+    }),
+  }, serviceIcon(key, 40), el("span", { text: serviceName(key) })))));
+  nodes.push(el("button", { class: "linkcard", type: "button", onclick: () => open({ name: "propose" }) },
+    el("span", { text: t("missing_link") }), el("b", { text: t("missing_cta") })));
+  return nodes;
+}
+
+function addCommuneScreen() {
+  const mine = new Set(provider().communes || []);
+  const choices = (state.data.available_communes || []).filter((commune) => !mine.has(commune));
+  const nodes = [subHeader(t("add_commune"))];
+  if (!choices.length) return [...nodes, el("p", { class: "empty", text: t("nothing_to_add") })];
+  nodes.push(el("div", { class: "chips" }, choices.map((commune) => el("button", {
+    type: "button",
+    text: commune,
+    onclick: (event) => busy(event.currentTarget, null, async () => {
+      try {
+        await saveProfileList("communes", [...mine, commune], t("commune_added", { name: commune }));
+        goBack();
+      } catch (error) {
+        toast(errorText(error), true);
+      }
+    }),
+  }))));
+  return nodes;
 }
 
 function proposeScreen() {
@@ -692,12 +838,17 @@ function registerScreen() {
   const phone = el("input", { type: "tel", autocomplete: "tel", inputmode: "tel", maxlength: "20", placeholder: "+243…", value: client?.phone_number || "" });
   const services = new Set();
   const communes = new Set();
-  const chip = (set, value, label) => el("button", {
+  const limit = state.data.max_services;
+  const chip = (set, value, label, max = null) => el("button", {
     type: "button",
     "aria-pressed": "false",
     text: label,
     onclick: (event) => {
-      if (set.has(value)) set.delete(value); else set.add(value);
+      if (set.has(value)) set.delete(value);
+      else if (typeof max === "number" && set.size >= max) {
+        toast(t("services_full", { max }), true);
+        return;
+      } else set.add(value);
       event.currentTarget.setAttribute("aria-pressed", set.has(value) ? "true" : "false");
     },
   });
@@ -715,7 +866,6 @@ function registerScreen() {
       state.data.provider = result.provider;
       state.data.provider_missions = [];
       state.data.service_requests = [];
-      state.selectedServices = null;
       show("home");
     } catch (error) {
       status.textContent = errorText(error);
@@ -729,7 +879,8 @@ function registerScreen() {
     el("label", { class: "field" }, el("span", { text: t("full_name") }), fullName),
     el("label", { class: "field" }, el("span", { text: t("phone_label") }), phone),
     el("div", { class: "lbl" }, el("span", { text: t("your_services") })),
-    el("div", { class: "chips" }, serviceKeys().map((key) => chip(services, key, serviceName(key)))),
+    typeof limit === "number" ? el("p", { class: "note", text: t("services_pick_max", { max: limit }) }) : null,
+    el("div", { class: "chips" }, providerServiceKeys().map((key) => chip(services, key, serviceName(key), limit))),
     el("div", { class: "lbl" }, el("span", { text: t("your_communes") })),
     el("div", { class: "chips" }, (state.data?.available_communes || []).map((commune) => chip(communes, commune, commune))),
     status,
@@ -750,6 +901,7 @@ function clientHomeScreen() {
   return [
     el("div", { class: "hello" }, el("div", {}, el("small", { text: t("hello") }), el("b", { text: client.first_name || telegramUser?.first_name || "" }))),
     walletCard(),
+    historyLink(),
     el("div", { class: "lbl" }, el("span", { text: t("client_requests") })),
     ...list,
     el("div", { class: "info" }, icon("i-info"), el("span", { text: t("client_note") })),
@@ -790,7 +942,6 @@ async function load() {
     state.data = data;
     state.lang = pickLanguage(data.language);
     document.documentElement.lang = state.lang;
-    state.selectedServices = null;
     render();
   } catch (error) {
     messageScreen(errorText(error), true);

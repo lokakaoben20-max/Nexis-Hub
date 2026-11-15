@@ -244,9 +244,9 @@ def clavier_disponibilite(status: str, lang: str = "fr"):
 def clavier_services_prestataire(selected_services=None):
     selected_services = selected_services or []
     builder = InlineKeyboardBuilder()
-    for key, label in SERVICES.items():
+    for key in catalogue.provider_service_keys(selected_services):
         prefix = "✅" if key in selected_services else "▫️"
-        builder.button(text=f"{prefix} {label}", callback_data=f"provider_service_{key}")
+        builder.button(text=f"{prefix} {SERVICES[key]}", callback_data=f"provider_service_{key}")
     builder.button(text="➡️ Continuer", callback_data="provider_services_done")
     builder.adjust(1)
     return builder.as_markup()
@@ -255,9 +255,9 @@ def clavier_services_prestataire(selected_services=None):
 def clavier_modifier_services(selected_services=None, lang: str = "fr"):
     selected_services = selected_services or []
     builder = InlineKeyboardBuilder()
-    for key, label in SERVICES.items():
+    for key in catalogue.provider_service_keys(selected_services):
         prefix = "✅" if key in selected_services else "▫️"
-        builder.button(text=f"{prefix} {label}", callback_data=f"edit_service_{key}")
+        builder.button(text=f"{prefix} {SERVICES[key]}", callback_data=f"edit_service_{key}")
     builder.button(text=get_message("button_save_services", lang), callback_data="edit_services_done")
     builder.button(text=get_message("button_propose_service", lang), callback_data="prest_missing_service")
     builder.button(text=button_label("back", lang), callback_data="profil_prestataire")

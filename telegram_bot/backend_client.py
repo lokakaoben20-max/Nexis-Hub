@@ -198,6 +198,11 @@ async def list_my_missions(telegram_id: int, role: str) -> list[dict]:
     return (await _money_call("GET", f"/api/me/missions?role={role}", actor=telegram_id, expect="missions"))["missions"]
 
 
+async def wallet_history(telegram_id: int, limit: int = 20) -> list[dict]:
+    """Derniers mouvements du wallet de cette personne, lus dans le registre."""
+    return (await _money_call("GET", f"/api/me/wallet/history?limit={limit}", actor=telegram_id, expect="entries"))["entries"]
+
+
 async def admin_list_missions(admin_telegram_id: int, status: str | None = None) -> list[dict]:
     query = f"?status={status}" if status else ""
     return (await _money_call("GET", f"/api/admin/missions{query}", actor=admin_telegram_id, expect="missions"))["missions"]
@@ -518,6 +523,12 @@ async def set_my_name(telegram_id: int, first_name: str) -> dict:
 async def set_my_services(telegram_id: int, services: list[str]) -> dict:
     return await _call(
         "PUT", "/api/me/provider-profile/services", {"services": services}, actor=telegram_id, expect=("profile_type",)
+    )
+
+
+async def set_my_communes(telegram_id: int, communes: list[str]) -> dict:
+    return await _call(
+        "PUT", "/api/me/provider-profile/communes", {"communes": communes}, actor=telegram_id, expect=("profile_type",)
     )
 
 

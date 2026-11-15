@@ -430,6 +430,50 @@ def test_full_escrow_and_release_flow(tmp_path, monkeypatch, backend_db_url):
         assert test_client.get("/api/me/wallet", headers=_as(7)).json()["wallet"]["wallet_balance_usd"] == 90.0
 
 
+def test_wallet_shows_secured_money_and_history_from_the_ledger(tmp_path, monkeypatch, backend_db_url):
+    """Argent sécurisé = net des missions payées, pas encore réglées, sans
+    litige ; l'historique lit les écritures du portefeuille."""
+    backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
+
+    def wallet(telegram_id):
+        return test_client.get("/api/me/wallet", headers=_as(telegram_id)).json()["wallet"]
+
+    def history(telegram_id, limit=20):
+        response = test_client.get(f"/api/me/wallet/history?limit={limit}", headers=_as(telegram_id))
+        assert response.status_code == 200
+        return response.json()["entries"]
+
+    with _authed_client(backend_main) as test_client:
+        assert (wallet(7)["secured_usd"], wallet(7)["secured_cdf"]) == (0.0, 0.0)
+        assert history(7) == []
+
+        mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
+        test_client.post(f"/api/bot/quotes/{quote_id}/accept", headers=_as(42))
+        _fund(test_client, mission_id=mission_id, quote_id=quote_id)
+        assert (wallet(7)["secured_usd"], wallet(7)["wallet_balance_usd"]) == (90.0, 0.0)
+        assert wallet(42)["secured_usd"] == 0.0, "le client n'a rien de sécurisé à recevoir"
+
+        test_client.post(f"/api/bot/missions/{mission_id}/presence/confirm", headers=_as(42))
+        test_client.post(f"/api/bot/missions/{mission_id}/finish", headers=_as(7))
+        test_client.post(f"/api/bot/missions/{mission_id}/confirm", headers=_as(42))
+        assert (wallet(7)["secured_usd"], wallet(7)["wallet_balance_usd"]) == (0.0, 90.0)
+
+        entries = history(7)
+        assert [(entry["kind"], entry["mission_id"], entry["currency"], entry["amount"]) for entry in entries] == [
+            ("release", mission_id, "USD", "90.00")
+        ]
+        assert entries[0]["created_at"]
+        assert history(7, limit=0) == entries, "limite ramenée entre 1 et 50"
+
+        # Une mission en litige n'est plus comptée comme sécurisée.
+        second_id, second_quote = _setup_mission_with_quote(test_client, amount=50.0)
+        test_client.post(f"/api/bot/quotes/{second_quote}/accept", headers=_as(42))
+        _fund(test_client, mission_id=second_id, quote_id=second_quote)
+        assert wallet(7)["secured_usd"] == 45.0
+        test_client.post(f"/api/bot/missions/{second_id}/dispute", json={"reason": "Travail non fait"}, headers=_as(42))
+        assert wallet(7)["secured_usd"] == 0.0
+
+
 def test_wallet_payment_fails_when_balance_insufficient(tmp_path, monkeypatch, backend_db_url):
     backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
 

@@ -44,6 +44,10 @@ class ServicesUpdate(BaseModel):
     services: list[str]
 
 
+class CommunesUpdate(BaseModel):
+    communes: list[str]
+
+
 class ServiceRequestCreate(BaseModel):
     service_name: str
     description: str
@@ -160,6 +164,9 @@ def compact_mission(mission: dict) -> dict:
         "payment_status": mission["payment_status"],
         "currency": mission["currency"],
         "net_provider": mission.get("net_provider"),
+        "description": mission.get("description"),
+        "urgent": bool(mission.get("urgent")),
+        "release_after": mission.get("release_after"),
         "provider_name": mission.get("provider_name"),
         "client_name": mission.get("client_name"),
     }
@@ -182,6 +189,8 @@ PROFILE_REFUSALS = {
     "invalid_services": "Service invalide",
     "unknown_commune": "Commune invalide",
     "communes_required": "Choisis au moins une commune",
+    "too_many_services": "Nombre maximum de services atteint",
+    "service_not_for_providers": "Ce service ne peut pas etre choisi par un prestataire",
     "invalid_communes": "Commune invalide",
     "invalid_name": "Nom complet invalide",
     "invalid_phone": "Numero WhatsApp invalide",
@@ -236,6 +245,10 @@ async def profile(telegram_id: int, telegram_user: dict = Depends(verify_telegra
     # Soldes lus dans le registre du backend : backend injoignable = None, la
     # page affiche « indisponible », jamais un chiffre par défaut.
     wallets = await backend_client.fetch_wallets(telegram_id)
+    try:
+        wallet_history = await backend_client.wallet_history(telegram_id)
+    except (BackendUnavailable, MoneyRefused):
+        wallet_history = None  # la page dit « indisponible », jamais une liste vide inventée
     wallet = wallets.get("wallet") if isinstance(wallets, dict) else None
 
     # Personne encore inconnue (ni cliente ni prestataire) : pas de langue
@@ -250,9 +263,12 @@ async def profile(telegram_id: int, telegram_user: dict = Depends(verify_telegra
         "provider_missions": await my_missions(telegram_id, "provider"),
         "service_requests": service_requests,
         "wallet": wallet if isinstance(wallet, dict) else None,
+        "wallet_history": wallet_history,
         "available_services": {service["key"]: service["names"]["fr"] for service in catalogue["services"]},
         "service_names": {service["key"]: service["names"] for service in catalogue["services"]},
         "available_communes": catalogue["communes"],
+        "max_services": catalogue.get("provider_max_services"),
+        "provider_excluded_services": catalogue.get("provider_excluded_services", []),
     }
 
 
@@ -304,6 +320,21 @@ async def save_provider_services(
     if not payload.services:
         raise refused(400, "services_required", "Choisis au moins un service")
     me = await _backend(backend_client.set_my_services(telegram_id, payload.services))
+    return {"status": "ok", "provider": page_provider(me["provider"])}
+
+
+@app.post("/api/provider/{telegram_id}/communes")
+async def save_provider_communes(
+    telegram_id: int,
+    payload: CommunesUpdate,
+    telegram_user: dict = Depends(verify_telegram_init_data),
+):
+    """Communes où le prestataire travaille : le backend vérifie qu'elles
+    existent au catalogue."""
+    require_same_telegram_user(telegram_id, telegram_user)
+    if not payload.communes:
+        raise refused(400, "communes_required", "Choisis au moins une commune")
+    me = await _backend(backend_client.set_my_communes(telegram_id, payload.communes))
     return {"status": "ok", "provider": page_provider(me["provider"])}
 
 

@@ -1469,14 +1469,27 @@ def get_my_wallet(actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
         account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
         balances = ledger.wallet_balances(db, account_id)
+        secured = ledger.provider_secured(db, account_id)
         return {
             "status": "ok",
             "wallet": {
                 "account_id": account_id,
                 "wallet_balance_usd": float(balances["USD"]),
                 "wallet_balance_cdf": float(balances["CDF"]),
+                # Pas dans le wallet : part du prestataire encore en escrow,
+                # versée quand le client confirme (ou après 48 h).
+                "secured_usd": float(secured["USD"]),
+                "secured_cdf": float(secured["CDF"]),
             },
         }
+
+
+@router.get("/api/me/wallet/history")
+def get_my_wallet_history(limit: int = 20, actor: Actor = Depends(current_actor)):
+    """Derniers mouvements du wallet de l'acteur, et de lui seul."""
+    with SessionLocal() as db:
+        account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
+        return {"status": "ok", "entries": ledger.wallet_history(db, account_id, limit)}
 
 
 @router.post("/api/bot/service-requests")
@@ -1589,6 +1602,10 @@ def list_services():
                 for service in profils.active_services(db)
             ],
             "communes": profils.communes(db),
+            # Règles du choix des services d'un prestataire, pour que les
+            # canaux n'affichent que ce que le backend acceptera.
+            "provider_max_services": profils.MAX_PROVIDER_SERVICES,
+            "provider_excluded_services": list(profils.PROVIDER_EXCLUDED_SERVICES),
         }
 
 

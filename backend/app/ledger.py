@@ -24,7 +24,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from backend.app.models import (
     BotMission,
@@ -202,6 +202,63 @@ def wallet_balances(db: Session, account_id: int | None) -> dict[str, Decimal]:
     if account_id is None:
         return {currency: ZERO for currency in CURRENCIES}
     return {currency: balance(db, WALLET, account_id, currency) for currency in CURRENCIES}
+
+
+def provider_secured(db: Session, account_id: int | None) -> dict[str, Decimal]:
+    """Part du prestataire encore en escrow, par devise : missions qui lui sont
+    confiées, payées et pas encore réglées, hors litige (l'issue d'un litige
+    n'est pas connue). Montants nets enregistrés au paiement, jamais les
+    colonnes float de la mission. Ce n'est pas un solde : rien n'est dans son
+    wallet tant que la mission n'est pas réglée."""
+    secured = {currency: ZERO for currency in CURRENCIES}
+    if account_id is None:
+        return secured
+    settlement = aliased(MoneyOperation)
+    settled = db.query(settlement.id).filter(
+        settlement.mission_id == BotMission.mission_id, settlement.phase == SETTLEMENT
+    )
+    fundings = (
+        db.query(MoneyOperation, BotMission)
+        .join(BotMission, BotMission.mission_id == MoneyOperation.mission_id)
+        .filter(
+            MoneyOperation.phase == FUNDING,
+            BotMission.provider_account_id == account_id,
+            BotMission.status != "disputed",
+            ~settled.exists(),
+        )
+        .all()
+    )
+    for funding, mission in fundings:
+        if mission.currency in secured:
+            secured[mission.currency] += to_money(funding.details["net"])
+    return secured
+
+
+def wallet_history(db: Session, account_id: int | None, limit: int = 20) -> list[dict]:
+    """Derniers mouvements du wallet, les plus récents d'abord : le type
+    d'opération, la mission éventuelle, la devise et le montant signé (texte,
+    deux décimales), lus dans le registre."""
+    if account_id is None:
+        return []
+    rows = (
+        db.query(LedgerEntry, MoneyOperation)
+        .join(MoneyOperation, MoneyOperation.id == LedgerEntry.operation_id)
+        .filter(LedgerEntry.account_type == WALLET, LedgerEntry.account_id == account_id)
+        .order_by(LedgerEntry.id.desc())
+        .limit(max(1, min(limit, 50)))
+        .all()
+    )
+    return [
+        {
+            "id": entry.id,
+            "kind": operation.kind,
+            "mission_id": operation.mission_id,
+            "currency": entry.currency,
+            "amount": str(to_money(entry.amount)),
+            "created_at": operation.created_at.isoformat() if operation.created_at else None,
+        }
+        for entry, operation in rows
+    ]
 
 
 def mission_operation(db: Session, mission_id: int, phase: str) -> MoneyOperation | None:

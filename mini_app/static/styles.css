@@ -291,3 +291,34 @@ button:disabled { cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation-duration: 0s !important; }
 }
+
+/* Carte de mission qu'on touche pour ouvrir son détail */
+.row.open { width: 100%; border: 0; background: none; padding: 0; text-align: left; color: inherit; }
+.row.open > svg:last-child { width: 16px; height: 16px; color: var(--faint); flex: none; }
+.pills { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Pastille du nombre de choses à faire sur l'onglet Missions */
+.nav .ic { position: relative; display: grid; }
+.nav .count {
+  position: absolute; top: -5px; right: -10px; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 999px; background: #E5484D; color: #fff; font: 700 10.5px/18px var(--text); text-align: center;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.nav .count[hidden] { display: none; }
+
+/* Historique du portefeuille */
+.linkcard > svg { width: 16px; height: 16px; color: var(--faint); flex: none; }
+.mv { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+.mv svg { width: 16px; height: 16px; }
+.mv.in { background: var(--ok-soft); color: var(--ok-ink); }
+.mv.out { background: var(--wait-bg); color: var(--wait-ink); }
+.amt { font: 600 13.5px var(--title); white-space: nowrap; }
+.amt.in { color: var(--ok-ink); }
+
+/* Liste modifiable (services, communes) */
+.row .remove {
+  flex: none; width: 32px; height: 32px; border: 0; border-radius: 50%;
+  display: grid; place-items: center; background: var(--danger-soft); color: var(--danger);
+}
+.row .remove svg { width: 14px; height: 14px; }
+.row .remove:disabled { opacity: .5; }
