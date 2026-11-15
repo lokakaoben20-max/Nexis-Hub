@@ -560,6 +560,97 @@ async def my_service_requests(provider_telegram_id: int) -> list[dict]:
     return body["service_requests"]
 
 
+# --- Ajout d'un service : photos puis demande à l'équipe ----------------------
+# Un prestataire vérifié n'ajoute pas un service lui-même (2026-11-15).
+
+# Refus du backend à l'envoi d'un fichier, en plus de ceux de `_call`.
+_FILE_REFUSAL_STATUSES = (400, 403, 404, 409, 413, 415, 429, 503)
+
+
+async def upload_service_photo(telegram_id: int, data: bytes) -> dict:
+    """Envoie une photo de réalisation au backend, qui la garde chiffrée.
+    Renvoie {"id", "content_type", "size_bytes"}."""
+    headers = {**actor_headers(telegram_id), "Content-Type": "application/octet-stream"}
+    try:
+        async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
+            response = await client.post(f"{BACKEND_BASE_URL}/api/me/files/service-photos", content=data)
+    except Exception as error:
+        raise BackendUnavailable(repr(error)) from error
+    try:
+        body = response.json()
+    except ValueError as error:
+        raise BackendUnavailable(f"réponse illisible ({response.status_code})") from error
+    if response.status_code in _FILE_REFUSAL_STATUSES:
+        detail = body.get("detail") if isinstance(body, dict) else None
+        if isinstance(detail, dict) and isinstance(detail.get("code"), str):
+            raise MoneyRefused(detail["code"], None, None, detail)
+    stored = body.get("file") if isinstance(body, dict) else None
+    if response.status_code != 200 or not isinstance(stored, dict) or not isinstance(stored.get("id"), str):
+        raise BackendUnavailable(f"réponse inattendue ({response.status_code})")
+    return stored
+
+
+async def request_service_addition(telegram_id: int, service_key: str, description: str = "", photo_ids: list[str] | None = None) -> dict:
+    body = await _call(
+        "POST",
+        "/api/me/provider-profile/service-additions",
+        {"service_key": service_key, "description": description, "photo_ids": list(photo_ids or [])},
+        actor=telegram_id,
+        expect=("service_addition",),
+    )
+    return body["service_addition"]
+
+
+async def my_service_additions(telegram_id: int) -> list[dict]:
+    body = await _call("GET", "/api/me/provider-profile/service-additions", actor=telegram_id, expect=("service_additions",))
+    return body["service_additions"]
+
+
+async def cancel_service_addition(telegram_id: int, addition_id: int) -> dict:
+    body = await _call(
+        "POST",
+        f"/api/me/provider-profile/service-additions/{int(addition_id)}/cancel",
+        actor=telegram_id,
+        expect=("service_addition",),
+    )
+    return body["service_addition"]
+
+
+async def admin_service_additions(admin_telegram_id: int) -> list[dict]:
+    body = await _call("GET", "/api/admin/service-additions", actor=admin_telegram_id, expect=("service_additions",))
+    return body["service_additions"]
+
+
+async def admin_decide_service_addition(admin_telegram_id: int, addition_id: int, approve: bool, admin_note: str = "") -> dict:
+    """Renvoie {"decided_now", "service_addition"} : `decided_now` faux si la
+    même décision était déjà prise (ne pas prévenir le prestataire deux fois)."""
+    return await _call(
+        "POST",
+        f"/api/admin/service-additions/{int(addition_id)}/decision",
+        {"decision": "approve" if approve else "reject", "admin_note": admin_note},
+        actor=admin_telegram_id,
+        expect=("service_addition",),
+    )
+
+
+async def admin_file(admin_telegram_id: int, file_id: str) -> tuple[bytes, str]:
+    """Contenu déchiffré d'un fichier, pour un admin (le backend revérifie)."""
+    try:
+        async with httpx.AsyncClient(timeout=30.0, headers=actor_headers(admin_telegram_id)) as client:
+            response = await client.get(f"{BACKEND_BASE_URL}/api/admin/files/{file_id}")
+    except Exception as error:
+        raise BackendUnavailable(repr(error)) from error
+    if response.status_code != 200:
+        try:
+            detail = response.json().get("detail")
+        except (ValueError, AttributeError):
+            detail = None
+        if isinstance(detail, dict) and isinstance(detail.get("code"), str):
+            raise MoneyRefused(detail["code"], None, None, detail)
+        raise BackendUnavailable(f"réponse inattendue ({response.status_code})")
+    return response.content, response.headers.get("content-type", "application/octet-stream")
+
+
 # --- Admin : profils et propositions de service ------------------------------
 # Le backend revérifie que la personne est admin (`not_admin` sinon).
 

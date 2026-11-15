@@ -547,3 +547,101 @@ def test_page_is_never_cached_and_links_its_files_by_content(client):
         digest = hashlib.sha256(content).hexdigest()[:12]
         assert f"/static/{name}?v={digest}" in page.text
         assert client.get(f"/static/{name}?v={digest}").status_code == 200
+
+
+# --- Nouveau service : demande à l'équipe, avec photos des réalisations ------------
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+
+
+@pytest.fixture
+def photos_dir(tmp_path, monkeypatch):
+    """Photos gardées (chiffrées) dans un dossier du test, jamais dans le dépôt."""
+    monkeypatch.setenv("FILES_DIR", str(tmp_path / "fichiers"))
+    return tmp_path / "fichiers"
+
+
+def _upload(client, data: bytes = PNG, telegram_id: int = CLIENT_ID, user_id: int | None = None):
+    return client.post(
+        f"/api/provider/{telegram_id}/photos",
+        content=data,
+        headers={**_auth(user_id or telegram_id), "Content-Type": "image/jpeg"},
+    )
+
+
+def test_a_verified_provider_asks_the_team_for_a_new_service_with_photos(client, live_backend, photos_dir):
+    live_backend.provider(CLIENT_ID)
+    direct = client.post(
+        f"/api/provider/{CLIENT_ID}/services",
+        json={"services": ["service_plomberie", "service_nettoyage"]},
+        headers=_auth(),
+    )
+    assert (direct.status_code, direct.headers["X-Nexis-Code"]) == (400, "service_needs_review")
+
+    uploaded = _upload(client)
+    assert uploaded.status_code == 200
+    photo_id = uploaded.json()["photo_id"]
+    stored = list(photos_dir.rglob(photo_id))
+    assert len(stored) == 1 and PNG not in stored[0].read_bytes(), "photo gardée chiffrée"
+
+    asked = client.post(
+        f"/api/provider/{CLIENT_ID}/service-additions",
+        json={"service_key": "service_nettoyage", "description": "3 ans de nettoyage de bureaux", "photo_ids": [photo_id]},
+        headers=_auth(),
+    )
+    assert asked.status_code == 200
+    body = asked.json()
+    assert "service_nettoyage" not in body["provider"]["services"], "actif seulement après validation"
+    assert [(item["service_key"], item["status"]) for item in body["service_additions"]] == [("service_nettoyage", "pending")]
+
+    again = client.post(
+        f"/api/provider/{CLIENT_ID}/service-additions", json={"service_key": "service_nettoyage"}, headers=_auth()
+    )
+    assert (again.status_code, again.headers["X-Nexis-Code"]) == (400, "service_addition_pending")
+
+    profile = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth()).json()
+    assert [item["status"] for item in profile["service_additions"]] == ["pending"]
+
+    addition_id = body["service_additions"][0]["id"]
+    cancelled = client.post(f"/api/provider/{CLIENT_ID}/service-additions/{addition_id}/cancel", json={}, headers=_auth())
+    assert cancelled.status_code == 200
+    assert [item["status"] for item in cancelled.json()["service_additions"]] == ["cancelled"]
+    missing = client.post(f"/api/provider/{CLIENT_ID}/service-additions/999999/cancel", json={}, headers=_auth())
+    assert (missing.status_code, missing.headers["X-Nexis-Code"]) == (404, "service_addition_not_found")
+
+
+def test_photo_uploads_are_checked_and_belong_to_their_sender(client, live_backend, photos_dir):
+    live_backend.provider(CLIENT_ID)
+    live_backend.provider(OTHER_ID)
+
+    not_an_image = _upload(client, b"%PDF-1.7 pas une photo")
+    too_large = _upload(client, PNG + b"\x00" * (mini_app_module.MAX_PHOTO_BYTES))
+    empty = _upload(client, b"")
+    as_someone_else = _upload(client, telegram_id=OTHER_ID, user_id=CLIENT_ID)
+    assert (not_an_image.status_code, not_an_image.headers["X-Nexis-Code"]) == (415, "unsupported_file_type")
+    assert (too_large.status_code, too_large.headers["X-Nexis-Code"]) == (413, "file_too_large")
+    assert (empty.status_code, empty.headers["X-Nexis-Code"]) == (400, "empty_file")
+    assert as_someone_else.status_code == 403
+
+    others_photo = _upload(client, telegram_id=OTHER_ID).json()["photo_id"]
+    stolen = client.post(
+        f"/api/provider/{CLIENT_ID}/service-additions",
+        json={"service_key": "service_nettoyage", "photo_ids": [others_photo]},
+        headers=_auth(),
+    )
+    assert (stolen.status_code, stolen.headers["X-Nexis-Code"]) == (400, "invalid_photos")
+    assert live_backend.profile(CLIENT_ID)["provider"]["services"] == ["service_plomberie"]
+
+
+def test_every_text_of_the_mini_app_exists_in_each_language():
+    """Chaque clé t("...") de main.js a son texte en français, lingala et anglais."""
+    import re
+
+    script = (ROOT / "mini_app" / "static" / "main.js").read_text(encoding="utf-8")
+    texts = (ROOT / "mini_app" / "static" / "i18n.js").read_text(encoding="utf-8")
+    keys = set(re.findall(r'\bt\("([a-z_]+)"', script))
+    blocks = re.split(r"\n  (?:fr|ln|en): \{", texts)[1:]
+    assert len(blocks) == 3
+    for block in blocks:
+        missing = sorted(key for key in keys if not re.search(rf"^    {key}:", block, re.M))
+        assert not missing, missing

@@ -28,11 +28,11 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, InputMediaPhoto, Message
 from dotenv import load_dotenv
 
 from messages import get_message
-from telegram_bot import backend_client
+from telegram_bot import backend_client, catalogue
 from telegram_bot.backend_client import (
     BackendUnavailable,
     MoneyRefused,
@@ -52,6 +52,7 @@ from telegram_bot.keyboards import (
     clavier_admin_mismatch,
     clavier_admin_payout,
     clavier_admin_provider,
+    clavier_admin_service_addition,
     clavier_admin_service_request,
 )
 
@@ -85,7 +86,14 @@ class AdminDisputeSplit(StatesGroup):
     percentage = State()
 
 
-STAT_KEYS = ("users", "providers", "providers_pending", "missions", "pending_services", "pending_client_requests", "disputes")
+class AdminAdditionReason(StatesGroup):
+    note = State()
+
+
+STAT_KEYS = (
+    "users", "providers", "providers_pending", "missions", "pending_services", "pending_service_additions",
+    "pending_client_requests", "disputes",
+)
 
 
 async def _admin_stats(admin_telegram_id: int) -> dict:
@@ -110,6 +118,7 @@ async def cmd_admin(message: Message):
         f"👥 Clients : <b>{stats['users']}</b>\n"
         f"🔧 Prestataires : <b>{stats['providers']}</b> (à vérifier : <b>{stats['providers_pending']}</b>)\n"
         f"📋 Missions : <b>{stats['missions']}</b>\n"
+        f"🆕 Services à valider : <b>{stats['pending_service_additions']}</b>\n"
         f"➕ Services en attente : <b>{stats['pending_services']}</b>\n"
         f"🙋 Besoins des clients : <b>{stats['pending_client_requests']}</b>\n"
         f"⚠️ Litiges : <b>{stats['disputes']}</b>",
@@ -157,6 +166,7 @@ async def admin_home(callback: CallbackQuery):
         f"👥 Clients : <b>{stats['users']}</b>\n"
         f"🔧 Prestataires : <b>{stats['providers']}</b> (à vérifier : <b>{stats['providers_pending']}</b>)\n"
         f"📋 Missions : <b>{stats['missions']}</b>\n"
+        f"🆕 Services à valider : <b>{stats['pending_service_additions']}</b>\n"
         f"➕ Services en attente : <b>{stats['pending_services']}</b>\n"
         f"🙋 Besoins des clients : <b>{stats['pending_client_requests']}</b>\n"
         f"⚠️ Litiges : <b>{stats['disputes']}</b>",
@@ -178,6 +188,7 @@ async def admin_stats(callback: CallbackQuery):
         f"Clients : <b>{stats['users']}</b>\n"
         f"Prestataires : <b>{stats['providers']}</b> (à vérifier : <b>{stats['providers_pending']}</b>)\n"
         f"Missions : <b>{stats['missions']}</b>\n"
+        f"Nouveaux services à valider : <b>{stats['pending_service_additions']}</b>\n"
         f"Services proposés en attente : <b>{stats['pending_services']}</b>\n"
         f"Litiges ouverts : <b>{stats['disputes']}</b>",
         parse_mode="HTML",
@@ -826,3 +837,165 @@ async def admin_reject_service(callback: CallbackQuery):
         parse_mode="HTML",
     )
     await callback.answer("Service refusé")
+
+
+# --- Nouveau service d'un prestataire vérifié : validé par l'équipe ----------------
+# La demande arrive de la Mini App, avec (ou sans) photos de réalisations ; le
+# service ne devient actif qu'à l'approbation. Les photos sont lues déchiffrées
+# chez le backend (admins seulement) et envoyées ici sans être gardées.
+
+ADDITION_REFUSALS = {
+    "already_decided": "Cette demande n'attend plus de décision (déjà décidée autrement, ou annulée par le prestataire).",
+    "service_addition_not_found": "Demande introuvable.",
+    "too_many_services": "Ce prestataire a déjà le maximum de services : approbation impossible.",
+    "invalid_admin_note": "Motif trop long (500 caractères au plus).",
+}
+MAX_ADMIN_NOTE_LENGTH = 500
+
+
+def _addition_text(addition: dict) -> str:
+    services = ", ".join(catalogue.service_label(key) for key in addition.get("provider_services") or []) or "aucun"
+    lines = [
+        "🆕 <b>Nouveau service à valider</b>",
+        "",
+        f"Référence : <b>AJ-{addition['id']:04d}</b>",
+        f"Prestataire : <b>{html.escape(addition.get('provider_name') or 'Prestataire')}</b>",
+        f"Service demandé : <b>{html.escape(catalogue.service_label(addition['service_key']))}</b>",
+        f"Services actuels : {html.escape(services)}",
+        f"Photos : <b>{len(addition.get('photo_ids') or [])}</b>",
+    ]
+    if addition.get("description"):
+        lines += ["", html.escape(addition["description"])]
+    if addition.get("previously_rejected"):
+        note = addition.get("previous_rejection_note")
+        lines += ["", "⚠️ Déjà refusé une fois" + (f" : {html.escape(note)}" if note else ".")]
+    return "\n".join(lines)
+
+
+async def _send_addition_photos(callback: CallbackQuery, addition: dict) -> None:
+    photos = []
+    for index, file_id in enumerate(addition.get("photo_ids") or []):
+        try:
+            data, _ = await backend_client.admin_file(callback.from_user.id, file_id)
+        except (BackendUnavailable, MoneyRefused):
+            await callback.message.answer(f"⚠️ Photo {index + 1} illisible pour le moment (AJ-{addition['id']:04d}).")
+            continue
+        photos.append(InputMediaPhoto(media=BufferedInputFile(data, filename=f"aj-{addition['id']}-{index + 1}.jpg")))
+    # Un album Telegram : 2 à 10 photos ; une seule part en photo simple.
+    if len(photos) == 1:
+        await callback.message.answer_photo(photos[0].media)
+    elif photos:
+        await callback.message.answer_media_group(photos)
+
+
+@router.callback_query(F.data == "admin_service_additions")
+async def admin_service_additions(callback: CallbackQuery):
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
+        return
+    try:
+        additions = await backend_client.admin_service_additions(callback.from_user.id)
+    except (BackendUnavailable, MoneyRefused) as error:
+        await callback.answer(money_failure_text(0, error, "fr", "service_unavailable"), show_alert=True)
+        return
+    if not additions:
+        await callback.message.edit_text("✅ Aucun nouveau service à valider.", reply_markup=clavier_admin_menu())
+        await callback.answer()
+        return
+    await callback.message.edit_text(
+        f"🆕 <b>Services à valider</b>\n\n{len(additions)} demande(s) de prestataires vérifiés.",
+        parse_mode="HTML",
+        reply_markup=clavier_admin_menu(),
+    )
+    await callback.answer()
+    for addition in additions:
+        await _send_addition_photos(callback, addition)
+        await callback.message.answer(
+            _addition_text(addition), parse_mode="HTML", reply_markup=clavier_admin_service_addition(addition["id"])
+        )
+
+
+async def _decide_addition(bot, admin_telegram_id: int, addition_id: int, approve: bool, note: str = "") -> tuple[str, bool]:
+    """Décision appliquée une seule fois par le backend. Renvoie (texte pour
+    l'admin, réessayer) ; le prestataire n'est prévenu que si cette décision
+    vient d'être prise (`decided_now`), jamais deux fois."""
+    try:
+        result = await backend_client.admin_decide_service_addition(admin_telegram_id, addition_id, approve, note)
+    except MoneyRefused as error:
+        return ADDITION_REFUSALS.get(error.code) or money_failure_text(0, error, "fr"), False
+    except BackendUnavailable as error:
+        return money_failure_text(0, error, "fr", "service_unavailable"), True
+    addition = result["service_addition"]
+    reference = f"AJ-{addition_id:04d}"
+    label = catalogue.service_label(addition["service_key"])
+    if not result.get("decided_now"):
+        return f"Déjà fait : {reference} ({label}).", False
+    telegram_id = addition.get("provider_telegram_id")
+    if telegram_id:
+        lang = addition.get("provider_language") or "fr"
+        service = html.escape(catalogue.service_label(addition["service_key"], lang))
+        if approve:
+            text = get_message("service_addition_approved", lang, service=service)
+        elif addition.get("admin_note"):
+            text = get_message("service_addition_rejected_note", lang, service=service, note=html.escape(addition["admin_note"]))
+        else:
+            text = get_message("service_addition_rejected", lang, service=service)
+        try:
+            await bot.send_message(telegram_id, text, parse_mode="HTML")
+        except Exception:
+            return f"{'✅ Approuvé' if approve else '❌ Refusé'} : {reference} ({label}). Prestataire non prévenu (Telegram).", False
+    return f"{'✅ Approuvé' if approve else '❌ Refusé'} : {reference} ({label}).", False
+
+
+@router.callback_query(F.data.startswith("admin_addition_ok_") | F.data.startswith("admin_addition_no_"))
+async def admin_answer_addition(callback: CallbackQuery):
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
+        return
+    approve = callback.data.startswith("admin_addition_ok_")
+    addition_id = int(callback.data.rsplit("_", 1)[1])
+    text, retry = await _decide_addition(callback.bot, callback.from_user.id, addition_id, approve)
+    if retry:
+        await callback.answer(text, show_alert=True)
+        return
+    await callback.message.edit_text(text)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_addition_why_"))
+async def admin_addition_ask_reason(callback: CallbackQuery, state: FSMContext):
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
+        return
+    addition_id = int(callback.data.rsplit("_", 1)[1])
+    await state.set_state(AdminAdditionReason.note)
+    await state.update_data(addition_reason_id=addition_id)
+    await callback.message.answer(
+        f"✍️ AJ-{addition_id:04d} : écris le motif du refus. Le prestataire le recevra tel quel, dans le message "
+        "de refus (500 caractères au plus)."
+    )
+    await callback.answer()
+
+
+@router.message(AdminAdditionReason.note)
+async def admin_addition_reason_received(message: Message, state: FSMContext):
+    status = await admin_status(message.from_user.id)
+    if status is None:
+        # Panne : on garde l'état, l'admin renvoie le même motif.
+        await message.answer(get_message("money_backend_unavailable", "fr"))
+        return
+    if not status:
+        await state.clear()
+        return
+    note = (message.text or "").strip()
+    if not note:
+        await message.answer("Écris le motif en texte.")
+        return
+    if len(note) > MAX_ADMIN_NOTE_LENGTH:
+        await message.answer(ADDITION_REFUSALS["invalid_admin_note"])
+        return
+    addition_id = (await state.get_data())["addition_reason_id"]
+    text, retry = await _decide_addition(message.bot, message.from_user.id, addition_id, False, note)
+    if not retry:
+        await state.clear()
+    await message.answer(text)

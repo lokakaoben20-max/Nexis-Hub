@@ -11,7 +11,7 @@ from urllib.parse import parse_qsl
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -51,6 +51,12 @@ class CommunesUpdate(BaseModel):
 class ServiceRequestCreate(BaseModel):
     service_name: str
     description: str
+
+
+class ServiceAdditionCreate(BaseModel):
+    service_key: str = Field(max_length=64)
+    description: str = Field(default="", max_length=500)
+    photo_ids: list[str] = Field(default_factory=list, max_length=10)
 
 
 class StatusUpdate(BaseModel):
@@ -197,6 +203,18 @@ PROFILE_REFUSALS = {
     "provider_not_found": "Prestataire introuvable",
     "provider_not_verified": "Profil en attente de validation par Nexis",
     "provider_suspended": "Profil suspendu par Nexis",
+    "service_needs_review": "Un nouveau service doit etre valide par l'equipe",
+    "service_already_offered": "Tu proposes deja ce service",
+    "service_addition_pending": "Une demande pour ce service attend deja l'equipe",
+    "service_addition_not_found": "Demande introuvable",
+    "already_decided": "L'equipe a deja repondu a cette demande",
+    "invalid_photos": "Photos invalides",
+    "invalid_description": "Description trop longue",
+    "empty_file": "Photo vide",
+    "file_too_large": "Photo trop lourde",
+    "unsupported_file_type": "Ce fichier n'est pas une photo",
+    "too_many_files": "Trop de photos envoyees aujourd'hui",
+    "file_storage_unavailable": "Envoi de photos indisponible",
 }
 
 
@@ -207,13 +225,27 @@ def refused(status_code: int, code: str, detail: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail=detail, headers={"X-Nexis-Code": code})
 
 
+# Statut HTTP de chaque refus (400 sinon), pour que la page distingue
+# « introuvable », « interdit », « trop lourd »... du simple refus.
+REFUSAL_STATUS = {
+    "provider_not_found": 404,
+    "service_addition_not_found": 404,
+    "provider_not_verified": 403,
+    "provider_suspended": 403,
+    "file_too_large": 413,
+    "unsupported_file_type": 415,
+    "too_many_files": 429,
+    "file_storage_unavailable": 503,
+}
+
+
 async def _backend(call):
     """Résultat d'une demande au backend, ou l'erreur HTTP que la page affiche
     (texte de `detail`)."""
     try:
         return await call
     except MoneyRefused as error:
-        status = 404 if error.code == "provider_not_found" else 403 if error.code in ("provider_not_verified", "provider_suspended") else 400
+        status = REFUSAL_STATUS.get(error.code, 400)
         code = error.code if error.code in PROFILE_REFUSALS else "refused"
         raise refused(status, code, PROFILE_REFUSALS.get(error.code, "Action refusee"))
     except BackendUnavailable:
@@ -242,6 +274,7 @@ async def profile(telegram_id: int, telegram_user: dict = Depends(verify_telegra
     me = await _backend(backend_client.fetch_me(telegram_id))
     catalogue = await _backend(backend_client.fetch_catalogue())
     service_requests = await _backend(backend_client.my_service_requests(telegram_id)) if me["provider"] else []
+    service_additions = await _backend(backend_client.my_service_additions(telegram_id)) if me["provider"] else []
     # Soldes lus dans le registre du backend : backend injoignable = None, la
     # page affiche « indisponible », jamais un chiffre par défaut.
     wallets = await backend_client.fetch_wallets(telegram_id)
@@ -262,6 +295,7 @@ async def profile(telegram_id: int, telegram_user: dict = Depends(verify_telegra
         "client_missions": await my_missions(telegram_id, "client"),
         "provider_missions": await my_missions(telegram_id, "provider"),
         "service_requests": service_requests,
+        "service_additions": service_additions,
         "wallet": wallet if isinstance(wallet, dict) else None,
         "wallet_history": wallet_history,
         "available_services": {service["key"]: service["names"]["fr"] for service in catalogue["services"]},
@@ -355,6 +389,59 @@ async def request_missing_service(
     request = await _backend(backend_client.propose_service(telegram_id, service_name, description))
     service_requests = await _backend(backend_client.my_service_requests(telegram_id))
     return {"status": "ok", "request_id": request["id"], "service_requests": service_requests}
+
+
+# Photo envoyée depuis le téléphone (déjà réduite par la page) : au plus la
+# limite du backend, jamais gardée ici, transmise telle quelle.
+MAX_PHOTO_BYTES = 5 * 1024 * 1024
+
+
+async def _bounded_body(request: Request, limit: int) -> bytes:
+    declared = request.headers.get("content-length")
+    if declared is not None and declared.isdigit() and int(declared) > limit:
+        raise refused(413, "file_too_large", PROFILE_REFUSALS["file_too_large"])
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            raise refused(413, "file_too_large", PROFILE_REFUSALS["file_too_large"])
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+@app.post("/api/provider/{telegram_id}/photos")
+async def upload_photo(telegram_id: int, request: Request, telegram_user: dict = Depends(verify_telegram_init_data)):
+    """Une photo de réalisation pour une demande d'ajout de service : le
+    backend vérifie son type réel et la garde chiffrée."""
+    require_same_telegram_user(telegram_id, telegram_user)
+    data = await _bounded_body(request, MAX_PHOTO_BYTES)
+    stored = await _backend(backend_client.upload_service_photo(telegram_id, data))
+    return {"status": "ok", "photo_id": stored["id"]}
+
+
+@app.post("/api/provider/{telegram_id}/service-additions")
+async def request_service_addition(
+    telegram_id: int, payload: ServiceAdditionCreate, telegram_user: dict = Depends(verify_telegram_init_data)
+):
+    """Demande d'un nouveau service, examinée par l'équipe avant d'être active."""
+    require_same_telegram_user(telegram_id, telegram_user)
+    await _backend(
+        backend_client.request_service_addition(telegram_id, payload.service_key, payload.description.strip(), payload.photo_ids)
+    )
+    me = await _backend(backend_client.fetch_me(telegram_id))
+    additions = await _backend(backend_client.my_service_additions(telegram_id))
+    return {"status": "ok", "provider": page_provider(me["provider"]), "service_additions": additions}
+
+
+@app.post("/api/provider/{telegram_id}/service-additions/{addition_id}/cancel")
+async def cancel_service_addition(
+    telegram_id: int, addition_id: int, telegram_user: dict = Depends(verify_telegram_init_data)
+):
+    require_same_telegram_user(telegram_id, telegram_user)
+    await _backend(backend_client.cancel_service_addition(telegram_id, addition_id))
+    me = await _backend(backend_client.fetch_me(telegram_id))
+    additions = await _backend(backend_client.my_service_additions(telegram_id))
+    return {"status": "ok", "provider": page_provider(me["provider"]), "service_additions": additions}
 
 
 @app.post("/api/provider/{telegram_id}/status")
