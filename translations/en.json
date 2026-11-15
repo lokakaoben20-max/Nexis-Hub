@@ -146,7 +146,7 @@
   "button_client_need": "💡 My need is not in the list",
   "client_need_prompt": "💡 <b>Your need is not in the list?</b>\n\nWrite in one message what you need and your commune. The Nexis Hub team reads it and answers you here.",
   "client_need_invalid": "Describe your need in a few words (between 10 and 1000 characters).",
-  "client_need_sent": "✅ <b>Your request has been received.</b>\n\nReference: <b>{reference}</b>\nNexis Hub will review your request and answer you in this chat. No payment is asked.",
+  "client_need_sent": "✅ <b>Your request has been received.</b>\n\nReference: <b>{reference}</b>\nNexis Hub will review your request and get back to you. No payment is asked.",
   "client_need_accepted": "✅ <b>Nexis Hub answer</b> ({reference})\n\nWe are taking care of your need. The team will contact you as soon as a provider can do it.",
   "client_need_rejected": "<b>Nexis Hub answer</b> ({reference})\n\nThis service is not available yet. Thank you for letting us know.",
   "money_error_too_many_pending_requests": "You already have several requests waiting. Wait for the team's answer before sending another one.",
