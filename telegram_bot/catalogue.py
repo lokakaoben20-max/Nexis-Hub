@@ -21,6 +21,10 @@ SERVICES: dict[str, str] = {}
 COMMUNES: list[tuple[str, str]] = []
 _NAMES: dict[str, dict[str, str]] = {}
 _ICONS: dict[str, str] = {}
+# Règles du choix des services d'un prestataire (backend, `GET /api/services`) :
+# nombre maximum et services qu'il ne peut pas prendre. Le backend refuse de
+# toute façon ; le bot s'en sert pour n'afficher que ce qui sera accepté.
+PROVIDER_RULES: dict = {"max_services": None, "excluded_services": ()}
 
 logger = logging.getLogger("nexis.bot")
 
@@ -47,6 +51,10 @@ def fill(body: dict) -> None:
             for item in body["services"]
         ]
         communes = [str(name) for name in body["communes"]]
+        max_services = body.get("provider_max_services")
+        excluded_services = tuple(str(key) for key in body.get("provider_excluded_services") or ())
+        if max_services is not None and (not isinstance(max_services, int) or max_services < 1):
+            raise TypeError("provider_max_services")
     except (KeyError, TypeError) as error:
         raise CatalogueUnavailable(f"catalogue illisible : {error!r}") from error
     if not services or not communes:
@@ -65,6 +73,7 @@ def fill(body: dict) -> None:
         _NAMES[key] = names
         _ICONS[key] = icon
     COMMUNES[:] = list(zip(communes, callbacks))
+    PROVIDER_RULES.update(max_services=max_services, excluded_services=excluded_services)
 
 
 async def load(base_url: str, headers: dict, attempts: int = 10, delay: float = 3.0) -> None:
@@ -101,3 +110,24 @@ def service_label(key: str, lang: str = "fr") -> str:
 
 def commune_from_callback(data: str) -> str | None:
     return next((name for name, callback_data in COMMUNES if callback_data == data), None)
+
+
+def provider_service_keys(selected=()) -> list[str]:
+    """Services qu'un prestataire peut voir dans sa liste : le catalogue sans
+    les services exclus, sauf ceux qu'il a déjà (profil d'avant la règle)."""
+    excluded = PROVIDER_RULES["excluded_services"]
+    return [key for key in SERVICES if key not in excluded or key in selected]
+
+
+def provider_service_refusal(selected, key: str, original=()) -> str | None:
+    """Pourquoi un prestataire ne peut pas ajouter `key` à `selected`, ou None.
+    `original` = ses services enregistrés : les reprendre est toujours permis
+    (le backend accepte une liste qui n'ajoute rien)."""
+    if key in original:
+        return None
+    if key in PROVIDER_RULES["excluded_services"]:
+        return "service_not_for_providers"
+    max_services = PROVIDER_RULES["max_services"]
+    if max_services is not None and len(selected) >= max_services:
+        return "too_many_services"
+    return None

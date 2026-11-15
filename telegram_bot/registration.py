@@ -79,6 +79,12 @@ async def _unavailable(callback: CallbackQuery, lang: str, error: Exception | No
     await callback.answer(text, show_alert=True)
 
 
+async def _service_refused(callback: CallbackQuery, refusal: str, lang: str) -> None:
+    """Service que le prestataire ne peut pas ajouter : la liste ne change pas."""
+    max_services = catalogue.PROVIDER_RULES["max_services"]
+    await callback.answer(get_message(f"provider_{refusal}", lang, max=max_services), show_alert=True)
+
+
 async def _choisir_langue(callback: CallbackQuery, state: FSMContext, lang: str, intro: str):
     """Choix de langue à l'écran d'accueil.
 
@@ -280,6 +286,10 @@ async def choisir_service_prestataire(callback: CallbackQuery, state: FSMContext
     if service_key in selected:
         selected.remove(service_key)
     else:
+        refusal = catalogue.provider_service_refusal(selected, service_key)
+        if refusal:
+            await _service_refused(callback, refusal, data.get("language", "fr"))
+            return
         selected.append(service_key)
 
     await state.update_data(provider_services=selected)
@@ -556,7 +566,7 @@ async def modifier_services_prestataire(callback: CallbackQuery, state: FSMConte
 
     selected_services = list(provider["services"])
     await state.set_state(ProviderServicesEdit.services)
-    await state.update_data(provider_services_edit=selected_services, language=lang)
+    await state.update_data(provider_services_edit=selected_services, provider_services_saved=list(selected_services), language=lang)
     await callback.message.edit_text(
         get_message("provider_edit_services", lang),
         parse_mode="HTML",
@@ -571,13 +581,17 @@ async def choisir_service_modification(callback: CallbackQuery, state: FSMContex
     data = await state.get_data()
     selected = data.get("provider_services_edit", [])
 
+    lang = data.get("language", "fr")
     if service_key in selected:
         selected.remove(service_key)
     else:
+        refusal = catalogue.provider_service_refusal(selected, service_key, data.get("provider_services_saved", []))
+        if refusal:
+            await _service_refused(callback, refusal, lang)
+            return
         selected.append(service_key)
 
     await state.update_data(provider_services_edit=selected)
-    lang = data.get("language", "fr")
     await callback.message.edit_reply_markup(reply_markup=clavier_modifier_services(selected, lang))
     await callback.answer()
 

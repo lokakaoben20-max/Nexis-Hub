@@ -226,6 +226,37 @@ def test_services_can_be_updated_after_registration(client):
     assert set(response.json()["provider"]["services"]) == {"service_nettoyage", "service_jardinage"}
 
 
+def test_a_provider_keeps_at_most_three_services_and_never_other(client):
+    _register(client)
+    four = ["service_plomberie", "service_nettoyage", "service_jardinage", "service_coiffure"]
+    too_many = client.post(f"/api/provider/{CLIENT_ID}/services", json={"services": four}, headers=_auth())
+    other = client.post(f"/api/provider/{CLIENT_ID}/services", json={"services": ["service_autre"]}, headers=_auth())
+
+    assert (too_many.status_code, too_many.headers["X-Nexis-Code"]) == (400, "too_many_services")
+    assert (other.status_code, other.headers["X-Nexis-Code"]) == (400, "service_not_for_providers")
+    profile = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth()).json()
+    assert profile["provider"]["services"] == ["service_plomberie"], "refus : rien de changé"
+    assert (profile["max_services"], profile["provider_excluded_services"]) == (3, ["service_autre"])
+
+
+def test_a_provider_changes_his_communes_himself(client):
+    _register(client)
+    response = client.post(f"/api/provider/{CLIENT_ID}/communes", json={"communes": ["Lemba", "Gombe"]}, headers=_auth())
+    assert response.status_code == 200
+    assert sorted(response.json()["provider"]["communes"]) == ["Gombe", "Lemba"]
+
+    empty = client.post(f"/api/provider/{CLIENT_ID}/communes", json={"communes": []}, headers=_auth())
+    unknown = client.post(f"/api/provider/{CLIENT_ID}/communes", json={"communes": ["Bruxelles"]}, headers=_auth())
+    assert (empty.status_code, empty.headers["X-Nexis-Code"]) == (400, "communes_required")
+    assert (unknown.status_code, unknown.headers["X-Nexis-Code"]) == (400, "unknown_commune")
+
+
+def test_cannot_change_another_providers_communes(client):
+    _register(client, telegram_id=OTHER_ID)
+    response = client.post(f"/api/provider/{OTHER_ID}/communes", json={"communes": ["Lemba"]}, headers=_auth())
+    assert response.status_code == 403
+
+
 def test_status_update_rejects_unknown_value(client):
     _register(client)
     response = client.post(
@@ -365,6 +396,16 @@ def test_profile_shows_the_registry_wallet_of_the_verified_user(client, live_bac
     assert wallet["wallet_balance_cdf"] == 0.0
 
 
+def test_profile_shows_secured_money_and_wallet_history(client, live_backend):
+    live_backend.credit_wallet(CLIENT_ID, 12.5)
+    mission_id = _paid_mission_for_provider(live_backend)
+
+    body = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth()).json()
+
+    assert body["wallet"]["secured_usd"] == float(live_backend.mission(mission_id).net_provider)
+    assert [(entry["currency"], entry["amount"]) for entry in body["wallet_history"]] == [("USD", "12.50")]
+
+
 def test_profile_lists_the_backend_missions_by_role(client, live_backend):
     ordered = live_backend.new_mission(CLIENT_ID, service="service_plomberie")
     entrusted = _paid_mission_for_provider(live_backend)
@@ -471,6 +512,7 @@ def test_provider_missions_show_the_providers_share(client, live_backend):
 
     assert mission["id"] == mission_id
     assert mission["net_provider"] == live_backend.mission(mission_id).net_provider
+    assert {"description", "urgent", "release_after"} <= set(mission), "écran de détail de la mission"
 
 
 def test_every_error_code_of_the_mini_app_has_a_text_in_each_language():

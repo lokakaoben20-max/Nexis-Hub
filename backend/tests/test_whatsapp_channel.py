@@ -386,7 +386,13 @@ def test_whatsapp_registration_never_gives_the_provider_role(client, backend):
 def test_whatsapp_client_reads_its_own_wallet_only(client):
     account_id = register(client).json()["account"]["account_id"]
     wallet = client.get("/api/me/wallet", headers=as_whatsapp()).json()["wallet"]
-    assert wallet == {"account_id": account_id, "wallet_balance_usd": 0.0, "wallet_balance_cdf": 0.0}
+    assert wallet == {
+        "account_id": account_id,
+        "wallet_balance_usd": 0.0,
+        "wallet_balance_cdf": 0.0,
+        "secured_usd": 0.0,
+        "secured_cdf": 0.0,
+    }
 
 
 def test_unknown_whatsapp_client_has_no_wallet_and_no_missions(client, backend):

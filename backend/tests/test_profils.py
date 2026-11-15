@@ -157,6 +157,62 @@ def test_module_b_comes_from_the_catalogue(db):
     assert profils.provider_module(db, provider.account_id) == "B"
 
 
+# --- Limite de services et services exclus (décision du 2026-11-15) ---------
+
+THREE = ["service_plomberie", "service_electricite", "service_nettoyage"]
+
+
+def test_a_provider_chooses_at_most_three_services(db):
+    assert profils.MAX_PROVIDER_SERVICES == 3
+    provider, _ = register(db, 7, services=THREE)
+    assert sorted(profils.provider_services(db, provider.account_id)) == sorted(THREE)
+
+    refused("too_many_services", profils.set_provider_services, db, provider.account_id, [*THREE, "service_coiffure"])
+    db.rollback()
+    assert sorted(profils.provider_services(db, provider.account_id)) == sorted(THREE), "refus : rien de changé"
+
+
+def test_a_new_registration_with_four_services_is_refused(db):
+    refused("too_many_services", register, db, 7, services=[*THREE, "service_coiffure"])
+    db.rollback()
+    assert profils.provider_profile(db, account(db, 7)) is None
+
+
+def test_other_service_is_not_for_providers(db):
+    assert "service_autre" in profils.PROVIDER_EXCLUDED_SERVICES
+    refused("service_not_for_providers", register, db, 7, services=["service_autre"])
+    db.rollback()
+    provider, _ = register(db, 8)
+    refused("service_not_for_providers", profils.set_provider_services, db, provider.account_id, ["service_plomberie", "service_autre"])
+
+
+def _legacy_services(db, account_id, keys):
+    """Services écrits avant la règle, directement en base."""
+    db.query(ProviderService).filter(ProviderService.account_id == account_id).delete()
+    db.add_all(ProviderService(account_id=account_id, service_key=key) for key in keys)
+    db.commit()
+
+
+def test_a_provider_from_before_the_rule_keeps_his_services_but_cannot_add(db):
+    provider, _ = register(db, 7)
+    five = [*THREE, "service_coiffure", "service_autre"]
+    _legacy_services(db, provider.account_id, five)
+
+    # Il garde tout, même en se réinscrivant avec la même liste.
+    register(db, 7, services=five)
+    assert sorted(profils.provider_services(db, provider.account_id)) == sorted(five)
+    # Il retire : accepté, même s'il reste au-dessus de la limite.
+    profils.set_provider_services(db, provider.account_id, five[:4])
+    db.commit()
+    assert sorted(profils.provider_services(db, provider.account_id)) == sorted(five[:4])
+    # Il ajoute : refusé tant qu'il est au-dessus de la limite.
+    refused("too_many_services", profils.set_provider_services, db, provider.account_id, [*five[:3], "service_jardinage"])
+    db.rollback()
+    # « Autre » retiré ne revient pas.
+    refused("service_not_for_providers", profils.set_provider_services, db, provider.account_id, ["service_autre"])
+    db.rollback()
+
+
 # --- Statuts ------------------------------------------------------------------
 
 

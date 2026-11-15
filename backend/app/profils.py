@@ -53,6 +53,13 @@ SELF_STATUSES = ("available", "offline")
 # Au 3e refus de mission d'affilée, le prestataire disponible passe en pause.
 MAX_CONSECUTIVE_DECLINES = 3
 
+# Un prestataire propose au plus MAX_PROVIDER_SERVICES services, et jamais un
+# service de PROVIDER_EXCLUDED_SERVICES (« Autre service » ne dit rien de son
+# métier ; s'il manque le sien, il le propose). Décision de Ben, 2026-11-15.
+# Un profil d'avant la règle garde ce qu'il a : il peut retirer, pas ajouter.
+MAX_PROVIDER_SERVICES = 3
+PROVIDER_EXCLUDED_SERVICES = ("service_autre",)
+
 # Classement des prestataires éligibles.
 BADGE_SCORES = {"partner": 30, "expert": 20, "premium": 10, "verified": 5, "pending": 0}
 # Nombre de missions terminées à partir duquel le taux de succès devient un
@@ -96,6 +103,27 @@ def _checked_services(db: Session, service_keys) -> list[str]:
     if any(key not in known for key in keys):
         raise ProfileRefused("unknown_service", 400)
     return keys
+
+
+def _checked_provider_services(db: Session, service_keys, current: list[str]) -> list[str]:
+    """Services d'un prestataire : ceux du catalogue, au plus
+    MAX_PROVIDER_SERVICES, sans service exclu. `current` = ses services
+    actuels : un service exclu qu'il a déjà, ou une liste déjà trop longue,
+    reste accepté tant que la demande n'ajoute rien."""
+    keys = _checked_services(db, service_keys)
+    added = [key for key in keys if key not in current]
+    if any(key in PROVIDER_EXCLUDED_SERVICES for key in added):
+        raise ProfileRefused("service_not_for_providers", 400)
+    if len(keys) > MAX_PROVIDER_SERVICES and added:
+        raise ProfileRefused("too_many_services", 400)
+    return keys
+
+
+def _current_services(db: Session, account_id: int) -> list[str]:
+    return [
+        row.service_key
+        for row in db.query(ProviderService).filter(ProviderService.account_id == account_id).all()
+    ]
 
 
 def _checked_communes(db: Session, commune_names) -> list[str]:
@@ -303,7 +331,7 @@ def register_provider(
     account = _locked_account(db, account_id)
     full_name = _checked_name(full_name)
     phone_number = _checked_phone(phone_number)
-    service_keys = _checked_services(db, services)
+    service_keys = _checked_provider_services(db, services, _current_services(db, account_id))
     commune_names = _checked_communes(db, communes)
     if id_document_file_id is not None:
         id_document_file_id = _checked_file_id(id_document_file_id)
@@ -354,7 +382,7 @@ def register_provider(
 
 def set_provider_services(db: Session, account_id: int, services) -> ProviderProfile:
     provider = _locked_provider(db, account_id)
-    _replace_services(db, account_id, _checked_services(db, services))
+    _replace_services(db, account_id, _checked_provider_services(db, services, _current_services(db, account_id)))
     provider.updated_at = _now()
     db.flush()
     return provider
