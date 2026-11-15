@@ -313,8 +313,18 @@ def _ensure_provider(test_client, telegram_id, service, commune):
         return
     services = list(dict.fromkeys([*provider["services"], service]))
     communes = list(dict.fromkeys([*provider["communes"], commune]))
-    if services != provider["services"]:
-        assert test_client.put("/api/me/provider-profile/services", json={"services": services}, headers=_as(telegram_id)).status_code == 200
+    for added in (key for key in services if key not in provider["services"]):
+        # Un vérifié n'ajoute pas un service lui-même : demande, puis
+        # approbation de l'équipe par la règle du backend.
+        asked = test_client.post(
+            "/api/me/provider-profile/service-additions", json={"service_key": added}, headers=_as(telegram_id)
+        )
+        assert asked.status_code == 200, asked.json()
+        from backend.app import profils
+
+        with importlib.import_module("backend.app.database").SessionLocal() as db:
+            profils.decide_service_addition(db, asked.json()["service_addition"]["id"], True, None)
+            db.commit()
     if communes != provider["communes"]:
         assert test_client.put("/api/me/provider-profile/communes", json={"communes": communes}, headers=_as(telegram_id)).status_code == 200
 

@@ -14,6 +14,8 @@ Les messages d'erreur nomment les variables, jamais leur valeur.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import os
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
@@ -27,7 +29,16 @@ TAUX = ("COLLECTION_FEE_RATE", "PAYOUT_FEE_RATE")
 MONTANTS_PAR_DEVISE = ("PAYOUT_FEE_FIXED", "PAYOUT_MINIMUM", "PAYOUT_AUTO_LIMIT")
 
 ROLES = {
-    "backend": ("DATABASE_URL", "BACKEND_API_KEY_TELEGRAM", "APP_CODE_HMAC_KEY", "BOT_TOKEN", "PAYMENT_GATEWAY"),
+    "backend": (
+        "DATABASE_URL",
+        "BACKEND_API_KEY_TELEGRAM",
+        "APP_CODE_HMAC_KEY",
+        "BOT_TOKEN",
+        "PAYMENT_GATEWAY",
+        # Photos envoyées par les personnes (backend/app/fichiers.py).
+        "FILES_DIR",
+        "FILES_ENCRYPTION_KEY",
+    ),
     "taches": ("DATABASE_URL", "BOT_TOKEN", "PAYMENT_GATEWAY"),
     "migration": ("DATABASE_URL",),
     "bot": ("BOT_TOKEN", "BACKEND_BASE_URL", "BACKEND_API_KEY_TELEGRAM", "REDIS_URL", "MINI_APP_URL", "BOT_RUN_MODE"),
@@ -102,6 +113,15 @@ def problemes(role: str) -> list[str]:
         valeur = os.getenv(nom, "").strip()
         if nom in requises and valeur and urlparse(valeur).scheme != "https":
             erreurs.append(f"{nom} doit être en https")
+
+    cle_fichiers = os.getenv("FILES_ENCRYPTION_KEY", "").strip()
+    if "FILES_ENCRYPTION_KEY" in requises and cle_fichiers:
+        try:
+            longueur = len(base64.urlsafe_b64decode(cle_fichiers))
+        except (binascii.Error, ValueError):
+            longueur = 0
+        if longueur != 32:
+            erreurs.append("FILES_ENCRYPTION_KEY doit être 32 octets en base64 (python -m backend.app.fichiers)")
 
     if role in ROLES_ARGENT:
         passerelle = os.getenv("PAYMENT_GATEWAY", "").strip()

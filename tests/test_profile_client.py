@@ -57,10 +57,11 @@ def test_a_provider_registers_waits_for_validation_then_sets_availability(live_b
     live_backend.grant_admin(999)
     asyncio.run(backend_client.admin_decide_provider(999, me["account_id"], "verify"))
     offline = asyncio.run(backend_client.set_my_availability(77, "offline"))
-    services = asyncio.run(backend_client.set_my_services(77, ["service_plomberie", "service_electricite"]))
-
     assert offline["provider"]["status"] == "offline"
-    assert services["provider"]["services"] == ["service_plomberie", "service_electricite"]
+    # Vérifié : un service de plus passe par une demande à l'équipe.
+    with pytest.raises(backend_client.MoneyRefused) as refused:
+        asyncio.run(backend_client.set_my_services(77, ["service_plomberie", "service_electricite"]))
+    assert refused.value.code == "service_needs_review"
 
 
 def test_a_service_outside_the_catalogue_is_refused(live_backend):

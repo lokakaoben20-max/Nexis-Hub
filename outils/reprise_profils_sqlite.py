@@ -287,8 +287,16 @@ def _comparer_prestataire(db, personne, account_id, rapport, changements, etapes
     ignores = int(row.get("consecutive_ignored") or 0)
 
     def etape(acc: int) -> None:
+        # Services repris de SQLite : déjà validés par l'équipe avec le profil.
         profil, cree = profils.register_provider(
-            db, acc, full_name=nom, phone_number=telephone, services=services, communes=communes, **documents
+            db,
+            acc,
+            full_name=nom,
+            phone_number=telephone,
+            services=services,
+            communes=communes,
+            added_services_reviewed=True,
+            **documents,
         )
         if cree and cree_le is not None:
             profil.created_at = cree_le
