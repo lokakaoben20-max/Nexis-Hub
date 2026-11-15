@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 from urllib.parse import parse_qsl
 
@@ -12,7 +13,7 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 import nexis_config
@@ -60,9 +61,28 @@ class ProviderRegistrationCreate(BaseModel):
     language: str = "fr"
 
 
+STATIC_DIR = BASE_DIR / "static"
+_STATIC_LINK = re.compile(r'(?P<attr>(?:src|href)=")/static/(?P<name>[\w.-]+\.(?:css|js))"')
+
+
+def _versioned(match: re.Match) -> str:
+    """Lien vers un fichier de la page, suivi de l'empreinte de son contenu :
+    un fichier changé a une nouvelle adresse, que Telegram ne peut pas
+    servir depuis son cache."""
+    path = STATIC_DIR / match["name"]
+    if not path.is_file():
+        return match[0]
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    return f'{match["attr"]}/static/{match["name"]}?v={digest}"'
+
+
 @app.get("/")
 def index():
-    return FileResponse(BASE_DIR / "static" / "index.html")
+    """La page elle-même n'est jamais gardée en cache (la vue web de
+    Telegram, surtout sur iPhone, garde sinon l'ancienne version) ; ses
+    fichiers le sont, sous une adresse qui change avec leur contenu."""
+    page = _STATIC_LINK.sub(_versioned, (STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+    return HTMLResponse(page, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 @app.get("/health")

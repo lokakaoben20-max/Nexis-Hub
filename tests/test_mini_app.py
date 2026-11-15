@@ -490,3 +490,18 @@ def test_every_error_code_of_the_mini_app_has_a_text_in_each_language():
     for block in blocks:
         missing = [code for code in codes if not re.search(rf"\b{code}:", block)]
         assert not missing, missing
+
+
+# --- La page n'est jamais servie depuis un vieux cache ------------------------------
+
+
+def test_page_is_never_cached_and_links_its_files_by_content(client):
+    page = client.get("/")
+
+    assert page.status_code == 200
+    assert "no-store" in page.headers["Cache-Control"]
+    for name in ("styles.css", "i18n.js", "main.js"):
+        content = (ROOT / "mini_app" / "static" / name).read_bytes()
+        digest = hashlib.sha256(content).hexdigest()[:12]
+        assert f"/static/{name}?v={digest}" in page.text
+        assert client.get(f"/static/{name}?v={digest}").status_code == 200
