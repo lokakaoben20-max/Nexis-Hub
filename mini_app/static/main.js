@@ -745,7 +745,9 @@ function addServiceScreen() {
       subHeader(t("add_service")),
       el("div", { class: "card notice" },
         el("b", { text: t("services_limit_title") }),
-        el("p", { text: t("services_full", { max: limit }) })),
+        el("p", { text: mine.size > limit
+          ? t("services_over", { n: mine.size, max: limit, k: mine.size - limit + 1 })
+          : t("services_full", { max: limit }) })),
       button(t("back_to_services"), () => goBack(), { cls: "btn ghost" }),
     ];
   }
