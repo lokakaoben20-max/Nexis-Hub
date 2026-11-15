@@ -25,6 +25,9 @@ _ICONS: dict[str, str] = {}
 # nombre maximum et services qu'il ne peut pas prendre. Le backend refuse de
 # toute façon ; le bot s'en sert pour n'afficher que ce qui sera accepté.
 PROVIDER_RULES: dict = {"max_services": None, "excluded_services": ()}
+# Services qu'un client ne choisit plus pour une mission (« Autre service » :
+# son besoin part à l'équipe, mission.client_need).
+CLIENT_EXCLUDED_SERVICES: list[str] = []
 
 logger = logging.getLogger("nexis.bot")
 
@@ -53,6 +56,7 @@ def fill(body: dict) -> None:
         communes = [str(name) for name in body["communes"]]
         max_services = body.get("provider_max_services")
         excluded_services = tuple(str(key) for key in body.get("provider_excluded_services") or ())
+        client_excluded = [str(key) for key in body.get("client_excluded_services") or ()]
         if max_services is not None and (not isinstance(max_services, int) or max_services < 1):
             raise TypeError("provider_max_services")
     except (KeyError, TypeError) as error:
@@ -74,6 +78,7 @@ def fill(body: dict) -> None:
         _ICONS[key] = icon
     COMMUNES[:] = list(zip(communes, callbacks))
     PROVIDER_RULES.update(max_services=max_services, excluded_services=excluded_services)
+    CLIENT_EXCLUDED_SERVICES[:] = client_excluded
 
 
 async def load(base_url: str, headers: dict, attempts: int = 10, delay: float = 3.0) -> None:
@@ -110,6 +115,11 @@ def service_label(key: str, lang: str = "fr") -> str:
 
 def commune_from_callback(data: str) -> str | None:
     return next((name for name, callback_data in COMMUNES if callback_data == data), None)
+
+
+def client_service_keys() -> list[str]:
+    """Services qu'un client peut demander comme mission."""
+    return [key for key in SERVICES if key not in CLIENT_EXCLUDED_SERVICES]
 
 
 def provider_service_keys(selected=()) -> list[str]:

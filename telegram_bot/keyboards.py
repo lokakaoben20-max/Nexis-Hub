@@ -289,11 +289,19 @@ def clavier_communes_prestataire(selected_communes=None):
 
 
 def clavier_services(lang: str = "fr"):
+    keys = catalogue.client_service_keys()
     builder = InlineKeyboardBuilder()
-    for key, label in SERVICES.items():
-        builder.button(text=label, callback_data=key)
+    for key in keys:
+        builder.button(text=SERVICES[key], callback_data=key)
+    builder.button(text=get_message("button_client_need", lang), callback_data="client_need")
     builder.button(text=button_label("back", lang), callback_data="profil_client")
-    builder.adjust(2, 2, 2, 2, 1, 1)
+    builder.adjust(*([2] * (len(keys) // 2)), *([1] * (len(keys) % 2)), 1, 1)
+    return builder.as_markup()
+
+
+def clavier_retour_services(lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=button_label("back_services", lang), callback_data="client_demande")
     return builder.as_markup()
 
 
@@ -567,6 +575,14 @@ def clavier_admin_service_request(request_id: int):
     return builder.as_markup()
 
 
+def clavier_admin_client_request(request_id: int):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ On s'en occupe", callback_data=f"admin_client_need_ok_{request_id}")
+    builder.button(text="❌ Pas possible", callback_data=f"admin_client_need_no_{request_id}")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
 def clavier_admin_menu():
     builder = InlineKeyboardBuilder()
     builder.button(text="📊 Statistiques", callback_data="admin_stats")
@@ -575,6 +591,7 @@ def clavier_admin_menu():
     builder.button(text="👥 Clients", callback_data="admin_clients")
     builder.button(text="⚠️ Litiges", callback_data="admin_disputes")
     builder.button(text="➕ Services proposés", callback_data="admin_service_requests")
+    builder.button(text="🙋 Besoins des clients", callback_data="admin_client_requests")
     builder.button(text="💸 Retraits", callback_data="admin_payouts")
     builder.button(text="⚖️ Montants différents", callback_data="admin_mismatches")
     builder.adjust(2)

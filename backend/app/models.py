@@ -827,6 +827,30 @@ class ProviderServiceRequest(Base):
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class ClientServiceRequest(Base):
+    """Besoin d'un client qui n'entre dans aucun service du catalogue : il
+    l'écrit et l'envoie à l'équipe Nexis Hub, qui lui répond. Ni mission ni
+    argent (décision du 2026-11-15, remplace « Autre service » pour les
+    clients)."""
+
+    __tablename__ = "client_service_requests"
+    __table_args__ = (
+        CheckConstraint(f"status IN {_sql_in(SERVICE_REQUEST_STATUSES)}", name="ck_client_service_requests_status"),
+        CheckConstraint(
+            "(status = 'pending' AND reviewed_at IS NULL) OR (status <> 'pending' AND reviewed_at IS NOT NULL)",
+            name="ck_client_service_requests_reviewed",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    description: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class IdempotencyKey(Base):
     """Une action d'écriture déjà faite pour un canal, sous la clé choisie par
     ce canal (WhatsApp : l'identifiant du message, `wamid`). Écrite dans la

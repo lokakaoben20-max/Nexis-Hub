@@ -336,3 +336,57 @@ def test_decline_refusals(api):
     api.post("/api/bot/quotes", json={"mission_id": mission_id, "amount": 20, "currency": "USD", "delay_hours": 2}, headers=tg(PROVIDER))
     assert code(decline(api, mission_id)) == "already_quoted"
     assert api.get("/api/me/profile", headers=tg(PROVIDER)).json()["provider"]["consecutive_ignored"] == 0
+
+
+# --- Besoins des clients hors catalogue (décision du 2026-11-15) --------------
+
+
+def test_other_service_is_no_longer_a_mission_for_clients(api):
+    assert api.get("/api/services", headers=tg(CLIENT)).json()["client_excluded_services"] == ["service_autre"]
+    payload = {
+        "creation_key": "k-autre",
+        "service": "service_autre",
+        "commune": "Gombe",
+        "currency": "USD",
+        "description": "Poser du carrelage",
+        "urgent": False,
+        "media": [],
+        "destination": {"latitude": -4.3, "longitude": 15.3, "landmark": "Près du marché central"},
+    }
+    refused = api.post("/api/bot/missions", json=payload, headers=tg(CLIENT))
+    assert (refused.status_code, code(refused)) == (400, "service_not_requestable")
+
+
+def test_a_client_sends_a_need_and_one_admin_answers_it_once(api):
+    sent = api.post("/api/me/client-requests", json={"description": "  Poser du carrelage   dans la cuisine "}, headers=tg(CLIENT))
+    assert sent.status_code == 200
+    request = sent.json()["client_request"]
+    assert (request["description"], request["status"]) == ("Poser du carrelage dans la cuisine", "pending")
+    assert "client_telegram_id" not in request
+
+    assert code(api.post("/api/me/client-requests", json={"description": "court"}, headers=tg(CLIENT))) == "invalid_description"
+    assert api.get("/api/admin/client-requests", headers=tg(CLIENT)).status_code == 403
+    assert api.get("/api/admin/stats", headers=tg(ADMIN)).json()["stats"]["pending_client_requests"] == 1
+
+    listed = api.get("/api/admin/client-requests", headers=tg(ADMIN)).json()["client_requests"]
+    assert [(item["id"], item["client_telegram_id"]) for item in listed] == [(request["id"], CLIENT)]
+
+    decide = f"/api/admin/client-requests/{request['id']}/decision"
+    assert code(api.post(decide, json={"status": "pending"}, headers=tg(ADMIN))) == "invalid_status"
+    assert api.post(decide, json={"status": "accepted"}, headers=tg(CLIENT)).status_code == 403
+    accepted = api.post(decide, json={"status": "accepted", "admin_note": "On cherche"}, headers=tg(ADMIN))
+    assert (accepted.json()["client_request"]["status"], accepted.json()["client_request"]["client_language"]) == ("accepted", "fr")
+    again = api.post(decide, json={"status": "rejected"}, headers=tg(ADMIN))
+    assert (again.status_code, code(again)) == (409, "already_reviewed")
+    assert code(api.post("/api/admin/client-requests/999/decision", json={"status": "rejected"}, headers=tg(ADMIN))) == "client_request_not_found"
+
+    mine = api.get("/api/me/client-requests", headers=tg(CLIENT)).json()["client_requests"]
+    assert [(item["status"], item["admin_note"]) for item in mine] == [("accepted", "On cherche")]
+    assert api.get("/api/admin/client-requests", headers=tg(ADMIN)).json()["client_requests"] == []
+
+
+def test_a_client_cannot_pile_up_unanswered_needs(api, backend):
+    for index in range(backend.crud.MAX_PENDING_CLIENT_REQUESTS):
+        assert api.post("/api/me/client-requests", json={"description": f"Besoin numéro {index}"}, headers=tg(CLIENT)).status_code == 200
+    refused = api.post("/api/me/client-requests", json={"description": "Un besoin de trop"}, headers=tg(CLIENT))
+    assert (refused.status_code, code(refused)) == (409, "too_many_pending_requests")

@@ -9,6 +9,7 @@ from backend.app import app_auth, ledger, profils
 from backend.app.models import (
     SERVICE_REQUEST_STATUSES,
     BotMission,
+    ClientServiceRequest,
     BotQuote,
     DisputeSettlementOffer,
     BotReview,
@@ -197,6 +198,9 @@ def create_mission(
         raise MissionRefused("invalid_media", 400)
     if service not in {item.key for item in profils.active_services(db)} or commune not in profils.communes(db):
         raise MissionRefused("invalid_mission", 400)
+    if service in profils.CLIENT_EXCLUDED_SERVICES:
+        # Besoin hors catalogue : il part à l'équipe (create_client_request).
+        raise MissionRefused("service_not_requestable", 400)
     latitude, longitude, landmark = checked_destination(destination_latitude, destination_longitude, destination_landmark)
 
     client_account_id = ledger.account_id_for(db, channel, client_external_id, create=True)
@@ -834,6 +838,81 @@ def create_service_request(
     db.commit()
     db.refresh(req)
     return req
+
+
+# --- Besoins des clients hors catalogue ---------------------------------------
+
+MIN_CLIENT_REQUEST_LENGTH = 10
+MAX_CLIENT_REQUEST_LENGTH = 1000
+# Demandes en attente d'une même personne : au-delà, elle attend une réponse.
+MAX_PENDING_CLIENT_REQUESTS = 5
+
+
+def create_client_request(db: Session, account_id: int, description) -> ClientServiceRequest:
+    """Le client écrit un besoin absent du catalogue ; l'équipe Nexis Hub lui
+    répond (`decide_client_request`). Refus : `invalid_description` (400),
+    `too_many_pending_requests` (409)."""
+    description = " ".join(str(description or "").split())
+    if not MIN_CLIENT_REQUEST_LENGTH <= len(description) <= MAX_CLIENT_REQUEST_LENGTH:
+        raise MissionRefused("invalid_description", 400)
+    db.query(NexisAccount).filter(NexisAccount.id == account_id).with_for_update().one()
+    pending = (
+        db.query(func.count(ClientServiceRequest.id))
+        .filter(ClientServiceRequest.account_id == account_id, ClientServiceRequest.status == "pending")
+        .scalar()
+    )
+    if pending >= MAX_PENDING_CLIENT_REQUESTS:
+        raise MissionRefused("too_many_pending_requests")
+    request = ClientServiceRequest(account_id=account_id, description=description, status="pending")
+    db.add(request)
+    db.commit()
+    db.refresh(request)
+    return request
+
+
+def client_requests_of(db: Session, account_id: int, limit: int = 10) -> list[ClientServiceRequest]:
+    return (
+        db.query(ClientServiceRequest)
+        .filter(ClientServiceRequest.account_id == account_id)
+        .order_by(ClientServiceRequest.id.desc())
+        .limit(max(1, min(limit, 50)))
+        .all()
+    )
+
+
+def pending_client_requests(db: Session, limit: int = 10) -> list[ClientServiceRequest]:
+    return (
+        db.query(ClientServiceRequest)
+        .filter(ClientServiceRequest.status == "pending")
+        .order_by(ClientServiceRequest.id)
+        .limit(max(1, min(limit, 50)))
+        .all()
+    )
+
+
+def pending_client_request_count(db: Session) -> int:
+    return db.query(func.count(ClientServiceRequest.id)).filter(ClientServiceRequest.status == "pending").scalar() or 0
+
+
+def decide_client_request(db: Session, request_id: int, status: str, admin_note: str = "") -> ClientServiceRequest:
+    """Réponse de l'équipe, appliquée une seule fois (mise à jour
+    conditionnelle : deux admins en même temps, un seul gagne). Refus :
+    `invalid_status` (400), `client_request_not_found` (404),
+    `already_reviewed` (409)."""
+    if status not in ("accepted", "rejected"):
+        raise MissionRefused("invalid_status", 400)
+    updated = (
+        db.query(ClientServiceRequest)
+        .filter(ClientServiceRequest.id == request_id, ClientServiceRequest.status == "pending")
+        .update({"status": status, "admin_note": admin_note or None, "reviewed_at": datetime.utcnow()})
+    )
+    db.commit()
+    request = db.get(ClientServiceRequest, request_id)
+    if request is None:
+        raise MissionRefused("client_request_not_found", 404)
+    if updated == 0:
+        raise MissionRefused("already_reviewed")
+    return request
 
 
 def get_provider_service_requests(db: Session, provider_account_id: int) -> list[ProviderServiceRequest]:

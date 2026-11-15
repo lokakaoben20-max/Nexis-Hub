@@ -586,6 +586,29 @@ async def admin_service_requests(admin_telegram_id: int) -> list[dict]:
     return body["service_requests"]
 
 
+async def create_client_request(telegram_id: int, description: str) -> dict:
+    """Besoin hors catalogue envoyé à l'équipe Nexis Hub."""
+    body = await _call("POST", "/api/me/client-requests", {"description": description}, actor=telegram_id, expect=("client_request",))
+    return body["client_request"]
+
+
+async def admin_client_requests(admin_telegram_id: int) -> list[dict]:
+    body = await _call("GET", "/api/admin/client-requests", actor=admin_telegram_id, expect=("client_requests",))
+    return body["client_requests"]
+
+
+async def admin_decide_client_request(admin_telegram_id: int, request_id: int, status: str) -> dict:
+    """Une seule réponse par besoin : `already_reviewed` ensuite."""
+    body = await _call(
+        "POST",
+        f"/api/admin/client-requests/{int(request_id)}/decision",
+        {"status": status},
+        actor=admin_telegram_id,
+        expect=("client_request",),
+    )
+    return body["client_request"]
+
+
 async def admin_decide_service_request(admin_telegram_id: int, request_id: int, status: str, admin_note: str) -> dict:
     """Une seule décision par proposition : `already_reviewed` ensuite."""
     body = await _call(
