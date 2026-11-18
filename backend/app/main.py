@@ -1,6 +1,6 @@
 import os
 import secrets
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
@@ -50,14 +50,14 @@ class BotProviderPayload(BaseModel):
 
 class MissionStatusPayload(BaseModel):
     mission_id: int
-    status: str
-    payment_status: str | None = None
+    status: Literal["in_progress", "awaiting_confirmation", "completed"]
+    payment_status: Literal["released"] | None = None
 
 
 class PaymentPayload(BaseModel):
     quote_id: int
-    payment_status: str
-    mission_id: int | None = None
+    payment_status: Literal["paid_escrow"]
+    mission_id: int
 
 
 @app.get("/health")
@@ -78,6 +78,12 @@ def create_bot_user(payload: BotUserPayload):
 
 @app.post("/api/bot/missions", dependencies=[Depends(require_internal_api_key)])
 def create_bot_mission(payload: BotMissionPayload):
+    existing = APP_STATE["missions"].get(payload.mission_id)
+    if existing is not None:
+        if existing["telegram_id"] != payload.telegram_id or existing["service"] != payload.service:
+            raise HTTPException(status_code=409, detail="Mission ID already belongs to another request")
+        return {"status": "ok", "mission": existing}
+
     APP_STATE["missions"][payload.mission_id] = {
         "mission_id": payload.mission_id,
         "telegram_id": payload.telegram_id,
@@ -86,6 +92,8 @@ def create_bot_mission(payload: BotMissionPayload):
         "currency": payload.currency,
         "description": payload.description,
         "urgent": payload.urgent,
+        "status": "pending",
+        "payment_status": "unpaid",
     }
     return {"status": "ok", "mission": APP_STATE["missions"][payload.mission_id]}
 
@@ -108,18 +116,50 @@ def create_bot_provider(payload: BotProviderPayload):
 def update_mission_status(payload: MissionStatusPayload):
     mission = APP_STATE["missions"].get(payload.mission_id)
     if mission is None:
-        return {"status": "not_found"}
+        raise HTTPException(status_code=404, detail="Mission not found")
+
+    current = mission["status"]
+    if payload.status == current:
+        if payload.payment_status is None or payload.payment_status == mission["payment_status"]:
+            return {"status": "ok", "mission": mission}
+        raise HTTPException(status_code=409, detail="Conflicting payment status")
+
+    transitions = {
+        "confirmed": "in_progress",
+        "in_progress": "awaiting_confirmation",
+        "awaiting_confirmation": "completed",
+    }
+    if transitions.get(current) != payload.status:
+        raise HTTPException(status_code=409, detail="Invalid mission status transition")
+    if mission["payment_status"] != "paid_escrow":
+        raise HTTPException(status_code=409, detail="Mission has no confirmed internal payment")
+    if payload.status == "completed":
+        if payload.payment_status != "released":
+            raise HTTPException(status_code=409, detail="Release confirmation required")
+    elif payload.payment_status is not None:
+        raise HTTPException(status_code=409, detail="Payment status cannot change at this step")
+
     mission["status"] = payload.status
-    if payload.payment_status:
+    if payload.payment_status is not None:
         mission["payment_status"] = payload.payment_status
     return {"status": "ok", "mission": mission}
 
 
 @app.post("/api/bot/payments", dependencies=[Depends(require_internal_api_key)])
 def update_payment(payload: PaymentPayload):
-    mission = APP_STATE["missions"].get(payload.mission_id) if payload.mission_id is not None else None
-    if mission is not None:
-        mission["payment_status"] = payload.payment_status
+    # This mirrors an internally confirmed wallet payment; it never charges a payment provider.
+    mission = APP_STATE["missions"].get(payload.mission_id)
+    if mission is None:
+        raise HTTPException(status_code=404, detail="Mission not found")
+
+    if mission["payment_status"] == "paid_escrow" and mission.get("payment_quote_id") == payload.quote_id:
+        return {"status": "ok", "payment_status": payload.payment_status, "mission": mission}
+    if mission["payment_status"] != "unpaid" or mission["status"] not in ("pending", "quoted", "confirmed"):
+        raise HTTPException(status_code=409, detail="Payment already handled or mission not payable")
+
+    mission["payment_status"] = "paid_escrow"
+    mission["payment_quote_id"] = payload.quote_id
+    mission["status"] = "confirmed"
     return {"status": "ok", "payment_status": payload.payment_status, "mission": mission}
 
 
