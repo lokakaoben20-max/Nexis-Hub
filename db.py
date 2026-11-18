@@ -1,17 +1,28 @@
 import json
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 
 DB_PATH = Path(__file__).with_name("nexis_hub.db")
 
 
+@contextmanager
 def get_connection():
-    return sqlite3.connect(DB_PATH)
+    """Transaction fiable, verrous temporises et fermeture garantie."""
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        conn.execute("PRAGMA busy_timeout = 30000")
+        conn.execute("PRAGMA foreign_keys = ON")
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def init_db():
     with get_connection() as conn:
+        conn.execute("PRAGMA journal_mode = WAL")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
