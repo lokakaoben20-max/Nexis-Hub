@@ -6,6 +6,9 @@ on:
       - develop/nexis-unification
     paths:
       - '.github/workflows/postgres-trial.yml'
+      - 'scripts/postgres_trial.py'
+      - 'scripts/preflight_postgres.py'
+      - 'db.py'
   workflow_dispatch:
 
 permissions:
@@ -15,8 +18,22 @@ jobs:
   migration-trial:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nexis_test
+          POSTGRES_PASSWORD: temporary_ci_password
+          POSTGRES_DB: nexis_trial
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nexis_test -d nexis_trial"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
-      NEXIS_MIGRATION_PG_DSN: ${{ secrets.NEXIS_MIGRATION_PG_DSN }}
+      NEXIS_MIGRATION_PG_DSN: postgresql://nexis_test:temporary_ci_password@127.0.0.1:5432/nexis_trial
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,12 +41,6 @@ jobs:
           python-version: '3.12'
       - name: Install trial dependencies
         run: python -m pip install -r requirements-migration.txt
-      - name: Require secret
-        run: |
-          if [ -z "$NEXIS_MIGRATION_PG_DSN" ]; then
-            echo "Missing NEXIS_MIGRATION_PG_DSN secret"
-            exit 1
-          fi
       - name: Create disposable synthetic SQLite backup
         run: |
           python - <<'PY'
@@ -40,7 +51,7 @@ jobs:
           db.init_db()
           db.create_user(987654321, "+243000000000", "Compte fictif")
           PY
-      - name: Import into fresh isolated PostgreSQL schema
+      - name: Import into isolated local PostgreSQL
         run: |
           python scripts/postgres_trial.py \
             --source backups/nexis-trial-synthetic.db \
