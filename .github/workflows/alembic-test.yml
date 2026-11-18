@@ -52,7 +52,7 @@ jobs:
               tables = set(inspect(conn).get_table_names())
               assert {'users', 'providers', 'missions', 'transactions', 'quotes', 'services', 'service_requests', 'reviews', 'platform_settings', 'alembic_version'} <= tables, tables
               version = conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one()
-              assert version == '0002_domain_tables', version
+              assert version == '0003_operational_fields', version
           assert len(models.Base.metadata.tables) == 9
           print('Initial migration verified')
           PY
