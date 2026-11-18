@@ -50,10 +50,10 @@ jobs:
           engine = get_engine()
           with engine.connect() as conn:
               tables = set(inspect(conn).get_table_names())
-              assert {'users', 'providers', 'missions', 'transactions', 'alembic_version'} <= tables, tables
+              assert {'users', 'providers', 'missions', 'transactions', 'quotes', 'services', 'service_requests', 'reviews', 'platform_settings', 'alembic_version'} <= tables, tables
               version = conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one()
-              assert version == '0001_initial_domain', version
-          assert len(models.Base.metadata.tables) == 4
+              assert version == '0002_domain_tables', version
+          assert len(models.Base.metadata.tables) == 9
           print('Initial migration verified')
           PY
       - name: Verify no pending model/schema differences
