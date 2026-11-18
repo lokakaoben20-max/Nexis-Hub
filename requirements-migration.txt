@@ -1,0 +1,2 @@
+# Used only for the isolated PostgreSQL trial importer.
+psycopg[binary]>=3.2,<4
