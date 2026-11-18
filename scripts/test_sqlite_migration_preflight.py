@@ -35,6 +35,21 @@ class PreflightTests(unittest.TestCase):
             report,
         )
 
+    def test_orphaned_mission_reference_is_rejected(self):
+        # Simulate a legacy SQLite backup with foreign keys not enforced.
+        with sqlite3.connect(self.path) as conn:
+            conn.execute(
+                "INSERT INTO missions (user_id, service, commune, description) "
+                "VALUES (?, ?, ?, ?)",
+                (999999, "test-only", "test-only", "orphan reference"),
+            )
+        report = preflight(self.path)
+        self.assertTrue(
+            any("missions: 1 orphaned foreign-key references" in error
+                for error in report["errors"]),
+            report,
+        )
+
     def test_missing_table_is_rejected(self):
         with sqlite3.connect(self.path) as conn:
             conn.execute("DROP TABLE platform_settings")
