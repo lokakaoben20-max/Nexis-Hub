@@ -1,0 +1,43 @@
+name: PostgreSQL migration trial (synthetic data)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migration-trial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NEXIS_MIGRATION_PG_DSN: ${{ secrets.NEXIS_MIGRATION_PG_DSN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install trial dependencies
+        run: python -m pip install -r requirements-migration.txt
+      - name: Require secret
+        run: |
+          if [ -z "$NEXIS_MIGRATION_PG_DSN" ]; then
+            echo "Missing NEXIS_MIGRATION_PG_DSN secret"
+            exit 1
+          fi
+      - name: Create disposable synthetic SQLite backup
+        run: |
+          python - <<'PY'
+          import db
+          from pathlib import Path
+          db.DB_PATH = Path("backups/nexis-trial-synthetic.db")
+          db.DB_PATH.parent.mkdir(exist_ok=True)
+          db.init_db()
+          db.create_user(987654321, "+243000000000", "Compte fictif")
+          PY
+      - name: Import into fresh isolated PostgreSQL schema
+        run: |
+          python scripts/postgres_trial.py \
+            --source backups/nexis-trial-synthetic.db \
+            --schema nexis_trial_${{ github.run_id }}_${{ github.run_attempt }} \
+            --apply
