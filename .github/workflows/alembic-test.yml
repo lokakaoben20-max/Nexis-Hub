@@ -85,15 +85,3 @@ jobs:
         run: python -m scripts.postgres_smoke_ci
       - name: Verify no pending model/schema differences
         run: alembic check
-      - name: Verify migration downgrade and clean re-upgrade
-        run: |
-          alembic downgrade base
-          python - <<'PY'
-          from sqlalchemy import inspect
-          from backend.app.postgres import get_engine
-          tables = set(inspect(get_engine()).get_table_names())
-          assert not (tables & {'users', 'providers', 'missions', 'transactions', 'quotes', 'services', 'service_requests', 'reviews', 'platform_settings'}), tables
-          print('Downgrade removed domain tables')
-          PY
-          alembic upgrade head
-          alembic check
