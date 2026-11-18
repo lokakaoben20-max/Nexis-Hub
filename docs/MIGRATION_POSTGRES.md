@@ -32,6 +32,36 @@ python scripts/backup_sqlite.py --destination backups/nexis-avant-postgres.db
 
 Conserver la sauvegarde dans un emplacement privé et protégé. Les bases et dossiers de sauvegarde sont exclus du suivi Git.
 
+## Étape 2 bis — Schéma PostgreSQL et importation de répétition (outil prêt)
+
+Installer uniquement les dépendances de migration :
+
+```bash
+pip install -r requirements-migration.txt
+```
+
+Prévisualiser le SQL **sans aucune connexion PostgreSQL** :
+
+```bash
+python scripts/postgres_trial.py --source backups/nexis-avant-postgres.db --schema nexis_trial_test
+```
+
+Pour un essai sur **une base PostgreSQL de test isolée**, configurer `NEXIS_MIGRATION_PG_DSN` dans l'environnement (ne jamais committer de mot de passe), puis lancer :
+
+```bash
+python scripts/postgres_trial.py --source backups/nexis-avant-postgres.db --schema nexis_trial_test --apply
+```
+
+L'importateur :
+
+- accepte seulement un schéma `nexis_trial_*` inexistant et ne supprime aucune table ;
+- conserve les identifiants, clés étrangères et contraintes d'unicité ;
+- convertit les champs `REAL` en PostgreSQL `NUMERIC` et les valeurs en `Decimal` ;
+- vérifie les comptes de lignes et les totaux des colonnes financières, avec annulation de la transaction en cas d'erreur ;
+- refuse la base active nommée `nexis_hub.db` : il faut d'abord créer une sauvegarde renommée.
+
+**Limite :** ce schéma reflète SQLite pour tester l'import et n'est pas encore le modèle métier PostgreSQL définitif. Aucun import réel n'a été exécuté depuis ce chat, faute de serveur PostgreSQL de test connecté.
+
 ## Étape 3 — Concilier les modèles (à développer)
 
 Ne pas recopier directement le modèle PostgreSQL de `nexis-hub-v5` :
