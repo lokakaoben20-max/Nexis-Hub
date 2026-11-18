@@ -29,11 +29,27 @@ def preflight(path):
         if check != "ok":
             result["errors"].append("SQLite integrity_check failed")
             return result
-        # Detect orphaned references before PostgreSQL enforces foreign keys.
-        # Report only table names and counts; never expose customer data or IDs.
+        # A broken backup may lack referenced tables. Check presence before
+        # PRAGMA foreign_key_check, which otherwise raises OperationalError.
+        existing = {
+            name for (name,) in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        for name in Base.metadata.tables:
+            if name not in existing:
+                result["errors"].append(f"Missing table: {name}")
+        if result["errors"]:
+            return result
+
+        # Report only aggregate counts; never expose customer data or IDs.
         orphan_counts = {}
-        for table_name, _rowid, _parent, _fk_index in conn.execute("PRAGMA foreign_key_check"):
-            orphan_counts[table_name] = orphan_counts.get(table_name, 0) + 1
+        try:
+            for table_name, _rowid, _parent, _fk_index in conn.execute("PRAGMA foreign_key_check"):
+                orphan_counts[table_name] = orphan_counts.get(table_name, 0) + 1
+        except sqlite3.DatabaseError:
+            result["errors"].append("SQLite foreign-key integrity check failed")
+            return result
         for table_name, count in sorted(orphan_counts.items()):
             result["errors"].append(f"{table_name}: {count} orphaned foreign-key references")
         for name, table in Base.metadata.tables.items():
