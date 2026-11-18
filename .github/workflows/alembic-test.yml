@@ -1,0 +1,60 @@
+name: Alembic isolated PostgreSQL test
+
+on:
+  push:
+    branches: [develop/nexis-unification]
+    paths:
+      - 'backend/app/models.py'
+      - 'backend/app/postgres.py'
+      - 'migrations/**'
+      - 'alembic.ini'
+      - 'requirements-postgres.txt'
+      - '.github/workflows/alembic-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  alembic-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nexis_ci
+          POSTGRES_PASSWORD: ci_only_password
+          POSTGRES_DB: nexis_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U nexis_ci -d nexis_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NEXIS_DATABASE_URL: postgresql+psycopg://nexis_ci:ci_only_password@127.0.0.1:5432/nexis_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-postgres.txt
+      - name: Apply initial migration and inspect tables
+        run: |
+          alembic upgrade head
+          python - <<'PY'
+          from sqlalchemy import inspect, text
+          from backend.app.postgres import get_engine
+          from backend.app import models
+          engine = get_engine()
+          with engine.connect() as conn:
+              tables = set(inspect(conn).get_table_names())
+              assert {'users', 'providers', 'missions', 'transactions', 'alembic_version'} <= tables, tables
+              version = conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one()
+              assert version == '0001_initial_domain', version
+          assert len(models.Base.metadata.tables) == 4
+          print('Initial migration verified')
+          PY
+      - name: Verify no pending model/schema differences
+        run: alembic check
