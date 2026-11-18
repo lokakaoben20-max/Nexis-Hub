@@ -40,7 +40,6 @@ from db import (
     get_user_missions,
     init_db,
     finish_mission,
-    mark_quote_paid,
     mark_quote_paid_with_wallet,
     reject_quote,
     release_payment,
@@ -519,7 +518,7 @@ def clavier_devis_client(quote_id: int):
 
 def clavier_paiement(quote_id: int):
     builder = InlineKeyboardBuilder()
-    builder.button(text="📱 Payer via Mobile Money", callback_data=f"pay_mobile_{quote_id}")
+    builder.button(text="📱 Mobile Money (bientôt)", callback_data=f"pay_mobile_{quote_id}")
     builder.button(text="👛 Payer avec Wallet", callback_data=f"pay_wallet_{quote_id}")
     builder.button(text="⬅️ Plus tard", callback_data="profil_client")
     builder.adjust(1)
@@ -1910,34 +1909,11 @@ async def client_accepte_devis(callback: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("pay_mobile_"))
 async def paiement_mobile_money(callback: CallbackQuery):
-    quote_id = int(callback.data.replace("pay_mobile_", "", 1))
-    payment = mark_quote_paid(quote_id, operator="mobile_money_simulation")
-    quote = payment["quote"]
-
-    await sync_payment_to_backend(quote_id, "paid_escrow", mission_id=quote["mission_id"])
-    await callback.message.edit_text(
-        "✅ <b>Paiement escrow confirmé</b>\n\n"
-        f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"
-        f"Référence paiement : <b>{payment['mobile_money_ref']}</b>\n"
-        f"Total payé : <b>{payment['total_client']:.2f} {quote['currency']}</b>\n"
-        f"Frais Tola / techniques : <b>{payment['tola_fee']:.2f} {quote['currency']}</b>\n\n"
-        "Le montant du devis est maintenant sécurisé. Le prestataire peut commencer.",
-        parse_mode="HTML",
-        reply_markup=clavier_client(get_user_language(callback.from_user.id)),
+    # No real gateway callback exists yet: never credit escrow on a button click.
+    await callback.answer(
+        "Mobile Money indisponible pour le moment. Aucun paiement n'a été enregistré.",
+        show_alert=True,
     )
-
-    await bot.send_message(
-        quote["provider_telegram_id"],
-        "💰 <b>Paiement sécurisé reçu</b>\n\n"
-        f"Mission : <b>NXH-{quote['mission_id']:04d}</b>\n"
-        f"Montant brut : <b>{quote['amount']:.2f} {quote['currency']}</b>\n"
-        f"Commission NEXIS HUB : <b>{payment['commission_amount']:.2f} {quote['currency']}</b>\n"
-        f"Net prestataire : <b>{payment['net_provider']:.2f} {quote['currency']}</b>\n\n"
-        "Vous pouvez commencer la mission.",
-        parse_mode="HTML",
-        reply_markup=clavier_mission_prestataire(quote["mission_id"], "start"),
-    )
-    await callback.answer("Paiement confirmé")
 
 
 @dp.callback_query(F.data.startswith("mission_start_"))
