@@ -65,7 +65,7 @@ def test_all_mutation_routes_reject_missing_key(monkeypatch):
             "full_name": "Prestataire test",
         }),
         ("/api/bot/missions/status", {"mission_id": 111, "status": "completed"}),
-        ("/api/bot/payments", {"quote_id": 10, "payment_status": "paid_escrow"}),
+        ("/api/bot/payments", {"quote_id": 10, "payment_status": "paid_escrow", "mission_id": 111}),
     ]
     for path, payload in routes:
         response = client.post(path, json=payload)
@@ -81,3 +81,75 @@ def test_authenticated_bot_can_sync_user(monkeypatch):
     )
     assert response.status_code == 200
     assert response.json()["user"]["telegram_id"] == 87654
+
+
+def test_payment_and_mission_lifecycle_reject_invalid_transitions(monkeypatch):
+    monkeypatch.setenv("BACKEND_API_KEY", TEST_KEY)
+    headers = {"X-Nexis-Internal-Key": TEST_KEY}
+    mission_id = 33321
+
+    created = client.post(
+        "/api/bot/missions",
+        json={"telegram_id": 101, "mission_id": mission_id,
+              "service": "service_plomberie", "commune": "Gombe"},
+        headers=headers,
+    )
+    assert created.status_code == 200
+    assert created.json()["mission"]["payment_status"] == "unpaid"
+
+    # No mission can start or complete before an internal payment confirmation.
+    assert client.post(
+        "/api/bot/missions/status",
+        json={"mission_id": mission_id, "status": "in_progress"},
+        headers=headers,
+    ).status_code == 409
+    assert client.post(
+        "/api/bot/payments",
+        json={"mission_id": mission_id, "quote_id": 55, "payment_status": "released"},
+        headers=headers,
+    ).status_code == 422
+
+    payment = {"mission_id": mission_id, "quote_id": 55, "payment_status": "paid_escrow"}
+    assert client.post("/api/bot/payments", json=payment, headers=headers).status_code == 200
+    assert client.post("/api/bot/payments", json=payment, headers=headers).status_code == 200
+    assert client.post(
+        "/api/bot/payments",
+        json={**payment, "quote_id": 56},
+        headers=headers,
+    ).status_code == 409
+
+    assert client.post(
+        "/api/bot/missions/status",
+        json={"mission_id": mission_id, "status": "completed", "payment_status": "released"},
+        headers=headers,
+    ).status_code == 409
+
+    for status in ("in_progress", "awaiting_confirmation"):
+        assert client.post(
+            "/api/bot/missions/status",
+            json={"mission_id": mission_id, "status": status},
+            headers=headers,
+        ).status_code == 200
+
+    assert client.post(
+        "/api/bot/missions/status",
+        json={"mission_id": mission_id, "status": "completed"},
+        headers=headers,
+    ).status_code == 409
+    release = {"mission_id": mission_id, "status": "completed", "payment_status": "released"}
+    assert client.post(
+        "/api/bot/missions/status", json=release, headers=headers,
+    ).status_code == 200
+    assert client.post(
+        "/api/bot/missions/status", json=release, headers=headers,
+    ).status_code == 200
+
+    # A retried mission sync cannot reset a completed mission to pending.
+    retried = client.post(
+        "/api/bot/missions",
+        json={"telegram_id": 101, "mission_id": mission_id,
+              "service": "service_plomberie", "commune": "Gombe"},
+        headers=headers,
+    )
+    assert retried.status_code == 200
+    assert retried.json()["mission"]["status"] == "completed"
