@@ -12,6 +12,8 @@ on:
       - '.github/workflows/alembic-test.yml'
       - 'scripts/audit_schema_parity.py'
       - 'scripts/postgres_smoke_ci.py'
+      - 'scripts/sqlite_migration_preflight.py'
+      - 'scripts/test_sqlite_migration_preflight.py'
       - 'db.py'
   workflow_dispatch:
 
@@ -81,6 +83,8 @@ jobs:
           assert not report['extra_columns'], report
           print('SQLite and PostgreSQL model columns match')
           PY
+      - name: Test read-only SQLite migration preflight
+        run: python -m unittest scripts.test_sqlite_migration_preflight -v
       - name: Verify synthetic mission quote transaction and rollback
         run: python -m scripts.postgres_smoke_ci
       - name: Verify no pending model/schema differences
