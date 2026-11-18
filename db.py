@@ -893,89 +893,28 @@ def calculate_payment_amounts(amount: float, currency: str, urgent: bool = False
 
 
 def mark_quote_paid(quote_id: int, operator: str = "simulation"):
-    quote = get_quote_by_id(quote_id)
-    if quote is None:
-        raise ValueError("Devis introuvable")
-
-    mission = get_mission_by_id(quote["mission_id"])
-    if mission is None:
-        raise ValueError("Mission introuvable")
-
-    amounts = calculate_payment_amounts(
-        amount=quote["amount"],
-        currency=quote["currency"],
-        urgent=bool(mission["is_urgent"]),
+    """Never treat a simulated Mobile Money click as a confirmed payment."""
+    raise ValueError(
+        "Paiement Mobile Money non disponible : confirmation serveur du fournisseur requise"
     )
-    mobile_money_ref = f"SIM-{quote_id:04d}"
-
-    with get_connection() as conn:
-        cursor = conn.execute(
-            """
-            INSERT INTO transactions (
-                mission_id, quote_id, type, amount, currency,
-                commission_amount, tola_fee, aggregator_fee, net_provider,
-                status, mobile_money_ref
-            )
-            VALUES (?, ?, 'escrow_in', ?, ?, ?, ?, ?, ?, 'success', ?)
-            """,
-            (
-                quote["mission_id"],
-                quote_id,
-                amounts["total_client"],
-                quote["currency"],
-                amounts["commission_amount"],
-                amounts["tola_fee"],
-                amounts["aggregator_fee"],
-                amounts["net_provider"],
-                mobile_money_ref,
-            ),
-        )
-        conn.execute(
-            """
-            UPDATE missions
-            SET payment_status = 'paid_escrow',
-                commission_amount = ?,
-                tola_fee = ?,
-                aggregator_fee = ?,
-                total_client = ?,
-                net_provider = ?,
-                status = 'confirmed'
-            WHERE id = ?
-            """,
-            (
-                amounts["commission_amount"],
-                amounts["tola_fee"],
-                amounts["aggregator_fee"],
-                amounts["total_client"],
-                amounts["net_provider"],
-                quote["mission_id"],
-            ),
-        )
-
-    return {
-        "transaction_id": cursor.lastrowid,
-        "mobile_money_ref": mobile_money_ref,
-        **amounts,
-        "quote": quote,
-        "operator": operator,
-        "status": "success",
-    }
 
 
 def mark_quote_paid_with_wallet(quote_id: int, operator: str = "wallet"):
     quote = get_quote_by_id(quote_id)
     if quote is None:
         raise ValueError("Devis introuvable")
+    if quote["status"] != "accepted":
+        raise ValueError("Le devis doit être accepté avant le paiement")
 
     mission = get_mission_by_id(quote["mission_id"])
     if mission is None:
         raise ValueError("Mission introuvable")
-
-    user = get_user_by_telegram_id(mission["client_telegram_id"])
-    if user is None:
-        raise ValueError("Client introuvable")
-
-    user_data = dict(user) if hasattr(user, "keys") and not isinstance(user, dict) else user
+    if mission["provider_id"] != quote["provider_id"]:
+        raise ValueError("Le devis ne correspond pas au prestataire choisi")
+    if mission["status"] != "confirmed" or mission["payment_status"] != "unpaid":
+        raise ValueError("Cette mission ne peut pas être payée à nouveau")
+    if quote["currency"] not in ("USD", "CDF"):
+        raise ValueError("Devise non prise en charge")
 
     amounts = calculate_payment_amounts(
         amount=quote["amount"],
@@ -983,17 +922,35 @@ def mark_quote_paid_with_wallet(quote_id: int, operator: str = "wallet"):
         urgent=bool(mission["is_urgent"]),
     )
     total_client = amounts["total_client"]
-    wallet_balance = user_data["wallet_balance_usd"] if quote["currency"] == "USD" else user_data["wallet_balance_cdf"]
-    if wallet_balance < total_client:
-        raise ValueError("Solde insuffisant sur le wallet")
+    wallet_column = "wallet_balance_usd" if quote["currency"] == "USD" else "wallet_balance_cdf"
 
     with get_connection() as conn:
-        wallet_column = "wallet_balance_usd" if quote["currency"] == "USD" else "wallet_balance_cdf"
-        conn.execute(
-            f"UPDATE users SET {wallet_column} = {wallet_column} - ? WHERE telegram_id = ?",
-            (total_client, mission["client_telegram_id"]),
+        # Reserve the mission and debit the wallet in one atomic transaction.
+        reserved = conn.execute(
+            """
+            UPDATE missions
+            SET payment_status = 'paid_escrow',
+                commission_amount = ?, tola_fee = ?, aggregator_fee = ?,
+                total_client = ?, net_provider = ?
+            WHERE id = ? AND provider_id = ?
+              AND status = 'confirmed' AND payment_status = 'unpaid'
+            """,
+            (
+                amounts["commission_amount"], amounts["tola_fee"],
+                amounts["aggregator_fee"], total_client, amounts["net_provider"],
+                quote["mission_id"], quote["provider_id"],
+            ),
         )
-        conn.execute(
+        if reserved.rowcount != 1:
+            raise ValueError("Paiement déjà traité ou mission non payable")
+        debited = conn.execute(
+            f"UPDATE users SET {wallet_column} = {wallet_column} - ? "
+            f"WHERE telegram_id = ? AND {wallet_column} >= ?",
+            (total_client, mission["client_telegram_id"], total_client),
+        )
+        if debited.rowcount != 1:
+            raise ValueError("Solde insuffisant sur le wallet")
+        transaction = conn.execute(
             """
             INSERT INTO transactions (
                 mission_id, quote_id, type, amount, currency,
@@ -1003,41 +960,15 @@ def mark_quote_paid_with_wallet(quote_id: int, operator: str = "wallet"):
             VALUES (?, ?, 'escrow_in', ?, ?, ?, ?, ?, ?, 'success', ?)
             """,
             (
-                quote["mission_id"],
-                quote_id,
-                total_client,
-                quote["currency"],
-                amounts["commission_amount"],
-                amounts["tola_fee"],
-                amounts["aggregator_fee"],
-                amounts["net_provider"],
+                quote["mission_id"], quote_id, total_client, quote["currency"],
+                amounts["commission_amount"], amounts["tola_fee"],
+                amounts["aggregator_fee"], amounts["net_provider"],
                 f"WLT-{quote_id:04d}",
-            ),
-        )
-        conn.execute(
-            """
-            UPDATE missions
-            SET payment_status = 'paid_escrow',
-                commission_amount = ?,
-                tola_fee = ?,
-                aggregator_fee = ?,
-                total_client = ?,
-                net_provider = ?,
-                status = 'confirmed'
-            WHERE id = ?
-            """,
-            (
-                amounts["commission_amount"],
-                amounts["tola_fee"],
-                amounts["aggregator_fee"],
-                total_client,
-                amounts["net_provider"],
-                quote["mission_id"],
             ),
         )
 
     return {
-        "transaction_id": None,
+        "transaction_id": transaction.lastrowid,
         "mobile_money_ref": f"WLT-{quote_id:04d}",
         **amounts,
         "quote": quote,
@@ -1052,14 +983,17 @@ def start_mission(mission_id: int, provider_telegram_id: int):
         raise ValueError("Mission introuvable")
     if mission["provider_telegram_id"] != provider_telegram_id:
         raise ValueError("Ce prestataire n'est pas associé à cette mission")
-    if mission["payment_status"] != "paid_escrow":
-        raise ValueError("La mission n'est pas encore payée en escrow")
 
     with get_connection() as conn:
-        conn.execute(
-            "UPDATE missions SET status = 'in_progress' WHERE id = ?",
+        changed = conn.execute(
+            """
+            UPDATE missions SET status = 'in_progress'
+            WHERE id = ? AND status = 'confirmed' AND payment_status = 'paid_escrow'
+            """,
             (mission_id,),
         )
+        if changed.rowcount != 1:
+            raise ValueError("La mission doit être confirmée et payée avant son démarrage")
     return get_mission_by_id(mission_id)
 
 
@@ -1071,10 +1005,15 @@ def finish_mission(mission_id: int, provider_telegram_id: int):
         raise ValueError("Ce prestataire n'est pas associé à cette mission")
 
     with get_connection() as conn:
-        conn.execute(
-            "UPDATE missions SET status = 'awaiting_confirmation' WHERE id = ?",
+        changed = conn.execute(
+            """
+            UPDATE missions SET status = 'awaiting_confirmation'
+            WHERE id = ? AND status = 'in_progress' AND payment_status = 'paid_escrow'
+            """,
             (mission_id,),
         )
+        if changed.rowcount != 1:
+            raise ValueError("La mission doit être en cours et payée pour être terminée")
     return get_mission_by_id(mission_id)
 
 
@@ -1124,12 +1063,23 @@ def release_payment(mission_id: int):
     mission = get_mission_by_id(mission_id)
     if mission is None:
         raise ValueError("Mission introuvable")
-    if mission["payment_status"] != "paid_escrow":
-        raise ValueError("Aucun paiement escrow à libérer")
+    if mission["provider_id"] is None:
+        raise ValueError("Prestataire manquant pour cette mission")
 
     wallet_column = "wallet_balance_usd" if mission["currency"] == "USD" else "wallet_balance_cdf"
 
     with get_connection() as conn:
+        # The guarded update prevents repeated or concurrent releases.
+        changed = conn.execute(
+            """
+            UPDATE missions SET status = 'completed', payment_status = 'released'
+            WHERE id = ? AND status = 'awaiting_confirmation'
+              AND payment_status = 'paid_escrow'
+            """,
+            (mission_id,),
+        )
+        if changed.rowcount != 1:
+            raise ValueError("Aucun paiement escrow libérable pour cette mission")
         conn.execute(
             """
             INSERT INTO transactions (
@@ -1138,23 +1088,14 @@ def release_payment(mission_id: int):
             VALUES (?, 'release', ?, ?, ?, 'success')
             """,
             (
-                mission_id,
-                mission["net_provider"],
-                mission["currency"],
+                mission_id, mission["net_provider"], mission["currency"],
                 mission["net_provider"],
             ),
         )
-        conn.execute(
+        credited = conn.execute(
             f"UPDATE providers SET {wallet_column} = {wallet_column} + ? WHERE id = ?",
             (mission["net_provider"], mission["provider_id"]),
         )
-        conn.execute(
-            """
-            UPDATE missions
-            SET status = 'completed',
-                payment_status = 'released'
-            WHERE id = ?
-            """,
-            (mission_id,),
-        )
+        if credited.rowcount != 1:
+            raise ValueError("Prestataire introuvable : libération annulée")
     return get_mission_by_id(mission_id)
