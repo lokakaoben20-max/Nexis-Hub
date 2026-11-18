@@ -159,7 +159,35 @@ def convert_row(row: tuple) -> tuple:
     return tuple(Decimal(str(value)) if isinstance(value, float) else value for value in row)
 
 
+def verify_money_totals(sqlite_conn, target, schema: str, tables: dict) -> None:
+    """Require exact Decimal totals for all financial columns after import."""
+    markers = ("amount", "balance", "commission", "fee", "total", "net_")
+    for table, metadata in tables.items():
+        for column in metadata["columns"]:
+            name, kind = column[1], column[2]
+            if pg_type(kind) != "NUMERIC":
+                continue
+            if not any(marker in name.lower() for marker in markers):
+                continue
+            source_rows = sqlite_conn.execute(
+                f"SELECT {ident(name)} FROM {ident(table)}"
+            )
+            expected = sum(
+                (Decimal(str(row[0])) for row in source_rows if row[0] is not None),
+                Decimal("0"),
+            )
+            target.execute(
+                f"SELECT COALESCE(SUM({ident(name)}), 0) "
+                f"FROM {ident(schema)}.{ident(table)}"
+            )
+            actual = target.fetchone()[0]
+            if actual != expected:
+                raise ValueError(f"Total financier divergent : {table}.{name}")
+
+
 def import_trial(source: Path, schema: str, dsn: str) -> dict:
+    if Path(source).name == "nexis_hub.db":
+        raise ValueError("Importer une sauvegarde renommée, jamais la base active")
     if not TRIAL_SCHEMA_PATTERN.fullmatch(schema):
         raise ValueError("Destination réservée aux schémas nexis_trial_*")
     manifest = preflight_sqlite(source)
@@ -236,6 +264,7 @@ def import_trial(source: Path, schema: str, dsn: str) -> dict:
                                 (sequence_name, maximum or 1, maximum is not None),
                             )
 
+                verify_money_totals(sqlite_conn, target, schema, tables)
                 # All schema constraints have been active throughout the import.
                 # Do not log or expose any row-level personal/financial values.
                 sqlite_conn.rollback()
