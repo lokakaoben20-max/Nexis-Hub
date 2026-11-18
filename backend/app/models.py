@@ -5,7 +5,7 @@ User until the cross-channel identity reconciliation is designed.
 """
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, ForeignKey, Identity, Integer, Numeric, String, Text
+from sqlalchemy import BigInteger, ForeignKey, Identity, Integer, Float, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.postgres import Base
@@ -50,6 +50,20 @@ class Provider(Base):
     subscription: Mapped[str | None] = mapped_column(Text)
     preferred_currency: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str | None] = mapped_column(Text)
+    languages_spoken: Mapped[str | None] = mapped_column(Text())
+    module: Mapped[str | None] = mapped_column(Text())
+    rating: Mapped[Decimal | None] = mapped_column(Float())
+    total_missions: Mapped[int | None] = mapped_column(Integer())
+    success_rate: Mapped[Decimal | None] = mapped_column(Float())
+    consecutive_ignored: Mapped[int | None] = mapped_column(Integer())
+    warnings_count: Mapped[int | None] = mapped_column(Integer())
+    visit_fee_enabled: Mapped[int | None] = mapped_column(Integer())
+    latitude: Mapped[Decimal | None] = mapped_column(Float())
+    longitude: Mapped[Decimal | None] = mapped_column(Float())
+    subscription_end: Mapped[str | None] = mapped_column(Text())
+    commission_rate: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    language: Mapped[str | None] = mapped_column(Text())
+    member_since_months: Mapped[int | None] = mapped_column(Integer())
 
 
 class Mission(Base):
@@ -77,6 +91,23 @@ class Mission(Base):
     payment_ref: Mapped[str | None] = mapped_column(Text)
     dispute_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str | None] = mapped_column(Text)
+    is_urgent: Mapped[int | None] = mapped_column(Integer())
+    photo_file_id: Mapped[str | None] = mapped_column(Text())
+    voice_file_id: Mapped[str | None] = mapped_column(Text())
+    visit_fee_paid: Mapped[int | None] = mapped_column(Integer())
+    visit_fee_status: Mapped[str | None] = mapped_column(Text())
+    dispute_deadline: Mapped[str | None] = mapped_column(Text())
+    admin_note: Mapped[str | None] = mapped_column(Text())
+    client_latitude: Mapped[Decimal | None] = mapped_column(Float())
+    client_longitude: Mapped[Decimal | None] = mapped_column(Float())
+    distance_km: Mapped[Decimal | None] = mapped_column(Float())
+    commission_rate: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    scheduled_at: Mapped[str | None] = mapped_column(Text())
+    arrived_at: Mapped[str | None] = mapped_column(Text())
+    started_at: Mapped[str | None] = mapped_column(Text())
+    finished_at: Mapped[str | None] = mapped_column(Text())
+    confirmed_at: Mapped[str | None] = mapped_column(Text())
+    preferred_provider_id: Mapped[int | None] = mapped_column(BigInteger())
 
 
 class Transaction(Base):
@@ -112,6 +143,7 @@ class Quote(Base):
     message: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str | None] = mapped_column(Text)
     amount_usd_equiv: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    created_at: Mapped[str | None] = mapped_column(Text())
 
 
 class Service(Base):
@@ -128,6 +160,7 @@ class Service(Base):
     requires_inspection: Mapped[int | None] = mapped_column(Integer)
     visit_fee_usd: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
     is_active: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[str | None] = mapped_column(Text())
 
 
 class ServiceRequest(Base):
@@ -139,6 +172,7 @@ class ServiceRequest(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str | None] = mapped_column(Text)
     admin_note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str | None] = mapped_column(Text())
 
 
 class Review(Base):
@@ -154,6 +188,7 @@ class Review(Base):
     was_resolved: Mapped[int | None] = mapped_column(Integer)
     comment: Mapped[str | None] = mapped_column(Text)
     is_public: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[str | None] = mapped_column(Text())
 
 
 class PlatformSetting(Base):
@@ -162,3 +197,5 @@ class PlatformSetting(Base):
     key: Mapped[str] = mapped_column(Text, primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[str | None] = mapped_column(Text())
+
