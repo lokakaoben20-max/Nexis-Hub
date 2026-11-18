@@ -45,6 +45,7 @@ def test_wallet_payment_debits_client_and_marks_mission_paid(tmp_path):
         },
     )
     quote_id = db.create_quote(mission_id, 2002, 50.0, "USD", 4, "")
+    db.accept_quote(quote_id)
 
     db.update_provider_status(2002, "available")
     db.create_user(1001, "+243800000001", "Alice", language="fr")
