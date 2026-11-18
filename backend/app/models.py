@@ -5,8 +5,8 @@ User until the cross-channel identity reconciliation is designed.
 """
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, ForeignKey, Integer, Numeric, String, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import BigInteger, ForeignKey, Identity, Numeric, String, Text
+from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.postgres import Base
 
@@ -14,7 +14,7 @@ from backend.app.postgres import Base
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
     phone_number: Mapped[str] = mapped_column(Text, nullable=False)
     first_name: Mapped[str | None] = mapped_column(Text)
@@ -26,7 +26,7 @@ class User(Base):
 class Provider(Base):
     __tablename__ = "providers"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
     phone_number: Mapped[str] = mapped_column(Text, nullable=False)
     full_name: Mapped[str] = mapped_column(Text, nullable=False)
@@ -40,7 +40,7 @@ class Provider(Base):
 class Mission(Base):
     __tablename__ = "missions"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     provider_id: Mapped[int | None] = mapped_column(ForeignKey("providers.id"))
     service: Mapped[str] = mapped_column(Text, nullable=False)
@@ -56,7 +56,7 @@ class Mission(Base):
 class Transaction(Base):
     __tablename__ = "transactions"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     mission_id: Mapped[int] = mapped_column(ForeignKey("missions.id"), nullable=False)
     quote_id: Mapped[int | None] = mapped_column(BigInteger)  # FK added after Quote mapping
     type: Mapped[str] = mapped_column(Text, nullable=False)
