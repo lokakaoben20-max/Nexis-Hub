@@ -1,11 +1,25 @@
+import os
+import secrets
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 app = FastAPI(title="Nexis Hub V5 Backend")
 
 APP_STATE: dict[str, Any] = {"users": {}, "missions": {}, "providers": {}}
+
+
+
+def require_internal_api_key(
+    provided_key: str | None = Header(default=None, alias="X-Nexis-Internal-Key"),
+) -> None:
+    """Reject external requests to internal bot and profile APIs."""
+    configured_key = os.getenv("BACKEND_API_KEY")
+    if not configured_key:
+        raise HTTPException(status_code=503, detail="Backend API key is not configured")
+    if not provided_key or not secrets.compare_digest(provided_key, configured_key):
+        raise HTTPException(status_code=401, detail="Invalid backend API key")
 
 
 class BotUserPayload(BaseModel):
@@ -51,7 +65,7 @@ def health():
     return {"status": "ok", "service": "nexis-hub-v5"}
 
 
-@app.post("/api/bot/users")
+@app.post("/api/bot/users", dependencies=[Depends(require_internal_api_key)])
 def create_bot_user(payload: BotUserPayload):
     APP_STATE["users"][payload.telegram_id] = {
         "telegram_id": payload.telegram_id,
@@ -62,7 +76,7 @@ def create_bot_user(payload: BotUserPayload):
     return {"status": "ok", "user": APP_STATE["users"][payload.telegram_id]}
 
 
-@app.post("/api/bot/missions")
+@app.post("/api/bot/missions", dependencies=[Depends(require_internal_api_key)])
 def create_bot_mission(payload: BotMissionPayload):
     APP_STATE["missions"][payload.mission_id] = {
         "mission_id": payload.mission_id,
@@ -76,7 +90,7 @@ def create_bot_mission(payload: BotMissionPayload):
     return {"status": "ok", "mission": APP_STATE["missions"][payload.mission_id]}
 
 
-@app.post("/api/bot/providers")
+@app.post("/api/bot/providers", dependencies=[Depends(require_internal_api_key)])
 def create_bot_provider(payload: BotProviderPayload):
     APP_STATE["providers"][payload.telegram_id] = {
         "telegram_id": payload.telegram_id,
@@ -90,7 +104,7 @@ def create_bot_provider(payload: BotProviderPayload):
     return {"status": "ok", "provider": APP_STATE["providers"][payload.telegram_id]}
 
 
-@app.post("/api/bot/missions/status")
+@app.post("/api/bot/missions/status", dependencies=[Depends(require_internal_api_key)])
 def update_mission_status(payload: MissionStatusPayload):
     mission = APP_STATE["missions"].get(payload.mission_id)
     if mission is None:
@@ -101,7 +115,7 @@ def update_mission_status(payload: MissionStatusPayload):
     return {"status": "ok", "mission": mission}
 
 
-@app.post("/api/bot/payments")
+@app.post("/api/bot/payments", dependencies=[Depends(require_internal_api_key)])
 def update_payment(payload: PaymentPayload):
     mission = APP_STATE["missions"].get(payload.mission_id) if payload.mission_id is not None else None
     if mission is not None:
@@ -109,7 +123,7 @@ def update_payment(payload: PaymentPayload):
     return {"status": "ok", "payment_status": payload.payment_status, "mission": mission}
 
 
-@app.get("/api/profile/{telegram_id}")
+@app.get("/api/profile/{telegram_id}", dependencies=[Depends(require_internal_api_key)])
 def profile(telegram_id: int):
     user = APP_STATE["users"].get(telegram_id)
     provider = APP_STATE["providers"].get(telegram_id)
