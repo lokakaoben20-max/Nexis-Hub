@@ -21,6 +21,12 @@ class User(Base):
     language: Mapped[str] = mapped_column(String(10), default="fr", nullable=False)
     wallet_balance_usd: Mapped[Decimal] = mapped_column(Numeric(20, 4), default=Decimal("0"), nullable=False)
     wallet_balance_cdf: Mapped[Decimal] = mapped_column(Numeric(20, 4), default=Decimal("0"), nullable=False)
+    channel: Mapped[str | None] = mapped_column(Text)
+    commune: Mapped[str | None] = mapped_column(Text)
+    preferred_currency: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[int | None] = mapped_column(Integer)
+    total_missions: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[str | None] = mapped_column(Text)
 
 
 class Provider(Base):
@@ -35,6 +41,15 @@ class Provider(Base):
     status: Mapped[str] = mapped_column(String(32), default="available", nullable=False)
     wallet_balance_usd: Mapped[Decimal] = mapped_column(Numeric(20, 4), default=Decimal("0"), nullable=False)
     wallet_balance_cdf: Mapped[Decimal] = mapped_column(Numeric(20, 4), default=Decimal("0"), nullable=False)
+    is_verified: Mapped[int | None] = mapped_column(Integer)
+    is_active: Mapped[int | None] = mapped_column(Integer)
+    is_suspended: Mapped[int | None] = mapped_column(Integer)
+    badge: Mapped[str | None] = mapped_column(Text)
+    id_document_url: Mapped[str | None] = mapped_column(Text)
+    portfolio_urls: Mapped[str | None] = mapped_column(Text)
+    subscription: Mapped[str | None] = mapped_column(Text)
+    preferred_currency: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str | None] = mapped_column(Text)
 
 
 class Mission(Base):
@@ -51,6 +66,17 @@ class Mission(Base):
     payment_status: Mapped[str] = mapped_column(String(40), default="unpaid", nullable=False)
     total_client: Mapped[Decimal] = mapped_column(Numeric(20, 4), default=Decimal("0"), nullable=False)
     net_provider: Mapped[Decimal] = mapped_column(Numeric(20, 4), default=Decimal("0"), nullable=False)
+    channel: Mapped[str | None] = mapped_column(Text)
+    service_id: Mapped[int | None] = mapped_column(BigInteger)
+    address_details: Mapped[str | None] = mapped_column(Text)
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    amount_usd_equiv: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    commission_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    tola_fee: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    aggregator_fee: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    payment_ref: Mapped[str | None] = mapped_column(Text)
+    dispute_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str | None] = mapped_column(Text)
 
 
 class Transaction(Base):
@@ -64,6 +90,14 @@ class Transaction(Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     status: Mapped[str] = mapped_column(String(40), default="pending", nullable=False)
     mobile_money_ref: Mapped[str | None] = mapped_column(Text)
+    amount_usd_equiv: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    commission_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    tola_fee: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    net_provider: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    aggregator_fee: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    operator: Mapped[str | None] = mapped_column(Text)
+    phone_number: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str | None] = mapped_column(Text)
 
 
 class Quote(Base):
