@@ -60,6 +60,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID")
 MINI_APP_URL = os.getenv("MINI_APP_URL")
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://127.0.0.1:8000")
+BACKEND_API_KEY = os.getenv("BACKEND_API_KEY", "")
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN manquant dans le fichier .env")
@@ -241,6 +242,11 @@ def button_label(key: str, lang: str = "fr") -> str:
     return BUTTON_LABELS.get(lang, BUTTON_LABELS["fr"]).get(key, BUTTON_LABELS["fr"][key])
 
 
+def backend_request_headers() -> dict[str, str]:
+    """Add the shared secret only when configured."""
+    return {"X-Nexis-Internal-Key": BACKEND_API_KEY} if BACKEND_API_KEY else {}
+
+
 async def sync_user_to_backend(telegram_id: int, first_name: str | None = None, phone_number: str | None = None, language: str = "fr") -> dict:
     payload = {
         "telegram_id": telegram_id,
@@ -248,7 +254,7 @@ async def sync_user_to_backend(telegram_id: int, first_name: str | None = None, 
         "phone_number": phone_number,
         "language": language,
     }
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=backend_request_headers()) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/users", json=payload)
         response.raise_for_status()
         return response.json()
@@ -264,7 +270,7 @@ async def sync_mission_to_backend(telegram_id: int, mission_id: int, data: dict)
         "description": data.get("description", ""),
         "urgent": bool(data.get("urgent", False)),
     }
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=backend_request_headers()) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/missions", json=payload)
         response.raise_for_status()
         return response.json()
@@ -279,7 +285,7 @@ async def sync_provider_to_backend(telegram_id: int, full_name: str, phone_numbe
         "communes": communes or [],
         "language": language,
     }
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=backend_request_headers()) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/providers", json=payload)
         response.raise_for_status()
         return response.json()
@@ -287,7 +293,7 @@ async def sync_provider_to_backend(telegram_id: int, full_name: str, phone_numbe
 
 async def fetch_backend_profile(telegram_id: int) -> dict | None:
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=5.0, headers=backend_request_headers()) as client:
             response = await client.get(f"{BACKEND_BASE_URL}/api/profile/{telegram_id}")
             response.raise_for_status()
             return response.json()
@@ -304,7 +310,7 @@ async def load_profile_from_backend(telegram_id: int, fallback_user: dict | None
 
 async def fetch_backend_missions(telegram_id: int) -> list[dict]:
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=5.0, headers=backend_request_headers()) as client:
             response = await client.get(f"{BACKEND_BASE_URL}/api/profile/{telegram_id}")
             response.raise_for_status()
             payload = response.json()
@@ -317,7 +323,7 @@ async def sync_mission_status_to_backend(mission_id: int, status: str, payment_s
     payload = {"mission_id": mission_id, "status": status}
     if payment_status:
         payload["payment_status"] = payment_status
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=backend_request_headers()) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/missions/status", json=payload)
         response.raise_for_status()
         return response.json()
@@ -327,7 +333,7 @@ async def sync_payment_to_backend(quote_id: int, payment_status: str, mission_id
     payload = {"quote_id": quote_id, "payment_status": payment_status}
     if mission_id is not None:
         payload["mission_id"] = mission_id
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, headers=backend_request_headers()) as client:
         response = await client.post(f"{BACKEND_BASE_URL}/api/bot/payments", json=payload)
         response.raise_for_status()
         return response.json()
