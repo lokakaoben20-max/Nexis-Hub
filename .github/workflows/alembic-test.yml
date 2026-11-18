@@ -56,6 +56,15 @@ jobs:
               version = conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one()
               assert version == '0004_sqlite_column_parity', version
           assert len(models.Base.metadata.tables) == 9
+          with engine.connect() as conn:
+              inspector = inspect(conn)
+              for table in models.Base.metadata.sorted_tables:
+                  expected = {c.name for c in table.columns}
+                  actual = {c['name'] for c in inspector.get_columns(table.name)}
+                  assert expected == actual, (table.name, sorted(expected - actual), sorted(actual - expected))
+                  expected_fk = {(fk.parent.name, fk.column.table.name, fk.column.name) for fk in table.foreign_keys}
+                  actual_fk = {(src, fk['referred_table'], dst) for fk in inspector.get_foreign_keys(table.name) for src, dst in zip(fk['constrained_columns'], fk['referred_columns'])}
+                  assert expected_fk == actual_fk, (table.name, expected_fk, actual_fk)
           print('Initial migration verified')
           PY
       - name: Audit source SQLite columns against PostgreSQL models
