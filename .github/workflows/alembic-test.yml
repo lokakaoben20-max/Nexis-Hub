@@ -10,6 +10,8 @@ on:
       - 'alembic.ini'
       - 'requirements-postgres.txt'
       - '.github/workflows/alembic-test.yml'
+      - 'scripts/audit_schema_parity.py'
+      - 'db.py'
   workflow_dispatch:
 
 permissions:
@@ -56,5 +58,7 @@ jobs:
           assert len(models.Base.metadata.tables) == 9
           print('Initial migration verified')
           PY
+      - name: Audit source SQLite columns against PostgreSQL models
+        run: python scripts/audit_schema_parity.py
       - name: Verify no pending model/schema differences
         run: alembic check
