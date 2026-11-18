@@ -50,6 +50,12 @@ class PreflightTests(unittest.TestCase):
             report,
         )
 
+    def test_missing_referenced_table_reports_error_without_crashing(self):
+        with sqlite3.connect(self.path) as conn:
+            conn.execute("DROP TABLE users")
+        report = preflight(self.path)
+        self.assertIn("Missing table: users", report["errors"])
+
     def test_missing_table_is_rejected(self):
         with sqlite3.connect(self.path) as conn:
             conn.execute("DROP TABLE platform_settings")
