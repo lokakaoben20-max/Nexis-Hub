@@ -59,7 +59,7 @@ jobs:
           print('Initial migration verified')
           PY
       - name: Audit source SQLite columns against PostgreSQL models
-        run: python scripts/audit_schema_parity.py
+        run: python -m scripts.audit_schema_parity
       - name: Verify complete SQLite column parity
         run: |
           python - <<'PY'
