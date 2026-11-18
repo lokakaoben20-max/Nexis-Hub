@@ -52,5 +52,5 @@ def audit_schema():
 if __name__ == "__main__":
     report = audit_schema()
     print(json.dumps(report, indent=2, ensure_ascii=False))
-    if report["missing_tables"] or report["extra_tables"]:
-        raise SystemExit("Table mismatch: reconcile before backend cutover")
+    if any(report[key] for key in ("missing_tables", "extra_tables", "missing_columns", "extra_columns")):
+        raise SystemExit("Schema mismatch: reconcile tables and columns before backend cutover")
