@@ -85,7 +85,7 @@ Message.edit_text = _safe_edit_text
 
 def is_admin(telegram_id: int) -> bool:
     if not ADMIN_TELEGRAM_ID:
-        return True
+        return False
     return str(telegram_id) == ADMIN_TELEGRAM_ID
 
 
