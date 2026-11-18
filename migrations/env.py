@@ -5,6 +5,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from backend.app.postgres import Base
+from backend.app import models  # noqa: F401 - register mapped tables
 
 config = context.config
 if config.config_file_name is not None:
