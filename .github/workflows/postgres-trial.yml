@@ -1,6 +1,11 @@
 name: PostgreSQL migration trial (synthetic data)
 
 on:
+  push:
+    branches:
+      - develop/nexis-unification
+    paths:
+      - '.github/workflows/postgres-trial.yml'
   workflow_dispatch:
 
 permissions:
