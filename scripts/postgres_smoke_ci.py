@@ -54,12 +54,17 @@ def main():
             assert session.scalar(select(Transaction).where(Transaction.quote_id == quote.id)).id == tx.id
             assert session.get(User, user.id).wallet_balance_usd == Decimal("100.0000")
             assert session.get(Transaction, tx.id).status == "pending"
+            assert session.get(Quote, quote.id).amount == Decimal("12.5000")
+            assert session.get(Mission, mission.id).net_provider == Decimal("10.0000")
             # Deliberately roll back: this is not a payment capture or escrow release.
             session.rollback()
 
     with Session(engine) as session:
         assert session.scalar(select(User).where(User.telegram_id == 900000001)) is None
+        assert session.scalar(select(Provider).where(Provider.telegram_id == 900000002)) is None
         assert session.scalar(select(Transaction).where(Transaction.type == "ci_simulated")) is None
+        assert session.scalar(select(Quote).where(Quote.amount == Decimal("12.5000"))) is None
+        assert session.scalar(select(Mission).where(Mission.description == "Synthetic")) is None
     print("Synthetic relational inserts and rollback verified")
 
 
