@@ -54,11 +54,22 @@ jobs:
               tables = set(inspect(conn).get_table_names())
               assert {'users', 'providers', 'missions', 'transactions', 'quotes', 'services', 'service_requests', 'reviews', 'platform_settings', 'alembic_version'} <= tables, tables
               version = conn.execute(text('SELECT version_num FROM alembic_version')).scalar_one()
-              assert version == '0003_operational_fields', version
+              assert version == '0004_sqlite_column_parity', version
           assert len(models.Base.metadata.tables) == 9
           print('Initial migration verified')
           PY
       - name: Audit source SQLite columns against PostgreSQL models
         run: python scripts/audit_schema_parity.py
+      - name: Verify complete SQLite column parity
+        run: |
+          python - <<'PY'
+          from scripts.audit_schema_parity import audit_schema
+          report = audit_schema()
+          assert not report['missing_tables'], report
+          assert not report['extra_tables'], report
+          assert not report['missing_columns'], report
+          assert not report['extra_columns'], report
+          print('SQLite and PostgreSQL model columns match')
+          PY
       - name: Verify no pending model/schema differences
         run: alembic check
