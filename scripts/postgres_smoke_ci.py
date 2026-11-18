@@ -6,6 +6,7 @@ import os
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from backend.app.models import Mission, Provider, Quote, Transaction, User
@@ -14,7 +15,12 @@ from backend.app.postgres import get_engine
 
 def main():
     url = os.environ.get("NEXIS_DATABASE_URL", "")
-    if "127.0.0.1" not in url or "/nexis_ci" not in url:
+    if not url:
+        raise RuntimeError("NEXIS_DATABASE_URL is required")
+    parsed = make_url(url)
+    if (parsed.get_backend_name() != "postgresql" or parsed.host != "127.0.0.1"
+            or parsed.port != 5432 or parsed.database != "nexis_ci"
+            or parsed.username != "nexis_ci"):
         raise RuntimeError("Refusing to run smoke test outside isolated CI database")
 
     engine = get_engine()
