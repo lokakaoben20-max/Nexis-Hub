@@ -10,5 +10,7 @@
     "binding": "ASSETS",
     "run_worker_first": true
   },
-  "observability": { "enabled": false }
+  "observability": { "enabled": false },
+  // Une adresse d'aperçu par branche (commande « npx wrangler preview »).
+  "previews": {}
 }
