@@ -269,6 +269,9 @@ button:disabled { cursor: default; }
 
 .info { display: flex; gap: 10px; align-items: flex-start; background: var(--brand-soft); color: var(--brand-soft-ink); border-radius: 16px; padding: 12px 14px; font-size: 12.5px; line-height: 1.45; }
 .info svg { width: 18px; height: 18px; flex: none; margin-top: 1px; }
+.info.act { width: 100%; border: 0; text-align: left; align-items: center; font: inherit; font-size: 12.5px; cursor: pointer; }
+.info.act span { flex: 1; }
+.info.act svg { margin-top: 0; }
 
 .msg { margin: 0; font-size: 13px; line-height: 1.45; border-radius: 12px; padding: 10px 12px; }
 .msg.error { background: var(--danger-soft); color: var(--danger); }

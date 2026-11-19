@@ -5,7 +5,8 @@
 // Telegram est simulé et toutes les données sont FICTIVES (aucun appel au
 // backend, aucun compte réel, aucun argent). Un bandeau le rappelle.
 //
-// Choix dans l'adresse : ?vue=prestataire (défaut) | inscription | client,
+// Choix dans l'adresse : ?vue=prestataire (défaut, aussi client) | attente
+// (prestataire en vérification, aussi client) | inscription | client,
 // ?langue=fr | ln | en. Le thème suit celui du téléphone.
 
 const SERVICES = {
@@ -65,15 +66,29 @@ function profile(view, lang) {
     service_names: Object.fromEntries(Object.entries(SERVICES).map(([key, [fr, ln, en]]) => [key, { fr, ln, en }])),
     available_communes: COMMUNES,
   };
+  const asClient = {
+    client: { first_name: "Patrick", phone_number: "+243812345678" },
+    client_missions: [{ id: 51, service: "service_electricite", commune: "Limete", status: "quoted", payment_status: "pending", currency: "USD", provider_name: "Aline M." }],
+  };
+  if (view === "attente") {
+    return {
+      ...base, ...asClient,
+      provider: { ...demoProvider(), badge: "pending", is_verified: false, total_missions: 0, rating: 0, success_rate: 0 },
+      provider_missions: [], service_additions: [], service_requests: [],
+      wallet: { ...base.wallet, secured_usd: 0, secured_cdf: 0 },
+    };
+  }
   if (view === "inscription") return { ...base, provider: null, provider_missions: null, service_additions: [], service_requests: [] };
   if (view === "client") {
     return {
       ...base, provider: null, provider_missions: null, service_additions: [], service_requests: [],
       client: { first_name: "Grâce", phone_number: "+243811111111" },
+      wallet: { wallet_balance_usd: 0, wallet_balance_cdf: 35000, secured_usd: 0, secured_cdf: 0 },
+      wallet_history: [{ id: 3, kind: "refund", mission_id: 39, currency: "CDF", amount: "35000.00", created_at: daysAgo(2) }],
       client_missions: [{ id: 42, service: "service_nettoyage", commune: "Limete", status: "confirmed", payment_status: "paid_escrow", currency: "CDF", provider_name: "Patrick K." }],
     };
   }
-  return base;
+  return { ...base, ...asClient };
 }
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), {

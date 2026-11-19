@@ -29,9 +29,60 @@ const state = {
   tab: "home",
   sub: null, // sous-écran : { name: "mission" | "propose" | "register", missionId }
   missionFilter: "active",
-  missionRole: "provider",
+  // Espace affiché quand la personne est aussi prestataire : "provider" ou
+  // "client" (un seul compte, un seul portefeuille, deux rôles).
+  space: null,
   currency: "CDF",
 };
+
+const SPACE_KEY = "nexis.espace";
+
+function savedSpace() {
+  try {
+    const value = window.localStorage.getItem(SPACE_KEY);
+    return value === "client" || value === "provider" ? value : null;
+  } catch (error) {
+    return null; // stockage bloqué : on retombe sur le choix par défaut
+  }
+}
+
+function setSpace(space) {
+  state.space = space;
+  state.tab = "home";
+  state.sub = null;
+  try {
+    window.localStorage.setItem(SPACE_KEY, space);
+  } catch (error) {
+    // stockage bloqué : le choix vaut pour cette ouverture seulement
+  }
+  render();
+  window.scrollTo(0, 0);
+}
+
+// Prestataire vérifié : son espace d'abord. Prestataire encore en
+// vérification mais déjà client : l'espace client, pour ne pas le bloquer
+// sur l'attente. Le dernier choix de la personne prime.
+function defaultSpace() {
+  const me = provider();
+  if (!me) return "client";
+  return savedSpace() || (me.is_verified || !state.data?.client ? "provider" : "client");
+}
+
+function inClientSpace() {
+  return !provider() || state.space === "client";
+}
+
+// Bascule « Prestataire | Client », en haut de l'accueil des deux espaces.
+function spaceSwitch() {
+  if (!provider()) return null;
+  return el("div", { class: "seg role", style: "--n:2", role: "group", "aria-label": t("space_switch") },
+    ["provider", "client"].map((space) => el("button", {
+      type: "button",
+      "aria-pressed": state.space === space ? "true" : "false",
+      text: t(`space_${space}`),
+      onclick: () => { if (state.space !== space) setSpace(space); },
+    })));
+}
 
 // --- Langue et textes --------------------------------------------------------
 
@@ -226,7 +277,7 @@ function goBack() {
 
 function updateChrome() {
   const nav = document.getElementById("nav");
-  const tabs = Boolean(provider()) && !state.sub;
+  const tabs = !inClientSpace() && !state.sub;
   nav.hidden = !tabs;
   document.body.classList.toggle("with-nav", tabs);
   nav.querySelectorAll("[data-tab]").forEach((item) => {
@@ -258,6 +309,7 @@ function render() {
   else if (state.sub?.name === "add_commune") screen = addCommuneScreen();
   else if (state.sub?.name === "register") screen = registerScreen();
   else if (!provider()) screen = state.data?.client ? clientHomeScreen() : registerScreen();
+  else if (state.space === "client") screen = clientHomeScreen();
   else if (state.tab === "missions") screen = missionsScreen();
   else if (state.tab === "services") screen = servicesScreen();
   else if (state.tab === "profile") screen = profileScreen();
@@ -275,6 +327,9 @@ function subHeader(title, subtitle) {
 
 // --- Éléments communs --------------------------------------------------------
 
+// Un seul portefeuille pour les deux rôles, mais la ligne du bas parle au
+// rôle affiché : au prestataire, sa part encore sécurisée ; au client, la
+// protection de ses paiements.
 function walletCard() {
   const wallet = state.data?.wallet;
   const key = state.currency === "USD" ? "wallet_balance_usd" : "wallet_balance_cdf";
@@ -288,7 +343,7 @@ function walletCard() {
   },
   el("small", { text: `${t("wallet")} · ${currencyLabel}` }),
   el("span", { class: "big", text: amount || t("balance_unknown") }),
-  el("span", { class: "row2" }, icon("i-shield"), el("span", { text: securedText(wallet) || t("wallet_note") })),
+  el("span", { class: "row2" }, icon("i-shield"), el("span", { text: inClientSpace() ? t("wallet_note_client") : securedText(wallet) || t("wallet_note") })),
   el("span", { class: "dots", "aria-hidden": "true" },
     el("i", { class: state.currency === "CDF" ? "on" : "" }),
     el("i", { class: state.currency === "USD" ? "on" : "" })));
@@ -407,7 +462,7 @@ function homeScreen() {
     el("div", {}, el("small", { text: t("hello") }), el("b", { text: me.full_name || telegramUser?.first_name || "" })),
     verified ? el("span", { class: "badge" }, icon("i-check"), el("span", { text: t("verified") })) : null);
 
-  if (!verified) return [hello, ...pendingBlock(me)];
+  if (!verified) return [spaceSwitch(), hello, ...pendingBlock(me)].filter(Boolean);
 
   const available = me.status === "available";
   const locked = Boolean(me.is_suspended);
@@ -443,7 +498,7 @@ function homeScreen() {
       ? todo.slice(0, 3).map((mission) => missionCard(mission, true))
       : [el("p", { class: "empty", text: t("todo_empty") })];
 
-  return [hello, availability, walletCard(), historyLink(), stats, todoLabel, ...todoList];
+  return [spaceSwitch(), hello, availability, walletCard(), historyLink(), stats, todoLabel, ...todoList].filter(Boolean);
 }
 
 function pendingBlock(me) {
@@ -479,22 +534,11 @@ async function toggleAvailability(toggle) {
   });
 }
 
+// Missions du prestataire. Ses demandes comme client sont dans l'espace
+// client (bascule en haut de l'accueil).
 function missionsScreen() {
-  const clientMissions = state.data.client_missions || [];
-  const both = clientMissions.length > 0;
-  const asProvider = !both || state.missionRole === "provider";
-  const all = asProvider ? state.data.provider_missions : state.data.client_missions;
+  const all = state.data.provider_missions;
   const nodes = [el("h1", { class: "h1", text: t("missions_title") })];
-
-  if (both) {
-    nodes.push(el("div", { class: "seg role", style: "--n:2" },
-      ["provider", "client"].map((role) => el("button", {
-        type: "button",
-        "aria-pressed": state.missionRole === role ? "true" : "false",
-        text: t(`role_${role}`),
-        onclick: () => { state.missionRole = role; render(); },
-      }))));
-  }
 
   const active = (all || []).filter((mission) => ACTIVE_STATUSES.includes(mission.status));
   const done = (all || []).filter((mission) => DONE_STATUSES.includes(mission.status));
@@ -510,7 +554,7 @@ function missionsScreen() {
     nodes.push(el("p", { class: "empty", text: t("missions_unavailable") }));
   } else {
     const shown = tabs.find(([key]) => key === state.missionFilter)[2];
-    nodes.push(...(shown.length ? shown.map((mission) => missionCard(mission, asProvider)) : [el("p", { class: "empty", text: t("missions_empty") })]));
+    nodes.push(...(shown.length ? shown.map((mission) => missionCard(mission, true)) : [el("p", { class: "empty", text: t("missions_empty") })]));
   }
   return nodes;
 }
@@ -1127,7 +1171,7 @@ function registerScreen() {
       state.data.provider = result.provider;
       state.data.provider_missions = [];
       state.data.service_requests = [];
-      show("home");
+      setSpace("provider");
     } catch (error) {
       status.textContent = errorText(error);
     }
@@ -1153,24 +1197,31 @@ function registerScreen() {
 
 function clientHomeScreen() {
   const client = state.data.client;
+  const me = provider();
   const missions = state.data.client_missions;
   const list = missions == null
     ? [el("p", { class: "empty", text: t("missions_unavailable") })]
     : missions.length
       ? missions.map((mission) => missionCard(mission, false))
       : [el("p", { class: "empty", text: t("missions_empty") })];
+  const name = client?.first_name || (me?.full_name || "").split(/\s+/)[0] || telegramUser?.first_name || "";
   return [
-    el("div", { class: "hello" }, el("div", {}, el("small", { text: t("hello") }), el("b", { text: client.first_name || telegramUser?.first_name || "" }))),
+    spaceSwitch(),
+    el("div", { class: "hello" }, el("div", {}, el("small", { text: t("hello") }), el("b", { text: name }))),
+    me && !me.is_verified
+      ? el("button", { class: "info act", type: "button", onclick: () => setSpace("provider") },
+        icon("i-clock"), el("span", { text: t("provider_pending_note") }), icon("i-chev"))
+      : null,
     walletCard(),
     historyLink(),
     el("div", { class: "lbl" }, el("span", { text: t("client_requests") })),
     ...list,
     el("div", { class: "info" }, icon("i-info"), el("span", { text: t("client_note") })),
-    el("button", { class: "pick", type: "button", onclick: () => open({ name: "register" }) },
+    me ? null : el("button", { class: "pick", type: "button", onclick: () => open({ name: "register" }) },
       el("span", { class: "pi" }, icon("i-toolbox")),
       el("div", {}, el("b", { text: t("become_provider") }), el("small", { text: t("become_provider_sub") })),
       icon("i-chev")),
-  ];
+  ].filter(Boolean);
 }
 
 // --- Démarrage ---------------------------------------------------------------
@@ -1201,6 +1252,7 @@ async function load() {
   try {
     const data = await api(`/api/profile/${telegramUser.id}`);
     state.data = data;
+    state.space = defaultSpace();
     state.lang = pickLanguage(data.language);
     document.documentElement.lang = state.lang;
     render();
