@@ -310,8 +310,9 @@ function todoCount() {
   return (state.data?.provider_missions || []).filter((mission) => canArrive(mission) || canFinish(mission)).length;
 }
 
-function paymentPill(mission) {
-  const amount = formatMoney(mission.net_provider, mission.currency);
+// `words` : l'état en mots (le montant est déjà affiché à côté, en grand).
+function paymentPill(mission, words = false) {
+  const amount = words ? null : formatMoney(mission.net_provider, mission.currency);
   if (mission.payment_status === "paid_escrow") {
     return el("span", { class: "pill p-sec" }, icon("i-shield"), el("span", { text: amount || t("payment_secured") }));
   }
@@ -344,15 +345,18 @@ function missionCard(mission, asProvider) {
       onclick: () => open({ name: "mission", missionId: mission.id, role: asProvider ? "provider" : "client" }),
     },
     serviceIcon(mission.service),
-    el("div", {},
-      el("b", { text: `${serviceName(mission.service)} · ${mission.commune || ""}` }),
-      el("small", { class: "wrap", text: [missionRef(mission.id), statusText(mission.status), other].filter(Boolean).join(" · ") })),
-    asProvider ? paymentPill(mission) : el("span", { class: "pill p-wait", text: statusText(mission.status) }),
+    // Le service et la commune d'abord (jamais coupés), puis où en est la
+    // mission, puis la référence et l'autre personne, plus discrètes.
+    el("div", { class: "mcard" },
+      el("b", { class: "wrap", text: [serviceName(mission.service), mission.commune].filter(Boolean).join(" · ") }),
+      el("span", { class: `mstate s-${mission.status}`, text: statusText(mission.status) }),
+      el("small", { text: [missionRef(mission.id), other].filter(Boolean).join(" · ") })),
+    asProvider ? paymentPill(mission) : null,
     icon("i-chev")));
   if (asProvider && canArrive(mission)) {
-    card.appendChild(button(t("btn_arrived"), (event) => declareArrival(event.currentTarget, mission.id), { cls: "btn sm", iconId: "i-arrived" }));
+    card.appendChild(button(t("btn_arrived"), (event) => declareArrival(event.currentTarget, mission.id), { cls: "btn sm wide", iconId: "i-arrived" }));
   } else if (asProvider && canFinish(mission)) {
-    card.appendChild(button(t("btn_finish"), (event) => finishMission(event.currentTarget, mission.id), { cls: "btn sm", iconId: "i-check" }));
+    card.appendChild(button(t("btn_finish"), (event) => finishMission(event.currentTarget, mission.id), { cls: "btn sm wide", iconId: "i-check" }));
   }
   return card;
 }
@@ -551,14 +555,18 @@ function missionScreen(missionId) {
   const nodes = [
     subHeader(t("mission_title", { ref: missionRef(mission.id) }), `${serviceName(mission.service)} · ${mission.commune || ""}`),
     el("div", { class: "pills" },
-      el("span", { class: "pill p-wait", text: statusText(mission.status) }),
-      asProvider ? paymentPill(mission) : null,
+      el("span", { class: `mstate s-${mission.status}`, text: statusText(mission.status) }),
       mission.urgent ? el("span", { class: "pill p-bad", text: t("urgent") }) : null),
+    // Ta part en premier, en grand : c'est ce que le prestataire cherche.
+    asProvider && formatMoney(mission.net_provider, mission.currency)
+      ? el("div", { class: "card part" },
+        el("small", { text: t("amount_label") }),
+        el("b", { text: formatMoney(mission.net_provider, mission.currency) }),
+        paymentPill(mission, true))
+      : null,
     el("div", { class: "card list" },
       row(asProvider ? t("client_label") : t("provider_label"), asProvider ? mission.client_name : mission.provider_name),
-      row(t("commune_label"), mission.commune),
-      row(t("description_label"), mission.description),
-      asProvider ? row(t("amount_label"), formatMoney(mission.net_provider, mission.currency)) : null),
+      row(t("description_label"), mission.description)),
   ];
   if (!asProvider) return nodes;
 
@@ -1047,6 +1055,14 @@ function proposeScreen() {
   ];
 }
 
+// Affichage seulement : +243 812 345 678 (groupes de 3), le numéro enregistré
+// ne change pas. Un numéro qui n'est pas congolais reste tel quel.
+function formatPhone(value) {
+  const digits = String(value || "").replace(/\s+/g, "");
+  const match = /^\+243(\d{3})(\d{3})(\d{3})$/.exec(digits);
+  return match ? `+243 ${match[1]} ${match[2]} ${match[3]}` : value;
+}
+
 function initials(name) {
   const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
   return (parts.slice(0, 2).map((part) => part[0]).join("") || "N").toUpperCase();
@@ -1064,7 +1080,7 @@ function profileScreen() {
       el("b", { text: me.full_name || "" }),
       el("span", { class: me.is_verified ? "badge" : "badge wait" }, icon(me.is_verified ? "i-check" : "i-clock"), el("span", { text: badgeText }))),
     el("div", { class: "card list" },
-      row(t("phone"), me.phone_number),
+      row(t("phone"), formatPhone(me.phone_number)),
       row(t("services"), (me.services || []).map(serviceName).join(", ")),
       row(t("communes"), (me.communes || []).join(", ")),
       row(t("language"), LANGUAGE_NAMES[state.lang], t("language_note"))),
@@ -1076,7 +1092,7 @@ function profileScreen() {
 
 function registerScreen() {
   const client = state.data?.client;
-  const fullName = el("input", { type: "text", autocomplete: "name", maxlength: "80", value: client?.first_name || "" });
+  const fullName = el("input", { type: "text", autocomplete: "name", maxlength: "80", placeholder: t("full_name_hint"), value: client?.first_name || "" });
   const phone = el("input", { type: "tel", autocomplete: "tel", inputmode: "tel", maxlength: "20", placeholder: "+243…", value: client?.phone_number || "" });
   const services = new Set();
   const communes = new Set();
@@ -1092,8 +1108,11 @@ function registerScreen() {
         return;
       } else set.add(value);
       event.currentTarget.setAttribute("aria-pressed", set.has(value) ? "true" : "false");
+      if (set === services && servicesCount) servicesCount.textContent = `${services.size}/${limit}`;
     },
   });
+  // Compteur « 1/3 » à côté du titre : la limite se voit avant d'être atteinte.
+  const servicesCount = typeof limit === "number" ? el("span", { class: "count", text: `0/${limit}` }) : null;
   const status = el("p", { class: "msg error", role: "alert" });
   const create = button(t("create"), () => busy(create, t("creating"), async () => {
     status.textContent = "";
@@ -1120,7 +1139,7 @@ function registerScreen() {
     el("p", { class: "h1s", text: t("register_intro") }),
     el("label", { class: "field" }, el("span", { text: t("full_name") }), fullName),
     el("label", { class: "field" }, el("span", { text: t("phone_label") }), phone),
-    el("div", { class: "lbl" }, el("span", { text: t("your_services") })),
+    el("div", { class: "lbl" }, el("span", { text: t("your_services") }), servicesCount),
     typeof limit === "number" ? el("p", { class: "note", text: t("services_pick_max", { max: limit }) }) : null,
     el("div", { class: "chips" }, providerServiceKeys().map((key) => chip(services, key, serviceName(key), limit))),
     el("div", { class: "lbl" }, el("span", { text: t("your_communes") })),
