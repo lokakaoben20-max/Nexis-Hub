@@ -1,6 +1,8 @@
 // Aperçu de la Mini App (données fictives) publié par Cloudflare Workers
 // Builds pour chaque branche : voir apercu/worker.js. Rien de la production
 // (bot, backend, Mini App réelle) ne passe par ce Worker.
+// Branche « production » réglée dans Cloudflare (Build > Production branch) :
+// celle de l'aperçu en cours ; adresse fixe nexis-hub.lokakaoben20.workers.dev.
 {
   "name": "nexis-hub",
   "main": "apercu/worker.js",
