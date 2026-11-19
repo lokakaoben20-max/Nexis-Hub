@@ -372,3 +372,15 @@ textarea {
     flex-direction: column;
   }
 }
+
+/* Keep keyboard focus visible on actionable controls without changing touch styling. */
+:where(button, input, textarea, select, a):focus-visible {
+  outline: 3px solid var(--primary-dark);
+  outline-offset: 3px;
+}
+
+/* Prevent narrow screens from clipping long service names and identifiers. */
+:where(.row, .panel, article, .wallet-row, .mission-row) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
