@@ -1,0 +1,14 @@
+// Aperçu de la Mini App (données fictives) publié par Cloudflare Workers
+// Builds pour chaque branche : voir apercu/worker.js. Rien de la production
+// (bot, backend, Mini App réelle) ne passe par ce Worker.
+{
+  "name": "nexis-hub",
+  "main": "apercu/worker.js",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./mini_app/static",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "observability": { "enabled": false }
+}
