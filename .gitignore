@@ -11,3 +11,6 @@ exchange_rate_cache.json
 
 # Fichiers envoyés en développement (backend/app/fichiers.py), chiffrés, et leur clé
 var/
+
+# Cache local de wrangler (aperçu Cloudflare)
+.wrangler/
