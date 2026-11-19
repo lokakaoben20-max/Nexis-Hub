@@ -230,4 +230,16 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String get back => 'Kozonga';
+
+  @override
+  String get editProfile => 'Kobongola';
+
+  @override
+  String get pickServiceHint => 'Pona, biso tokosala oyo etikali.';
+
+  @override
+  String get otherNeed => 'Mosusu';
+
+  @override
+  String get close => 'Kokanga';
 }

@@ -39,6 +39,7 @@ class Mission {
     this.providerName,
     this.quotesCount = 0,
     this.when,
+    this.rated = false,
   });
 
   final int id;
@@ -50,6 +51,9 @@ class Mission {
   final String? providerName;
   final int quotesCount;
   final DateTime? when;
+
+  /// Le client a déjà noté la prestation (étoile sur la carte).
+  final bool rated;
 
   bool get isActive => const [
     MissionStatus.pending,

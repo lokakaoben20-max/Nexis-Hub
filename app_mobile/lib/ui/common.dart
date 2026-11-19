@@ -6,28 +6,34 @@ import '../data/models.dart';
 import '../l10n/app_localizations.dart';
 import 'theme.dart';
 
-/// Icône et couleur de chaque service (mêmes couleurs que la Mini App).
+/// Icône (trait fin, comme les maquettes) et couleur de chaque service.
 ({IconData icon, Color color}) serviceVisual(
   Service service,
 ) => switch (service) {
-  Service.plomberie => (icon: PhFill.wrench, color: const Color(0xFF0350E6)),
+  Service.plomberie => (icon: PhRegular.wrench, color: const Color(0xFF0350E6)),
   Service.electricite => (
-    icon: PhFill.lightning,
+    icon: PhRegular.lightning,
     color: const Color(0xFFC98200),
   ),
   Service.climatisation => (
-    icon: PhFill.snowflake,
+    icon: PhRegular.snowflake,
     color: const Color(0xFF0A84D6),
   ),
   Service.informatique => (
-    icon: PhFill.desktop,
+    icon: PhRegular.desktop,
     color: const Color(0xFF021937),
   ),
-  Service.graphisme => (icon: PhFill.palette, color: const Color(0xFF494C95)),
-  Service.coiffure => (icon: PhFill.scissors, color: const Color(0xFFC2416B)),
-  Service.nettoyage => (icon: PhFill.broom, color: const Color(0xFF1E8A4C)),
-  Service.jardinage => (icon: PhFill.plant, color: const Color(0xFF4F8A10)),
-  Service.autre => (icon: PhFill.plusCircle, color: const Color(0xFF5B667A)),
+  Service.graphisme => (
+    icon: PhRegular.palette,
+    color: const Color(0xFF494C95),
+  ),
+  Service.coiffure => (
+    icon: PhRegular.scissors,
+    color: const Color(0xFFC2416B),
+  ),
+  Service.nettoyage => (icon: PhRegular.broom, color: const Color(0xFF1E8A4C)),
+  Service.jardinage => (icon: PhRegular.plant, color: const Color(0xFF4F8A10)),
+  Service.autre => (icon: PhRegular.plusCircle, color: const Color(0xFF5B667A)),
 };
 
 /// Noms des services : les mêmes que dans le bot (FR / LN / EN).
@@ -69,7 +75,7 @@ class ServiceBadge extends StatelessWidget {
         border: Border.all(color: context.palette.line),
       ),
       alignment: Alignment.center,
-      child: Icon(visual.icon, size: size * .5, color: visual.color),
+      child: Icon(visual.icon, size: size * .56, color: visual.color),
     );
   }
 }

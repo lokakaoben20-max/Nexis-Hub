@@ -519,6 +519,30 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'Retour'**
   String get back;
+
+  /// No description provided for @editProfile.
+  ///
+  /// In fr, this message translates to:
+  /// **'Modifier'**
+  String get editProfile;
+
+  /// No description provided for @pickServiceHint.
+  ///
+  /// In fr, this message translates to:
+  /// **'Choisis, on s\'occupe du reste.'**
+  String get pickServiceHint;
+
+  /// No description provided for @otherNeed.
+  ///
+  /// In fr, this message translates to:
+  /// **'Autre'**
+  String get otherNeed;
+
+  /// No description provided for @close.
+  ///
+  /// In fr, this message translates to:
+  /// **'Fermer'**
+  String get close;
 }
 
 class _AppLocalizationsDelegate

@@ -230,4 +230,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get back => 'Back';
+
+  @override
+  String get editProfile => 'Edit';
+
+  @override
+  String get pickServiceHint => 'Pick one, we\'ll handle the rest.';
+
+  @override
+  String get otherNeed => 'Other';
+
+  @override
+  String get close => 'Close';
 }

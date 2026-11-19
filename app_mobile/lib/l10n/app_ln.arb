@@ -69,5 +69,9 @@
   "becomeProviderSub": "Compte moko, esika ya mbongo moko",
   "signOut": "Kobima",
   "clientBadge": "Mosombi",
-  "back": "Kozonga"
+  "back": "Kozonga",
+  "editProfile": "Kobongola",
+  "pickServiceHint": "Pona, biso tokosala oyo etikali.",
+  "otherNeed": "Mosusu",
+  "close": "Kokanga"
 }

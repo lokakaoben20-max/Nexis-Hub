@@ -107,5 +107,9 @@
   "becomeProviderSub": "Le même compte, le même portefeuille",
   "signOut": "Se déconnecter",
   "clientBadge": "Client",
-  "back": "Retour"
+  "back": "Retour",
+  "editProfile": "Modifier",
+  "pickServiceHint": "Choisis, on s'occupe du reste.",
+  "otherNeed": "Autre",
+  "close": "Fermer"
 }

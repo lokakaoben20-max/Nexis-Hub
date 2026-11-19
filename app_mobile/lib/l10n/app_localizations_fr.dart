@@ -231,4 +231,16 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get back => 'Retour';
+
+  @override
+  String get editProfile => 'Modifier';
+
+  @override
+  String get pickServiceHint => 'Choisis, on s\'occupe du reste.';
+
+  @override
+  String get otherNeed => 'Autre';
+
+  @override
+  String get close => 'Fermer';
 }

@@ -69,5 +69,9 @@
   "becomeProviderSub": "Same account, same wallet",
   "signOut": "Sign out",
   "clientBadge": "Client",
-  "back": "Back"
+  "back": "Back",
+  "editProfile": "Edit",
+  "pickServiceHint": "Pick one, we'll handle the rest.",
+  "otherNeed": "Other",
+  "close": "Close"
 }

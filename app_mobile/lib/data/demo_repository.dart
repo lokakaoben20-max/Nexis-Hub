@@ -67,6 +67,7 @@ class DemoRepository implements NexisRepository {
       amount: const Money(4500, Currency.usd),
       providerName: 'Jean M.',
       when: _now.subtract(const Duration(days: 2)),
+      rated: true,
     ),
     Mission(
       id: 38,
@@ -77,6 +78,7 @@ class DemoRepository implements NexisRepository {
       amount: const Money(25000, Currency.cdf),
       providerName: 'Prisca K.',
       when: _now.subtract(const Duration(days: 6)),
+      rated: true,
     ),
     Mission(
       id: 33,

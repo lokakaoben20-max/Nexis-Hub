@@ -47,6 +47,15 @@ class PhRegular {
   static const IconData toolbox = IconData(0xeca0, fontFamily: 'Phosphor');
   static const IconData userCircle = IconData(0xe4c4, fontFamily: 'Phosphor');
   static const IconData wallet = IconData(0xe68a, fontFamily: 'Phosphor');
+  static const IconData broom = IconData(0xec54, fontFamily: 'Phosphor');
+  static const IconData desktop = IconData(0xe560, fontFamily: 'Phosphor');
+  static const IconData lightning = IconData(0xe2de, fontFamily: 'Phosphor');
+  static const IconData palette = IconData(0xe6c8, fontFamily: 'Phosphor');
+  static const IconData plant = IconData(0xebae, fontFamily: 'Phosphor');
+  static const IconData plusCircle = IconData(0xe3d6, fontFamily: 'Phosphor');
+  static const IconData scissors = IconData(0xeae0, fontFamily: 'Phosphor');
+  static const IconData snowflake = IconData(0xe5aa, fontFamily: 'Phosphor');
+  static const IconData wrench = IconData(0xe5d4, fontFamily: 'Phosphor');
 }
 
 class PhFill {
@@ -112,6 +121,7 @@ class PhFill {
     fontFamily: 'PhosphorFill',
   );
   static const IconData wrench = IconData(0xe5d4, fontFamily: 'PhosphorFill');
+  static const IconData star = IconData(0xe46a, fontFamily: 'PhosphorFill');
 }
 
 class PhBold {
