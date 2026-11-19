@@ -27,6 +27,6 @@ cp -R "$racine/mini_app/static/." "$sortie/"
 
 cd "$racine/app_mobile"
 flutter pub get
-flutter build web --release --base-href /app/ --no-web-resources-cdn --dart-define=NEXIS_APERCU=true
+flutter build web --release --base-href /app/ --no-web-resources-cdn
 cp -R build/web "$sortie/app"
 echo "Aperçu construit dans $sortie"

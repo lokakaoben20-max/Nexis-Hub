@@ -3,7 +3,7 @@
 // Cloudflare (Workers Builds) publie ce Worker pour chaque branche : la
 // page est celle de mini_app/static telle qu'elle est sur la branche, mais
 // Telegram est simulé et toutes les données sont FICTIVES (aucun appel au
-// backend, aucun compte réel, aucun argent). Un bandeau le rappelle.
+// backend, aucun compte réel, aucun argent).
 //
 // La racine « / » est la page d'accueil à épingler (accueil.js). Choix
 // dans l'adresse de la Mini App : ?vue=prestataire (défaut, aussi client) | attente
@@ -128,12 +128,6 @@ async function action(path, request) {
   return json({ detail: { code: "refused" } }, 400);
 }
 
-const BANNER_TEXT = {
-  fr: "Aperçu · données fictives, rien n'est enregistré",
-  ln: "Bomoni · makambo ya solo te, eloko ebombami te",
-  en: "Preview · sample data, nothing is saved",
-};
-
 const MENU_TEXT = { fr: "Menu", ln: "Menu", en: "Menu" };
 
 function png(base64) {
@@ -166,7 +160,7 @@ async function page(env, url) {
     .on("body", {
       element(element) {
         element.prepend(
-          `<div style="position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:10px;background:#021937;color:#fff;font:600 12px/1.4 system-ui,sans-serif;padding:calc(6px + env(safe-area-inset-top,0px)) 12px 6px"><a href="/" style="color:#fff;text-decoration:none;border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:3px 10px;flex:none">‹ ${MENU_TEXT[lang]}</a><span style="flex:1;text-align:center">${BANNER_TEXT[lang]}</span></div>`,
+          `<a href="/" style="position:fixed;z-index:50;left:10px;top:calc(8px + env(safe-area-inset-top,0px));color:#fff;background:rgba(2,25,55,.78);text-decoration:none;font:600 12px/1.4 system-ui,sans-serif;border-radius:999px;padding:4px 11px">‹ ${MENU_TEXT[lang]}</a>`,
           { html: true },
         );
       },
