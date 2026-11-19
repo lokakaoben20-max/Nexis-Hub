@@ -10,9 +10,6 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get previewBanner => 'Preview · sample data';
-
-  @override
   String get slogan => 'Where trust meets service.';
 
   @override
@@ -50,9 +47,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String codeSentTo(String channel, String phone) {
     return 'Sent on $channel to $phone';
   }
-
-  @override
-  String get demoCodeHint => 'Preview: type any 6 digits.';
 
   @override
   String get welcomeBack => 'Welcome back';
@@ -195,8 +189,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get comingSoon => 'Coming soon';
 
   @override
-  String get comingSoonText =>
-      'This screen comes in a next version of the preview.';
+  String get comingSoonText => 'This screen comes in a next version.';
 
   @override
   String get ok => 'Got it';
@@ -242,4 +235,68 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get close => 'Close';
+
+  @override
+  String quotesPill(int count) {
+    return '$count quotes';
+  }
+
+  @override
+  String get waitingPill => 'Waiting';
+
+  @override
+  String legalText(String terms, String privacy) {
+    return 'By continuing, you accept the $terms and the $privacy.';
+  }
+
+  @override
+  String get legalTerms => 'Terms of use';
+
+  @override
+  String get legalPrivacy => 'Privacy policy';
+
+  @override
+  String get notReceived => 'Didn\'t get it?';
+
+  @override
+  String resendIn(String time) {
+    return 'Resend in $time';
+  }
+
+  @override
+  String get resendNow => 'Resend the code';
+
+  @override
+  String receiveInstead(String channel) {
+    return 'Get it by $channel instead';
+  }
+
+  @override
+  String get myInfo => 'My details';
+
+  @override
+  String get myInfoSub => 'Name, photo, commune';
+
+  @override
+  String devicesCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count connected devices',
+      one: '1 connected device',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get helpDisputes => 'Help and disputes';
+
+  @override
+  String get helpDisputesSub => 'A problem with a mission';
+
+  @override
+  String get spaceClient => 'Client';
+
+  @override
+  String get spaceProvider => 'Provider';
 }

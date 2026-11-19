@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -6,7 +8,6 @@ import '../ui/icons.dart';
 import '../app_state.dart';
 import '../l10n/app_localizations.dart';
 import '../ui/common.dart';
-import '../ui/preview_banner.dart';
 import '../ui/theme.dart';
 
 /// 15 B : bienvenue, plein dégradé bleu, choix de la langue.
@@ -246,23 +247,19 @@ class _NumberScreenState extends State<NumberScreen> {
     final l = AppLocalizations.of(context);
     final p = context.palette;
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: p.bg,
-        surfaceTintColor: Colors.transparent,
-        leading: const BackButton(),
-      ),
+      appBar: roundBackBar(context),
       body: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const _Steps(1),
               const SizedBox(height: 24),
-              Text(l.yourNumber, style: title(26, color: p.ink)),
-              const SizedBox(height: 6),
-              Text(l.yourNumberIntro, style: body(14.5, color: p.muted)),
+              Text(l.yourNumber, style: title(22, color: p.ink)),
+              const SizedBox(height: 8),
+              Text(l.yourNumberIntro, style: body(13.5, color: p.muted)),
               const SizedBox(height: 20),
               Row(
                 children: [
@@ -342,6 +339,8 @@ class _NumberScreenState extends State<NumberScreen> {
                 const Color(0xFF2AABEE),
               ),
               const Spacer(),
+              _Legal(l: l),
+              const SizedBox(height: 12),
               PrimaryButton(
                 label: l.receiveCode,
                 onPressed: _valid
@@ -386,12 +385,12 @@ class _NumberScreenState extends State<NumberScreen> {
         borderRadius: BorderRadius.circular(16),
         onTap: () => setState(() => _channel = channel),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
             children: [
               Container(
-                width: 40,
-                height: 40,
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
                   color: color,
                   borderRadius: BorderRadius.circular(12),
@@ -405,15 +404,26 @@ class _NumberScreenState extends State<NumberScreen> {
                   children: [
                     Text(
                       name,
-                      style: body(15, weight: FontWeight.w600, color: p.ink),
+                      style: body(14, weight: FontWeight.w700, color: p.ink),
                     ),
-                    Text(sub, style: body(12.5, color: p.muted)),
+                    const SizedBox(height: 1),
+                    Text(sub, style: body(12, color: p.muted)),
                   ],
                 ),
               ),
-              Icon(
-                selected ? PhFill.checkCircle : PhRegular.circle,
-                color: selected ? NexisColors.brand : p.line,
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: selected
+                        ? NexisColors.brand
+                        : const Color(0xFFC9D0DB),
+                    width: selected ? 6 : 2,
+                  ),
+                ),
               ),
             ],
           ),
@@ -437,10 +447,23 @@ class CodeScreen extends StatefulWidget {
 class _CodeScreenState extends State<CodeScreen> {
   final _code = TextEditingController();
   final _focus = FocusNode();
+  Timer? _timer;
+  int _left = 60;
+
+  void _restart() {
+    _timer?.cancel();
+    setState(() => _left = 60);
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() => _left = _left > 0 ? _left - 1 : 0);
+      if (_left == 0) timer.cancel();
+    });
+  }
 
   @override
   void initState() {
     super.initState();
+    _restart();
     _code.addListener(() {
       setState(() {});
       if (_code.text.length == 6) {
@@ -457,6 +480,7 @@ class _CodeScreenState extends State<CodeScreen> {
 
   @override
   void dispose() {
+    _timer?.cancel();
     _code.dispose();
     _focus.dispose();
     super.dispose();
@@ -470,31 +494,27 @@ class _CodeScreenState extends State<CodeScreen> {
     final masked =
         '+243 ${digits.substring(0, 2)} •• •• ${digits.substring(digits.length - 3)}';
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: p.bg,
-        surfaceTintColor: Colors.transparent,
-        leading: const BackButton(),
-      ),
+      appBar: roundBackBar(context),
       body: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+          padding: const EdgeInsets.fromLTRB(18, 4, 18, 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const _Steps(2),
               const SizedBox(height: 24),
-              Text(l.theCode, style: title(26, color: p.ink)),
-              const SizedBox(height: 6),
+              Text(l.theCode, style: title(22, color: p.ink)),
+              const SizedBox(height: 8),
               Text(
                 l.codeSentTo(widget.channel, masked),
-                style: body(14.5, color: p.muted),
+                style: body(13.5, color: p.muted),
               ),
               const SizedBox(height: 22),
               // Le vrai champ couvre les six cases, invisible : toucher une
               // case ouvre le clavier, le code se colle d'un coup.
               SizedBox(
-                height: 58,
+                height: 54,
                 child: Stack(
                   children: [
                     Row(
@@ -502,7 +522,7 @@ class _CodeScreenState extends State<CodeScreen> {
                         for (var i = 0; i < 6; i++)
                           Expanded(
                             child: Container(
-                              height: 58,
+                              height: 54,
                               margin: EdgeInsets.only(right: i < 5 ? 8 : 0),
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
@@ -511,14 +531,36 @@ class _CodeScreenState extends State<CodeScreen> {
                                 border: Border.all(
                                   color: i == _code.text.length
                                       ? NexisColors.brand
+                                      : i < _code.text.length
+                                      ? p.ink
                                       : p.line,
-                                  width: i == _code.text.length ? 2 : 1,
+                                  width: i == _code.text.length
+                                      ? 2
+                                      : i < _code.text.length
+                                      ? 1.5
+                                      : 1,
                                 ),
+                                boxShadow: i == _code.text.length
+                                    ? const [
+                                        BoxShadow(
+                                          color: Color(0xFFDCEBFF),
+                                          spreadRadius: 3,
+                                        ),
+                                      ]
+                                    : null,
                               ),
-                              child: Text(
-                                i < _code.text.length ? _code.text[i] : '',
-                                style: title(22, color: p.ink),
-                              ),
+                              child: i == _code.text.length
+                                  ? Container(
+                                      width: 2,
+                                      height: 22,
+                                      color: NexisColors.brand,
+                                    )
+                                  : Text(
+                                      i < _code.text.length
+                                          ? _code.text[i]
+                                          : '',
+                                      style: title(20, color: p.ink),
+                                    ),
                             ),
                           ),
                       ],
@@ -546,14 +588,85 @@ class _CodeScreenState extends State<CodeScreen> {
                   ],
                 ),
               ),
-              if (isPreview) ...[
-                const SizedBox(height: 14),
-                Text(l.demoCodeHint, style: body(13, color: p.muted)),
-              ],
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      l.notReceived,
+                      style: body(12.5, color: p.muted),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: _left == 0 ? _restart : null,
+                    child: Text(
+                      _left == 0
+                          ? l.resendNow
+                          : l.resendIn(
+                              '${_left ~/ 60}:${(_left % 60).toString().padLeft(2, '0')}',
+                            ),
+                      style: body(
+                        12.5,
+                        weight: FontWeight.w600,
+                        color: NexisColors.brand,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Center(
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Text(
+                    l.receiveInstead(
+                      widget.channel == 'WhatsApp' ? 'Telegram' : 'WhatsApp',
+                    ),
+                    style: body(
+                      13,
+                      weight: FontWeight.w600,
+                      color: NexisColors.brand,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Liens légaux juste au-dessus du bouton (maquette 16).
+class _Legal extends StatelessWidget {
+  const _Legal({required this.l});
+
+  final AppLocalizations l;
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = context.palette.muted;
+    const marker = '\u0001';
+    final parts = l.legalText(marker, '\u0002').split(RegExp('[\u0001\u0002]'));
+    final link = body(11.5, weight: FontWeight.w600, color: NexisColors.brand);
+    final order =
+        l.legalText(marker, '\u0002').indexOf(marker) <
+            l.legalText(marker, '\u0002').indexOf('\u0002')
+        ? [l.legalTerms, l.legalPrivacy]
+        : [l.legalPrivacy, l.legalTerms];
+    return Text.rich(
+      TextSpan(
+        style: body(11.5, color: muted).copyWith(height: 1.5),
+        children: [
+          TextSpan(text: parts[0]),
+          TextSpan(text: order[0], style: link),
+          TextSpan(text: parts[1]),
+          TextSpan(text: order[1], style: link),
+          TextSpan(text: parts.length > 2 ? parts[2] : ''),
+        ],
+      ),
+      textAlign: TextAlign.center,
     );
   }
 }

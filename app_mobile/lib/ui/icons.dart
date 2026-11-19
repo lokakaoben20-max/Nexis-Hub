@@ -56,6 +56,7 @@ class PhRegular {
   static const IconData scissors = IconData(0xeae0, fontFamily: 'Phosphor');
   static const IconData snowflake = IconData(0xe5aa, fontFamily: 'Phosphor');
   static const IconData wrench = IconData(0xe5d4, fontFamily: 'Phosphor');
+  static const IconData caretLeft = IconData(0xe138, fontFamily: 'Phosphor');
 }
 
 class PhFill {
@@ -122,6 +123,16 @@ class PhFill {
   );
   static const IconData wrench = IconData(0xe5d4, fontFamily: 'PhosphorFill');
   static const IconData star = IconData(0xe46a, fontFamily: 'PhosphorFill');
+  static const IconData identificationCard = IconData(
+    0xe2c8,
+    fontFamily: 'PhosphorFill',
+  );
+  static const IconData devices = IconData(0xeba4, fontFamily: 'PhosphorFill');
+  static const IconData globeHemisphereWest = IconData(
+    0xe28c,
+    fontFamily: 'PhosphorFill',
+  );
+  static const IconData headset = IconData(0xe584, fontFamily: 'PhosphorFill');
 }
 
 class PhBold {

@@ -15,9 +15,12 @@ import 'theme.dart';
 /// Les mesures sont celles de la maquette (carte 228 × 136 sur un écran
 /// de 340), mises à l'échelle de l'écran réel.
 class WalletCard extends StatefulWidget {
-  const WalletCard({super.key, required this.wallet});
+  const WalletCard({super.key, required this.wallet, this.alignStart = false});
 
   final Wallet wallet;
+
+  /// Carte calée à gauche (écran Portefeuille) au lieu de centrée (Accueil).
+  final bool alignStart;
 
   @override
   State<WalletCard> createState() => _WalletCardState();
@@ -36,8 +39,13 @@ class _WalletCardState extends State<WalletCard> {
   Widget build(BuildContext context) {
     final reduce = MediaQuery.disableAnimationsOf(context);
     final duration = Duration(milliseconds: reduce ? 0 : 350);
-    final scale = (MediaQuery.sizeOf(context).width / 340).clamp(.9, 1.35).toDouble();
+    final scale = (MediaQuery.sizeOf(context).width / 340)
+        .clamp(.9, 1.35)
+        .toDouble();
     return Column(
+      crossAxisAlignment: widget.alignStart
+          ? CrossAxisAlignment.start
+          : CrossAxisAlignment.center,
       children: [
         GestureDetector(
           onHorizontalDragEnd: (details) {
@@ -65,7 +73,7 @@ class _WalletCardState extends State<WalletCard> {
                         key: ValueKey(index),
                         duration: duration,
                         curve: Curves.ease,
-                        left: 15,
+                        left: widget.alignStart ? 0 : 15,
                         top: 0,
                         width: 228,
                         height: 136,

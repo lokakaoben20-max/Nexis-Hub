@@ -10,9 +10,6 @@ class AppLocalizationsLn extends AppLocalizations {
   AppLocalizationsLn([String locale = 'ln']) : super(locale);
 
   @override
-  String get previewBanner => 'Bomoni · makambo ya solo te';
-
-  @override
   String get slogan => 'Epai bosembo ekutani na mosala.';
 
   @override
@@ -51,9 +48,6 @@ class AppLocalizationsLn extends AppLocalizations {
   String codeSentTo(String channel, String phone) {
     return 'Etindami na $channel na $phone';
   }
-
-  @override
-  String get demoCodeHint => 'Bomoni : kota ba chiffre 6 nyonso.';
 
   @override
   String get welcomeBack => 'Boyei malamu';
@@ -242,4 +236,68 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String get close => 'Kokanga';
+
+  @override
+  String quotesPill(int count) {
+    return 'Devis $count';
+  }
+
+  @override
+  String get waitingPill => 'Ezali kozela';
+
+  @override
+  String legalText(String terms, String privacy) {
+    return 'Soki okobi liboso, ondimi $terms mpe $privacy.';
+  }
+
+  @override
+  String get legalTerms => 'Mibeko ya kosalela';
+
+  @override
+  String get legalPrivacy => 'Politiki ya kobomba sango';
+
+  @override
+  String get notReceived => 'Ozwi te ?';
+
+  @override
+  String resendIn(String time) {
+    return 'Kotinda lisusu na $time';
+  }
+
+  @override
+  String get resendNow => 'Tinda code lisusu';
+
+  @override
+  String receiveInstead(String channel) {
+    return 'Zwa yango na $channel';
+  }
+
+  @override
+  String get myInfo => 'Makambo na ngai';
+
+  @override
+  String get myInfoSub => 'Nkombo, foto, commune';
+
+  @override
+  String devicesCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Ba appareils $count ekangami',
+      one: 'Appareil 1 ekangami',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get helpDisputes => 'Lisalisi mpe matata';
+
+  @override
+  String get helpDisputesSub => 'Likambo na mosala moko';
+
+  @override
+  String get spaceClient => 'Mosombi';
+
+  @override
+  String get spaceProvider => 'Mosali';
 }

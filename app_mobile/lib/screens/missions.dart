@@ -31,25 +31,14 @@ class _MissionsScreenState extends State<MissionsScreen> {
           final done = missions.where((m) => !m.isActive).toList();
           final shown = _ongoing ? ongoing : done;
           return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
             children: [
-              Text(l.myMissions, style: title(26, color: p.ink)),
+              Text(l.myMissions, style: title(22, color: p.ink)),
               const SizedBox(height: 14),
-              SegmentedButton<bool>(
-                showSelectedIcon: false,
-                segments: [
-                  ButtonSegment(
-                    value: true,
-                    label: Text('${l.tabOngoing} · ${ongoing.length}'),
-                  ),
-                  ButtonSegment(
-                    value: false,
-                    label: Text('${l.tabDone} · ${done.length}'),
-                  ),
-                ],
-                selected: {_ongoing},
-                onSelectionChanged: (value) =>
-                    setState(() => _ongoing = value.first),
+              _Segmented(
+                labels: ['${l.tabOngoing} · ${ongoing.length}', l.tabDone],
+                selected: _ongoing ? 0 : 1,
+                onChanged: (i) => setState(() => _ongoing = i == 0),
               ),
               const SizedBox(height: 14),
               if (shown.isEmpty)
@@ -62,11 +51,82 @@ class _MissionsScreenState extends State<MissionsScreen> {
               else
                 for (final mission in shown) ...[
                   MissionCard(mission: mission),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 14),
                 ],
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// Sélecteur en pilule de la maquette (fond gris, choix en blanc).
+class _Segmented extends StatelessWidget {
+  const _Segmented({
+    required this.labels,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: dark ? p.surface : const Color(0xFFE9EDF3),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < labels.length; i++)
+            Expanded(
+              child: Semantics(
+                button: true,
+                selected: i == selected,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => onChanged(i),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: i == selected
+                          ? (dark ? p.bg : Colors.white)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(99),
+                      boxShadow: i == selected && !dark
+                          ? const [
+                              BoxShadow(
+                                color: Color(0x14021937),
+                                offset: Offset(0, 1),
+                                blurRadius: 2,
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Text(
+                      labels[i],
+                      style: body(
+                        13,
+                        weight: FontWeight.w600,
+                        color: i == selected
+                            ? p.ink
+                            : (dark ? p.muted : const Color(0xFF5B667A)),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

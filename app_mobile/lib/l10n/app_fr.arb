@@ -1,6 +1,5 @@
 {
   "@@locale": "fr",
-  "previewBanner": "Aperçu · données fictives",
   "slogan": "Là où la confiance rencontre le service.",
   "welcomeIntro": "Plomberie, électricité, nettoyage et plus encore à Kinshasa. Ton argent reste sécurisé jusqu'à ce que tu confirmes.",
   "start": "Commencer",
@@ -23,7 +22,6 @@
       }
     }
   },
-  "demoCodeHint": "Aperçu : tape n'importe quels 6 chiffres.",
   "welcomeBack": "Bon retour",
   "hello": "Mbote, {name}",
   "@hello": {
@@ -96,7 +94,7 @@
   "today": "Aujourd'hui",
   "yesterday": "Hier",
   "comingSoon": "Bientôt dans l'app",
-  "comingSoonText": "Cet écran arrive dans une prochaine version de l'aperçu.",
+  "comingSoonText": "Cet écran arrive dans une prochaine version.",
   "ok": "Compris",
   "phone": "Téléphone",
   "commune": "Commune",
@@ -111,5 +109,59 @@
   "editProfile": "Modifier",
   "pickServiceHint": "Choisis, on s'occupe du reste.",
   "otherNeed": "Autre",
-  "close": "Fermer"
+  "close": "Fermer",
+  "quotesPill": "{count} devis",
+  "waitingPill": "En attente",
+  "@quotesPill": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "legalText": "En continuant, tu acceptes les {terms} et la {privacy}.",
+  "legalTerms": "Conditions d'utilisation",
+  "legalPrivacy": "Politique de confidentialité",
+  "notReceived": "Pas reçu ?",
+  "resendIn": "Renvoyer dans {time}",
+  "resendNow": "Renvoyer le code",
+  "receiveInstead": "Recevoir plutôt par {channel}",
+  "@legalText": {
+    "placeholders": {
+      "terms": {
+        "type": "String"
+      },
+      "privacy": {
+        "type": "String"
+      }
+    }
+  },
+  "@resendIn": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "@receiveInstead": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "myInfo": "Mes informations",
+  "myInfoSub": "Nom, photo, commune",
+  "devicesCount": "{count, plural, =1{1 appareil connecté} other{{count} appareils connectés}}",
+  "helpDisputes": "Aide et litiges",
+  "helpDisputesSub": "Un souci sur une mission",
+  "spaceClient": "Client",
+  "spaceProvider": "Prestataire",
+  "@devicesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

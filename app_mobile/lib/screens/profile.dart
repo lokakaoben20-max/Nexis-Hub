@@ -23,15 +23,24 @@ class ProfileScreen extends StatelessWidget {
       child: Loaded<Profile>(
         load: state.repository.profile,
         builder: (context, profile) => ListView(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
           children: [
+            Text(l.navProfile, style: title(22, color: p.ink)),
+            const SizedBox(height: 14),
             Center(
-              child: CircleAvatar(
-                radius: 38,
-                backgroundColor: const Color(0xFFC2416B),
+              child: Container(
+                width: 74,
+                height: 74,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFFC2416B),
+                  border: Border.all(color: p.surface, width: 3),
+                  boxShadow: [BoxShadow(color: p.line, spreadRadius: 1)],
+                ),
                 child: Text(
                   profile.initials,
-                  style: title(22, color: Colors.white),
+                  style: title(20, color: Colors.white),
                 ),
               ),
             ),
@@ -39,58 +48,63 @@ class ProfileScreen extends StatelessWidget {
             Center(
               child: Text(
                 '${profile.firstName} ${profile.lastName}',
-                style: title(20, color: p.ink),
+                style: title(17, color: p.ink),
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             Center(
               child: Text(
-                l.clientBadge,
-                style: body(13, weight: FontWeight.w600, color: p.muted),
+                _masked(profile.phone),
+                style: body(12.5, color: p.muted),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
+            if (profile.isProvider) ...[
+              const _SpaceSwitch(),
+              const SizedBox(height: 14),
+            ],
             _group(context, [
               _row(
                 context,
-                PhFill.phone,
-                l.phone,
-                value: _phone(profile.phone),
+                PhFill.identificationCard,
+                l.myInfo,
+                sub: l.myInfoSub,
+                onTap: () => showComingSoon(context, l.myInfo),
               ),
-              _row(context, PhFill.mapPin, l.commune, value: profile.commune),
               _row(
                 context,
-                PhFill.translate,
-                l.language,
-                value: _languageName(langOf(context)),
-                onTap: () => _pickLanguage(context),
-              ),
-            ]),
-            const SizedBox(height: 12),
-            _group(context, [
-              _row(
-                context,
-                PhFill.deviceMobile,
+                PhFill.devices,
                 l.myDevices,
+                sub: l.devicesCount(2),
                 onTap: () => showComingSoon(context, l.myDevices),
               ),
               _row(
                 context,
-                PhFill.lifebuoy,
-                l.help,
-                onTap: () => showComingSoon(context, l.help),
+                PhFill.globeHemisphereWest,
+                l.language,
+                sub: _languageName(langOf(context)),
+                onTap: () => _pickLanguage(context),
               ),
-            ]),
-            const SizedBox(height: 12),
-            _group(context, [
               _row(
                 context,
-                PhFill.toolbox,
-                l.becomeProvider,
-                sub: l.becomeProviderSub,
-                onTap: () => showComingSoon(context, l.becomeProvider),
+                PhFill.headset,
+                l.helpDisputes,
+                sub: l.helpDisputesSub,
+                onTap: () => showComingSoon(context, l.helpDisputes),
               ),
             ]),
+            if (!profile.isProvider) ...[
+              const SizedBox(height: 12),
+              _group(context, [
+                _row(
+                  context,
+                  PhFill.toolbox,
+                  l.becomeProvider,
+                  sub: l.becomeProviderSub,
+                  onTap: () => showComingSoon(context, l.becomeProvider),
+                ),
+              ]),
+            ],
             const SizedBox(height: 18),
             TextButton(
               onPressed: state.signOut,
@@ -109,9 +123,10 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  static String _phone(String e164) {
-    final m = RegExp(r'^\+243(\d{3})(\d{3})(\d{3})$').firstMatch(e164);
-    return m == null ? e164 : '+243 ${m[1]} ${m[2]} ${m[3]}';
+  static String _masked(String e164) {
+    final d = e164.replaceAll(RegExp(r'\D'), '');
+    if (d.length < 12) return e164;
+    return '+243 ${d.substring(3, 5)} •• •• ${d.substring(d.length - 3)}';
   }
 
   static String _languageName(String code) =>
@@ -157,13 +172,25 @@ class ProfileScreen extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: p.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: p.line),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Theme.of(context).brightness == Brightness.dark
+              ? p.line
+              : const Color(0xFFEEF1F5),
+        ),
       ),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Column(
         children: [
           for (var i = 0; i < rows.length; i++) ...[
-            if (i > 0) Divider(height: 1, indent: 64, color: p.line),
+            if (i > 0)
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? p.line
+                    : const Color(0xFFEEF1F5),
+              ),
             rows[i],
           ],
         ],
@@ -184,24 +211,24 @@ class ProfileScreen extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         child: Row(
           children: [
             // Série B : icône blanche sur carré au dégradé Nexis.
             Container(
-              width: 36,
-              height: 36,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [NexisColors.halo, NexisColors.gradientEnd],
                 ),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: Colors.white, size: 18),
+              child: Icon(icon, color: Colors.white, size: 20),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -210,7 +237,10 @@ class ProfileScreen extends StatelessWidget {
                     label,
                     style: body(14.5, weight: FontWeight.w600, color: p.ink),
                   ),
-                  if (sub != null) Text(sub, style: body(12.5, color: p.muted)),
+                  if (sub != null) ...[
+                    const SizedBox(height: 2),
+                    Text(sub, style: body(12, color: p.muted)),
+                  ],
                 ],
               ),
             ),
@@ -221,6 +251,57 @@ class ProfileScreen extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Passage Client / Prestataire (seulement pour qui a les deux rôles).
+/// L'espace prestataire de l'app viendra plus tard : on le dit.
+class _SpaceSwitch extends StatelessWidget {
+  const _SpaceSwitch();
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final p = context.palette;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    Widget side(String label, bool on, VoidCallback? onTap) => Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: on ? NexisColors.navy : Colors.transparent,
+            borderRadius: BorderRadius.circular(99),
+          ),
+          child: Text(
+            label,
+            style: body(
+              13,
+              weight: FontWeight.w600,
+              color: on ? Colors.white : p.muted,
+            ),
+          ),
+        ),
+      ),
+    );
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: dark ? p.surface : const Color(0xFFE9EDF3),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Row(
+        children: [
+          side(l.spaceClient, true, null),
+          side(
+            l.spaceProvider,
+            false,
+            () => showComingSoon(context, l.spaceProvider),
+          ),
+        ],
       ),
     );
   }

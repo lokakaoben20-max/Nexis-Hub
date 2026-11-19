@@ -100,12 +100,6 @@ abstract class AppLocalizations {
     Locale('ln'),
   ];
 
-  /// No description provided for @previewBanner.
-  ///
-  /// In fr, this message translates to:
-  /// **'Aperçu · données fictives'**
-  String get previewBanner;
-
   /// No description provided for @slogan.
   ///
   /// In fr, this message translates to:
@@ -177,12 +171,6 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'Envoyé sur {channel} au {phone}'**
   String codeSentTo(String channel, String phone);
-
-  /// No description provided for @demoCodeHint.
-  ///
-  /// In fr, this message translates to:
-  /// **'Aperçu : tape n\'importe quels 6 chiffres.'**
-  String get demoCodeHint;
 
   /// No description provided for @welcomeBack.
   ///
@@ -451,7 +439,7 @@ abstract class AppLocalizations {
   /// No description provided for @comingSoonText.
   ///
   /// In fr, this message translates to:
-  /// **'Cet écran arrive dans une prochaine version de l\'aperçu.'**
+  /// **'Cet écran arrive dans une prochaine version.'**
   String get comingSoonText;
 
   /// No description provided for @ok.
@@ -543,6 +531,102 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'Fermer'**
   String get close;
+
+  /// No description provided for @quotesPill.
+  ///
+  /// In fr, this message translates to:
+  /// **'{count} devis'**
+  String quotesPill(int count);
+
+  /// No description provided for @waitingPill.
+  ///
+  /// In fr, this message translates to:
+  /// **'En attente'**
+  String get waitingPill;
+
+  /// No description provided for @legalText.
+  ///
+  /// In fr, this message translates to:
+  /// **'En continuant, tu acceptes les {terms} et la {privacy}.'**
+  String legalText(String terms, String privacy);
+
+  /// No description provided for @legalTerms.
+  ///
+  /// In fr, this message translates to:
+  /// **'Conditions d\'utilisation'**
+  String get legalTerms;
+
+  /// No description provided for @legalPrivacy.
+  ///
+  /// In fr, this message translates to:
+  /// **'Politique de confidentialité'**
+  String get legalPrivacy;
+
+  /// No description provided for @notReceived.
+  ///
+  /// In fr, this message translates to:
+  /// **'Pas reçu ?'**
+  String get notReceived;
+
+  /// No description provided for @resendIn.
+  ///
+  /// In fr, this message translates to:
+  /// **'Renvoyer dans {time}'**
+  String resendIn(String time);
+
+  /// No description provided for @resendNow.
+  ///
+  /// In fr, this message translates to:
+  /// **'Renvoyer le code'**
+  String get resendNow;
+
+  /// No description provided for @receiveInstead.
+  ///
+  /// In fr, this message translates to:
+  /// **'Recevoir plutôt par {channel}'**
+  String receiveInstead(String channel);
+
+  /// No description provided for @myInfo.
+  ///
+  /// In fr, this message translates to:
+  /// **'Mes informations'**
+  String get myInfo;
+
+  /// No description provided for @myInfoSub.
+  ///
+  /// In fr, this message translates to:
+  /// **'Nom, photo, commune'**
+  String get myInfoSub;
+
+  /// No description provided for @devicesCount.
+  ///
+  /// In fr, this message translates to:
+  /// **'{count, plural, =1{1 appareil connecté} other{{count} appareils connectés}}'**
+  String devicesCount(int count);
+
+  /// No description provided for @helpDisputes.
+  ///
+  /// In fr, this message translates to:
+  /// **'Aide et litiges'**
+  String get helpDisputes;
+
+  /// No description provided for @helpDisputesSub.
+  ///
+  /// In fr, this message translates to:
+  /// **'Un souci sur une mission'**
+  String get helpDisputesSub;
+
+  /// No description provided for @spaceClient.
+  ///
+  /// In fr, this message translates to:
+  /// **'Client'**
+  String get spaceClient;
+
+  /// No description provided for @spaceProvider.
+  ///
+  /// In fr, this message translates to:
+  /// **'Prestataire'**
+  String get spaceProvider;
 }
 
 class _AppLocalizationsDelegate

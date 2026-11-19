@@ -80,61 +80,117 @@ class ServiceBadge extends StatelessWidget {
   }
 }
 
-/// Les états de l'argent : un mot, une icône, une couleur (charte).
-class PaymentPill extends StatelessWidget {
-  const PaymentPill(this.state, {super.key, this.text});
+/// Couleurs des pastilles des maquettes (fond, texte), claires et sombres.
+enum PillTone { secured, ok, info, warn, wait, bad }
 
-  final PaymentState state;
-  final String? text;
+(Color, Color) _pillColors(PillTone tone, bool dark) => switch (tone) {
+  PillTone.secured =>
+    dark
+        ? (const Color(0xFF1A2B4D), const Color(0xFF8DB4FF))
+        : (const Color(0xFFE8F0FE), const Color(0xFF0A3D9E)),
+  PillTone.ok =>
+    dark
+        ? (const Color(0xFF12301F), const Color(0xFF5BD08A))
+        : (const Color(0xFFE3F5EA), const Color(0xFF17663A)),
+  PillTone.info =>
+    dark
+        ? (const Color(0xFF22234A), const Color(0xFFB3B5F2))
+        : (const Color(0xFFECECF8), const Color(0xFF3B3E80)),
+  PillTone.warn =>
+    dark
+        ? (const Color(0xFF33270D), const Color(0xFFF2C661))
+        : (const Color(0xFFFFF1D6), const Color(0xFF7A4E00)),
+  PillTone.wait =>
+    dark
+        ? (const Color(0xFF1A2740), const Color(0xFFA9B4C6))
+        : (const Color(0xFFEEF1F5), const Color(0xFF4E5B70)),
+  PillTone.bad =>
+    dark
+        ? (const Color(0xFF3A1715), const Color(0xFFFF8A80))
+        : (const Color(0xFFFDECEA), const Color(0xFFB42318)),
+};
+
+/// Pastille de la maquette : icône facultative et texte.
+/// [compact] : la petite pastille sans icône de la liste des mouvements.
+class Pill extends StatelessWidget {
+  const Pill({
+    super.key,
+    required this.tone,
+    required this.text,
+    this.icon,
+    this.compact = false,
+  });
+
+  final PillTone tone;
+  final String text;
+  final IconData? icon;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    final l = AppLocalizations.of(context);
-    final (IconData icon, Color color, String label) = switch (state) {
-      PaymentState.secured => (
-        PhFill.shieldCheck,
-        NexisColors.brand,
-        l.paySecured,
-      ),
-      PaymentState.released => (
-        PhFill.checkCircle,
-        NexisColors.ok,
-        l.payReleased,
-      ),
-      PaymentState.refunded => (
-        PhFill.arrowCounterClockwise,
-        NexisColors.violet,
-        l.payRefunded,
-      ),
-      PaymentState.blocked => (PhFill.lock, NexisColors.danger, l.payBlocked),
-      PaymentState.available => (PhFill.wallet, NexisColors.ok, l.payAvailable),
-      PaymentState.none => (PhRegular.clock, context.palette.muted, ''),
-    };
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final shown = dark && color == NexisColors.brand
-        ? context.palette.softInk
-        : color;
+    final (bg, fg) = _pillColors(tone, dark);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: compact
+          ? const EdgeInsets.symmetric(horizontal: 7, vertical: 2)
+          : const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
-        color: shown.withValues(alpha: dark ? .18 : .1),
+        color: bg,
         borderRadius: BorderRadius.circular(99),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: shown),
-          const SizedBox(width: 4),
+          if (icon != null && !compact) ...[
+            Icon(icon, size: 13, color: fg),
+            const SizedBox(width: 5),
+          ],
           Flexible(
             child: Text(
-              text ?? label,
+              text,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: body(11.5, weight: FontWeight.w600, color: shown),
+              style: body(
+                compact ? 10.5 : 11.5,
+                weight: FontWeight.w600,
+                color: fg,
+              ),
             ),
           ),
         ],
       ),
     );
+  }
+}
+
+/// Les états de l'argent : un mot, une icône, une couleur (charte).
+class PaymentPill extends StatelessWidget {
+  const PaymentPill(this.state, {super.key, this.text, this.compact = false});
+
+  final PaymentState state;
+  final String? text;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final (IconData icon, PillTone tone, String label) = switch (state) {
+      PaymentState.secured => (
+        PhFill.shieldCheck,
+        PillTone.secured,
+        l.paySecured,
+      ),
+      PaymentState.released => (PhFill.checkCircle, PillTone.ok, l.payReleased),
+      PaymentState.refunded => (
+        PhFill.arrowCounterClockwise,
+        PillTone.info,
+        l.payRefunded,
+      ),
+      PaymentState.blocked => (PhFill.lock, PillTone.bad, l.payBlocked),
+      PaymentState.available => (PhFill.wallet, PillTone.ok, l.payAvailable),
+      PaymentState.none => (PhRegular.clock, PillTone.wait, ''),
+    };
+    return Pill(tone: tone, text: text ?? label, icon: icon, compact: compact);
   }
 }
 
@@ -226,3 +282,44 @@ void showComingSoon(BuildContext context, String what) {
 
 String langOf(BuildContext context) =>
     Localizations.localeOf(context).languageCode;
+
+/// Bouton retour rond et blanc des maquettes (n-back).
+class RoundBack extends StatelessWidget {
+  const RoundBack({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Semantics(
+      button: true,
+      label: MaterialLocalizations.of(context).backButtonTooltip,
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: () => Navigator.maybePop(context),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: p.surface,
+            shape: BoxShape.circle,
+            border: Border.all(color: dark ? p.line : const Color(0xFFE6E9EF)),
+          ),
+          child: Icon(PhRegular.caretLeft, size: 18, color: p.ink),
+        ),
+      ),
+    );
+  }
+}
+
+/// Barre du haut des écrans d'entrée : seulement le bouton retour rond.
+PreferredSizeWidget roundBackBar(BuildContext context) => AppBar(
+  backgroundColor: context.palette.bg,
+  surfaceTintColor: Colors.transparent,
+  automaticallyImplyLeading: false,
+  leadingWidth: 58,
+  leading: const Padding(
+    padding: EdgeInsets.only(left: 18),
+    child: Center(child: RoundBack()),
+  ),
+);

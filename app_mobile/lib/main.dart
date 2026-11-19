@@ -6,7 +6,6 @@ import 'l10n/app_localizations.dart';
 import 'screens/shell.dart';
 import 'screens/welcome.dart';
 import 'ui/lingala_fallback.dart';
-import 'ui/preview_banner.dart';
 import 'ui/theme.dart';
 
 void main() {
@@ -41,7 +40,6 @@ class NexisApp extends StatelessWidget {
             }
             return const Locale('fr');
           },
-          builder: (context, child) => PreviewBanner(child: child!),
           home: state.signedIn ? const Shell() : const WelcomeScreen(),
         ),
       ),

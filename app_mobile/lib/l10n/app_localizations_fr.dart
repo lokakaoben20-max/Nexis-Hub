@@ -10,9 +10,6 @@ class AppLocalizationsFr extends AppLocalizations {
   AppLocalizationsFr([String locale = 'fr']) : super(locale);
 
   @override
-  String get previewBanner => 'Aperçu · données fictives';
-
-  @override
   String get slogan => 'Là où la confiance rencontre le service.';
 
   @override
@@ -51,9 +48,6 @@ class AppLocalizationsFr extends AppLocalizations {
   String codeSentTo(String channel, String phone) {
     return 'Envoyé sur $channel au $phone';
   }
-
-  @override
-  String get demoCodeHint => 'Aperçu : tape n\'importe quels 6 chiffres.';
 
   @override
   String get welcomeBack => 'Bon retour';
@@ -196,8 +190,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get comingSoon => 'Bientôt dans l\'app';
 
   @override
-  String get comingSoonText =>
-      'Cet écran arrive dans une prochaine version de l\'aperçu.';
+  String get comingSoonText => 'Cet écran arrive dans une prochaine version.';
 
   @override
   String get ok => 'Compris';
@@ -243,4 +236,68 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get close => 'Fermer';
+
+  @override
+  String quotesPill(int count) {
+    return '$count devis';
+  }
+
+  @override
+  String get waitingPill => 'En attente';
+
+  @override
+  String legalText(String terms, String privacy) {
+    return 'En continuant, tu acceptes les $terms et la $privacy.';
+  }
+
+  @override
+  String get legalTerms => 'Conditions d\'utilisation';
+
+  @override
+  String get legalPrivacy => 'Politique de confidentialité';
+
+  @override
+  String get notReceived => 'Pas reçu ?';
+
+  @override
+  String resendIn(String time) {
+    return 'Renvoyer dans $time';
+  }
+
+  @override
+  String get resendNow => 'Renvoyer le code';
+
+  @override
+  String receiveInstead(String channel) {
+    return 'Recevoir plutôt par $channel';
+  }
+
+  @override
+  String get myInfo => 'Mes informations';
+
+  @override
+  String get myInfoSub => 'Nom, photo, commune';
+
+  @override
+  String devicesCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count appareils connectés',
+      one: '1 appareil connecté',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get helpDisputes => 'Aide et litiges';
+
+  @override
+  String get helpDisputesSub => 'Un souci sur une mission';
+
+  @override
+  String get spaceClient => 'Client';
+
+  @override
+  String get spaceProvider => 'Prestataire';
 }

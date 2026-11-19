@@ -27,46 +27,90 @@ class WalletScreen extends StatelessWidget {
         load: () async =>
             (wallet: await repo.wallet(), movements: await repo.movements()),
         builder: (context, data) => ListView(
-          padding: const EdgeInsets.fromLTRB(0, 20, 0, 24),
+          padding: const EdgeInsets.fromLTRB(0, 16, 0, 24),
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Text(l.navWallet, style: title(26, color: p.ink)),
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              child: Text(l.navWallet, style: title(22, color: p.ink)),
             ),
             const SizedBox(height: 14),
-            WalletCard(wallet: data.wallet),
-            const SizedBox(height: 16),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              child: WalletCard(wallet: data.wallet, alignStart: true),
+            ),
+            const SizedBox(height: 18),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18),
               child: Row(
                 children: [
                   Expanded(
-                    child: _button(context, PhBold.arrowDown, l.actionDeposit),
+                    child: _button(
+                      context,
+                      PhRegular.arrowFatLineDown,
+                      l.actionDeposit,
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: _button(context, PhBold.arrowUp, l.actionWithdraw),
+                    child: _button(
+                      context,
+                      PhRegular.arrowFatLineUp,
+                      l.actionWithdraw,
+                    ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 18),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Text(l.movements, style: title(15, color: p.ink)),
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Expanded(
+                    child: Text(
+                      l.movements,
+                      style: body(15, weight: FontWeight.w600, color: p.ink),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => showComingSoon(context, l.movements),
+                    child: Text(
+                      l.seeAll,
+                      style: body(
+                        12.5,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 14),
             Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20),
+              margin: const EdgeInsets.symmetric(horizontal: 18),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
               decoration: BoxDecoration(
                 color: p.surface,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: p.line),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? p.line
+                      : const Color(0xFFEEF1F5),
+                ),
               ),
               child: Column(
                 children: [
                   for (var i = 0; i < data.movements.length; i++) ...[
-                    if (i > 0) Divider(height: 1, color: p.line),
+                    if (i > 0)
+                      Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? p.line
+                            : const Color(0xFFEEF1F5),
+                      ),
                     _movement(context, data.movements[i]),
                   ],
                 ],
@@ -78,18 +122,30 @@ class WalletScreen extends StatelessWidget {
     );
   }
 
-  Widget _button(BuildContext context, IconData icon, String label) =>
-      FilledButton.tonalIcon(
-        onPressed: () => showComingSoon(context, label),
-        icon: Icon(icon, size: 18),
-        label: Text(label, style: title(14)),
-        style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(50),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+  Widget _button(BuildContext context, IconData icon, String label) {
+    final p = context.palette;
+    return Semantics(
+      button: true,
+      child: GestureDetector(
+        onTap: () => showComingSoon(context, label),
+        child: Container(
+          height: 50,
+          decoration: BoxDecoration(
+            color: p.soft,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 20, color: p.softInk),
+              const SizedBox(width: 8),
+              Text(label, style: title(14.5, color: p.softInk)),
+            ],
           ),
         ),
-      );
+      ),
+    );
+  }
 
   Widget _movement(BuildContext context, Movement movement) {
     final l = AppLocalizations.of(context);
@@ -106,22 +162,32 @@ class WalletScreen extends StatelessWidget {
         : days == 1
         ? l.yesterday
         : MaterialLocalizations.of(context).formatShortMonthDay(movement.when);
-    final icon = switch (movement.kind) {
-      MovementKind.payment => PhRegular.shieldCheck,
-      MovementKind.refund => PhRegular.arrowCounterClockwise,
-      MovementKind.release => PhRegular.checkCircle,
-      MovementKind.deposit => PhRegular.arrowDown,
-      MovementKind.withdrawal => PhRegular.arrowUp,
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final (IconData icon, Color bg, Color fg) = switch (movement.kind) {
+      MovementKind.payment => (PhFill.shieldCheck, p.soft, p.softInk),
+      MovementKind.refund => (
+        PhRegular.arrowCounterClockwise,
+        dark ? const Color(0xFF22234A) : const Color(0xFFECECF8),
+        dark ? const Color(0xFFB3B5F2) : NexisColors.violet,
+      ),
+      MovementKind.release => (
+        PhFill.checkCircle,
+        dark ? const Color(0xFF12301F) : const Color(0xFFE3F5EA),
+        dark ? const Color(0xFF5BD08A) : NexisColors.ok,
+      ),
+      MovementKind.deposit => (PhRegular.arrowDown, p.soft, p.softInk),
+      MovementKind.withdrawal => (PhRegular.arrowUp, p.soft, p.softInk),
     };
+    final amount = movement.amount;
     return Padding(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         children: [
           Container(
             width: 40,
             height: 40,
-            decoration: BoxDecoration(color: p.soft, shape: BoxShape.circle),
-            child: Icon(icon, color: p.softInk, size: 20),
+            decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+            child: Icon(icon, color: fg, size: 19),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -130,9 +196,16 @@ class WalletScreen extends StatelessWidget {
               children: [
                 Text(
                   movement.label,
-                  style: body(14.5, weight: FontWeight.w600, color: p.ink),
+                  style: body(14, weight: FontWeight.w700, color: p.ink),
                 ),
-                Text(when, style: body(12.5, color: p.muted)),
+                const SizedBox(height: 3),
+                Text(
+                  when,
+                  style: body(
+                    12,
+                    color: dark ? p.muted : const Color(0xFF5B667A),
+                  ),
+                ),
               ],
             ),
           ),
@@ -140,11 +213,14 @@ class WalletScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                formatMoney(movement.amount, lang),
-                style: body(14.5, weight: FontWeight.w700, color: p.ink),
+                formatMoney(
+                  Money(amount.minorUnits.abs(), amount.currency),
+                  lang,
+                ),
+                style: title(13, color: p.ink),
               ),
-              const SizedBox(height: 4),
-              PaymentPill(movement.state),
+              const SizedBox(height: 3),
+              PaymentPill(movement.state, compact: true),
             ],
           ),
         ],
