@@ -17,6 +17,8 @@
     "run_worker_first": true
   },
   "observability": { "enabled": false },
+  // Date de la version publiée, affichée en bas de la page d'accueil.
+  "version_metadata": { "binding": "VERSION" },
   // Une adresse d'aperçu par branche (commande « npx wrangler preview »).
   "previews": {}
 }

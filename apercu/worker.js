@@ -5,9 +5,13 @@
 // Telegram est simulé et toutes les données sont FICTIVES (aucun appel au
 // backend, aucun compte réel, aucun argent). Un bandeau le rappelle.
 //
-// Choix dans l'adresse : ?vue=prestataire (défaut, aussi client) | attente
+// La racine « / » est la page d'accueil à épingler (accueil.js). Choix
+// dans l'adresse de la Mini App : ?vue=prestataire (défaut, aussi client) | attente
 // (prestataire en vérification, aussi client) | inscription | client,
 // ?langue=fr | ln | en. Le thème suit celui du téléphone.
+
+import { accueil, manifest } from "./accueil.js";
+import { ICONE_180, ICONE_192, ICONE_512 } from "./icones.js";
 
 const SERVICES = {
   service_plomberie: ["Plomberie", "Plomberie", "Plumbing"],
@@ -130,6 +134,13 @@ const BANNER_TEXT = {
   en: "Preview · sample data, nothing is saved",
 };
 
+const MENU_TEXT = { fr: "Menu", ln: "Menu", en: "Menu" };
+
+function png(base64) {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  return new Response(bytes, { headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=86400" } });
+}
+
 function telegramStub(lang) {
   // Juste ce que la page utilise de Telegram.WebApp.
   return `window.Telegram = { WebApp: {
@@ -155,7 +166,7 @@ async function page(env, url) {
     .on("body", {
       element(element) {
         element.prepend(
-          `<div style="position:sticky;top:0;z-index:50;background:#021937;color:#fff;font:600 12px/1.4 system-ui,sans-serif;text-align:center;padding:6px 12px">${BANNER_TEXT[lang]}</div>`,
+          `<div style="position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:10px;background:#021937;color:#fff;font:600 12px/1.4 system-ui,sans-serif;padding:calc(6px + env(safe-area-inset-top,0px)) 12px 6px"><a href="/" style="color:#fff;text-decoration:none;border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:3px 10px;flex:none">‹ ${MENU_TEXT[lang]}</a><span style="flex:1;text-align:center">${BANNER_TEXT[lang]}</span></div>`,
           { html: true },
         );
       },
@@ -169,7 +180,20 @@ async function page(env, url) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/" && !url.searchParams.has("vue")) {
+      const meta = env.VERSION || {};
+      const version = meta.timestamp ? new Date(meta.timestamp).toLocaleString("fr-FR", { timeZone: "Africa/Kinshasa" }) : "inconnue";
+      return new Response(accueil(version), {
+        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Robots-Tag": "noindex" },
+      });
+    }
     if (url.pathname === "/" || url.pathname === "/index.html") return page(env, url);
+    if (url.pathname === "/manifest.webmanifest") {
+      return new Response(JSON.stringify(manifest()), { headers: { "Content-Type": "application/manifest+json", "Cache-Control": "no-store" } });
+    }
+    if (url.pathname === "/apple-touch-icon.png") return png(ICONE_180);
+    if (url.pathname === "/icone-192.png") return png(ICONE_192);
+    if (url.pathname === "/icone-512.png") return png(ICONE_512);
     if (url.pathname.startsWith("/static/")) {
       const response = await env.ASSETS.fetch(new URL(url.pathname.slice("/static".length), url));
       const headers = new Headers(response.headers);
