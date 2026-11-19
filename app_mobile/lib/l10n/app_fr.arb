@@ -1,0 +1,111 @@
+{
+  "@@locale": "fr",
+  "previewBanner": "Aperçu · données fictives",
+  "slogan": "Là où la confiance rencontre le service.",
+  "welcomeIntro": "Plomberie, électricité, nettoyage et plus encore à Kinshasa. Ton argent reste sécurisé jusqu'à ce que tu confirmes.",
+  "start": "Commencer",
+  "haveAccount": "J'ai déjà un compte",
+  "yourNumber": "Ton numéro",
+  "yourNumberIntro": "On t'envoie un code pour vérifier que c'est bien toi.",
+  "receiveCodeBy": "Recevoir le code par",
+  "whatsappSub": "Le code arrive en quelques secondes",
+  "telegramSub": "Avec le bot Nexis Hub",
+  "receiveCode": "Recevoir le code",
+  "theCode": "Le code",
+  "codeSentTo": "Envoyé sur {channel} au {phone}",
+  "@codeSentTo": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      },
+      "phone": {
+        "type": "String"
+      }
+    }
+  },
+  "demoCodeHint": "Aperçu : tape n'importe quels 6 chiffres.",
+  "welcomeBack": "Bon retour",
+  "hello": "Mbote, {name}",
+  "@hello": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "myWallets": "Mes portefeuilles",
+  "available": "Disponible",
+  "securedAmount": "{amount} sécurisés",
+  "@securedAmount": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "hideAmounts": "Masquer les montants",
+  "showAmounts": "Afficher les montants",
+  "actionServices": "Services",
+  "actionDeposit": "Dépôt",
+  "actionWithdraw": "Retrait",
+  "actionHistory": "Historique",
+  "actionMore": "Plus",
+  "lastServices": "Dernières prestations",
+  "tabDone": "Terminées",
+  "tabOngoing": "En cours",
+  "navHome": "Accueil",
+  "navMissions": "Missions",
+  "navWallet": "Portefeuille",
+  "navProfile": "Profil",
+  "requestService": "Demander un service",
+  "whichService": "Quel service ?",
+  "notInList": "Mon besoin n'est pas dans la liste",
+  "myMissions": "Mes missions",
+  "noMissions": "Rien ici pour l'instant.",
+  "statusPending": "En attente de devis",
+  "statusQuoted": "{count} devis reçus",
+  "@statusQuoted": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "statusConfirmed": "Prestataire choisi",
+  "statusInProgress": "{name} est en route",
+  "@statusInProgress": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "statusAwaiting": "À confirmer",
+  "statusCompleted": "Terminée",
+  "statusCancelled": "Annulée",
+  "statusDisputed": "Litige en cours",
+  "compareQuotes": "Comparer les devis",
+  "follow": "Suivre",
+  "paySecured": "Sécurisé par Nexis Hub",
+  "payReleased": "Versé au prestataire",
+  "payRefunded": "Remboursé",
+  "payBlocked": "Bloqué (litige)",
+  "payAvailable": "Disponible",
+  "movements": "Mouvements",
+  "seeAll": "Tout voir",
+  "today": "Aujourd'hui",
+  "yesterday": "Hier",
+  "comingSoon": "Bientôt dans l'app",
+  "comingSoonText": "Cet écran arrive dans une prochaine version de l'aperçu.",
+  "ok": "Compris",
+  "phone": "Téléphone",
+  "commune": "Commune",
+  "language": "Langue",
+  "myDevices": "Mes appareils",
+  "help": "Aide",
+  "becomeProvider": "Devenir prestataire",
+  "becomeProviderSub": "Le même compte, le même portefeuille",
+  "signOut": "Se déconnecter",
+  "clientBadge": "Client",
+  "back": "Retour"
+}

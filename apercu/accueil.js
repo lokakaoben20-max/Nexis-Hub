@@ -86,7 +86,13 @@ section { display:grid; gap:8px; }
   </section>
   <section>
     <h2>Application mobile</h2>
-    <p class="note"><b>Pas encore construite.</b> Ses écrans apparaîtront ici, à cette même adresse, dès que les premiers seront codés.</p>
+    <div class="list">
+      <a class="item" href="/app/">
+        <span class="txt"><b>Ouvrir l'application</b><small>La vraie app Flutter, en construction : bienvenue, connexion, accueil, missions, portefeuille, profil.</small></span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+      </a>
+    </div>
+    <p class="note">Pour avoir l'application avec sa propre icône, ouvre-la puis épingle cette page-là à l'écran d'accueil.</p>
   </section>
   <p class="note">Pour l'épingler : dans Safari, Partager puis « Sur l'écran d'accueil ». Sur Android, menu ⋮ puis « Ajouter à l'écran d'accueil ». Sur ordinateur (Chrome ou Edge), l'icône d'installation dans la barre d'adresse.</p>
   <p class="foot">Version publiée : ${esc(version)}</p>

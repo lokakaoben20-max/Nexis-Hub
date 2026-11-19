@@ -14,3 +14,6 @@ var/
 
 # Cache local de wrangler (aperçu Cloudflare)
 .wrangler/
+
+# Aperçu assemblé par apercu/construire.sh
+apercu/public/

@@ -194,6 +194,17 @@ export default {
     if (url.pathname === "/apple-touch-icon.png") return png(ICONE_180);
     if (url.pathname === "/icone-192.png") return png(ICONE_192);
     if (url.pathname === "/icone-512.png") return png(ICONE_512);
+    // Application mobile Flutter (version web) : fichiers de apercu/public/app.
+    if (url.pathname === "/app") return Response.redirect(new URL("/app/", url), 301);
+    if (url.pathname.startsWith("/app/")) {
+      const response = await env.ASSETS.fetch(request);
+      const headers = new Headers(response.headers);
+      headers.set("X-Robots-Tag", "noindex");
+      if (url.pathname === "/app/" || url.pathname.endsWith(".html") || url.pathname.endsWith(".js") || url.pathname.endsWith(".json")) {
+        headers.set("Cache-Control", "no-cache");
+      }
+      return new Response(response.body, { status: response.status, headers });
+    }
     if (url.pathname.startsWith("/static/")) {
       const response = await env.ASSETS.fetch(new URL(url.pathname.slice("/static".length), url));
       const headers = new Headers(response.headers);

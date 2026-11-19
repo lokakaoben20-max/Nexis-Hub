@@ -11,8 +11,10 @@
   // sur un téléphone.
   "workers_dev": true,
   "preview_urls": true,
+  // Mini App + application Flutter (web), assemblées par ce script.
+  "build": { "command": "bash apercu/construire.sh" },
   "assets": {
-    "directory": "./mini_app/static",
+    "directory": "./apercu/public",
     "binding": "ASSETS",
     "run_worker_first": true
   },
