@@ -47,6 +47,21 @@ class PreflightTests(unittest.TestCase):
             report,
         )
 
+    def test_non_finite_monetary_value_is_rejected(self):
+        # Infinity is accepted by SQLite REAL but cannot be migrated to
+        # PostgreSQL NUMERIC(20,4). Use only the disposable test backup.
+        with sqlite3.connect(self.path) as conn:
+            conn.execute(
+                "INSERT INTO users (telegram_id, phone_number, wallet_balance_usd) "
+                "VALUES (?, ?, ?)",
+                (102, "test-only", float("inf")),
+            )
+        report = self._report_after_checkpoint()
+        self.assertTrue(
+            any("users.wallet_balance_usd" in error for error in report["errors"]),
+            report,
+        )
+
     def test_orphaned_mission_reference_is_rejected(self):
         # Simulate a legacy SQLite backup with foreign keys not enforced.
         with sqlite3.connect(self.path) as conn:
