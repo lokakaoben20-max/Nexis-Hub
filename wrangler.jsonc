@@ -5,6 +5,10 @@
   "name": "nexis-hub",
   "main": "apercu/worker.js",
   "compatibility_date": "2025-09-01",
+  // Adresses publiques *.workers.dev : nécessaires pour ouvrir l'aperçu
+  // sur un téléphone.
+  "workers_dev": true,
+  "preview_urls": true,
   "assets": {
     "directory": "./mini_app/static",
     "binding": "ASSETS",
