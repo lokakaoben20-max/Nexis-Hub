@@ -215,6 +215,7 @@
   "quote_accept_confirmation_wallet_unknown": "✅ <b>Devis accepté.</b>\n\nMission : <b>NXH-{mission_id:04d}</b>\nPrestataire : <b>{prestataire}</b>\nDevis : <b>{devis:.2f} {currency}</b>\nTotal à payer : <b>{total:.2f} {currency}</b>\n\n👛 Solde wallet : indisponible pour le moment.\n\nChoisissez un mode de paiement pour sécuriser la mission.",
   "choose_operator": "📱 <b>Paiement Mobile Money</b>\n\nMontant : <b>{total:.2f} {currency}</b>\nNuméro : <b>{phone}</b>\n\nChoisissez votre opérateur :",
   "payment_mobile_pending_client": "⏳ <b>Demande de paiement envoyée sur votre téléphone</b>\n\nValidez le paiement de <b>{total:.2f} {currency}</b> avec votre code secret, puis appuyez sur « Vérifier le paiement ».",
+  "payment_mobile_unconfirmed_client": "⏳ <b>Votre opérateur n'a pas encore répondu</b>\n\nSi une demande de paiement de <b>{total:.2f} {currency}</b> apparaît sur votre téléphone, validez-la avec votre code secret. Sinon, ne faites rien.\n\nDans quelques minutes, appuyez sur « Vérifier le paiement ». Rien ne peut être débité deux fois.",
   "button_check_payment": "🔄 Vérifier le paiement",
   "payment_mobile_failed_client": "❌ Le paiement de la mission <b>NXH-{mission_id:04d}</b> n'a pas abouti. Rien n'a été débité. Vous pouvez réessayer.",
   "payment_overpaid_client": "ℹ️ Votre paiement de <b>{amount} {currency}</b> pour la mission <b>NXH-{mission_id:04d}</b> est arrivé alors qu'elle était déjà payée. Il a été crédité sur votre wallet.",

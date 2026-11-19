@@ -209,6 +209,7 @@
   "quote_accept_confirmation_wallet_unknown": "✅ <b>Devis endimami.</b>\n\nMosala : <b>NXH-{mission_id:04d}</b>\nMosali : <b>{prestataire}</b>\nDevis : <b>{devis:.2f} {currency}</b>\nMbongo ya kofuta : <b>{total:.2f} {currency}</b>\n\n👛 Mbongo na esika ya mbongo : eza naino te.\n\nPona lolenge ya kofuta mpo na kobatela mosala.",
   "choose_operator": "📱 <b>Kofuta na mbongo na telefone</b>\n\nMbongo : <b>{total:.2f} {currency}</b>\nMotango : <b>{phone}</b>\n\nPona motambwisi na yo :",
   "payment_mobile_pending_client": "⏳ <b>Bosenga ya lifuti etindami na telefone na yo</b>\n\nNdima lifuti ya <b>{total:.2f} {currency}</b> na motango ya sekele na yo, sima finá « Tala lifuti ».",
+  "payment_mobile_unconfirmed_client": "⏳ <b>Motambwisi na yo azongisi naino eyano te</b>\n\nSoki bosengi ya lifuti ya <b>{total:.2f} {currency}</b> ebimi na telefone na yo, ndima yango na motango ya sekele na yo. Soki te, sala eloko te.\n\nSima ya miniti moke, finá « Tala lifuti ». Mbongo ekoki kolongwa mbala mibale te.",
   "button_check_payment": "🔄 Tala lifuti",
   "payment_mobile_failed_client": "❌ Lifuti ya mosala <b>NXH-{mission_id:04d}</b> elekaki te. Mbongo moko te elongwe. Okoki komeka lisusu.",
   "payment_overpaid_client": "ℹ️ Lifuti na yo ya <b>{amount} {currency}</b> mpo na mosala <b>NXH-{mission_id:04d}</b> ekomaki ntango mosala esilaki kofutama. Bakotisi yango na esika na yo ya mbongo.",

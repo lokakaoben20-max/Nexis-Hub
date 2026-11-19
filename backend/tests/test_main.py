@@ -1145,6 +1145,58 @@ def test_webhook_without_a_valid_signature_is_refused(tmp_path, monkeypatch, bac
         assert test_client.post("/api/payments/webhook/flexpay", content=b"{}").status_code == 404
 
 
+def test_a_signed_webhook_finds_the_intent_by_our_reference(tmp_path, monkeypatch, backend_db_url):
+    """Le webhook désigne l'intention par notre référence, connue dès la
+    demande ; il ne fait jamais foi seul : le statut est relu chez l'agrégateur."""
+    import json
+
+    from backend.app import payment_gateway, tasks
+    from backend.app.payment_gateway import PENDING, GatewayResult, InvalidWebhook, SimulationGateway, WebhookNotice
+
+    confirmed = set()
+
+    class SignedGateway(SimulationGateway):
+        name = "signed"
+
+        def request_collection(self, intent):
+            return GatewayResult(PENDING)
+
+        def collection_status(self, intent):
+            return super().collection_status(intent) if intent.reference in confirmed else GatewayResult(PENDING)
+
+        def verify_webhook(self, headers, body):
+            if headers.get("x-test-signature") != "ok":
+                raise InvalidWebhook("signature absente")
+            return WebhookNotice(reference=json.loads(body)["reference"])
+
+    monkeypatch.setitem(payment_gateway.GATEWAYS, "signed", SignedGateway)
+    monkeypatch.setenv("PAYMENT_GATEWAY", "signed")
+    backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
+    monkeypatch.setattr(tasks, "send_telegram_message", lambda *args, **kwargs: True)
+
+    with _authed_client(backend_main) as test_client:
+        mission_id, quote_id = _setup_mission_with_quote(test_client)
+        intent = _fund(test_client, mission_id=mission_id, quote_id=quote_id).json()["intent"]
+        assert intent["status"] == "pending" and intent["reference"].startswith("NXI")
+
+        def webhook(reference, signature="ok"):
+            return test_client.post(
+                "/api/payments/webhook/signed",
+                content=json.dumps({"reference": reference}).encode(),
+                headers={"X-Test-Signature": signature},
+            )
+
+        assert webhook(intent["reference"], signature="faux").status_code == 401
+        assert webhook("NXI" + "0" * 32).json() == {"status": "ignored"}
+        # Webhook reçu, mais l'agrégateur ne confirme pas encore : rien ne bouge.
+        assert webhook(intent["reference"]).json() == {"status": "ok"}
+        assert test_client.get(f"/api/bot/missions/{mission_id}", headers=_as(42)).json()["mission"]["payment_status"] in (None, "unpaid")
+
+        confirmed.add(intent["reference"])
+        assert webhook(intent["reference"]).json() == {"status": "ok"}
+        assert test_client.get(f"/api/bot/missions/{mission_id}", headers=_as(42)).json()["mission"]["payment_status"] == "paid_escrow"
+
+
 def test_payment_intents_name_the_parties_by_account(tmp_path, monkeypatch, backend_db_url):
     backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     from backend.app import ledger

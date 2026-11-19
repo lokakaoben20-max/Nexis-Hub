@@ -888,6 +888,7 @@ def fund_mission(mission_id: int, payload: FundPayload, actor: Actor = Depends(c
 def _intent_to_dict(intent: PaymentIntent) -> dict:
     return {
         "id": intent.id,
+        "reference": intent.reference,
         "mission_id": intent.mission_id,
         "status": intent.status,
         "operator": intent.operator,
@@ -903,6 +904,7 @@ def _intent_to_dict(intent: PaymentIntent) -> dict:
 def _payout_to_dict(payout: Payout) -> dict:
     return {
         "id": payout.id,
+        "reference": payout.reference,
         "status": payout.status,
         "requested_by_telegram_id": payout.requested_by_telegram_id,
         "amount": str(payout.amount),
@@ -1096,6 +1098,21 @@ def resolve_payment_mismatch(
         return _intent_response(db, intent)
 
 
+def _webhook_target(db, gateway_name: str, notice) -> tuple[PaymentIntent | None, Payout | None]:
+    """Intention ou retrait que désigne un webhook : par notre référence
+    d'abord (connue dès la demande, même si l'agrégateur n'a jamais répondu),
+    sinon par la sienne."""
+    for column, value in (("reference", notice.reference), ("gateway_reference", notice.gateway_reference)):
+        if not value:
+            continue
+        filters = {"gateway": gateway_name, column: value}
+        intent = db.query(PaymentIntent).filter_by(**filters).one_or_none()
+        payout = db.query(Payout).filter_by(**filters).one_or_none()
+        if intent is not None or payout is not None:
+            return intent, payout
+    return None, None
+
+
 @app.post("/api/payments/webhook/{gateway_name}")
 async def payment_webhook(gateway_name: str, request: Request):
     """Confirmation de l'agrégateur. Hors clé API (c'est l'agrégateur qui
@@ -1105,14 +1122,13 @@ async def payment_webhook(gateway_name: str, request: Request):
     if gateway_name != gateway.name:
         raise HTTPException(status_code=404, detail={"code": "unknown_gateway"})
     try:
-        reference = gateway.verify_webhook(request.headers, await request.body())
+        notice = gateway.verify_webhook(request.headers, await request.body())
     except payment_gateway.InvalidWebhook as error:
         raise HTTPException(status_code=401, detail={"code": "invalid_signature"}) from error
     from backend.app.tasks import refresh_and_notify_intent, refresh_and_notify_payout
 
     with SessionLocal() as db:
-        intent = db.query(PaymentIntent).filter_by(gateway=gateway.name, gateway_reference=reference).one_or_none()
-        payout = db.query(Payout).filter_by(gateway=gateway.name, gateway_reference=reference).one_or_none()
+        intent, payout = _webhook_target(db, gateway.name, notice)
         if intent is not None:
             refresh_and_notify_intent(db, intent.id)
         elif payout is not None:

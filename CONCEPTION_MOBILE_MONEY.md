@@ -127,6 +127,57 @@ une correction est une opération admin explicite, tracée dans le registre.
   nous.
 - En production, le paiement simulé est refusé par configuration.
 
+## Notre référence, et ce qu'on fait quand on ne sait pas (2026-11-19)
+
+Chaque intention et chaque retrait reçoivent **notre référence**
+(`NXI…` pour un encaissement, `NXO…` pour un versement : 128 bits
+aléatoires, 35 lettres et chiffres), enregistrée en base avant tout appel.
+Elle est unique dans toute l'histoire de Nexis Hub, quel que soit
+l'environnement : l'identifiant numérique d'une ligne, lui, se répète entre la
+production, le test et un poste de développement. L'agrégateur s'en sert pour
+le statut, et doit refuser un second ordre qui la porte (condition posée à
+SerdiPay avant signature).
+
+Trois réponses possibles de l'agrégateur à une lecture de statut, en plus des
+statuts habituels :
+
+- **pas de réponse** (`GatewayUnavailable`) : on ne sait rien, rien ne bouge ;
+- **`NOT_FOUND`** : il ne connaît aucune transaction avec notre référence, la
+  demande ne lui est jamais parvenue ;
+- **statut inconnu** : exception, jamais un échec par défaut.
+
+Encaissement :
+
+- Pas de réponse à la demande : l'intention **reste « created »**, donc
+  ouverte. Le client voit « votre opérateur n'a pas encore répondu ; si une
+  demande apparaît, validez-la, sinon ne faites rien ». Un second clic renvoie
+  la même intention : jamais deux demandes, jamais deux débits.
+- `NOT_FOUND` sur une intention « created » de plus de 2 minutes : échec
+  (`never_reached_gateway`), le client peut réessayer avec une nouvelle
+  intention et une nouvelle référence. Avant 2 minutes, on attend : la demande
+  peut être encore en route.
+- `NOT_FOUND` sur une intention que l'agrégateur avait acceptée : jamais un
+  échec (le client a peut-être payé). Rien ne bouge, l'intention est marquée
+  `unknown_at_gateway` et le rapprochement la signale à l'admin.
+- Une intention en échec n'est jamais rouverte, mais si l'agrégateur confirme
+  quand même le paiement (webhook tardif), l'argent n'est jamais ignoré :
+  mission payée si elle ne l'est pas, sinon crédit au wallet du client.
+
+Versement :
+
+- Un ordre n'est envoyé qu'une fois par le chemin normal (`send_count`) :
+  un double clic ou deux processus n'envoient jamais deux ordres.
+- Pas de réponse à l'ordre : on garde seulement l'heure d'envoi, l'argent
+  reste bloqué.
+- `NOT_FOUND` : l'ordre est renvoyé **avec la même référence**, 5 minutes au
+  moins après le dernier envoi, 3 envois au plus. Au-delà, plus de renvoi :
+  le rapprochement signale `payout_never_received` et l'admin voit avec
+  l'agrégateur. L'argent n'est jamais rendu au wallet sur ce seul motif.
+
+Webhook : il désigne l'opération par notre référence (connue dès la
+demande, même sans réponse de l'agrégateur), sinon par la sienne, et le
+statut est toujours relu.
+
 ## Module d'adaptation
 
 Une interface, une implémentation par agrégateur :
@@ -136,8 +187,11 @@ Une interface, une implémentation par agrégateur :
 - demander un versement, en lire le statut ;
 - lire le relevé d'une journée.
 
-Les tests utilisent une implémentation de test (dans `tests/` uniquement),
-et le bac à sable de l'agrégateur sert aux essais de bout en bout.
+Les tests utilisent une implémentation de test (dans `tests/` uniquement) :
+`FakeGateway` de `backend/tests/test_mobile_money.py` tient le même contrat
+que le vrai agrégateur (transactions retenues par notre référence, doublons
+refusés, `NOT_FOUND`, réponse perdue, demande perdue). Le bac à sable de
+l'agrégateur sert aux essais de bout en bout.
 
 ## Ce que le bot et l'admin voient
 
@@ -149,7 +203,10 @@ et le bac à sable de l'agrégateur sert aux essais de bout en bout.
 
 ## Décisions de Ben (2026-10-03)
 
-1. **Agrégateur : FlexPaie (FlexPay).**
+1. **Agrégateur : FlexPaie (FlexPay).** Remplacé le 2026-11-19 : **SerdiPay
+   en principal, FlexPaie en secours**, sous condition que SerdiPay confirme
+   par écrit l'API de statut par notre référence, le refus d'un ordre en
+   double et l'authentification des callbacks.
 2. **Frais d'encaissement** : à la charge de Nexis Hub, sur sa commission,
    « on verra ensuite » : réglage du backend, modifiable sans migration.
 3. **Frais de retrait** : au prix coûtant, à la charge du prestataire, avec

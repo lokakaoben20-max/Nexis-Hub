@@ -11,10 +11,10 @@ import pytest
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 
-from backend.app import ledger, mobile_money
+from backend.app import ledger, mobile_money, reconciliation
 from backend.tests import profils_de_test
 from backend.tests.test_ledger import accepted_quote
-from backend.app.payment_gateway import FAILED, PENDING, SUCCEEDED, GatewayResult, GatewayUnavailable
+from backend.app.payment_gateway import FAILED, NOT_FOUND, PENDING, SUCCEEDED, GatewayResult, GatewayUnavailable
 
 LedgerEntry = ledger.LedgerEntry
 PaymentIntent = mobile_money.PaymentIntent
@@ -29,7 +29,18 @@ def acc(db, telegram_id):
 
 
 class FakeGateway:
-    """Agrégateur de test : `collection` / `payout` disent ce qu'il répondra."""
+    """Agrégateur de test qui se comporte comme le vrai contrat
+    (`payment_gateway`) : il retient chaque transaction par notre référence,
+    refuse un second ordre qui la porte, et dit `NOT_FOUND` pour une
+    référence qu'il n'a jamais reçue. `collection` / `payout` disent comment
+    il répondra.
+
+    Pannes réglables :
+    - `down` : il ne répond pas, et la demande ne lui parvient pas ;
+    - `lose_answer` : la demande lui parvient, mais sa réponse se perd ;
+    - `drop_requests` : les demandes se perdent en route, la lecture du
+      statut marche.
+    """
 
     name = "fake"
 
@@ -39,31 +50,59 @@ class FakeGateway:
         self.fee = Decimal("2.50")
         self.payout = "succeeded"
         self.down = False
-        self.payout_requests = 0
+        self.lose_answer = False
+        self.drop_requests = False
+        self.payout_requests = 0  # ordres de versement reçus, doublons compris
+        self.duplicates_refused = 0
+        self.known = {}  # notre référence -> sa référence
 
     def _check(self):
         if self.down:
             raise GatewayUnavailable()
 
+    def _receive(self, reference, gateway_reference):
+        if self.drop_requests:
+            raise GatewayUnavailable()
+        if reference in self.known:
+            self.duplicates_refused += 1
+            return
+        self.known[reference] = gateway_reference
+
+    def _answer(self):
+        if self.lose_answer:
+            raise GatewayUnavailable()
+
     def request_collection(self, intent):
         self._check()
+        self._receive(intent.reference, f"FAKE-{intent.id}")
+        self._answer()
         return self.collection_status(intent)
 
     def collection_status(self, intent):
         self._check()
+        if intent.reference not in self.known:
+            return GatewayResult(NOT_FOUND)
         status = {"succeeded": SUCCEEDED, "pending": PENDING, "failed": FAILED}[self.collection]
         amount = self.amount if self.amount is not None else intent.amount
-        return GatewayResult(status, f"FAKE-{intent.id}", Decimal(amount), intent.currency, self.fee, "refusé" if status == FAILED else None)
+        return GatewayResult(status, self.known[intent.reference], Decimal(amount), intent.currency, self.fee, "refusé" if status == FAILED else None)
 
     def request_payout(self, payout):
         self.payout_requests += 1
         self._check()
+        self._receive(payout.reference, f"FAKE-OUT-{payout.id}")
+        self._answer()
         return self.payout_status(payout)
 
     def payout_status(self, payout):
         self._check()
+        if payout.reference not in self.known:
+            return GatewayResult(NOT_FOUND)
         status = {"succeeded": SUCCEEDED, "pending": PENDING, "failed": FAILED}[self.payout]
-        return GatewayResult(status, f"FAKE-OUT-{payout.id}")
+        return GatewayResult(status, self.known[payout.reference])
+
+    def forget(self, reference):
+        """L'agrégateur perd une transaction qu'il avait acceptée."""
+        del self.known[reference]
 
 
 @pytest.fixture
@@ -213,10 +252,13 @@ def test_a_replayed_confirmation_does_nothing(db, gateway):
     assert balance(db, ledger.FEES) == money("2.50")
 
 
-def test_an_unreachable_aggregator_moves_nothing(db, gateway):
+def test_an_unreachable_aggregator_moves_nothing_and_keeps_the_intent_open(db, gateway):
     gateway.down = True
-    refused("gateway_unavailable", lambda: pay(db))
+    intent = pay(db)
+
+    assert intent.status == "created"  # on ne sait pas si la demande est arrivée
     assert db.query(ledger.MoneyOperation).count() == 0
+    assert pay(db).id == intent.id  # aucune seconde demande tant qu'on ne sait pas
 
 
 def test_a_provider_cannot_pay_their_own_mission(db, gateway):
@@ -281,12 +323,12 @@ def test_rejected_or_failed_payouts_give_the_money_back(db, gateway):
 
 def test_a_payout_lost_in_transit_is_never_given_back_or_resent(db, gateway):
     earn(db, gateway)
-    gateway.down = True
+    gateway.lose_answer = True  # l'ordre arrive, la réponse se perd
     payout = mobile_money.approve_payout(db, withdraw(db).id, ADMIN_ID)
+    gateway.lose_answer = False
 
     assert payout.status == "processing"
     assert wallet(db, PROVIDER_ID) == money(40)  # toujours bloqué, pas rendu
-    gateway.down = False
     assert mobile_money.refresh_payout(db, payout.id).status == "succeeded"
     assert gateway.payout_requests == 1  # relu, pas renvoyé
 
@@ -340,3 +382,154 @@ def test_a_payout_is_decided_once(db, gateway):
 
     assert gateway.payout_requests == 1
     refused("invalid_state", lambda: mobile_money.reject_payout(db, payout.id, ADMIN_ID))
+
+
+# --- Pannes : réponse perdue, demande jamais arrivée, agrégateur incohérent ---------
+# Le backend ne conclut jamais d'un silence : il relit par notre référence.
+
+
+def older(row, field, delta):
+    setattr(row, field, getattr(row, field) - delta)
+
+
+def test_every_intent_and_payout_carries_its_own_reference(db, gateway, monkeypatch):
+    monkeypatch.setenv("PAYOUT_AUTO_LIMIT_USD", "1000")
+    gateway.collection = "failed"
+    first, second = pay(db), pay(db)
+    gateway.collection = "succeeded"
+    earn(db, gateway)
+    payout = withdraw(db, 20)
+
+    references = [first.reference, second.reference, payout.reference]
+    assert first.reference.startswith("NXI") and payout.reference.startswith("NXO")
+    assert all(len(reference) == 35 and reference.isalnum() for reference in references)
+    assert len(set(references)) == 3
+    assert set(references) <= set(gateway.known)  # c'est elle que l'agrégateur a reçue
+
+
+def test_a_lost_answer_never_charges_the_client_twice(db, gateway):
+    gateway.collection = "pending"
+    gateway.lose_answer = True
+    intent = pay(db)
+    gateway.lose_answer = False
+
+    assert intent.status == "created"
+    assert pay(db).id == intent.id  # second clic : même intention, aucune autre demande
+    assert len(gateway.known) == 1
+
+    gateway.collection = "succeeded"  # le client a validé sur son téléphone
+    assert mobile_money.refresh_intent(db, intent.id).status == "succeeded"
+    assert balance(db, ledger.ESCROW, 1) == money(100)
+    assert_books_balanced(db)
+
+
+def test_a_request_that_never_arrived_fails_only_after_the_delay_then_can_be_retried(db, gateway):
+    gateway.down = True
+    intent = pay(db)
+    gateway.down = False
+
+    # Tout de suite : la demande pourrait encore être en route.
+    assert mobile_money.refresh_intent(db, intent.id).status == "created"
+
+    older(intent, "created_at", mobile_money.STALLED_CREATED_AFTER + timedelta(seconds=1))
+    db.commit()
+    intent = mobile_money.refresh_intent(db, intent.id)
+    assert (intent.status, intent.failure_reason) == ("failed", "never_reached_gateway")
+    assert db.query(ledger.MoneyOperation).count() == 0
+
+    retry = pay(db)
+    assert retry.id != intent.id and retry.reference != intent.reference
+    assert retry.status == "succeeded"
+
+
+def test_money_confirmed_after_a_failure_is_never_ignored(db, gateway):
+    gateway.collection = "failed"
+    intent = pay(db)
+    assert intent.status == "failed"
+
+    gateway.collection = "pending"  # un échec n'est jamais rouvert
+    assert mobile_money.refresh_intent(db, intent.id).status == "failed"
+
+    gateway.collection = "succeeded"  # webhook tardif : l'argent est arrivé quand même
+    assert mobile_money.refresh_intent(db, intent.id).status == "succeeded"
+    assert balance(db, ledger.ESCROW, 1) == money(100)
+    assert_books_balanced(db)
+
+
+def test_money_confirmed_after_a_failure_on_a_paid_mission_goes_to_the_wallet(db, gateway):
+    gateway.collection = "failed"
+    failed = pay(db)
+    gateway.collection = "succeeded"
+    assert pay(db).status == "succeeded"
+
+    assert mobile_money.refresh_intent(db, failed.id).status == "overpaid"
+    assert balance(db, ledger.ESCROW, 1) == money(100)  # jamais payée deux fois
+    assert wallet(db, CLIENT_ID) == money(100)
+    assert_books_balanced(db)
+
+
+def test_an_intent_the_aggregator_forgets_is_flagged_never_failed(db, gateway):
+    gateway.collection = "pending"
+    intent = pay(db)
+    gateway.forget(intent.reference)
+    older(intent, "created_at", timedelta(hours=1))
+    db.commit()
+
+    intent = mobile_money.refresh_intent(db, intent.id)
+    assert intent.status == "pending"  # le client a peut-être payé : on ne conclut rien
+    assert intent.failure_reason == mobile_money.UNKNOWN_AT_GATEWAY
+    report = reconciliation.reconcile(db, ledger._utcnow())
+    assert "intent_unknown_at_gateway" in [anomaly["code"] for anomaly in report.anomalies]
+
+
+def test_a_payout_that_never_arrived_is_resent_once_with_the_same_reference(db, gateway):
+    earn(db, gateway)
+    gateway.down = True
+    payout = mobile_money.approve_payout(db, withdraw(db).id, ADMIN_ID)
+    gateway.down = False
+    assert (payout.status, payout.send_count) == ("processing", 1)
+
+    # Trop tôt : la demande pourrait encore être en route.
+    assert mobile_money.refresh_payout(db, payout.id).status == "processing"
+    assert gateway.payout_requests == 1
+
+    older(payout, "last_sent_at", mobile_money.PAYOUT_RESEND_AFTER + timedelta(seconds=1))
+    db.commit()
+    payout = mobile_money.refresh_payout(db, payout.id)
+    assert (payout.status, payout.send_count) == ("succeeded", 2)
+    assert payout.reference in gateway.known
+    assert gateway.duplicates_refused == 0
+    assert wallet(db, PROVIDER_ID) == money(40)
+    assert balance(db, ledger.PAYOUT_PENDING, payout.id) == 0
+    assert_books_balanced(db)
+
+
+def test_a_payout_already_received_is_never_sent_twice(db, gateway):
+    earn(db, gateway)
+    gateway.payout = "pending"
+    payout = mobile_money.approve_payout(db, withdraw(db).id, ADMIN_ID)
+
+    # Double appel d'envoi (double clic, deux processus) : un seul ordre.
+    assert mobile_money._send_payout(db, payout.id).send_count == 1
+    older(payout, "last_sent_at", timedelta(hours=1))
+    db.commit()
+    mobile_money.refresh_payout(db, payout.id)  # l'agrégateur le connaît : relu, pas renvoyé
+
+    assert gateway.payout_requests == 1
+    assert db.get(Payout, payout.id).send_count == 1
+
+
+def test_resends_stop_at_the_limit_and_the_admin_is_told(db, gateway):
+    earn(db, gateway)
+    gateway.drop_requests = True
+    payout = mobile_money.approve_payout(db, withdraw(db).id, ADMIN_ID)
+    for _ in range(mobile_money.MAX_PAYOUT_SENDS + 2):
+        older(payout, "last_sent_at", mobile_money.PAYOUT_RESEND_AFTER + timedelta(seconds=1))
+        db.commit()
+        payout = mobile_money.refresh_payout(db, payout.id)
+
+    assert gateway.payout_requests == mobile_money.MAX_PAYOUT_SENDS
+    assert payout.status == "processing"
+    assert wallet(db, PROVIDER_ID) == money(40)  # jamais rendu sur ce seul motif
+    report = reconciliation.reconcile(db, ledger._utcnow())
+    assert "payout_never_received" in [anomaly["code"] for anomaly in report.anomalies]
