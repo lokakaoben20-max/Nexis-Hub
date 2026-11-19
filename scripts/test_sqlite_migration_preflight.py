@@ -17,8 +17,15 @@ class PreflightTests(unittest.TestCase):
         with patch.object(db, "DB_PATH", self.path):
             db.init_db()
 
+    def _report_after_checkpoint(self):
+        # The preflight uses immutable=1, which intentionally ignores WAL files.
+        # Flush this disposable test database so the reader sees committed edits.
+        with sqlite3.connect(self.path) as conn:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        return preflight(self.path)
+
     def test_empty_schema_passes(self):
-        report = preflight(self.path)
+        report = self._report_after_checkpoint()
         self.assertEqual(report["errors"], [], report)
         self.assertEqual(len(report["tables"]), 9)
         # init_db() seeds catalog and platform defaults even on a fresh DB.
@@ -34,7 +41,7 @@ class PreflightTests(unittest.TestCase):
                 "INSERT INTO users (telegram_id, phone_number, wallet_balance_usd) VALUES (?, ?, ?)",
                 (101, "test-only", 1.123456),
             )
-        report = preflight(self.path)
+        report = self._report_after_checkpoint()
         self.assertTrue(
             any("users.wallet_balance_usd" in error for error in report["errors"]),
             report,
@@ -48,7 +55,7 @@ class PreflightTests(unittest.TestCase):
                 "VALUES (?, ?, ?, ?)",
                 (999999, "test-only", "test-only", "orphan reference"),
             )
-        report = preflight(self.path)
+        report = self._report_after_checkpoint()
         self.assertTrue(
             any("missions: 1 orphaned foreign-key references" in error
                 for error in report["errors"]),
@@ -58,13 +65,13 @@ class PreflightTests(unittest.TestCase):
     def test_missing_referenced_table_reports_error_without_crashing(self):
         with sqlite3.connect(self.path) as conn:
             conn.execute("DROP TABLE users")
-        report = preflight(self.path)
+        report = self._report_after_checkpoint()
         self.assertIn("Missing table: users", report["errors"])
 
     def test_missing_table_is_rejected(self):
         with sqlite3.connect(self.path) as conn:
             conn.execute("DROP TABLE platform_settings")
-        report = preflight(self.path)
+        report = self._report_after_checkpoint()
         self.assertIn("Missing table: platform_settings", report["errors"])
 
 
