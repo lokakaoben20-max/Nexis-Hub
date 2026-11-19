@@ -217,6 +217,8 @@
   "money_error_invalid_phone": "Invalid phone number for Mobile Money. Please update your number (format +243…).",
   "money_error_invalid_operator": "Unsupported Mobile Money operator.",
   "money_error_gateway_unavailable": "The Mobile Money service is not responding. Nothing was charged, please try again shortly.",
+  "money_error_payments_paused": "Mobile Money payments are paused for now. Nothing was charged. Try again a little later or pay with your wallet.",
+  "money_error_payouts_paused": "Withdrawals are paused for now. Your money stays in your wallet, nothing moved. Try again a little later.",
   "money_error_below_minimum": "Amount below the minimum withdrawal.",
   "money_error_use_payment_intent": "This payment must go through Mobile Money.",
   "money_error_intent_not_found": "Payment not found.",

@@ -219,6 +219,8 @@
   "money_error_invalid_phone": "Motango ya telefone ebongi te mpo na mbongo na telefone. Bongola motango na yo (lolenge +243…).",
   "money_error_invalid_operator": "Motambwisi ya mbongo na telefone oyo endimami te.",
   "money_error_gateway_unavailable": "Mosala ya mbongo na telefone ezali koyanola te. Mbongo moko te elongwe, meká lisusu mwa sima.",
+  "money_error_payments_paused": "Kofuta na mbongo na telefone etelemi mpo na sikoyo. Mbongo moko te elongwe. Meká lisusu mwa sima to futa na esika na yo ya mbongo.",
+  "money_error_payouts_paused": "Kobimisa mbongo etelemi mpo na sikoyo. Mbongo na yo etikali na esika na yo ya mbongo, eloko moko ebongwani te. Meká lisusu mwa sima.",
   "money_error_below_minimum": "Mbongo ezali na nse ya minimum ya kobimisa.",
   "money_error_use_payment_intent": "Lifuti oyo esengeli koleka na mbongo na telefone.",
   "money_error_intent_not_found": "Lifuti emonani te.",

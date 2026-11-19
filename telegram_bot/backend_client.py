@@ -302,6 +302,17 @@ async def admin_revoke_app_devices(admin_telegram_id: int, telegram_id: int) -> 
     )
 
 
+async def money_switches(admin_telegram_id: int) -> list[dict]:
+    """État des interrupteurs d'arrêt Mobile Money (encaissements, versements)."""
+    return (await _payout_call("GET", "/api/bot/admin/money-switches", admin_telegram_id, keys=("switches",)))["switches"]
+
+
+async def set_money_switch(admin_telegram_id: int, name: str, open: bool, reason: str) -> dict:
+    """Coupe ou rouvre un flux. Rend `{"changed": bool, "switches": [...]}`."""
+    payload = {"open": open, "reason": reason}
+    return await _payout_call("POST", f"/api/bot/admin/money-switches/{name}", admin_telegram_id, payload, keys=("switches",))
+
+
 async def request_payout(telegram_id: int, amount: float, currency: str, phone: str, operator: str) -> dict:
     payload = {"amount": amount, "currency": currency, "phone": phone, "operator": operator}
     return (await _payout_call("POST", "/api/bot/payouts", telegram_id, payload))["payout"]

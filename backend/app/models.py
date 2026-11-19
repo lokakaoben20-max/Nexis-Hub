@@ -8,6 +8,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from backend.app.database import Base
 
 
+def _in(column: str, values: tuple[str, ...]) -> str:
+    return f"{column} IN ({', '.join(repr(value) for value in values)})"
+
+
 class BotMission(Base):
     __tablename__ = "bot_missions"
     __table_args__ = (
@@ -511,6 +515,47 @@ class Payout(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+MONEY_SWITCHES = ("collections", "payouts")
+MONEY_SWITCH_SOURCES = ("bot", "cli")
+
+
+class MoneySwitch(Base):
+    """Interrupteur d'arrêt d'un flux Mobile Money (`backend.app.interrupteurs`) :
+    `collections` (encaissements) ou `payouts` (versements). Une ligne par
+    interrupteur, créée au premier changement ; sans ligne, le flux est
+    ouvert. Seul `interrupteurs.switch` l'écrit, avec une ligne de journal
+    dans la même transaction."""
+
+    __tablename__ = "money_switches"
+    __table_args__ = (CheckConstraint(_in("name", MONEY_SWITCHES), name="ck_money_switches_name"),)
+
+    name: Mapped[str] = mapped_column(String(20), primary_key=True)
+    is_open: Mapped[bool] = mapped_column(Boolean)
+    changed_at: Mapped[datetime] = mapped_column(DateTime)
+    # Admin qui a changé l'interrupteur depuis le bot ; vide depuis la
+    # commande serveur (la personne a alors accès à la machine).
+    changed_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    reason: Mapped[str] = mapped_column(Text)
+
+
+class MoneySwitchEvent(Base):
+    """Journal des changements d'interrupteur, jamais modifié ni effacé."""
+
+    __tablename__ = "money_switch_events"
+    __table_args__ = (
+        CheckConstraint(_in("name", MONEY_SWITCHES), name="ck_money_switch_events_name"),
+        CheckConstraint(_in("source", MONEY_SWITCH_SOURCES), name="ck_money_switch_events_source"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(20), index=True)
+    is_open: Mapped[bool] = mapped_column(Boolean)
+    at: Mapped[datetime] = mapped_column(DateTime)
+    by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source: Mapped[str] = mapped_column(String(10))
+    reason: Mapped[str] = mapped_column(Text)
+
+
 # ---------------------------------------------------------------------------
 # Application mobile : appareils, sessions, codes de connexion
 # (plan : app-mobile/plan-etape1-connexion-api-2026-11-07.md, section 4).
@@ -529,10 +574,6 @@ DEVICE_ATTESTATIONS = ("verified", "unverified")
 LOGIN_PURPOSES = ("signup", "login")
 LOGIN_DELIVERIES = ("whatsapp", "telegram")
 MAX_CODE_ATTEMPTS = 5
-
-
-def _in(column: str, values: tuple[str, ...]) -> str:
-    return f"{column} IN ({', '.join(repr(value) for value in values)})"
 
 
 class Device(Base):

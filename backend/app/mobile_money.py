@@ -20,7 +20,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app import ledger
+from backend.app import interrupteurs, ledger
 from backend.app.ledger import CENT, ZERO, MoneyError, to_money
 from backend.app.models import NexisAccount, PaymentIntent, Payout
 from backend.app.payment_gateway import FAILED, NOT_FOUND, PENDING, SUCCEEDED, GatewayUnavailable, get_gateway
@@ -119,6 +119,9 @@ def create_intent(
     existing = _open_intent(db, mission_id)
     if existing is not None:
         return existing
+    if not interrupteurs.is_open(db, interrupteurs.COLLECTIONS):
+        # Encaissements coupés par un admin : aucune nouvelle demande ne part.
+        raise MoneyError("payments_paused", 503, mission)
     intent = PaymentIntent(
         reference=new_reference("NXI"),
         mission_id=mission_id,
@@ -394,6 +397,9 @@ def request_payout(db: Session, *, account_id: int, amount, currency: str, phone
     s'il ne demande aucune vérification (sous le plafond, aucun fonds de
     remboursement) ; sinon il attend l'admin."""
     _check_phone_and_operator(phone, operator)
+    if not interrupteurs.is_open(db, interrupteurs.PAYOUTS):
+        # Versements coupés : rien n'est bloqué ni demandé.
+        raise MoneyError("payouts_paused", 503)
     if currency not in ledger.CURRENCIES:
         raise MoneyError("invalid_currency", 400)
     amount = to_money(amount)
@@ -445,6 +451,9 @@ def approve_payout(db: Session, payout_id: int, admin_telegram_id: int) -> Payou
         if payout.status in ("processing", "succeeded") and payout.decided_by_telegram_id == admin_telegram_id:
             return payout  # double clic
         raise MoneyError("invalid_state")
+    if not interrupteurs.is_open(db, interrupteurs.PAYOUTS):
+        # Versements coupés : le retrait reste à valider, l'argent bloqué.
+        raise MoneyError("payouts_paused", 503)
     payout.status, payout.decided_by_telegram_id, payout.updated_at = "processing", admin_telegram_id, _utcnow()
     db.commit()
     return _send_payout(db, payout_id)
@@ -472,9 +481,17 @@ def _send_payout(db: Session, payout_id: int, *, resend: bool = False) -> Payout
     qu'un double appel n'envoie jamais deux ordres. Renvoi : seulement depuis
     `refresh_payout`, quand l'agrégateur dit ne pas connaître notre
     référence ; c'est toujours la même référence, que l'agrégateur refuse en
-    double."""
+    double.
+
+    Versements coupés (`interrupteurs`) : rien ne part, l'argent reste bloqué.
+    Un retrait jamais envoyé part par la vérification de secours
+    (`refresh_payout`, l'agrégateur ne le connaît pas) une fois rouverts."""
     payout = db.get(Payout, payout_id, with_for_update=True)
-    if payout.status != "processing" or (payout.send_count and not resend):
+    if (
+        payout.status != "processing"
+        or (payout.send_count and not resend)
+        or not interrupteurs.is_open(db, interrupteurs.PAYOUTS)
+    ):
         db.commit()  # rien écrit : libère le verrou
         return payout
     now = _utcnow()

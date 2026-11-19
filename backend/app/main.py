@@ -19,6 +19,7 @@ from backend.app import (
     crud,
     fichiers,
     idempotency,
+    interrupteurs,
     ledger,
     mobile_money,
     payment_gateway,
@@ -336,6 +337,11 @@ class PayoutPayload(BaseModel):
 
 class PayoutDecisionPayload(BaseModel):
     reason: str = ""
+
+
+class MoneySwitchPayload(BaseModel):
+    open: bool
+    reason: str
 
 
 class MismatchDecisionPayload(BaseModel):
@@ -1041,6 +1047,30 @@ def admin_revoke_app_devices(payload: AppDevicesRevokePayload, actor: Actor = De
             raise HTTPException(status_code=404, detail={"code": "account_not_found"})
         revoked = app_sessions.revoke_all_devices(db, account_id)
         return {"status": "ok", "revoked": revoked}
+
+
+@router.get("/api/bot/admin/money-switches")
+def money_switches(actor: Actor = Depends(current_actor)):
+    """État des interrupteurs d'arrêt Mobile Money (`backend.app.interrupteurs`)."""
+    _require_admin(actor)
+    with SessionLocal() as db:
+        return {"status": "ok", "switches": interrupteurs.state(db)}
+
+
+@router.post("/api/bot/admin/money-switches/{name}")
+def set_money_switch(name: str, payload: MoneySwitchPayload, actor: Actor = Depends(current_actor)):
+    """Un admin coupe ou rouvre les encaissements (`collections`) ou les
+    versements (`payouts`), avec une raison gardée au journal."""
+    admin_telegram_id = _require_admin(actor)
+    with SessionLocal() as db:
+        try:
+            _, changed = interrupteurs.switch(
+                db, name, open=payload.open, reason=payload.reason, source="bot", by_telegram_id=admin_telegram_id
+            )
+        except ledger.MoneyError as error:
+            db.rollback()
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+        return {"status": "ok", "changed": changed, "switches": interrupteurs.state(db)}
 
 
 @router.post("/api/bot/payouts/{payout_id}/approve")

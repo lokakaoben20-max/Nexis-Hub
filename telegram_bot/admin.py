@@ -154,6 +154,107 @@ async def cmd_couper_app(message: Message):
     await message.answer(f"📵 Téléphones de l'application coupés : <b>{body['revoked']}</b>.", parse_mode="HTML")
 
 
+# --- Interrupteurs d'arrêt Mobile Money (backend/app/interrupteurs.py) ---------------
+
+SWITCH_NAMES = {"encaissements": "collections", "versements": "payouts"}
+SWITCH_LABELS = {"collections": "Encaissements", "payouts": "Versements"}
+SWITCH_USAGE = (
+    "Couper : /couper encaissements <raison> (ou versements)\n"
+    "Rouvrir : /rouvrir encaissements <raison> (ou versements)"
+)
+SWITCH_REFUSALS = {
+    "reason_required": "Une raison est obligatoire (500 caractères au plus).",
+    "not_admin": "Le backend ne reconnaît pas cet admin (python -m backend.app.admins liste).",
+}
+
+
+def switches_text(switches: list[dict]) -> str:
+    lines = ["🛑 <b>Interrupteurs Mobile Money</b>"]
+    for item in switches:
+        label = SWITCH_LABELS.get(item["name"], item["name"])
+        if item["is_open"]:
+            lines.append(f"🟢 {label} : ouverts")
+        else:
+            since = (item.get("changed_at") or "")[:16].replace("T", " ")
+            lines.append(f"⛔ {label} : <b>coupés</b> depuis le {since} UTC ({html.escape(item.get('reason') or '')})")
+    lines += ["", html.escape(SWITCH_USAGE)]
+    return "\n".join(lines)
+
+
+async def _show_switches(telegram_id: int) -> str:
+    try:
+        return switches_text(await backend_client.money_switches(telegram_id))
+    except MoneyRefused as error:
+        return SWITCH_REFUSALS.get(error.code, f"Refusé par le backend : {html.escape(error.code)}")
+    except BackendUnavailable:
+        return get_message("money_backend_unavailable", "fr")
+
+
+@router.message(Command("interrupteurs"))
+async def cmd_interrupteurs(message: Message):
+    if refusal := await _access_refusal(message.from_user.id):
+        await message.answer(refusal)
+        return
+    await message.answer(await _show_switches(message.from_user.id), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_switches")
+async def admin_switches(callback: CallbackQuery):
+    if refusal := await _access_refusal(callback.from_user.id):
+        await callback.answer(refusal, show_alert=True)
+        return
+    await callback.message.edit_text(
+        await _show_switches(callback.from_user.id), parse_mode="HTML", reply_markup=clavier_admin_menu()
+    )
+    await callback.answer()
+
+
+@router.message(Command("couper", "rouvrir"))
+async def cmd_couper_rouvrir(message: Message):
+    """`/couper encaissements <raison>`, `/rouvrir versements <raison>` : coupe
+    ou rouvre un flux Mobile Money sans redéployer. Le backend revérifie que
+    l'auteur est admin et garde la raison au journal ; les autres admins sont
+    prévenus."""
+    if refusal := await _access_refusal(message.from_user.id):
+        await message.answer(refusal)
+        return
+    parts = (message.text or "").split(maxsplit=2)
+    command = parts[0].lstrip("/").split("@")[0].lower()
+    name = SWITCH_NAMES.get(parts[1].lower()) if len(parts) > 1 else None
+    reason = parts[2].strip() if len(parts) > 2 else ""
+    if name is None or not reason:
+        await message.answer(SWITCH_USAGE)
+        return
+    try:
+        body = await backend_client.set_money_switch(message.from_user.id, name, command == "rouvrir", reason)
+    except MoneyRefused as error:
+        await message.answer(SWITCH_REFUSALS.get(error.code, f"Refusé par le backend : {html.escape(error.code)}"))
+        return
+    except BackendUnavailable:
+        # Rien n'a changé. Depuis le serveur : python -m backend.app.interrupteurs.
+        await message.answer(
+            "Backend injoignable : rien n'a changé. Depuis le serveur : "
+            "python -m backend.app.interrupteurs couper|rouvrir encaissements|versements --raison \"...\""
+        )
+        return
+    label = SWITCH_LABELS[name]
+    state_text = "rouverts" if command == "rouvrir" else "coupés"
+    if not body["changed"]:
+        await message.answer(f"{label} déjà {state_text} : rien n'a changé.")
+        return
+    await message.answer(f"{'🟢' if command == 'rouvrir' else '⛔'} {label} {state_text}.")
+    alert = (
+        f"{'🟢' if command == 'rouvrir' else '⛔'} {label} {state_text} par l'admin {message.from_user.id} : "
+        f"{html.escape(reason)}"
+    )
+    for admin_id in await backend_client.admin_telegram_ids():
+        if admin_id != message.from_user.id:
+            try:
+                await message.bot.send_message(admin_id, alert, parse_mode="HTML")
+            except Exception:
+                pass  # un admin injoignable n'empêche pas les autres d'être prévenus
+
+
 @router.callback_query(F.data == "admin_home")
 async def admin_home(callback: CallbackQuery):
     if refusal := await _access_refusal(callback.from_user.id):
@@ -488,7 +589,11 @@ async def admin_decider_retrait(callback: CallbackQuery):
     try:
         payout = await decide_payout(payout_id, approve, callback.from_user.id)
     except (MoneyRefused, BackendUnavailable) as error:
-        await callback.answer(money_failure_text(0, error, "fr"), show_alert=True)
+        if isinstance(error, MoneyRefused) and error.code == "payouts_paused":
+            text = "Versements coupés (/interrupteurs) : le retrait reste à valider, rien n'est parti."
+        else:
+            text = money_failure_text(0, error, "fr")
+        await callback.answer(text, show_alert=True)
         return
     await callback.message.edit_text(f"Retrait #{payout_id} : {payout['status']}.")
     from telegram_bot.dashboard import payout_status_text

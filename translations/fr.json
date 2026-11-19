@@ -225,6 +225,8 @@
   "money_error_invalid_phone": "Numéro de téléphone invalide pour le Mobile Money. Mettez à jour votre numéro (format +243…).",
   "money_error_invalid_operator": "Opérateur Mobile Money non pris en charge.",
   "money_error_gateway_unavailable": "Le service Mobile Money ne répond pas. Rien n'a été débité, réessayez dans un instant.",
+  "money_error_payments_paused": "Les paiements Mobile Money sont suspendus pour le moment. Rien n'a été débité. Réessaie un peu plus tard ou paie avec ton wallet.",
+  "money_error_payouts_paused": "Les retraits sont suspendus pour le moment. Ton argent reste dans ton wallet, rien n'a bougé. Réessaie un peu plus tard.",
   "money_error_below_minimum": "Montant inférieur au minimum de retrait.",
   "money_error_use_payment_intent": "Ce paiement doit passer par le Mobile Money.",
   "money_error_intent_not_found": "Paiement introuvable.",

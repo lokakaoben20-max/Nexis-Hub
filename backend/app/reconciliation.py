@@ -20,7 +20,7 @@ from decimal import Decimal
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.app import ledger, mobile_money
+from backend.app import interrupteurs, ledger, mobile_money
 from backend.app.ledger import ESCROW, FUNDING, PAYOUT_PENDING, SETTLEMENT, WALLET, ZERO, to_money
 from backend.app.models import BotMission, LedgerEntry, MoneyOperation, PaymentIntent, Payout
 from backend.app.payment_gateway import collection_fee_rate
@@ -55,6 +55,9 @@ class Report:
     generated_at: datetime
     anomalies: list[dict] = field(default_factory=list)
     counts: dict = field(default_factory=dict)
+    # Flux Mobile Money coupés par un admin (`interrupteurs`) : pas un écart,
+    # mais rappelé chaque jour pour qu'aucun ne reste coupé par oubli.
+    paused: list[dict] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -84,6 +87,7 @@ def reconcile(db: Session, now: datetime | None = None) -> Report:
     _check_intents(db, report, now)
     _check_mobile_money_fundings(db, report)
     _check_mismatch_credits(db, report)
+    report.paused = [item for item in interrupteurs.state(db) if not item["is_open"]]
     report.counts = {
         "operations": db.query(func.count(MoneyOperation.id)).scalar(),
         "intents": db.query(func.count(PaymentIntent.id)).scalar(),
@@ -264,10 +268,15 @@ def format_admin_report(report: Report, limit: int = 20) -> str:
     date = report.generated_at.strftime("%Y-%m-%d")
     counts = report.counts
     summary = f"{counts.get('operations', 0)} opérations, {counts.get('intents', 0)} intentions, {counts.get('payouts', 0)} retraits"
+    paused = [
+        f"⛔ {interrupteurs.LABELS[item['name']].capitalize()} coupés depuis le "
+        f"{item['changed_at'][:16].replace('T', ' ')} UTC : {item['reason']}"
+        for item in report.paused
+    ]
     if report.ok:
-        return f"✅ Rapprochement du {date} : aucun écart ({summary})."
+        return "\n".join([f"✅ Rapprochement du {date} : aucun écart ({summary})."] + paused)
     lines = [f"⚠️ Rapprochement du {date} : {len(report.anomalies)} écart(s) ({summary}). Aucune correction automatique."]
     lines += [f"• {anomaly['detail']}" for anomaly in report.anomalies[:limit]]
     if len(report.anomalies) > limit:
         lines.append(f"… et {len(report.anomalies) - limit} autre(s).")
-    return "\n".join(lines)
+    return "\n".join(lines + paused)

@@ -257,3 +257,70 @@ def test_only_the_admin_settles_a_different_amount(monkeypatch, live_backend):
     listing = DummyCallback(ADMIN_ID, data="admin_mismatches")
     asyncio.run(admin.admin_montants_differents(listing))
     assert listing.answered == admin.MISMATCH_REFUSALS["not_admin"]  # téléphones des clients
+
+
+# --- Interrupteurs d'arrêt (backend/app/interrupteurs.py) ---------------------------
+
+SECOND_ADMIN_ID = 9
+
+
+def test_an_admin_cuts_withdrawals_from_telegram_and_the_other_admins_are_told(monkeypatch, live_backend):
+    _earned(live_backend)
+    live_backend.grant_admin(SECOND_ADMIN_ID)
+    bot = DummyBot()
+
+    command = DummyMessage(ADMIN_ID, text="/couper versements fraude suspectée", bot=bot)
+    asyncio.run(admin.cmd_couper_rouvrir(command))
+    assert command.answers == ["⛔ Versements coupés."]
+    assert [(sent.chat_id, "fraude suspectée" in sent.text) for sent in bot.messages] == [(SECOND_ADMIN_ID, True)]
+
+    _, final, _ = _withdraw("50")
+    assert final.message.edited_text == get_message("money_error_payouts_paused", "fr")
+    assert live_backend.balance(PROVIDER_ID) == 90.0  # rien de bloqué
+
+    status = DummyMessage(ADMIN_ID, text="/interrupteurs")
+    asyncio.run(admin.cmd_interrupteurs(status))
+    assert "Versements : <b>coupés</b>" in status.answers[0] and "Encaissements : ouverts" in status.answers[0]
+
+    again = DummyMessage(ADMIN_ID, text="/rouvrir versements vérifié avec l'agrégateur")
+    asyncio.run(admin.cmd_couper_rouvrir(again))
+    assert again.answers == ["🟢 Versements rouverts."]
+    _, final, _ = _withdraw("50")
+    assert "validation" in final.message.edited_text
+
+
+def test_a_cut_needs_a_known_flow_a_reason_and_an_admin(monkeypatch, live_backend):
+    _earned(live_backend)
+
+    for text in ("/couper versements", "/couper wallets panne", "/couper"):
+        message = DummyMessage(ADMIN_ID, text=text)
+        asyncio.run(admin.cmd_couper_rouvrir(message))
+        assert message.answers == [admin.SWITCH_USAGE]
+
+    intruder = DummyMessage(PROVIDER_ID, text="/couper encaissements je bloque tout")
+    asyncio.run(admin.cmd_couper_rouvrir(intruder))
+    assert intruder.answers == ["Accès admin refusé."]
+    _, final, _ = _withdraw("50")
+    assert "validation" in final.message.edited_text  # rien n'a été coupé
+
+
+def test_an_admin_cannot_approve_a_withdrawal_while_payouts_are_cut(monkeypatch, live_backend):
+    _earned(live_backend)
+    _withdraw("50")
+    asyncio.run(admin.cmd_couper_rouvrir(DummyMessage(ADMIN_ID, text="/couper versements panne agrégateur")))
+
+    callback = DummyCallback(ADMIN_ID, data="admin_payout_ok_1", bot=DummyBot())
+    asyncio.run(admin.admin_decider_retrait(callback))
+
+    assert "Versements coupés" in callback.answered
+    assert live_backend.balance(PROVIDER_ID) == 40.0  # toujours bloqués, rien n'est parti
+
+
+def test_a_client_is_told_payments_are_paused_and_nothing_is_charged(monkeypatch, live_backend):
+    _, quote_id = _accepted_quote(live_backend)
+    asyncio.run(admin.cmd_couper_rouvrir(DummyMessage(ADMIN_ID, text="/couper encaissements agrégateur en panne")))
+
+    callback = DummyCallback(CLIENT_ID, data=f"qpay_op_{quote_id}_mpesa")
+    asyncio.run(payment.paiement_mobile_money_operateur(callback))
+
+    assert callback.answered == get_message("money_error_payments_paused", "fr")
