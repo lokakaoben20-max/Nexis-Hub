@@ -56,6 +56,19 @@ def main():
             assert session.get(Transaction, tx.id).status == "pending"
             assert session.get(Quote, quote.id).amount == Decimal("12.5000")
             assert session.get(Mission, mission.id).net_provider == Decimal("10.0000")
+            # Check that the synthetic chain resolves through real foreign keys.
+            assert session.scalar(
+                select(Transaction.id)
+                .join(Quote, Transaction.quote_id == Quote.id)
+                .join(Mission, Quote.mission_id == Mission.id)
+                .join(User, Mission.user_id == User.id)
+                .join(Provider, Quote.provider_id == Provider.id)
+                .where(Transaction.id == tx.id,
+                       Transaction.mission_id == Mission.id,
+                       Mission.provider_id == Provider.id,
+                       User.telegram_id == 900000001,
+                       Provider.telegram_id == 900000002)
+            ) == tx.id
             # Deliberately roll back: this is not a payment capture or escrow release.
             session.rollback()
 
