@@ -8,6 +8,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from backend.app.database import Base
 
 
+def _in(column: str, values: tuple[str, ...]) -> str:
+    return f"{column} IN ({', '.join(repr(value) for value in values)})"
+
+
 class BotMission(Base):
     __tablename__ = "bot_missions"
     __table_args__ = (
@@ -438,9 +442,14 @@ class PaymentIntent(Base):
             sqlite_where=text("status IN ('created', 'pending')"),
         ),
         UniqueConstraint("gateway", "gateway_reference", name="uq_payment_intents_gateway_reference"),
+        UniqueConstraint("reference", name="uq_payment_intents_reference"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Notre référence, unique dans toute l'histoire de Nexis Hub (tous
+    # environnements) : créée avant tout appel, envoyée à l'agrégateur, qui
+    # s'en sert pour le statut et refuse un second ordre qui la porte.
+    reference: Mapped[str] = mapped_column(String(40))
     mission_id: Mapped[int] = mapped_column(ForeignKey("bot_missions.mission_id"), index=True)
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     gateway: Mapped[str] = mapped_column(String(30))
@@ -472,9 +481,15 @@ class Payout(Base):
     le wallet (refus ou échec)."""
 
     __tablename__ = "payouts"
-    __table_args__ = (UniqueConstraint("gateway", "gateway_reference", name="uq_payouts_gateway_reference"),)
+    __table_args__ = (
+        UniqueConstraint("gateway", "gateway_reference", name="uq_payouts_gateway_reference"),
+        UniqueConstraint("reference", name="uq_payouts_reference"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Notre référence (voir PaymentIntent.reference) : un versement renvoyé
+    # après une coupure porte toujours la même.
+    reference: Mapped[str] = mapped_column(String(40))
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     # Identité Telegram du demandeur (audit, messages) ; vide pour un autre canal.
     requested_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -489,8 +504,56 @@ class Payout(Base):
     needs_review_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     decided_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     failure_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Dernier envoi de l'ordre à l'agrégateur (réponse reçue ou non). Un
+    # versement inconnu de l'agrégateur n'est renvoyé qu'après un délai depuis
+    # ce moment, pour ne pas croiser une demande encore en route.
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Nombre d'envois de l'ordre (même référence à chaque fois), plafonné par
+    # `mobile_money.MAX_PAYOUT_SENDS`.
+    send_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+MONEY_SWITCHES = ("collections", "payouts")
+MONEY_SWITCH_SOURCES = ("bot", "cli")
+
+
+class MoneySwitch(Base):
+    """Interrupteur d'arrêt d'un flux Mobile Money (`backend.app.interrupteurs`) :
+    `collections` (encaissements) ou `payouts` (versements). Une ligne par
+    interrupteur, créée au premier changement ; sans ligne, le flux est
+    ouvert. Seul `interrupteurs.switch` l'écrit, avec une ligne de journal
+    dans la même transaction."""
+
+    __tablename__ = "money_switches"
+    __table_args__ = (CheckConstraint(_in("name", MONEY_SWITCHES), name="ck_money_switches_name"),)
+
+    name: Mapped[str] = mapped_column(String(20), primary_key=True)
+    is_open: Mapped[bool] = mapped_column(Boolean)
+    changed_at: Mapped[datetime] = mapped_column(DateTime)
+    # Admin qui a changé l'interrupteur depuis le bot ; vide depuis la
+    # commande serveur (la personne a alors accès à la machine).
+    changed_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    reason: Mapped[str] = mapped_column(Text)
+
+
+class MoneySwitchEvent(Base):
+    """Journal des changements d'interrupteur, jamais modifié ni effacé."""
+
+    __tablename__ = "money_switch_events"
+    __table_args__ = (
+        CheckConstraint(_in("name", MONEY_SWITCHES), name="ck_money_switch_events_name"),
+        CheckConstraint(_in("source", MONEY_SWITCH_SOURCES), name="ck_money_switch_events_source"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(20), index=True)
+    is_open: Mapped[bool] = mapped_column(Boolean)
+    at: Mapped[datetime] = mapped_column(DateTime)
+    by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source: Mapped[str] = mapped_column(String(10))
+    reason: Mapped[str] = mapped_column(Text)
 
 
 # ---------------------------------------------------------------------------
@@ -511,10 +574,6 @@ DEVICE_ATTESTATIONS = ("verified", "unverified")
 LOGIN_PURPOSES = ("signup", "login")
 LOGIN_DELIVERIES = ("whatsapp", "telegram")
 MAX_CODE_ATTEMPTS = 5
-
-
-def _in(column: str, values: tuple[str, ...]) -> str:
-    return f"{column} IN ({', '.join(repr(value) for value in values)})"
 
 
 class Device(Base):

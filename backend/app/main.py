@@ -19,6 +19,7 @@ from backend.app import (
     crud,
     fichiers,
     idempotency,
+    interrupteurs,
     ledger,
     mobile_money,
     payment_gateway,
@@ -336,6 +337,11 @@ class PayoutPayload(BaseModel):
 
 class PayoutDecisionPayload(BaseModel):
     reason: str = ""
+
+
+class MoneySwitchPayload(BaseModel):
+    open: bool
+    reason: str
 
 
 class MismatchDecisionPayload(BaseModel):
@@ -888,6 +894,7 @@ def fund_mission(mission_id: int, payload: FundPayload, actor: Actor = Depends(c
 def _intent_to_dict(intent: PaymentIntent) -> dict:
     return {
         "id": intent.id,
+        "reference": intent.reference,
         "mission_id": intent.mission_id,
         "status": intent.status,
         "operator": intent.operator,
@@ -903,6 +910,7 @@ def _intent_to_dict(intent: PaymentIntent) -> dict:
 def _payout_to_dict(payout: Payout) -> dict:
     return {
         "id": payout.id,
+        "reference": payout.reference,
         "status": payout.status,
         "requested_by_telegram_id": payout.requested_by_telegram_id,
         "amount": str(payout.amount),
@@ -1041,6 +1049,30 @@ def admin_revoke_app_devices(payload: AppDevicesRevokePayload, actor: Actor = De
         return {"status": "ok", "revoked": revoked}
 
 
+@router.get("/api/bot/admin/money-switches")
+def money_switches(actor: Actor = Depends(current_actor)):
+    """État des interrupteurs d'arrêt Mobile Money (`backend.app.interrupteurs`)."""
+    _require_admin(actor)
+    with SessionLocal() as db:
+        return {"status": "ok", "switches": interrupteurs.state(db)}
+
+
+@router.post("/api/bot/admin/money-switches/{name}")
+def set_money_switch(name: str, payload: MoneySwitchPayload, actor: Actor = Depends(current_actor)):
+    """Un admin coupe ou rouvre les encaissements (`collections`) ou les
+    versements (`payouts`), avec une raison gardée au journal."""
+    admin_telegram_id = _require_admin(actor)
+    with SessionLocal() as db:
+        try:
+            _, changed = interrupteurs.switch(
+                db, name, open=payload.open, reason=payload.reason, source="bot", by_telegram_id=admin_telegram_id
+            )
+        except ledger.MoneyError as error:
+            db.rollback()
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+        return {"status": "ok", "changed": changed, "switches": interrupteurs.state(db)}
+
+
 @router.post("/api/bot/payouts/{payout_id}/approve")
 def approve_payout(payout_id: int, payload: PayoutDecisionPayload, actor: Actor = Depends(current_actor)):
     admin_telegram_id = _require_admin(actor)
@@ -1096,6 +1128,21 @@ def resolve_payment_mismatch(
         return _intent_response(db, intent)
 
 
+def _webhook_target(db, gateway_name: str, notice) -> tuple[PaymentIntent | None, Payout | None]:
+    """Intention ou retrait que désigne un webhook : par notre référence
+    d'abord (connue dès la demande, même si l'agrégateur n'a jamais répondu),
+    sinon par la sienne."""
+    for column, value in (("reference", notice.reference), ("gateway_reference", notice.gateway_reference)):
+        if not value:
+            continue
+        filters = {"gateway": gateway_name, column: value}
+        intent = db.query(PaymentIntent).filter_by(**filters).one_or_none()
+        payout = db.query(Payout).filter_by(**filters).one_or_none()
+        if intent is not None or payout is not None:
+            return intent, payout
+    return None, None
+
+
 @app.post("/api/payments/webhook/{gateway_name}")
 async def payment_webhook(gateway_name: str, request: Request):
     """Confirmation de l'agrégateur. Hors clé API (c'est l'agrégateur qui
@@ -1105,14 +1152,13 @@ async def payment_webhook(gateway_name: str, request: Request):
     if gateway_name != gateway.name:
         raise HTTPException(status_code=404, detail={"code": "unknown_gateway"})
     try:
-        reference = gateway.verify_webhook(request.headers, await request.body())
+        notice = gateway.verify_webhook(request.headers, await request.body())
     except payment_gateway.InvalidWebhook as error:
         raise HTTPException(status_code=401, detail={"code": "invalid_signature"}) from error
     from backend.app.tasks import refresh_and_notify_intent, refresh_and_notify_payout
 
     with SessionLocal() as db:
-        intent = db.query(PaymentIntent).filter_by(gateway=gateway.name, gateway_reference=reference).one_or_none()
-        payout = db.query(Payout).filter_by(gateway=gateway.name, gateway_reference=reference).one_or_none()
+        intent, payout = _webhook_target(db, gateway.name, notice)
         if intent is not None:
             refresh_and_notify_intent(db, intent.id)
         elif payout is not None:

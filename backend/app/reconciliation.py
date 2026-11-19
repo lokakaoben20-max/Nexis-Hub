@@ -20,7 +20,7 @@ from decimal import Decimal
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.app import ledger
+from backend.app import interrupteurs, ledger, mobile_money
 from backend.app.ledger import ESCROW, FUNDING, PAYOUT_PENDING, SETTLEMENT, WALLET, ZERO, to_money
 from backend.app.models import BotMission, LedgerEntry, MoneyOperation, PaymentIntent, Payout
 from backend.app.payment_gateway import collection_fee_rate
@@ -55,6 +55,9 @@ class Report:
     generated_at: datetime
     anomalies: list[dict] = field(default_factory=list)
     counts: dict = field(default_factory=dict)
+    # Flux Mobile Money coupés par un admin (`interrupteurs`) : pas un écart,
+    # mais rappelé chaque jour pour qu'aucun ne reste coupé par oubli.
+    paused: list[dict] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -84,6 +87,7 @@ def reconcile(db: Session, now: datetime | None = None) -> Report:
     _check_intents(db, report, now)
     _check_mobile_money_fundings(db, report)
     _check_mismatch_credits(db, report)
+    report.paused = [item for item in interrupteurs.state(db) if not item["is_open"]]
     report.counts = {
         "operations": db.query(func.count(MoneyOperation.id)).scalar(),
         "intents": db.query(func.count(PaymentIntent.id)).scalar(),
@@ -169,6 +173,11 @@ def _check_payouts(db: Session, report: Report, now: datetime) -> None:
         # updated_at toutes les 2 min tant que l'agrégateur répond « en attente ».
         if payout.status == "processing" and payout.created_at < now - STUCK_PAYOUT_AFTER:
             report.add("payout_stuck", f"retrait {payout.id} demandé le {payout.created_at:%Y-%m-%d %H:%M}, toujours en cours d'envoi : statut à vérifier chez l'agrégateur")
+        if payout.status == "processing" and (payout.send_count or 0) >= mobile_money.MAX_PAYOUT_SENDS:
+            report.add(
+                "payout_never_received",
+                f"retrait {payout.id} (réf. {payout.reference}) envoyé {payout.send_count} fois, inconnu de l'agrégateur : plus de renvoi, à voir avec lui",
+            )
 
 
 def _check_intents(db: Session, report: Report, now: datetime) -> None:
@@ -204,6 +213,8 @@ def _check_intents(db: Session, report: Report, now: datetime) -> None:
             report.add("intent_amount_mismatch", f"{label} : montant reçu différent ({intent.failure_reason}), décision de l'admin requise")
         elif intent.status == "created" and intent.created_at < now - STUCK_INTENT_AFTER:
             report.add("intent_stuck", f"{label} jamais transmise ou jamais relue chez l'agrégateur depuis {intent.created_at:%Y-%m-%d %H:%M}")
+        if intent.status in mobile_money.REFRESHABLE_INTENT and intent.failure_reason == mobile_money.UNKNOWN_AT_GATEWAY:
+            report.add("intent_unknown_at_gateway", f"{label} (réf. {intent.reference}) acceptée puis perdue par l'agrégateur : à voir avec lui")
 
         if intent.status in ("succeeded", "overpaid", "mismatch_credited", "mismatch_paid"):
             fees = [operation for operation in operations if operation.kind == "collection_fee"]
@@ -257,10 +268,15 @@ def format_admin_report(report: Report, limit: int = 20) -> str:
     date = report.generated_at.strftime("%Y-%m-%d")
     counts = report.counts
     summary = f"{counts.get('operations', 0)} opérations, {counts.get('intents', 0)} intentions, {counts.get('payouts', 0)} retraits"
+    paused = [
+        f"⛔ {interrupteurs.LABELS[item['name']].capitalize()} coupés depuis le "
+        f"{item['changed_at'][:16].replace('T', ' ')} UTC : {item['reason']}"
+        for item in report.paused
+    ]
     if report.ok:
-        return f"✅ Rapprochement du {date} : aucun écart ({summary})."
+        return "\n".join([f"✅ Rapprochement du {date} : aucun écart ({summary})."] + paused)
     lines = [f"⚠️ Rapprochement du {date} : {len(report.anomalies)} écart(s) ({summary}). Aucune correction automatique."]
     lines += [f"• {anomaly['detail']}" for anomaly in report.anomalies[:limit]]
     if len(report.anomalies) > limit:
         lines.append(f"… et {len(report.anomalies) - limit} autre(s).")
-    return "\n".join(lines)
+    return "\n".join(lines + paused)

@@ -13,24 +13,42 @@ remboursement ne se retire qu'après vérification admin.
 
 import os
 import re
+import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app import ledger
+from backend.app import interrupteurs, ledger
 from backend.app.ledger import CENT, ZERO, MoneyError, to_money
 from backend.app.models import NexisAccount, PaymentIntent, Payout
-from backend.app.payment_gateway import FAILED, PENDING, SUCCEEDED, GatewayUnavailable, get_gateway
+from backend.app.payment_gateway import FAILED, NOT_FOUND, PENDING, SUCCEEDED, GatewayUnavailable, get_gateway
 
 OPERATORS = {"mpesa", "airtel", "orange"}
 OPEN_INTENT = ("created", "pending")
 # Une intention expirée peut encore être confirmée en retard par
 # l'agrégateur : elle reste relue, et l'argent n'est jamais ignoré.
 REFRESHABLE_INTENT = OPEN_INTENT + ("expired",)
+# Une intention en échec n'est jamais rouverte, mais un paiement que
+# l'agrégateur confirme quand même (webhook tardif) n'est jamais ignoré.
+CONFIRMABLE_INTENT = REFRESHABLE_INTENT + ("failed",)
 INTENT_LIFETIME = timedelta(minutes=15)
 PHONE_RE = re.compile(r"^\+243\d{9}$")
+# Un versement que l'agrégateur ne connaît pas n'est renvoyé qu'après ce délai
+# depuis le dernier envoi (une demande encore en route ne doit jamais être
+# doublée), et au plus MAX_PAYOUT_SENDS fois en tout : au-delà, l'admin
+# vérifie avec l'agrégateur (rapport de rapprochement, `payout_stuck`).
+PAYOUT_RESEND_AFTER = timedelta(minutes=5)
+MAX_PAYOUT_SENDS = 3
+
+
+def new_reference(prefix: str) -> str:
+    """Notre référence d'encaissement (`NXI…`) ou de versement (`NXO…`) :
+    aléatoire (128 bits), donc unique entre la production, le test et les
+    postes de développement qui partageraient un même compte marchand.
+    Lettres et chiffres seulement, 35 caractères."""
+    return f"{prefix}{uuid.uuid4().hex.upper()}"
 
 
 def _utcnow() -> datetime:
@@ -101,7 +119,11 @@ def create_intent(
     existing = _open_intent(db, mission_id)
     if existing is not None:
         return existing
+    if not interrupteurs.is_open(db, interrupteurs.COLLECTIONS):
+        # Encaissements coupés par un admin : aucune nouvelle demande ne part.
+        raise MoneyError("payments_paused", 503, mission)
     intent = PaymentIntent(
+        reference=new_reference("NXI"),
         mission_id=mission_id,
         account_id=client_account_id,
         gateway=get_gateway().name,
@@ -128,9 +150,13 @@ def create_intent(
     try:
         result = get_gateway().request_collection(intent)
     except GatewayUnavailable:
-        intent.status, intent.failure_reason, intent.updated_at = "failed", "gateway_unavailable", _utcnow()
-        db.commit()
-        raise MoneyError("gateway_unavailable", 503)
+        # Pas de réponse : l'agrégateur a peut-être reçu la demande, et le
+        # téléphone du client sonne peut-être déjà. On ne conclut rien.
+        # L'intention reste « created », donc ouverte : aucune autre tentative
+        # ne peut doubler le débit. La vérification de secours la relit par
+        # notre référence ; inconnue de l'agrégateur, elle passe en échec et
+        # le client peut réessayer.
+        return db.get(PaymentIntent, intent.id)
     return _apply_collection_result(db, intent, result)
 
 
@@ -146,6 +172,7 @@ def _open_intent(db: Session, mission_id: int) -> PaymentIntent | None:
 # de l'agrégateur (backend arrêté entre son enregistrement et l'appel). Le délai
 # laisse finir une demande encore en cours.
 STALLED_CREATED_AFTER = timedelta(minutes=2)
+UNKNOWN_AT_GATEWAY = "unknown_at_gateway"
 LATE_CONFIRMATION_WINDOW = timedelta(hours=24)
 
 
@@ -170,17 +197,25 @@ def intents_to_refresh(db: Session, now: datetime) -> list[int]:
 
 def refresh_intent(db: Session, intent_id: int) -> PaymentIntent:
     """Relit le statut auprès de l'agrégateur (webhook reçu, ou vérification
-    de secours) et en tire les conséquences."""
+    de secours) et en tire les conséquences.
+
+    Une intention en échec est relue aussi (webhook tardif) : elle n'est
+    jamais rouverte, mais un paiement que l'agrégateur confirme quand même
+    n'est jamais ignoré (mission payée, ou argent au wallet du client)."""
     intent = db.get(PaymentIntent, intent_id, with_for_update=True)
     if intent is None:
         raise MoneyError("intent_not_found", 404)
-    if intent.status not in REFRESHABLE_INTENT:
+    if intent.status not in CONFIRMABLE_INTENT:
+        db.commit()  # rien écrit : libère le verrou
         return intent
     try:
         result = get_gateway().collection_status(intent)
     except GatewayUnavailable:
         db.rollback()
         return db.get(PaymentIntent, intent_id)
+    if intent.status == "failed" and result.status != SUCCEEDED:
+        db.commit()
+        return intent
     return _apply_collection_result(db, intent, result)
 
 
@@ -189,6 +224,19 @@ def _apply_collection_result(db: Session, intent: PaymentIntent, result) -> Paym
     now = _utcnow()
     if result.reference and not intent.gateway_reference:
         intent.gateway_reference = result.reference
+    if result.status == NOT_FOUND:
+        if intent.status == "created":
+            # Jamais parvenue à l'agrégateur : le client n'a rien pu valider.
+            # Le délai laisse arriver une demande encore en route.
+            if intent.created_at < now - STALLED_CREATED_AFTER:
+                intent.status, intent.failure_reason, intent.updated_at = "failed", "never_reached_gateway", now
+        else:
+            # L'agrégateur avait accusé réception et ne la connaît plus :
+            # incohérence de son côté, jamais un échec du nôtre. Rien ne bouge ;
+            # le rapprochement la signale à l'admin (`intent_unknown_at_gateway`).
+            intent.failure_reason, intent.updated_at = UNKNOWN_AT_GATEWAY, now
+        db.commit()
+        return intent
     if result.status == PENDING:
         if intent.status != "expired":
             intent.status = "expired" if now > intent.expires_at else "pending"
@@ -229,7 +277,7 @@ def _apply_collection_result(db: Session, intent: PaymentIntent, result) -> Paym
         # perdu, il va au wallet du client.
         db.rollback()
         intent = db.get(PaymentIntent, intent_id, with_for_update=True)
-        if intent.status not in REFRESHABLE_INTENT:
+        if intent.status not in CONFIRMABLE_INTENT:
             return intent
         ledger.record_overpayment(
             db, account_id=intent.account_id, currency=intent.currency, amount=intent.amount, reference=reference, mission_id=intent.mission_id
@@ -349,6 +397,9 @@ def request_payout(db: Session, *, account_id: int, amount, currency: str, phone
     s'il ne demande aucune vérification (sous le plafond, aucun fonds de
     remboursement) ; sinon il attend l'admin."""
     _check_phone_and_operator(phone, operator)
+    if not interrupteurs.is_open(db, interrupteurs.PAYOUTS):
+        # Versements coupés : rien n'est bloqué ni demandé.
+        raise MoneyError("payouts_paused", 503)
     if currency not in ledger.CURRENCIES:
         raise MoneyError("invalid_currency", 400)
     amount = to_money(amount)
@@ -370,6 +421,7 @@ def request_payout(db: Session, *, account_id: int, amount, currency: str, phone
         review = "above_auto_limit"
 
     payout = Payout(
+        reference=new_reference("NXO"),
         account_id=account_id,
         # Identité de canal du demandeur, pour l'audit et les messages Telegram.
         requested_by_telegram_id=ledger.telegram_id_of(db, account_id),
@@ -399,6 +451,9 @@ def approve_payout(db: Session, payout_id: int, admin_telegram_id: int) -> Payou
         if payout.status in ("processing", "succeeded") and payout.decided_by_telegram_id == admin_telegram_id:
             return payout  # double clic
         raise MoneyError("invalid_state")
+    if not interrupteurs.is_open(db, interrupteurs.PAYOUTS):
+        # Versements coupés : le retrait reste à valider, l'argent bloqué.
+        raise MoneyError("payouts_paused", 503)
     payout.status, payout.decided_by_telegram_id, payout.updated_at = "processing", admin_telegram_id, _utcnow()
     db.commit()
     return _send_payout(db, payout_id)
@@ -419,16 +474,39 @@ def reject_payout(db: Session, payout_id: int, admin_telegram_id: int, reason: s
     return payout
 
 
-def _send_payout(db: Session, payout_id: int) -> Payout:
+def _send_payout(db: Session, payout_id: int, *, resend: bool = False) -> Payout:
+    """Envoie l'ordre de versement, verrou du retrait tenu pendant l'appel.
+
+    Premier envoi (`resend=False`) : seulement s'il n'est jamais parti, pour
+    qu'un double appel n'envoie jamais deux ordres. Renvoi : seulement depuis
+    `refresh_payout`, quand l'agrégateur dit ne pas connaître notre
+    référence ; c'est toujours la même référence, que l'agrégateur refuse en
+    double.
+
+    Versements coupés (`interrupteurs`) : rien ne part, l'argent reste bloqué.
+    Un retrait jamais envoyé part par la vérification de secours
+    (`refresh_payout`, l'agrégateur ne le connaît pas) une fois rouverts."""
     payout = db.get(Payout, payout_id, with_for_update=True)
+    if (
+        payout.status != "processing"
+        or (payout.send_count and not resend)
+        or not interrupteurs.is_open(db, interrupteurs.PAYOUTS)
+    ):
+        db.commit()  # rien écrit : libère le verrou
+        return payout
+    now = _utcnow()
+    payout.last_sent_at, payout.updated_at = now, now
+    payout.send_count = (payout.send_count or 0) + 1
+    db.flush()
     try:
         result = get_gateway().request_payout(payout)
     except GatewayUnavailable:
         # On ne sait pas si l'agrégateur a reçu l'ordre : surtout ne pas rendre
-        # l'argent ni le renvoyer. La vérification de secours relit le statut
-        # (référence = id du retrait) et le rapprochement tranche.
-        db.rollback()
-        return db.get(Payout, payout_id)
+        # l'argent ni le renvoyer tout de suite. Seule l'heure d'envoi est
+        # gardée ; la vérification de secours relit le statut par notre
+        # référence.
+        db.commit()
+        return payout
     return _apply_payout_result(db, payout, result)
 
 
@@ -437,16 +515,28 @@ def refresh_payout(db: Session, payout_id: int) -> Payout:
     if payout is None:
         raise MoneyError("payout_not_found", 404)
     if payout.status != "processing":
+        db.commit()  # rien écrit : libère le verrou
         return payout
     try:
         result = get_gateway().payout_status(payout)
     except GatewayUnavailable:
         db.rollback()
         return db.get(Payout, payout_id)
+    if result.status == NOT_FOUND:
+        # Ordre jamais parvenu (backend arrêté avant l'envoi, ou demande
+        # perdue en route) : renvoyé avec la même référence, après un délai,
+        # un nombre limité de fois. Jamais rendu au wallet sur ce seul motif.
+        last = payout.last_sent_at or payout.updated_at
+        if (payout.send_count or 0) < MAX_PAYOUT_SENDS and last < _utcnow() - PAYOUT_RESEND_AFTER:
+            return _send_payout(db, payout_id, resend=True)
+        db.commit()
+        return payout
     return _apply_payout_result(db, payout, result)
 
 
 def _apply_payout_result(db: Session, payout: Payout, result) -> Payout:
+    if result.status not in (SUCCEEDED, FAILED, PENDING, NOT_FOUND):
+        raise RuntimeError(f"Statut d'agrégateur inconnu : {result.status}")
     if result.reference and not payout.gateway_reference:
         payout.gateway_reference = result.reference
     payout.updated_at = _utcnow()
