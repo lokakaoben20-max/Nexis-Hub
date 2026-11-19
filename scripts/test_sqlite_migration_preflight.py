@@ -77,6 +77,21 @@ class PreflightTests(unittest.TestCase):
             report,
         )
 
+    def test_negative_monetary_value_below_numeric_limit_is_rejected(self):
+        # PostgreSQL NUMERIC(20,4) has the same magnitude limit for
+        # negative values. Exercise the disposable SQLite backup only.
+        with sqlite3.connect(self.path) as conn:
+            conn.execute(
+                "INSERT INTO users (telegram_id, phone_number, wallet_balance_usd) "
+                "VALUES (?, ?, ?)",
+                (104, "test-only", -(10**16)),
+            )
+        report = self._report_after_checkpoint()
+        self.assertTrue(
+            any("users.wallet_balance_usd" in error for error in report["errors"]),
+            report,
+        )
+
     def test_orphaned_mission_reference_is_rejected(self):
         # Simulate a legacy SQLite backup with foreign keys not enforced.
         with sqlite3.connect(self.path) as conn:
