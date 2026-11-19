@@ -21,7 +21,12 @@ class PreflightTests(unittest.TestCase):
         report = preflight(self.path)
         self.assertEqual(report["errors"], [], report)
         self.assertEqual(len(report["tables"]), 9)
-        self.assertTrue(all(t["rows"] == 0 for t in report["tables"].values()))
+        # init_db() seeds catalog and platform defaults even on a fresh DB.
+        self.assertGreater(report["tables"]["services"]["rows"], 0)
+        self.assertGreater(report["tables"]["platform_settings"]["rows"], 0)
+        for name, table in report["tables"].items():
+            if name not in ("services", "platform_settings"):
+                self.assertEqual(table["rows"], 0, name)
 
     def test_invalid_precision_is_rejected(self):
         with sqlite3.connect(self.path) as conn:
