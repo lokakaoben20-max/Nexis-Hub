@@ -62,6 +62,21 @@ class PreflightTests(unittest.TestCase):
             report,
         )
 
+    def test_monetary_value_above_numeric_limit_is_rejected(self):
+        # NUMERIC(20,4) permits at most 16 digits before the decimal.
+        # This disposable SQLite fixture must never be migrated as-is.
+        with sqlite3.connect(self.path) as conn:
+            conn.execute(
+                "INSERT INTO users (telegram_id, phone_number, wallet_balance_usd) "
+                "VALUES (?, ?, ?)",
+                (103, "test-only", 10**16),
+            )
+        report = self._report_after_checkpoint()
+        self.assertTrue(
+            any("users.wallet_balance_usd" in error for error in report["errors"]),
+            report,
+        )
+
     def test_orphaned_mission_reference_is_rejected(self):
         # Simulate a legacy SQLite backup with foreign keys not enforced.
         with sqlite3.connect(self.path) as conn:
