@@ -23,7 +23,7 @@
     }
   },
   "welcomeBack": "Bon retour",
-  "hello": "Mbote, {name}",
+  "hello": "Bonjour, {name}",
   "@hello": {
     "placeholders": {
       "name": {

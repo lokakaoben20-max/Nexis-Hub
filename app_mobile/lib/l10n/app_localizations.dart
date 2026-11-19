@@ -181,7 +181,7 @@ abstract class AppLocalizations {
   /// No description provided for @hello.
   ///
   /// In fr, this message translates to:
-  /// **'Mbote, {name}'**
+  /// **'Bonjour, {name}'**
   String hello(String name);
 
   /// No description provided for @myWallets.

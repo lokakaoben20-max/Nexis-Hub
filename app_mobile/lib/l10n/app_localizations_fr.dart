@@ -54,7 +54,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String hello(String name) {
-    return 'Mbote, $name';
+    return 'Bonjour, $name';
   }
 
   @override

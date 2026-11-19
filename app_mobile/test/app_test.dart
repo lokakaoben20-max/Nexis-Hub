@@ -28,7 +28,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
     expect(state.signedIn, isTrue);
-    expect(find.text('Mbote, Grâce'), findsOneWidget);
+    expect(find.text('Bonjour, Grâce'), findsOneWidget);
   });
 
   testWidgets('le lingala change les textes de l\'app', (tester) async {
