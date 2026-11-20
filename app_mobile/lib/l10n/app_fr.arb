@@ -43,6 +43,16 @@
   },
   "hideAmounts": "Masquer les montants",
   "showAmounts": "Afficher les montants",
+  "walletLocked": "{amount} bloqués pour vos missions en cours",
+  "@walletLocked": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "walletExplanation": "Cet argent est versé au prestataire uniquement après confirmation du client.",
+  "walletInfoLabel": "Pourquoi ce montant est-il bloqué ?",
   "actionServices": "Services",
   "actionDeposit": "Dépôt",
   "actionWithdraw": "Retrait",

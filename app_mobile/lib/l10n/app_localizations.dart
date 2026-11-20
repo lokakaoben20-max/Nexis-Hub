@@ -201,6 +201,15 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'{amount} sécurisés'**
   String securedAmount(String amount);
+  
+  /// Amount held until a client's confirmation.
+  String walletLocked(String amount);
+
+  /// Explains when the held funds are paid out.
+  String get walletExplanation;
+
+  /// Accessible label for the held-funds explanation.
+  String get walletInfoLabel;
 
   /// No description provided for @hideAmounts.
   ///

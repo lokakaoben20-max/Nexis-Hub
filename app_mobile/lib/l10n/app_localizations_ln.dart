@@ -68,6 +68,18 @@ class AppLocalizationsLn extends AppLocalizations {
   }
 
   @override
+  String walletLocked(String amount) {
+    return '$amount ekangami mpo na misala na yo oyo ezali kosalema';
+  }
+
+  @override
+  String get walletExplanation =>
+      'Mbongo oyo ekopesama na mosali kaka sima ya kondimama na mosombi.';
+
+  @override
+  String get walletInfoLabel => 'Mpo na nini mbongo oyo ekangami?';
+
+  @override
   String get hideAmounts => 'Kobomba mitango';
 
   @override

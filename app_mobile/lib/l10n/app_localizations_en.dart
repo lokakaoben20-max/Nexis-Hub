@@ -67,6 +67,18 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String walletLocked(String amount) {
+    return '$amount locked for your ongoing jobs';
+  }
+
+  @override
+  String get walletExplanation =>
+      'This money is paid to the provider only after the client confirms the job.';
+
+  @override
+  String get walletInfoLabel => 'Why is this amount locked?';
+
+  @override
   String get hideAmounts => 'Hide amounts';
 
   @override
