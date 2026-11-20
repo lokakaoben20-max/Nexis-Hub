@@ -9,7 +9,7 @@ ne contient pas ces compléments.
 
 ## Objet et décisions déjà prises
 
-Nexis Hub ouvre un canal WhatsApp réservé aux clients, parce que Telegram est peu utilisé à Kinshasa. Ce document décrit l'architecture cible de ce canal. Aucune ligne de code WhatsApp n'est écrite avant que les étapes qui le précèdent (chantier argent, compte Nexis) soient terminées.
+Nexis Hub ouvre un canal WhatsApp réservé aux clients, parce que Telegram est peu utilisé à Kinshasa. Ce document décrit l'architecture cible de ce canal et distingue les composants présents dans le backend de ceux qui restent à construire.
 
 Décisions prises par Ben le 2 octobre 2026 :
 
@@ -18,39 +18,17 @@ Décisions prises par Ben le 2 octobre 2026 :
 3. **Un seul compte client** : un même client peut relier Telegram et WhatsApp à un seul compte et un seul wallet. La liaison est vérifiée par le numéro de téléphone.
 4. **Refus explicite** : une personne qui demande à s'inscrire comme prestataire sur WhatsApp reçoit un refus clair et un lien vers Telegram ou la Mini App.
 
-## État actuel vérifié dans le dépôt
+## État du code vérifié — 20 novembre 2026
 
-Aucun code WhatsApp n'existe, et le backend est entièrement construit autour de l'identifiant Telegram. Vérifié sur `feature/v5-migration`, commit `d3f3b1b`.
+Branche examinée : `feature/mobile-money`, HEAD `fed4a85a`.
 
-| Constat | Preuve |
-| --- | --- |
-| Le plan prévoit un canal WhatsApp en 4 lignes, conditionné à un backend indépendant du canal | `V5_MIGRATION_PLAN.md:503-509` (avant cette mise à jour) |
-| Le client est identifié par son `telegram_id`, clé primaire de la table, et son wallet y est accroché | `backend/app/models.py:11-17` |
-| Le prestataire aussi, avec son propre wallet | `backend/app/models.py:24-43` |
-| Missions, devis, avis et demandes de service référencent client et prestataire par `telegram_id` | `backend/app/models.py:55-127` |
-| Toutes les routes du backend prennent un `telegram_id` dans l'URL | `backend/app/main.py:276-745` |
-| Les notifications du backend ne partent que par l'API Telegram | `backend/app/notify.py:14`, appelé depuis `backend/app/tasks.py:53-149` |
-| La Mini App authentifie par la signature Telegram (`initData`) | `mini_app/app.py:119` |
-| Le paiement mobile money est simulé | `telegram_bot/payment.py:142` (`operator="mobile_money_simulation"`) |
-| Le mot « WhatsApp » n'apparaît que pour demander le numéro de téléphone à l'inscription Telegram | `translations/fr.json:155`, `telegram_bot/keyboards.py:184` |
+- Le backend utilise les comptes Nexis, résout l'acteur à partir du canal et de son identifiant, et protège les routes par clé de service. Des routes client WhatsApp existent, dont `POST /api/whatsapp/client`; les écritures ouvertes à WhatsApp exigent l'idempotence.
+- L'application cliente WhatsApp complète n'est pas livrée : le dépôt ne contient pas de service `whatsapp_bot/` ni de webhook Meta exécuté. Le bot présent est Telegram.
+- Le backend envoie actuellement des notifications Telegram via `backend/app/notify.py`. La table d'outbox multicanal et l'expéditeur WhatsApp décrits dans la cible ne sont pas implémentés.
+- Les tâches backend tournent par le planificateur de `backend/app/taches.py`; Celery n'est plus utilisé.
+- Le code ne lit pas `NEXIS_PUBLIC_URL`. Les URLs actuellement lues sont `MINI_APP_URL` (Mini App) et `WEBHOOK_URL` (webhook Telegram). L'URL Cloudflare de test `https://nexishub.dpdns.org` n'est pas raccordée à un réglage unique dans le code.
 
-(Mise à jour du 2026-11-14 : `db.py` est supprimé, le backend est la seule mémoire.) À l'époque, `db.py` (SQLite) portait encore une partie de la vérité métier. Le canal WhatsApp ne peut pas s'appuyer sur `db.py` : il ne parle qu'au backend.
-
-**Mise à jour du 2 octobre au soir.** Le chantier « backend seule source de vérité de l'argent » (branche `feature/argent-backend`, commit `0002b7e`, pas encore fusionnée) a déjà posé la base d'identité (`CONCEPTION_ARGENT.md`, section « Comptes Nexis ») :
-
-- tables `accounts` et `channel_identities` ; un compte par `telegram_id` connu, avec son identité `telegram` (commit `298ce9e`) ;
-- registre en partie double qui ne connaît que le compte, jamais un identifiant de canal ; un seul wallet par personne (soldes client et prestataire additionnés à la migration) ;
-- missions payées liées à `client_account_id` et `provider_account_id` ;
-- refus d'un prestataire sur sa propre mission (`provider_is_client`).
-
-Restent pour le chantier d'identité WhatsApp : rôles et numéro vérifié du compte, passage des autres tables (missions, devis, avis) à `account_id`, liaison entre canaux, notifications.
-
-**Mise à jour du 7 novembre 2026 (étape 1 du plan d'implémentation).**
-
-- Comptes, registre, missions, devis et avis sont sur `account_id` ; l'acteur est résolu par le backend depuis son identité de canal ; le bouton « Partager mon numéro » est obligatoire (chantiers argent, identité et socle).
-- **Identifiant WhatsApp : le BSUID, pas le numéro.** Depuis 2026, Meta attribue à chaque utilisateur un identifiant propre à l'entreprise (« business-scoped user ID », par exemple `CD.13491208655302741918`) et peut masquer le numéro d'un utilisateur qui a pris un nom d'utilisateur WhatsApp : `wa_id` devient facultatif dans les webhooks. L'identité `whatsapp` de `channel_identities` porte donc le BSUID ; le numéro, quand Meta le donne, est enregistré comme numéro prouvé du compte (`accounts.phone_e164`). Le BSUID change quand l'utilisateur change de numéro (message système `user_changed_user_id`) : c'est un cas de l'étape 9 (« Numéro changé »).
-- Une clé de service par canal (`BACKEND_API_KEY_TELEGRAM`, `BACKEND_API_KEY_WHATSAPP`) ; la clé fixe le canal de l'acteur. Toute route est fermée à WhatsApp sauf ouverture explicite (`@open_to`) ; les actions de prestataire (`@provider_action`) ne peuvent jamais l'être.
-- Inscription du client WhatsApp : `POST /api/whatsapp/client`. Numéro déjà prouvé sur un autre compte : refus `phone_owned_by_account`, rien n'est créé ni rattaché (la liaison par code arrive à l'étape 9).
+Les tableaux et parcours qui suivent sous « Architecture cible » décrivent les travaux planifiés, pas un service WhatsApp déjà exploitable.
 
 ## Principes non négociables
 
@@ -97,7 +75,7 @@ Missions, devis, transactions, avis et litiges référencent `account_id` au lie
 
 ### Routage des notifications
 
-Le backend écrit chaque notification dans une table `notifications` dans la même transaction que l'événement métier (paiement reçu, mission libérée, litige ouvert). Une tâche Celery envoie ensuite chaque ligne sur le canal préféré du destinataire et enregistre le résultat. L'envoi direct actuel (`backend/app/notify.py:14`) est remplacé par cette table pour les deux canaux.
+**Cible non encore implémentée.** Aujourd'hui, `backend/app/notify.py` envoie directement les notifications par Telegram depuis les tâches qui en ont besoin. Il n'existe pas encore de table d'outbox multicanal ni d'expéditeur de notifications WhatsApp. Si cette cible est réalisée, l'exécution périodique pourra s'appuyer sur le planificateur intégré de `backend/app/taches.py` (sans Celery).
 
 **Ce qui est garanti, et ce qui ne l'est pas.**
 
@@ -120,7 +98,7 @@ Le backend écrit chaque notification dans une table `notifications` dans la mê
 
 - **Service WhatsApp** (`whatsapp_bot/`, processus séparé) : reçoit les webhooks de Meta, vérifie la signature, déduplique, garde l'état de conversation et appelle le backend.
 - **Backend V5** : seule source de vérité. Nouveaux endpoints indexés par `account_id`, authentifiés par clé de service par canal.
-- **Expéditeur de notifications** (Celery) : lit `notifications` et envoie par Telegram ou WhatsApp.
+- **Expéditeur de notifications (cible)** : lira l'outbox multicanale et enverra par Telegram ou WhatsApp ; il reste à construire et sera déclenché par le planificateur intégré (pas Celery).
 - **Bot Telegram et Mini App** : inchangés dans leur rôle, mais appellent les endpoints par `account_id`.
 
 L'état de conversation WhatsApp (étape en cours d'un client) vit dans Redis, déjà en place. Il ne contient aucune donnée d'argent : perdu, le client recommence l'étape.
@@ -307,11 +285,11 @@ Le canal WhatsApp vient après le chantier argent, et le compte Nexis doit être
 
 | Étape | Contenu | Dépend de | Livré quand |
 | --- | --- | --- | --- |
-| 0. Accord avec le chantier argent | Le grand livre et les wallets sont rattachés à `account_id` dès leur conception | Chantier argent (`feature/argent-backend`) | **Fait** dans `CONCEPTION_ARGENT.md` et le code (`298ce9e`) ; reste la fusion, décidée par Ben avec le rapport de migration ci-dessous |
-| 1. Compte Nexis complet | Sur la base posée par le chantier argent : rôles et numéro vérifié du compte, missions, devis, avis et demandes de service sur `account_id`, bot Telegram et Mini App adaptés, bouton « Partager mon numéro » obligatoire | Étape 0 fusionnée | Critères de réussite de la migration ci-dessous, sur une copie des vraies bases puis sur les vraies bases |
-| 2. Notifications fiables | Table `notifications` écrite dans la transaction métier, expéditeur Celery, Telegram migré dessus | Étape 1 | Plus aucun envoi direct ; tests d'échec réseau, de réponse perdue (`uncertain`) et de rejeu d'événement |
-| 3. Rôles dans le backend | Refus des actions prestataire depuis WhatsApp, refus du devis sur sa propre mission, clé de service par canal | Étape 1 | Tests de refus pour chaque endpoint prestataire |
-| 4. Service WhatsApp, socle | `whatsapp_bot/` : webhook, signature, déduplication, état Redis, inscription, menu, refus prestataire | Étapes 2 et 3 | Fonctionne sur le numéro de test Meta |
+| 0. Compte et registre | Le grand livre et les wallets sont rattachés à `account_id` | Chantier argent | **En place** dans le code de `feature/mobile-money` ; les critères de migration et de rapprochement restent les garde-fous opérationnels de toute reprise de données |
+| 1. Compte Nexis complet | Rôles, identité de canal, acteur résolu par le backend, missions et devis par compte | Étape 0 | **Base backend en place** ; auditer les vraies données avant toute opération de production et garder la liaison de canaux dans son étape dédiée |
+| 2. Notifications fiables | À construire : outbox transactionnelle et expéditeur piloté par `backend.app.taches` (pas Celery) | Étape 1 | Plus aucun envoi direct ; tests d'échec réseau, de réponse perdue (`uncertain`) et de rejeu d'événement |
+| 3. Rôles et sécurité des canaux | Refus des actions prestataire depuis WhatsApp, acteur résolu côté backend, clé de service par canal, idempotence des écritures multicanales | Étape 1 | **Garde backend en place** ; aucune action de prestataire ne doit être ouverte au canal WhatsApp |
+| 4. Service WhatsApp, socle | À construire : `whatsapp_bot/`, webhook Meta, signature, déduplication, état Redis et interface client | Étapes 2 et 3 | Aucun service Meta complet n'est encore présent dans le dépôt |
 | 5. Parcours client | Mission, devis, paiement, suivi, notation, litige | Étape 4 et chantier argent terminé | Mêmes résultats que Telegram sur les mêmes scénarios ; parcours essayés sur le numéro de test Meta par quelques personnes, en français et en lingala |
 | 6. Liaison des comptes | Code à usage unique, cas difficiles (récupération admin, numéro réattribué, contestation, regroupement par le registre), journal d'audit | Étape 5 | Tests d'attaque (code faux, expiré, réutilisé, numéro tapé, numéro réattribué, récupération avec mauvaises réponses) |
 | 7. Modèles et envoi WhatsApp | Modèles utilité validés par Meta, choix message libre ou modèle selon la fenêtre de 24 h | Étapes 2 et 5, modèles approuvés | Chaque notification arrive, dans ou hors fenêtre |
