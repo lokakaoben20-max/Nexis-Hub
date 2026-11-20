@@ -1,25 +1,17 @@
 import 'package:flutter/material.dart';
 
-import 'icons.dart';
-
 import '../data/models.dart';
 import '../data/money.dart';
 import '../l10n/app_localizations.dart';
 import 'common.dart';
 import 'theme.dart';
 
-/// Carte portefeuille A (maquette app-accueil-reference) : la carte FC
-/// devant, la carte USD qui dépasse derrière. Toucher la carte de derrière,
-/// un point ou glisser change de portefeuille ; l'œil masque les montants.
-///
-/// Les mesures sont celles de la maquette (carte 228 × 136 sur un écran
-/// de 340), mises à l'échelle de l'écran réel.
+/// Carte de solde unique. Le dernier choix de devise reste partagé entre
+/// les écrans pendant toute la session de l'application.
 class WalletCard extends StatefulWidget {
   const WalletCard({super.key, required this.wallet, this.alignStart = false});
 
   final Wallet wallet;
-
-  /// Carte calée à gauche (écran Portefeuille) au lieu de centrée (Accueil).
   final bool alignStart;
 
   @override
@@ -27,264 +19,290 @@ class WalletCard extends StatefulWidget {
 }
 
 class _WalletCardState extends State<WalletCard> {
-  static const _currencies = [Currency.cdf, Currency.usd];
-  int _front = 0;
+  static Currency _rememberedCurrency = Currency.cdf;
+  late Currency _currency = _rememberedCurrency;
   bool _hidden = false;
 
-  void _show(int index) {
-    if (index != _front) setState(() => _front = index);
+  void _show(Currency currency) {
+    if (_currency == currency) return;
+    setState(() {
+      _currency = currency;
+      _rememberedCurrency = currency;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final reduce = MediaQuery.disableAnimationsOf(context);
-    final duration = Duration(milliseconds: reduce ? 0 : 350);
-    final scale = (MediaQuery.sizeOf(context).width / 340)
-        .clamp(.9, 1.35)
-        .toDouble();
-    return Column(
-      crossAxisAlignment: widget.alignStart
-          ? CrossAxisAlignment.start
-          : CrossAxisAlignment.center,
-      children: [
-        GestureDetector(
-          onHorizontalDragEnd: (details) {
-            final v = details.primaryVelocity ?? 0;
-            if (v < -100) _show(1);
-            if (v > 100) _show(0);
-          },
-          child: SizedBox(
-            width: 228 * scale + 30 * scale,
-            height: 136 * scale,
-            child: FittedBox(
-              alignment: Alignment.centerLeft,
-              child: SizedBox(
-                width: 258,
-                height: 136,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    for (final index in [
-                      for (var i = 0; i < _currencies.length; i++)
-                        if (i != _front) i,
-                      _front,
-                    ])
-                      AnimatedPositioned(
-                        key: ValueKey(index),
-                        duration: duration,
-                        curve: Curves.ease,
-                        left: widget.alignStart ? 0 : 15,
-                        top: 0,
-                        width: 228,
-                        height: 136,
-                        child: AnimatedSlide(
-                          duration: duration,
-                          curve: Curves.ease,
-                          offset: Offset(index == _front ? 0 : 30 / 228, 0),
-                          child: AnimatedScale(
-                            duration: duration,
-                            curve: Curves.ease,
-                            scale: index == _front ? 1 : .88,
-                            child: AnimatedOpacity(
-                              duration: duration,
-                              opacity: index == _front ? 1 : .5,
-                              child: GestureDetector(
-                                onTap: () => _show(index),
-                                child: _card(
-                                  context,
-                                  _currencies[index],
-                                  front: index == _front,
+    final duration = Duration(milliseconds: reduce ? 0 : 260);
+    final l = AppLocalizations.of(context);
+    final lang = langOf(context);
+    final amount = widget.wallet.available[_currency] ?? Money(0, _currency);
+    final secured = widget.wallet.secured[_currency] ?? Money(0, _currency);
+    final label = _currency == Currency.cdf ? 'FC' : 'USD';
+    final shownAmount = _hidden ? '•••••• $label' : _formatWalletMoney(amount, lang);
+    final shownSecured =
+        _hidden ? '•••••• $label' : _formatWalletMoney(secured, lang);
+
+    return Align(
+      alignment: widget.alignStart ? Alignment.centerLeft : Alignment.center,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 440),
+        child: SizedBox(
+          width: double.infinity,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                stops: [0, .45, 1],
+                colors: [
+                  NexisColors.halo,
+                  NexisColors.gradientStart,
+                  NexisColors.gradientEnd,
+                ],
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x660350E6),
+                  offset: Offset(0, 16),
+                  blurRadius: 28,
+                  spreadRadius: -12,
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ColoredBox(
+                      color: NexisColors.navy.withValues(alpha: .2),
+                    ),
+                  ),
+                  Positioned(
+                    right: -48,
+                    bottom: -88,
+                    width: 220,
+                    height: 175,
+                    child: _oval(Colors.white.withValues(alpha: .08)),
+                  ),
+                  Positioned(
+                    left: -70,
+                    top: 60,
+                    width: 200,
+                    height: 180,
+                    child: _oval(NexisColors.navy.withValues(alpha: .08)),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 18, 18),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              'NEXIS HUB',
+                              style: title(
+                                9,
+                                color: Colors.white.withValues(alpha: .92),
+                              ).copyWith(letterSpacing: 1.8),
+                            ),
+                            const Spacer(),
+                            Image.asset(
+                              'assets/images/monogramme-blanc.png',
+                              width: 20,
+                              height: 21,
+                              excludeFromSemantics: true,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _currencySelector(l, duration),
+                        const SizedBox(height: 16),
+                        Text(
+                          l.available,
+                          style: body(
+                            13,
+                            weight: FontWeight.w500,
+                            color: Colors.white.withValues(alpha: .94),
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: AnimatedSwitcher(
+                                duration: duration,
+                                switchInCurve: Curves.easeOut,
+                                switchOutCurve: Curves.easeIn,
+                                transitionBuilder: (child, animation) =>
+                                    FadeTransition(
+                                  opacity: animation,
+                                  child: SlideTransition(
+                                    position: Tween<Offset>(
+                                      begin: const Offset(0, .08),
+                                      end: Offset.zero,
+                                    ).animate(animation),
+                                    child: child,
+                                  ),
+                                ),
+                                child: SizedBox(
+                                  key: ValueKey(_currency),
+                                  width: double.infinity,
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      shownAmount,
+                                      maxLines: 1,
+                                      style: title(31, color: Colors.white)
+                                          .copyWith(letterSpacing: -.5),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
+                            Semantics(
+                              button: true,
+                              label: _hidden ? l.showAmounts : l.hideAmounts,
+                              child: IconButton(
+                                tooltip:
+                                    _hidden ? l.showAmounts : l.hideAmounts,
+                                onPressed: () =>
+                                    setState(() => _hidden = !_hidden),
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 44,
+                                  height: 44,
+                                ),
+                                padding: EdgeInsets.zero,
+                                visualDensity: VisualDensity.standard,
+                                icon: Icon(
+                                  _hidden
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                  size: 19,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                  ],
+                        const SizedBox(height: 12),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.shield_outlined,
+                              size: 17,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 7),
+                            Expanded(
+                              child: AnimatedSwitcher(
+                                duration: duration,
+                                child: Text(
+                                  l.walletLocked(shownSecured),
+                                  key: ValueKey('locked-$_currency-$_hidden'),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: body(
+                                    12.5,
+                                    weight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Tooltip(
+                              message: l.walletExplanation,
+                              triggerMode: TooltipTriggerMode.tap,
+                              child: Semantics(
+                                button: true,
+                                label: l.walletInfoLabel,
+                                child: SizedBox(
+                                  width: 44,
+                                  height: 44,
+                                  child: Icon(
+                                    Icons.info_outline,
+                                    size: 19,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _currencySelector(AppLocalizations l, Duration duration) {
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: NexisColors.navy.withValues(alpha: .26),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: .22)),
+      ),
+      child: Row(
+        children: [
+          _currencyButton(Currency.cdf, duration),
+          _currencyButton(Currency.usd, duration),
+        ],
+      ),
+    );
+  }
+
+  Widget _currencyButton(Currency currency, Duration duration) {
+    final selected = currency == _currency;
+    final label = currency == Currency.cdf ? 'CDF' : 'USD';
+    return Expanded(
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: label,
+        child: Material(
+          color: selected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(11),
+          child: InkWell(
+            onTap: () => _show(currency),
+            borderRadius: BorderRadius.circular(11),
+            child: SizedBox(
+              height: 42,
+              child: Center(
+                child: AnimatedDefaultTextStyle(
+                  duration: duration,
+                  style: body(
+                    13,
+                    weight: FontWeight.w700,
+                    color: selected ? NexisColors.navy : Colors.white,
+                  ),
+                  child: Text(label),
                 ),
               ),
             ),
           ),
         ),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            for (var i = 0; i < _currencies.length; i++)
-              GestureDetector(
-                onTap: () => _show(i),
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 2.5,
-                    vertical: 6,
-                  ),
-                  child: AnimatedContainer(
-                    duration: duration,
-                    width: 5,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: i == _front
-                          ? context.palette.ink
-                          : const Color(0xFFC9D0DB),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ],
+      ),
     );
   }
 
-  Widget _card(BuildContext context, Currency currency, {required bool front}) {
-    final l = AppLocalizations.of(context);
-    final lang = langOf(context);
-    final amount = widget.wallet.available[currency] ?? Money(0, currency);
-    final secured = widget.wallet.secured[currency];
-    final label = currency == Currency.cdf ? 'FC' : 'USD';
-    String shown(Money money) =>
-        _hidden ? '•••••• $label' : formatMoney(money, lang);
-    final white = Colors.white;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          stops: [0, .45, 1],
-          colors: [
-            NexisColors.halo,
-            NexisColors.gradientStart,
-            NexisColors.gradientEnd,
-          ],
-        ),
-        boxShadow: front
-            ? const [
-                BoxShadow(
-                  color: Color(0x8C0350E6),
-                  offset: Offset(0, 18),
-                  blurRadius: 30,
-                  spreadRadius: -14,
-                ),
-              ]
-            : null,
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Stack(
-          children: [
-            // Les deux grands ovales discrets de la maquette.
-            Positioned(
-              right: -60,
-              bottom: -90,
-              width: 220,
-              height: 170,
-              child: _oval(Colors.white.withValues(alpha: .08)),
-            ),
-            Positioned(
-              left: -40,
-              bottom: -110,
-              width: 240,
-              height: 160,
-              child: _oval(NexisColors.navy.withValues(alpha: .08)),
-            ),
-            if (front) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          'NEXIS HUB',
-                          style: title(
-                            8.5,
-                            color: white.withValues(alpha: .9),
-                          ).copyWith(letterSpacing: 1.9),
-                        ),
-                        const Spacer(),
-                        Image.asset(
-                          'assets/images/monogramme-blanc.png',
-                          width: 18,
-                          height: 19,
-                          excludeFromSemantics: true,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      '${l.available} · $label',
-                      style: body(10.5, color: white.withValues(alpha: .85)),
-                    ),
-                    const SizedBox(height: 5),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        shown(amount),
-                        style: title(
-                          20,
-                          color: white,
-                        ).copyWith(letterSpacing: -.4),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Positioned(
-                left: 16,
-                right: 14,
-                bottom: 13,
-                child: Row(
-                  children: [
-                    if (secured != null && !secured.isZero) ...[
-                      Icon(PhFill.shieldCheck, color: white, size: 13),
-                      const SizedBox(width: 5),
-                      Expanded(
-                        child: Text(
-                          l.securedAmount(shown(secured)),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: body(
-                            10.5,
-                            weight: FontWeight.w600,
-                            color: white,
-                          ),
-                        ),
-                      ),
-                    ] else
-                      const Spacer(),
-                    Semantics(
-                      button: true,
-                      label: _hidden ? l.showAmounts : l.hideAmounts,
-                      excludeSemantics: true,
-                      child: GestureDetector(
-                        onTap: () => setState(() => _hidden = !_hidden),
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: white.withValues(alpha: .2),
-                          ),
-                          child: Icon(
-                            _hidden ? PhRegular.eyeSlash : PhRegular.eye,
-                            color: white,
-                            size: 16,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+  String _formatWalletMoney(Money money, String languageCode) {
+    final formatted = formatMoney(money, languageCode);
+    if (languageCode != 'en') return formatted;
+    return formatted.replaceAllMapped(
+      RegExp(r'(?<=\d),(?=\d{3}(?:[.,]| |$))'),
+      (_) => ' ',
     );
   }
 

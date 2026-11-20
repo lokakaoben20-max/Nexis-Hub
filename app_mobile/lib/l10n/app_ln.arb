@@ -19,6 +19,16 @@
   "securedAmount": "{amount} ebatelami",
   "hideAmounts": "Kobomba mitango",
   "showAmounts": "Komonisa mitango",
+  "walletLocked": "{amount} ekangami mpo na misala na yo oyo ezali kosalema",
+  "@walletLocked": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "walletExplanation": "Mbongo oyo ekopesama na mosali kaka sima ya kondimama na mosombi.",
+  "walletInfoLabel": "Mpo na nini mbongo oyo ekangami?",
   "actionServices": "Misala",
   "actionDeposit": "Kotia",
   "actionWithdraw": "Kobimisa",

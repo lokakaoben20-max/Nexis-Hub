@@ -23,6 +23,8 @@ const ACTIVE_STATUSES = ["pending", "quoted", "confirmed", "in_progress", "await
 const DONE_STATUSES = ["completed", "cancelled", "disputed"];
 const LOCALES = { fr: "fr-FR", ln: "fr-FR", en: "en-US" };
 
+const CURRENCY_KEY = "nexis.devise";
+
 const state = {
   data: null,
   lang: "fr",
@@ -32,8 +34,27 @@ const state = {
   // Espace affiché quand la personne est aussi prestataire : "provider" ou
   // "client" (un seul compte, un seul portefeuille, deux rôles).
   space: null,
-  currency: "CDF",
+  currency: savedCurrency(),
+  walletHidden: false,
+  walletInfo: false,
 };
+
+function savedCurrency() {
+  try {
+    return window.localStorage.getItem(CURRENCY_KEY) === "USD" ? "USD" : "CDF";
+  } catch (error) {
+    return "CDF";
+  }
+}
+
+function setCurrency(currency) {
+  state.currency = currency;
+  try {
+    window.localStorage.setItem(CURRENCY_KEY, currency);
+  } catch (error) {
+    // Le choix reste actif pour cette ouverture si le stockage est indisponible.
+  }
+}
 
 const SPACE_KEY = "nexis.espace";
 
@@ -114,6 +135,18 @@ function missionRef(id) {
 
 // Montants : jamais calculés ici, seulement mis en forme. USD avec deux
 // décimales, francs congolais sans décimales.
+function formatWalletMoney(value, currency) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const usd = currency === "USD";
+  const locale = LOCALES[state.lang] || "fr-FR";
+  const parts = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: usd ? 2 : 0,
+    maximumFractionDigits: usd ? 2 : 0,
+  }).formatToParts(value);
+  const number = parts.map((part) => part.type === "group" ? "\u202F" : part.value).join("");
+  return `${number} ${usd ? "USD" : "FC"}`;
+}
+
 function formatMoney(value, currency) {
   if (typeof value !== "number" || !Number.isFinite(value)) return null;
   const isUsd = currency === "USD";
@@ -333,22 +366,73 @@ function subHeader(title, subtitle) {
 function walletCard() {
   const wallet = state.data?.wallet;
   const key = state.currency === "USD" ? "wallet_balance_usd" : "wallet_balance_cdf";
-  const amount = wallet ? formatMoney(wallet[key], state.currency) : null;
-  const currencyLabel = state.currency === "USD" ? "USD" : "FC";
-  return el("button", {
-    class: "wallet",
-    type: "button",
-    "aria-label": `${t("wallet")} · ${currencyLabel}. ${t("wallet_switch")}`,
-    onclick: () => { state.currency = state.currency === "USD" ? "CDF" : "USD"; render(); },
+  const securedKey = state.currency === "USD" ? "secured_usd" : "secured_cdf";
+  const amount = wallet ? formatWalletMoney(wallet[key], state.currency) : null;
+  const secured = wallet ? formatWalletMoney(wallet[securedKey] || 0, state.currency) : formatWalletMoney(0, state.currency);
+  const currencyLabel = state.currency === "USD" ? "USD" : "CDF";
+  const card = el("section", {
+    class: "wallet-card",
+    "aria-label": t("wallet"),
   },
-  el("small", { text: `${t("wallet")} · ${currencyLabel}` }),
-  el("span", { class: "big", text: amount || t("balance_unknown") }),
-  el("span", { class: "row2" }, icon("i-shield"), el("span", { text: inClientSpace() ? t("wallet_note_client") : securedText(wallet) || t("wallet_note") })),
-  el("span", { class: "dots", "aria-hidden": "true" },
-    el("i", { class: state.currency === "CDF" ? "on" : "" }),
-    el("i", { class: state.currency === "USD" ? "on" : "" })));
+  el("div", { class: "wallet-card__head" },
+    el("span", { class: "wallet-card__brand", text: "NEXIS HUB" }),
+    el("div", { class: "wallet-card__currencies", role: "group", "aria-label": t("wallet_currency") },
+      ["CDF", "USD"].map((currency) => el("button", {
+        type: "button",
+        class: "wallet-card__currency",
+        "aria-pressed": state.currency === currency ? "true" : "false",
+        text: currency,
+        onclick: () => {
+          if (state.currency !== currency) {
+            setCurrency(currency);
+            state.walletInfo = false;
+            render();
+          }
+        },
+      })))),
+  el("div", { class: "wallet-card__label", text: t("available") }),
+  el("div", { class: "wallet-card__amount-row", "aria-live": "polite" },
+    el("span", { class: "wallet-card__amount", text: amount || t("balance_unknown") }),
+    el("button", {
+      type: "button",
+      class: "wallet-card__eye",
+      "aria-label": state.walletHidden ? t("wallet_show_amounts") : t("wallet_hide_amounts"),
+      "aria-pressed": state.walletHidden ? "true" : "false",
+      title: state.walletHidden ? t("wallet_show_amounts") : t("wallet_hide_amounts"),
+      onclick: () => { state.walletHidden = !state.walletHidden; render(); },
+    }, walletEye(state.walletHidden))),
+  el("div", { class: "wallet-card__locked" },
+    icon("i-shield"),
+    el("span", { class: "wallet-card__locked-text", text: t("wallet_locked", { amount: state.walletHidden ? "•••••• " + (currencyLabel === "USD" ? "USD" : "FC") : secured }) }),
+    el("button", {
+      type: "button",
+      class: "wallet-card__info",
+      "aria-label": t("wallet_info_label"),
+      "aria-expanded": state.walletInfo ? "true" : "false",
+      title: t("wallet_explanation"),
+      onclick: () => { state.walletInfo = !state.walletInfo; render(); },
+    }, icon("i-info"))),
+  state.walletInfo ? el("p", { class: "wallet-card__explanation", text: t("wallet_explanation") }) : null);
+  return card;
 }
 
+function walletEye(hidden) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "1.8");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", hidden
+    ? "M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8M9.9 5.2A10.8 10.8 0 0112 5c5.2 0 8.8 5.2 8.8 7 0 .8-.7 1.8-1.8 2.8M6.2 6.2C3.9 7.7 3 10.3 3 12c0 1.8 3.8 7 9 7 1.2 0 2.3-.3 3.3-.8"
+    : "M2.5 12s3.3-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.3 6.5-9.5 6.5S2.5 12 2.5 12zM15 12a3 3 0 11-6 0 3 3 0 016 0z");
+  svg.appendChild(path);
+  return svg;
+}
 // Part du prestataire encore en escrow (backend : provider_secured) : pas
 // dans le solde, versée quand le client confirme.
 function securedText(wallet) {

@@ -19,6 +19,16 @@
   "securedAmount": "{amount} secured",
   "hideAmounts": "Hide amounts",
   "showAmounts": "Show amounts",
+  "walletLocked": "{amount} locked for your ongoing jobs",
+  "@walletLocked": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "walletExplanation": "This money is paid to the provider only after the client confirms the job.",
+  "walletInfoLabel": "Why is this amount locked?",
   "actionServices": "Services",
   "actionDeposit": "Deposit",
   "actionWithdraw": "Withdraw",

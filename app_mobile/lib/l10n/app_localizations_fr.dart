@@ -69,6 +69,18 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
+  String walletLocked(String amount) {
+    return '$amount bloqués pour vos missions en cours';
+  }
+
+  @override
+  String get walletExplanation =>
+      'Cet argent est versé au prestataire uniquement après confirmation du client.';
+
+  @override
+  String get walletInfoLabel => 'Pourquoi ce montant est-il bloqué ?';
+
+  @override
   String get hideAmounts => 'Masquer les montants';
 
   @override
