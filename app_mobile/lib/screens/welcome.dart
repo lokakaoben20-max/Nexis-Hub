@@ -70,11 +70,60 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     super.dispose();
   }
 
-  /// Un toucher = langue suivante (FR, LN, EN), sans liste à choisir.
-  void _nextLanguage() {
-    const order = ['fr', 'ln', 'en'];
-    final i = order.indexOf(langOf(context));
-    AppScope.of(context).setLocale(Locale(order[(i + 1) % order.length]));
+  /// Petit menu sous la pastille : les trois langues, la langue en cours
+  /// cochée (choix de Ben, 2026-11-20).
+  Future<void> _pickLanguage(BuildContext pill) async {
+    final state = AppScope.of(context);
+    final current = langOf(context);
+    final box = pill.findRenderObject()! as RenderBox;
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final topLeft = box.localToGlobal(
+      Offset(0, box.size.height + 6),
+      ancestor: overlay,
+    );
+    final bottomRight = box.localToGlobal(
+      box.size.bottomRight(Offset.zero),
+      ancestor: overlay,
+    );
+    final picked = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromPoints(topLeft, bottomRight),
+        Offset.zero & overlay.size,
+      ),
+      color: Colors.white,
+      elevation: 8,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      items: [
+        for (final (code, name) in const [
+          ('fr', 'Français'),
+          ('ln', 'Lingala'),
+          ('en', 'English'),
+        ])
+          PopupMenuItem<String>(
+            value: code,
+            height: 44,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    name,
+                    style: body(
+                      15,
+                      weight: FontWeight.w600,
+                      color: NexisColors.navy,
+                    ),
+                  ),
+                ),
+                if (code == current)
+                  const Icon(PhBold.check, size: 18, color: NexisColors.brand),
+              ],
+            ),
+          ),
+      ],
+    );
+    if (picked != null && picked != current) state.setLocale(Locale(picked));
   }
 
   @override
@@ -106,7 +155,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                             rise: 0,
                             child: _LanguagePill(
                               code: lang.toUpperCase(),
-                              onTap: _nextLanguage,
+                              onTap: _pickLanguage,
                             ),
                           ),
                         ),
@@ -203,13 +252,12 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           .push(MaterialPageRoute<void>(builder: (_) => const NumberScreen()));
 }
 
-/// Une seule pastille : la langue en cours ; chaque toucher passe à la
-/// suivante (FR, LN, EN).
+/// Une seule pastille : la langue en cours ; la toucher ouvre le menu.
 class _LanguagePill extends StatelessWidget {
   const _LanguagePill({required this.code, required this.onTap});
 
   final String code;
-  final VoidCallback onTap;
+  final void Function(BuildContext pill) onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -226,7 +274,7 @@ class _LanguagePill extends StatelessWidget {
         ),
         child: InkWell(
           customBorder: const StadiumBorder(),
-          onTap: onTap,
+          onTap: () => onTap(context),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
             child: Row(
@@ -242,6 +290,8 @@ class _LanguagePill extends StatelessWidget {
                     color: Colors.white,
                   ),
                 ),
+                const SizedBox(width: 4),
+                const Icon(PhRegular.caretDown, size: 10, color: Colors.white),
               ],
             ),
           ),

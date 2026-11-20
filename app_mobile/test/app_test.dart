@@ -36,7 +36,7 @@ void main() {
     expect(find.text('Bonjour, Grâce'), findsOneWidget);
   });
 
-  testWidgets('la pastille de langue passe FR, LN, EN sans liste', (
+  testWidgets('la pastille de langue ouvre un menu des trois langues', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1170, 2532);
@@ -47,12 +47,21 @@ void main() {
     await tester.pumpWidget(NexisApp(state: state));
     await tester.pump(const Duration(seconds: 2));
     expect(find.text('Commencer'), findsOneWidget);
-    for (final (from, to) in const [('FR', 'ln'), ('LN', 'en'), ('EN', 'fr')]) {
-      await tester.tap(find.text(from));
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(state.locale?.languageCode, to);
-      expect(find.byType(BottomSheet), findsNothing);
-    }
+
+    await tester.tap(find.text('FR'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Français'), findsOneWidget);
+    expect(find.text('Lingala'), findsOneWidget);
+    expect(find.text('English'), findsOneWidget);
+    expect(state.locale?.languageCode, 'fr');
+
+    await tester.tap(find.text('English'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(state.locale?.languageCode, 'en');
+    expect(find.text('Lingala'), findsNothing);
+    expect(find.text('Get started'), findsOneWidget);
     // Quitter l'écran arrête les animations et les minuteries.
     await tester.pumpWidget(const SizedBox());
   });
