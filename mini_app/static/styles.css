@@ -184,10 +184,9 @@ button:disabled { cursor: default; }
   box-shadow: 0 16px 30px -17px rgba(3, 80, 230, .75);
   display: grid; gap: 6px;
 }
-.wallet-card__head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-.wallet-card__brand { font: 600 10px/1.2 var(--title); letter-spacing: .16em; color: #fff; }
-.wallet-card__currencies { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px; border-radius: 14px; background: rgba(2, 25, 55, .30); border: 1px solid rgba(255,255,255,.24); }
-.wallet-card__currency { min-width: 64px; min-height: 44px; padding: 0 12px; border: 0; border-radius: 10px; color: #fff; background: transparent; font: 600 13px/1 var(--text); cursor: pointer; }
+.wallet-card__head { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
+.wallet-card__currencies { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 188px; gap: 3px; padding: 3px; border-radius: 14px; background: rgba(2, 25, 55, .30); border: 1px solid rgba(255,255,255,.24); }
+.wallet-card__currency { min-width: 0; min-height: 44px; padding: 0 12px; border: 0; border-radius: 10px; color: #fff; background: transparent; font: 600 13px/1 var(--text); cursor: pointer; }
 .wallet-card__currency[aria-pressed="true"] { color: #021937; background: #fff; }
 .wallet-card__label { margin-top: 12px; color: rgba(255,255,255,.94); font-size: 13px; font-weight: 500; }
 .wallet-card__amount-row { display: flex; align-items: center; gap: 8px; min-width: 0; }

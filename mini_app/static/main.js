@@ -375,7 +375,6 @@ function walletCard() {
     "aria-label": t("wallet"),
   },
   el("div", { class: "wallet-card__head" },
-    el("span", { class: "wallet-card__brand", text: "NEXIS HUB" }),
     el("div", { class: "wallet-card__currencies", role: "group", "aria-label": t("wallet_currency") },
       ["CDF", "USD"].map((currency) => el("button", {
         type: "button",

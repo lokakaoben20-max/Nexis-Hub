@@ -22,6 +22,7 @@ class _WalletCardState extends State<WalletCard> {
   static Currency _rememberedCurrency = Currency.cdf;
   late Currency _currency = _rememberedCurrency;
   bool _hidden = false;
+  bool _showExplanation = false;
 
   void _show(Currency currency) {
     if (_currency == currency) return;
@@ -100,26 +101,13 @@ class _WalletCardState extends State<WalletCard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Text(
-                              'NEXIS HUB',
-                              style: title(
-                                9,
-                                color: Colors.white.withValues(alpha: .92),
-                              ).copyWith(letterSpacing: 1.8),
-                            ),
-                            const Spacer(),
-                            Image.asset(
-                              'assets/images/monogramme-blanc.png',
-                              width: 20,
-                              height: 21,
-                              excludeFromSemantics: true,
-                            ),
-                          ],
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: SizedBox(
+                            width: 190,
+                            child: _currencySelector(l, duration),
+                          ),
                         ),
-                        const SizedBox(height: 16),
-                        _currencySelector(l, duration),
                         const SizedBox(height: 16),
                         Text(
                           l.available,
@@ -214,34 +202,44 @@ class _WalletCardState extends State<WalletCard> {
                                 ),
                               ),
                             ),
-                            Tooltip(
-                              message: l.walletExplanation,
-                              triggerMode: TooltipTriggerMode.tap,
-                              child: Semantics(
-                                button: true,
-                                label: l.walletInfoLabel,
-                                child: SizedBox(
-                                  width: 44,
-                                  height: 44,
-                                  child: Icon(
-                                    Icons.info_outline,
-                                    size: 19,
-                                    color: Colors.white,
-                                  ),
-                                ),
+                            IconButton(
+                              tooltip: l.walletInfoLabel,
+                              onPressed: () => setState(
+                                () => _showExplanation = !_showExplanation,
+                              ),
+                              constraints: const BoxConstraints.tightFor(
+                                width: 44,
+                                height: 44,
+                              ),
+                              padding: EdgeInsets.zero,
+                              visualDensity: VisualDensity.standard,
+                              icon: const Icon(
+                                Icons.info_outline,
+                                size: 19,
+                                color: Colors.white,
                               ),
                             ),
                           ],
                         ),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 24, right: 44),
-                          child: Text(
-                            l.walletExplanation,
-                            style: body(
-                              11.5,
-                              color: Colors.white.withValues(alpha: .92),
-                            ),
-                          ),
+                        AnimatedSize(
+                          duration: duration,
+                          curve: Curves.easeInOut,
+                          child: _showExplanation
+                              ? Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: 24,
+                                    right: 44,
+                                  ),
+                                  child: Text(
+                                    l.walletExplanation,
+                                    style: body(
+                                      11.5,
+                                      color:
+                                          Colors.white.withValues(alpha: .92),
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
                         ),
                       ],
                     ),
@@ -257,8 +255,8 @@ class _WalletCardState extends State<WalletCard> {
 
   Widget _currencySelector(AppLocalizations l, Duration duration) {
     return Container(
-      height: 48,
-      padding: const EdgeInsets.all(3),
+      height: 52,
+      padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
         color: NexisColors.navy.withValues(alpha: .26),
         borderRadius: BorderRadius.circular(14),
@@ -288,7 +286,7 @@ class _WalletCardState extends State<WalletCard> {
             onTap: () => _show(currency),
             borderRadius: BorderRadius.circular(11),
             child: SizedBox(
-              height: 42,
+              height: 48,
               child: Center(
                 child: AnimatedDefaultTextStyle(
                   duration: duration,
