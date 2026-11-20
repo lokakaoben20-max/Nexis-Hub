@@ -29,6 +29,32 @@ et passe avant la rapidité.
 - Une recommandation présentée à Ben est la solution définitive visée, jamais une
   étape « en attendant ».
 
+## Intelligence artificielle dans le produit (décidé par Ben le 2026-11-20)
+
+Ceci concerne l'IA **dans Nexis** (assistants, tri, détection), pas les agents qui codent.
+
+- **L'IA aide, elle ne décide jamais seule** une action irréversible. Aucune IA ne déclenche,
+  ne bloque ni ne calcule un mouvement d'argent (paiement, libération, remboursement,
+  retrait, partage de litige), ne valide ni ne refuse un prestataire, ne sanctionne personne
+  et ne fixe aucun prix. Ces décisions restent au backend (règles écrites et testées) ou à un
+  humain de l'équipe Nexis.
+- Toute suggestion d'IA est **tracée** (entrée, réponse, qui l'a suivie ou écartée) et
+  **contestable** par la personne concernée.
+- **Consentement et confidentialité** : aucune donnée personnelle (pièce d'identité, selfie,
+  numéro, position) n'est envoyée à un service d'IA extérieur sans avis juridique préalable
+  et accord explicite de Ben.
+- L'**antifraude** commence par des **règles explicites** (seuils, journal d'alertes, revue
+  humaine, recours), pas par de l'IA.
+- Aucune fonctionnalité d'IA n'est présentée comme « opérationnelle » sans test de bout en
+  bout, ni sans mesure du coût, de la qualité (y compris en lingala) et des faux positifs.
+- **Ordre décidé** : pas d'IA avant le lancement. Après le lancement, avec de vraies données :
+  1) pilote d'**assistant interne pour l'équipe admin** (résumé d'un litige avant décision,
+  tri des alertes et des « Mon besoin n'est pas dans la liste ») ; 2) plus tard, assistant
+  client limité (aider à choisir le bon service), après relecture du lingala, avis juridique
+  et vérification des règles Meta sur l'IA dans WhatsApp ; 3) en dernier, aide au contrôle
+  des pièces d'identité, seulement si l'avocat l'autorise. L'aide à la rédaction des devis
+  n'est pas prévue : le prix reste la décision du prestataire.
+
 ## Objectif du projet
 
 Ce dépôt contient un bot Telegram pour Nexis Hub avec une migration progressive vers une
