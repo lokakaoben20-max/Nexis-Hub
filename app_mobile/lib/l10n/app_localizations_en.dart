@@ -580,4 +580,187 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get seeWallet => 'See my wallet';
+
+  @override
+  String get inService => 'On duty';
+
+  @override
+  String get offService => 'Off duty';
+
+  @override
+  String inServiceSub(String communes) {
+    return 'You get requests from $communes';
+  }
+
+  @override
+  String get offServiceSub => 'You don\'t get new requests';
+
+  @override
+  String get offServiceHint =>
+      'Turn on “On duty” to get requests from clients.';
+
+  @override
+  String andList(String head, String last) {
+    return '$head and $last';
+  }
+
+  @override
+  String securedUntilConfirm(String amount) {
+    return '$amount secured, paid out when the client confirms';
+  }
+
+  @override
+  String get newRequests => 'New requests';
+
+  @override
+  String get noRequests => 'No new requests for now.';
+
+  @override
+  String get jobsInProgress => 'Ongoing missions';
+
+  @override
+  String get newPill => 'New';
+
+  @override
+  String minutesAgo(int count) {
+    return '$count min';
+  }
+
+  @override
+  String hoursAgo(int count) {
+    return '$count h';
+  }
+
+  @override
+  String get quoteSentPill => 'Quote sent';
+
+  @override
+  String get sendAQuote => 'Send a quote';
+
+  @override
+  String get sendTheQuote => 'Send the quote';
+
+  @override
+  String get yourPrice => 'Your price';
+
+  @override
+  String get priceAsked => 'Amount asked from the client';
+
+  @override
+  String get changeCurrency => 'Change currency';
+
+  @override
+  String get yourSlot => 'Your time slot';
+
+  @override
+  String get otherSlot => 'Other';
+
+  @override
+  String get quoteSentToast =>
+      'Quote sent. You\'ll be told if the client picks it.';
+
+  @override
+  String get quoteFailed => 'The quote wasn\'t sent. Try again in a moment.';
+
+  @override
+  String get actionFailed => 'That didn\'t work. Try again in a moment.';
+
+  @override
+  String get jobTitle => 'Mission';
+
+  @override
+  String get jobToStart => 'Paid, time to set off';
+
+  @override
+  String get jobOnTheWay => 'On the way';
+
+  @override
+  String jobArrivalPending(String name) {
+    return '$name must confirm your arrival';
+  }
+
+  @override
+  String get jobOnSite => 'On site';
+
+  @override
+  String jobWaitingClient(String name) {
+    return 'Done, $name must confirm';
+  }
+
+  @override
+  String get shareLocation => 'Share my location';
+
+  @override
+  String shareLocationSub(String name) {
+    return '$name sees how far away you are';
+  }
+
+  @override
+  String get pStepPaid => 'Client paid';
+
+  @override
+  String get pStepLeft => 'I set off';
+
+  @override
+  String get pStepArrive => 'I arrive on site';
+
+  @override
+  String get pStepOnSite => 'I\'m on site';
+
+  @override
+  String get pStepDone => 'I\'m done';
+
+  @override
+  String get btnLeave => 'I\'m setting off';
+
+  @override
+  String get btnArrived => 'I\'ve arrived';
+
+  @override
+  String get btnFinished => 'I\'m done';
+
+  @override
+  String callClient(String name) {
+    return 'Call $name';
+  }
+
+  @override
+  String arrivalWaiting(String name) {
+    return '$name must confirm your arrival on their phone. You can also type their presence code.';
+  }
+
+  @override
+  String arrivalWaitingSub(String name) {
+    return 'Waiting for $name';
+  }
+
+  @override
+  String get arrivalConfirmed => 'Arrival confirmed';
+
+  @override
+  String get presenceCode => 'Client\'s presence code';
+
+  @override
+  String get confirmCode => 'Confirm';
+
+  @override
+  String wrongCode(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Wrong code. $count tries left.',
+      one: 'Wrong code. 1 try left.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String codeLocked(String name) {
+    return 'Too many tries. Only $name can confirm your arrival now.';
+  }
+
+  @override
+  String finishedNote(String name) {
+    return '$name has 48 h to confirm or report a problem. With no answer, the money is paid to you after 48 h.';
+  }
 }

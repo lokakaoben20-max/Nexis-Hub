@@ -7,6 +7,7 @@ import '../data/models.dart';
 import '../l10n/app_localizations.dart';
 import '../ui/common.dart';
 import '../ui/loader.dart';
+import '../ui/parts.dart';
 import '../ui/theme.dart';
 
 /// Profil : identité, langue (vraiment changeable), appareils, aide.
@@ -60,7 +61,7 @@ class ProfileScreen extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             if (profile.isProvider) ...[
-              const _SpaceSwitch(),
+              const SpaceSwitch(),
               const SizedBox(height: 14),
             ],
             _group(context, [
@@ -258,51 +259,3 @@ class ProfileScreen extends StatelessWidget {
 
 /// Passage Client / Prestataire (seulement pour qui a les deux rôles).
 /// L'espace prestataire de l'app viendra plus tard : on le dit.
-class _SpaceSwitch extends StatelessWidget {
-  const _SpaceSwitch();
-
-  @override
-  Widget build(BuildContext context) {
-    final l = AppLocalizations.of(context);
-    final p = context.palette;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    Widget side(String label, bool on, VoidCallback? onTap) => Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: on ? NexisColors.navy : Colors.transparent,
-            borderRadius: BorderRadius.circular(99),
-          ),
-          child: Text(
-            label,
-            style: body(
-              13,
-              weight: FontWeight.w600,
-              color: on ? Colors.white : p.muted,
-            ),
-          ),
-        ),
-      ),
-    );
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: dark ? p.surface : const Color(0xFFE9EDF3),
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: Row(
-        children: [
-          side(l.spaceClient, true, null),
-          side(
-            l.spaceProvider,
-            false,
-            () => showComingSoon(context, l.spaceProvider),
-          ),
-        ],
-      ),
-    );
-  }
-}

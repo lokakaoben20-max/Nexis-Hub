@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../app_state.dart';
 import '../ui/icons.dart';
 
 import '../data/models.dart';
@@ -9,6 +10,8 @@ import '../ui/theme.dart';
 import 'home.dart';
 import 'missions.dart';
 import 'profile.dart';
+import 'provider/home.dart';
+import 'provider/missions.dart';
 import 'wallet.dart';
 
 /// Barre du bas de la maquette approuvée (design/app-accueil-reference.html) :
@@ -31,6 +34,7 @@ class Shell extends StatefulWidget {
 class _ShellState extends State<Shell> {
   int _tab = 0;
   bool _picking = false;
+  bool? _shownProvider;
 
   void go(int tab) => setState(() {
     _tab = tab;
@@ -67,13 +71,22 @@ class _ShellState extends State<Shell> {
     final safeBottom = MediaQuery.paddingOf(context).bottom;
     // 96 dans la maquette, dont 34 pour la barre d'accueil de l'iPhone.
     final double barHeight = 62 + (safeBottom < 16 ? 16 : safeBottom);
+    final provider = AppScope.of(context).providerSpace;
+    if (_shownProvider != provider) {
+      // Changer d'espace ramène à son accueil.
+      _shownProvider = provider;
+      _tab = 0;
+      _picking = false;
+    }
     final screens = [
-      HomeScreen(
-        onTab: go,
-        onPickService: _togglePicker,
-        bottomInset: barHeight,
-      ),
-      const MissionsScreen(),
+      provider
+          ? ProviderHomeScreen(onTab: go)
+          : HomeScreen(
+              onTab: go,
+              onPickService: _togglePicker,
+              bottomInset: barHeight,
+            ),
+      provider ? const ProviderMissionsScreen() : const MissionsScreen(),
       const WalletScreen(),
       const ProfileScreen(),
     ];
@@ -94,7 +107,7 @@ class _ShellState extends State<Shell> {
                 index: _tab,
                 children: [
                   for (var i = 0; i < screens.length; i++)
-                    i == 0
+                    i == 0 && !provider
                         ? screens[i]
                         : MediaQuery.removePadding(
                             context: context,

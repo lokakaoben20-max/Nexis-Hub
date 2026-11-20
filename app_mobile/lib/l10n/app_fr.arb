@@ -401,5 +401,155 @@
       }
     }
   },
-  "seeWallet": "Voir mon portefeuille"
+  "seeWallet": "Voir mon portefeuille",
+  "inService": "En service",
+  "offService": "Hors service",
+  "inServiceSub": "Tu reçois les demandes de {communes}",
+  "@inServiceSub": {
+    "placeholders": {
+      "communes": {
+        "type": "String"
+      }
+    }
+  },
+  "offServiceSub": "Tu ne reçois pas de nouvelles demandes",
+  "offServiceHint": "Active « En service » pour recevoir les demandes des clients.",
+  "andList": "{head} et {last}",
+  "@andList": {
+    "placeholders": {
+      "head": {
+        "type": "String"
+      },
+      "last": {
+        "type": "String"
+      }
+    }
+  },
+  "securedUntilConfirm": "{amount} sécurisés, versés quand le client confirme",
+  "@securedUntilConfirm": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "newRequests": "Nouvelles demandes",
+  "noRequests": "Pas de nouvelle demande pour l'instant.",
+  "jobsInProgress": "Missions en cours",
+  "newPill": "Nouveau",
+  "minutesAgo": "{count} min",
+  "@minutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "hoursAgo": "{count} h",
+  "@hoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "quoteSentPill": "Devis envoyé",
+  "sendAQuote": "Envoyer un devis",
+  "sendTheQuote": "Envoyer le devis",
+  "yourPrice": "Ton prix",
+  "priceAsked": "Montant demandé au client",
+  "changeCurrency": "Changer de devise",
+  "yourSlot": "Ton créneau",
+  "otherSlot": "Autre",
+  "quoteSentToast": "Devis envoyé. Tu seras prévenu si le client le choisit.",
+  "quoteFailed": "Le devis n'est pas parti. Réessaie dans un instant.",
+  "actionFailed": "Ça n'a pas marché. Réessaie dans un instant.",
+  "jobTitle": "Mission",
+  "jobToStart": "Payé, à toi de partir",
+  "jobOnTheWay": "En route",
+  "jobArrivalPending": "Arrivée à confirmer par {name}",
+  "@jobArrivalPending": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "jobOnSite": "Sur place",
+  "jobWaitingClient": "Terminé, {name} doit confirmer",
+  "@jobWaitingClient": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "shareLocation": "Partager ma position",
+  "shareLocationSub": "{name} voit la distance jusqu'à ton arrivée",
+  "@shareLocationSub": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "pStepPaid": "Client a payé",
+  "pStepLeft": "Je suis parti",
+  "pStepArrive": "J'arrive sur place",
+  "pStepOnSite": "Je suis sur place",
+  "pStepDone": "J'ai terminé",
+  "btnLeave": "Je pars",
+  "btnArrived": "Je suis arrivé",
+  "btnFinished": "J'ai terminé",
+  "callClient": "Appeler {name}",
+  "@callClient": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "arrivalWaiting": "{name} doit confirmer ton arrivée sur son téléphone. Tu peux aussi taper son code de présence.",
+  "@arrivalWaiting": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "arrivalWaitingSub": "En attente de {name}",
+  "@arrivalWaitingSub": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "arrivalConfirmed": "Arrivée confirmée",
+  "presenceCode": "Code de présence du client",
+  "confirmCode": "Valider",
+  "wrongCode": "{count, plural, =1{Code incorrect. Encore 1 essai.} other{Code incorrect. Encore {count} essais.}}",
+  "@wrongCode": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "codeLocked": "Trop d'essais. Seul {name} peut maintenant confirmer ton arrivée.",
+  "@codeLocked": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "finishedNote": "{name} a 48 h pour confirmer ou signaler un problème. Sans réponse, l'argent t'est versé au bout de 48 h.",
+  "@finishedNote": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  }
 }

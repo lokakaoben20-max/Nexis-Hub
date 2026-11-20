@@ -14,7 +14,7 @@ class DemoRepository implements NexisRepository {
     lastName: 'Nsimba',
     phone: '+243812345412',
     commune: 'Limete',
-    isProvider: false,
+    isProvider: true,
   );
 
   @override
@@ -361,6 +361,184 @@ class DemoRepository implements NexisRepository {
       ),
     );
     return dispute;
+  }
+
+  // --- Espace prestataire (fictif) ---
+
+  bool _inService = true;
+
+  /// Code de présence de la cliente dans l'aperçu (sur le vrai serveur, il
+  /// n'est donné qu'au client et n'est jamais enregistré).
+  static const demoPresenceCode = '2580';
+
+  DateTime _nextDay(int weekday, int hour) {
+    final days = (weekday - _now.weekday + 7) % 7;
+    final day = _now.add(Duration(days: days == 0 ? 7 : days));
+    return DateTime(day.year, day.month, day.day, hour);
+  }
+
+  late final List<ProviderRequest> _requests = [
+    ProviderRequest(
+      missionId: 71,
+      service: Service.nettoyage,
+      commune: 'Limete',
+      summary: 'Samedi matin · 3 pièces',
+      description:
+          'Appartement de 3 pièces, cuisine et salle de bain comprises. '
+          'Produits à apporter.',
+      wanted: 'Samedi matin',
+      photos: 3,
+      receivedAt: _now.subtract(const Duration(minutes: 3)),
+      slotChoices: [
+        _nextDay(DateTime.saturday, 8),
+        _nextDay(DateTime.saturday, 9),
+        _nextDay(DateTime.saturday, 10),
+      ],
+    ),
+    ProviderRequest(
+      missionId: 72,
+      service: Service.jardinage,
+      commune: 'Ngaliema',
+      summary: 'Dimanche · petit jardin',
+      description: 'Petit jardin devant la maison : tondre et tailler la haie.',
+      wanted: 'Dimanche',
+      photos: 1,
+      receivedAt: _now.subtract(const Duration(minutes: 12)),
+      slotChoices: [
+        _nextDay(DateTime.sunday, 9),
+        _nextDay(DateTime.sunday, 14),
+      ],
+    ),
+  ];
+
+  late final List<ProviderJob> _jobs = [
+    ProviderJob(
+      missionId: 61,
+      service: Service.nettoyage,
+      commune: 'Limete',
+      clientName: 'Esther M.',
+      clientInitials: 'EM',
+      clientColor: 0xFFC2416B,
+      place: "Limete, 7e rue · près de l'école",
+      amount: const Money(25000, Currency.cdf),
+      sharing: true,
+      steps: {
+        ProviderStep.clientPaid: _now.subtract(const Duration(minutes: 40)),
+        ProviderStep.leftHome: _now.subtract(const Duration(minutes: 12)),
+      },
+    ),
+  ];
+
+  @override
+  Future<ProviderHome> providerHome() async => ProviderHome(
+    inService: _inService,
+    communes: const ['Limete', 'Gombe'],
+    available: const Money(120000, Currency.cdf),
+    secured: _jobs
+        .where((j) => !j.steps.containsKey(ProviderStep.finished))
+        .fold(
+          const Money(0, Currency.cdf),
+          (sum, j) => j.amount.currency == Currency.cdf
+              ? Money(sum.minorUnits + j.amount.minorUnits, Currency.cdf)
+              : sum,
+        ),
+    requests: List.of(_requests),
+    jobs: List.of(_jobs),
+  );
+
+  @override
+  Future<void> setInService(bool value) async => _inService = value;
+
+  @override
+  Future<ProviderRequest> providerRequest(int missionId) async =>
+      _requests.firstWhere((r) => r.missionId == missionId);
+
+  @override
+  Future<void> sendQuote(int missionId, Money price, DateTime slot) async {
+    final i = _requests.indexWhere((r) => r.missionId == missionId);
+    if (i < 0) throw StateError('mission_not_open');
+    final request = _requests[i];
+    if (request.quoted) throw StateError('quote_already_sent');
+    if (price.minorUnits <= 0) throw ArgumentError('price_must_be_positive');
+    _requests[i] = ProviderRequest(
+      missionId: request.missionId,
+      service: request.service,
+      commune: request.commune,
+      summary: request.summary,
+      description: request.description,
+      wanted: request.wanted,
+      photos: request.photos,
+      receivedAt: request.receivedAt,
+      slotChoices: request.slotChoices,
+      quoted: true,
+    );
+  }
+
+  @override
+  Future<ProviderJob> providerJob(int missionId) async =>
+      _jobs.firstWhere((j) => j.missionId == missionId);
+
+  ProviderJob _saveJob(ProviderJob job) {
+    final i = _jobs.indexWhere((j) => j.missionId == job.missionId);
+    _jobs[i] = job;
+    return job;
+  }
+
+  @override
+  Future<ProviderJob> setSharing(int missionId, bool value) async =>
+      _saveJob((await providerJob(missionId)).copyWith(sharing: value));
+
+  @override
+  Future<ProviderJob> leaveForJob(int missionId) async {
+    final job = await providerJob(missionId);
+    if (job.steps.containsKey(ProviderStep.leftHome)) return job;
+    return _saveJob(
+      job.copyWith(
+        steps: {...job.steps, ProviderStep.leftHome: DateTime.now()},
+      ),
+    );
+  }
+
+  @override
+  Future<ProviderJob> signalArrival(int missionId) async {
+    final job = await providerJob(missionId);
+    if (!job.steps.containsKey(ProviderStep.leftHome)) {
+      throw StateError('not_on_the_way');
+    }
+    return _saveJob(job.copyWith(arrivalSignaled: true));
+  }
+
+  @override
+  Future<PresenceResult> enterPresenceCode(int missionId, String code) async {
+    final job = await providerJob(missionId);
+    if (job.steps.containsKey(ProviderStep.arrived)) {
+      return PresenceResult.confirmed;
+    }
+    if (!job.arrivalSignaled) throw StateError('arrival_not_signaled');
+    if (job.codeAttemptsLeft <= 0) return PresenceResult.locked;
+    if (code.trim() != demoPresenceCode) {
+      final left = job.codeAttemptsLeft - 1;
+      _saveJob(job.copyWith(codeAttemptsLeft: left));
+      return left == 0 ? PresenceResult.locked : PresenceResult.wrongCode;
+    }
+    _saveJob(
+      job.copyWith(steps: {...job.steps, ProviderStep.arrived: DateTime.now()}),
+    );
+    return PresenceResult.confirmed;
+  }
+
+  @override
+  Future<ProviderJob> finishJob(int missionId) async {
+    final job = await providerJob(missionId);
+    if (!job.steps.containsKey(ProviderStep.arrived)) {
+      throw StateError('arrival_not_confirmed');
+    }
+    if (job.steps.containsKey(ProviderStep.finished)) return job;
+    return _saveJob(
+      job.copyWith(
+        steps: {...job.steps, ProviderStep.finished: DateTime.now()},
+      ),
+    );
   }
 
   static String _label(Service service) => switch (service) {

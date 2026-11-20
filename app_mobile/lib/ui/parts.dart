@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../app_state.dart';
+import '../l10n/app_localizations.dart';
 import 'icons.dart';
 import 'theme.dart';
 import 'common.dart';
@@ -331,6 +333,116 @@ class NScreen extends StatelessWidget {
                 child: bottom,
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Client / Prestataire (maquettes 11 et 23) : le même compte change
+/// d'espace, le portefeuille reste le même.
+class SpaceSwitch extends StatelessWidget {
+  const SpaceSwitch({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final p = context.palette;
+    final dark = _dark(context);
+    final state = AppScope.of(context);
+    final provider = state.providerSpace;
+    Widget side(String label, bool on, bool value) => Expanded(
+      child: Semantics(
+        button: true,
+        selected: on,
+        label: label,
+        excludeSemantics: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => state.setProviderSpace(value),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: on ? NexisColors.navy : Colors.transparent,
+              borderRadius: BorderRadius.circular(99),
+            ),
+            child: Text(
+              label,
+              style: body(
+                12.5,
+                weight: FontWeight.w600,
+                color: on ? Colors.white : p.muted,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: dark ? p.surface : const Color(0xFFE9EDF3),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Row(
+        children: [
+          side(l.spaceClient, !provider, false),
+          side(l.spaceProvider, provider, true),
+        ],
+      ),
+    );
+  }
+}
+
+/// Interrupteur vert des maquettes (« En service », « Partager ma
+/// position »).
+class NToggle extends StatelessWidget {
+  const NToggle({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    required this.label,
+  });
+
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      toggled: value,
+      label: label,
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: onChanged == null ? null : () => onChanged!(!value),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: 46,
+          height: 28,
+          padding: const EdgeInsets.all(3),
+          alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+          decoration: BoxDecoration(
+            color: value ? const Color(0xFF1E8A4C) : const Color(0xFFC9D0DB),
+            borderRadius: BorderRadius.circular(99),
+          ),
+          child: Container(
+            width: 22,
+            height: 22,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 2,
+                  offset: Offset(0, 1),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

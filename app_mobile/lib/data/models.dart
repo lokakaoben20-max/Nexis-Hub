@@ -239,3 +239,124 @@ class Dispute {
 
   bool get decided => outcome != null;
 }
+
+/// Une demande de client reçue par le prestataire, à laquelle il peut
+/// répondre par un devis (maquette 11 et 12).
+class ProviderRequest {
+  const ProviderRequest({
+    required this.missionId,
+    required this.service,
+    required this.commune,
+    required this.summary,
+    required this.description,
+    required this.wanted,
+    required this.photos,
+    required this.receivedAt,
+    required this.slotChoices,
+    this.quoted = false,
+  });
+
+  final int missionId;
+  final Service service;
+  final String commune;
+
+  /// « Samedi matin · 3 pièces ».
+  final String summary;
+  final String description;
+
+  /// Le moment souhaité par le client, en mots (« Samedi matin »).
+  final String wanted;
+  final int photos;
+  final DateTime receivedAt;
+
+  /// Créneaux proposés d'après le souhait du client ; « Autre » en plus.
+  final List<DateTime> slotChoices;
+
+  /// Le devis est déjà parti : le client le compare aux autres.
+  final bool quoted;
+}
+
+/// Les étapes d'une mission vue par le prestataire (maquette 13).
+enum ProviderStep { clientPaid, leftHome, arrived, finished }
+
+/// Une mission payée, du côté du prestataire.
+class ProviderJob {
+  const ProviderJob({
+    required this.missionId,
+    required this.service,
+    required this.commune,
+    required this.clientName,
+    required this.clientInitials,
+    required this.clientColor,
+    required this.place,
+    required this.amount,
+    required this.steps,
+    this.sharing = false,
+    this.arrivalSignaled = false,
+    this.codeAttemptsLeft = 5,
+  });
+
+  final int missionId;
+  final Service service;
+  final String commune;
+  final String clientName;
+  final String clientInitials;
+  final int clientColor;
+
+  /// Le lieu exact, donné seulement une fois la mission payée.
+  final String place;
+
+  /// L'argent sécurisé du client pour cette mission.
+  final Money amount;
+  final Map<ProviderStep, DateTime> steps;
+  final bool sharing;
+
+  /// « Je suis arrivé » envoyé ; l'arrivée attend la preuve du client
+  /// (son appui ou son code de présence).
+  final bool arrivalSignaled;
+  final int codeAttemptsLeft;
+
+  String get clientFirstName => clientName.split(' ').first;
+
+  ProviderJob copyWith({
+    Map<ProviderStep, DateTime>? steps,
+    bool? sharing,
+    bool? arrivalSignaled,
+    int? codeAttemptsLeft,
+  }) => ProviderJob(
+    missionId: missionId,
+    service: service,
+    commune: commune,
+    clientName: clientName,
+    clientInitials: clientInitials,
+    clientColor: clientColor,
+    place: place,
+    amount: amount,
+    steps: steps ?? this.steps,
+    sharing: sharing ?? this.sharing,
+    arrivalSignaled: arrivalSignaled ?? this.arrivalSignaled,
+    codeAttemptsLeft: codeAttemptsLeft ?? this.codeAttemptsLeft,
+  );
+}
+
+/// L'accueil prestataire : en service ou non, l'argent, les demandes.
+class ProviderHome {
+  const ProviderHome({
+    required this.inService,
+    required this.communes,
+    required this.available,
+    required this.secured,
+    required this.requests,
+    required this.jobs,
+  });
+
+  final bool inService;
+  final List<String> communes;
+  final Money available;
+  final Money secured;
+  final List<ProviderRequest> requests;
+  final List<ProviderJob> jobs;
+}
+
+/// Réponse au code de présence tapé par le prestataire.
+enum PresenceResult { confirmed, wrongCode, locked }

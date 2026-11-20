@@ -581,4 +581,187 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String get seeWallet => 'Tala esika ya mbongo na ngai';
+
+  @override
+  String get inService => 'Nazali na mosala';
+
+  @override
+  String get offService => 'Nazali na mosala te';
+
+  @override
+  String inServiceSub(String communes) {
+    return 'Ozali kozwa bosengi ya $communes';
+  }
+
+  @override
+  String get offServiceSub => 'Ozali kozwa bosengi ya sika te';
+
+  @override
+  String get offServiceHint =>
+      'Fungola « Nazali na mosala » mpo na kozwa bosengi ya basombi.';
+
+  @override
+  String andList(String head, String last) {
+    return '$head mpe $last';
+  }
+
+  @override
+  String securedUntilConfirm(String amount) {
+    return '$amount ebatelami, ekopesama soki mosombi andimi';
+  }
+
+  @override
+  String get newRequests => 'Bosengi ya sika';
+
+  @override
+  String get noRequests => 'Bosengi ya sika ezali te sikoyo.';
+
+  @override
+  String get jobsInProgress => 'Ba mission oyo ezali kosalema';
+
+  @override
+  String get newPill => 'Ya sika';
+
+  @override
+  String minutesAgo(int count) {
+    return '$count min';
+  }
+
+  @override
+  String hoursAgo(int count) {
+    return '$count h';
+  }
+
+  @override
+  String get quoteSentPill => 'Devis etindami';
+
+  @override
+  String get sendAQuote => 'Tinda devis';
+
+  @override
+  String get sendTheQuote => 'Tinda devis';
+
+  @override
+  String get yourPrice => 'Ntalo na yo';
+
+  @override
+  String get priceAsked => 'Mbongo osengi na mosombi';
+
+  @override
+  String get changeCurrency => 'Bongola lolenge ya mbongo';
+
+  @override
+  String get yourSlot => 'Ngonga na yo';
+
+  @override
+  String get otherSlot => 'Mosusu';
+
+  @override
+  String get quoteSentToast =>
+      'Devis etindami. Tokoyebisa yo soki mosombi aponi yango.';
+
+  @override
+  String get quoteFailed => 'Devis ekendeki te. Meka lisusu mwa moke.';
+
+  @override
+  String get actionFailed => 'Ebimi malamu te. Meka lisusu mwa moke.';
+
+  @override
+  String get jobTitle => 'Mission';
+
+  @override
+  String get jobToStart => 'Efutami, kende sikoyo';
+
+  @override
+  String get jobOnTheWay => 'Na nzela';
+
+  @override
+  String jobArrivalPending(String name) {
+    return '$name asengeli kondima ete okomi';
+  }
+
+  @override
+  String get jobOnSite => 'Na esika';
+
+  @override
+  String jobWaitingClient(String name) {
+    return 'Esili, $name asengeli kondima';
+  }
+
+  @override
+  String get shareLocation => 'Kabola esika nazali';
+
+  @override
+  String shareLocationSub(String name) {
+    return '$name akomona ntaka tii okokoma';
+  }
+
+  @override
+  String get pStepPaid => 'Mosombi afuti';
+
+  @override
+  String get pStepLeft => 'Nabimi';
+
+  @override
+  String get pStepArrive => 'Nakokoma na esika';
+
+  @override
+  String get pStepOnSite => 'Nazali na esika';
+
+  @override
+  String get pStepDone => 'Nasilisi';
+
+  @override
+  String get btnLeave => 'Nabimi';
+
+  @override
+  String get btnArrived => 'Nakomi';
+
+  @override
+  String get btnFinished => 'Nasilisi';
+
+  @override
+  String callClient(String name) {
+    return 'Benga $name';
+  }
+
+  @override
+  String arrivalWaiting(String name) {
+    return '$name asengeli kondima na telefone na ye ete okomi. Okoki mpe kokotisa code na ye ya bozali.';
+  }
+
+  @override
+  String arrivalWaitingSub(String name) {
+    return 'Tozali kozela $name';
+  }
+
+  @override
+  String get arrivalConfirmed => 'Bokomi endimami';
+
+  @override
+  String get presenceCode => 'Code ya bozali ya mosombi';
+
+  @override
+  String get confirmCode => 'Ndima';
+
+  @override
+  String wrongCode(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Code ezali malamu te. Meka mbala $count lisusu.',
+      one: 'Code ezali malamu te. Meka mbala 1 lisusu.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String codeLocked(String name) {
+    return 'Omeki mingi. Kaka $name akoki sikoyo kondima ete okomi.';
+  }
+
+  @override
+  String finishedNote(String name) {
+    return '$name azali na 48 h mpo na kondima to koyebisa mokakatano. Soki azongisi te, okozwa mbongo nsima ya 48 h.';
+  }
 }

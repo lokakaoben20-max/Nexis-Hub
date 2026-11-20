@@ -582,4 +582,188 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get seeWallet => 'Voir mon portefeuille';
+
+  @override
+  String get inService => 'En service';
+
+  @override
+  String get offService => 'Hors service';
+
+  @override
+  String inServiceSub(String communes) {
+    return 'Tu reçois les demandes de $communes';
+  }
+
+  @override
+  String get offServiceSub => 'Tu ne reçois pas de nouvelles demandes';
+
+  @override
+  String get offServiceHint =>
+      'Active « En service » pour recevoir les demandes des clients.';
+
+  @override
+  String andList(String head, String last) {
+    return '$head et $last';
+  }
+
+  @override
+  String securedUntilConfirm(String amount) {
+    return '$amount sécurisés, versés quand le client confirme';
+  }
+
+  @override
+  String get newRequests => 'Nouvelles demandes';
+
+  @override
+  String get noRequests => 'Pas de nouvelle demande pour l\'instant.';
+
+  @override
+  String get jobsInProgress => 'Missions en cours';
+
+  @override
+  String get newPill => 'Nouveau';
+
+  @override
+  String minutesAgo(int count) {
+    return '$count min';
+  }
+
+  @override
+  String hoursAgo(int count) {
+    return '$count h';
+  }
+
+  @override
+  String get quoteSentPill => 'Devis envoyé';
+
+  @override
+  String get sendAQuote => 'Envoyer un devis';
+
+  @override
+  String get sendTheQuote => 'Envoyer le devis';
+
+  @override
+  String get yourPrice => 'Ton prix';
+
+  @override
+  String get priceAsked => 'Montant demandé au client';
+
+  @override
+  String get changeCurrency => 'Changer de devise';
+
+  @override
+  String get yourSlot => 'Ton créneau';
+
+  @override
+  String get otherSlot => 'Autre';
+
+  @override
+  String get quoteSentToast =>
+      'Devis envoyé. Tu seras prévenu si le client le choisit.';
+
+  @override
+  String get quoteFailed =>
+      'Le devis n\'est pas parti. Réessaie dans un instant.';
+
+  @override
+  String get actionFailed => 'Ça n\'a pas marché. Réessaie dans un instant.';
+
+  @override
+  String get jobTitle => 'Mission';
+
+  @override
+  String get jobToStart => 'Payé, à toi de partir';
+
+  @override
+  String get jobOnTheWay => 'En route';
+
+  @override
+  String jobArrivalPending(String name) {
+    return 'Arrivée à confirmer par $name';
+  }
+
+  @override
+  String get jobOnSite => 'Sur place';
+
+  @override
+  String jobWaitingClient(String name) {
+    return 'Terminé, $name doit confirmer';
+  }
+
+  @override
+  String get shareLocation => 'Partager ma position';
+
+  @override
+  String shareLocationSub(String name) {
+    return '$name voit la distance jusqu\'à ton arrivée';
+  }
+
+  @override
+  String get pStepPaid => 'Client a payé';
+
+  @override
+  String get pStepLeft => 'Je suis parti';
+
+  @override
+  String get pStepArrive => 'J\'arrive sur place';
+
+  @override
+  String get pStepOnSite => 'Je suis sur place';
+
+  @override
+  String get pStepDone => 'J\'ai terminé';
+
+  @override
+  String get btnLeave => 'Je pars';
+
+  @override
+  String get btnArrived => 'Je suis arrivé';
+
+  @override
+  String get btnFinished => 'J\'ai terminé';
+
+  @override
+  String callClient(String name) {
+    return 'Appeler $name';
+  }
+
+  @override
+  String arrivalWaiting(String name) {
+    return '$name doit confirmer ton arrivée sur son téléphone. Tu peux aussi taper son code de présence.';
+  }
+
+  @override
+  String arrivalWaitingSub(String name) {
+    return 'En attente de $name';
+  }
+
+  @override
+  String get arrivalConfirmed => 'Arrivée confirmée';
+
+  @override
+  String get presenceCode => 'Code de présence du client';
+
+  @override
+  String get confirmCode => 'Valider';
+
+  @override
+  String wrongCode(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Code incorrect. Encore $count essais.',
+      one: 'Code incorrect. Encore 1 essai.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String codeLocked(String name) {
+    return 'Trop d\'essais. Seul $name peut maintenant confirmer ton arrivée.';
+  }
+
+  @override
+  String finishedNote(String name) {
+    return '$name a 48 h pour confirmer ou signaler un problème. Sans réponse, l\'argent t\'est versé au bout de 48 h.';
+  }
 }

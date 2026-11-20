@@ -25,6 +25,18 @@ class AppState extends ChangeNotifier {
 
   bool get signedIn => _signedIn;
 
+  bool _providerSpace = false;
+
+  /// Espace Prestataire affiché (un même compte peut être client et
+  /// prestataire, avec un seul portefeuille).
+  bool get providerSpace => _providerSpace;
+
+  void setProviderSpace(bool value) {
+    if (value == _providerSpace) return;
+    _providerSpace = value;
+    notifyListeners();
+  }
+
   void setLocale(Locale locale) {
     _locale = locale;
     notifyListeners();
@@ -37,6 +49,7 @@ class AppState extends ChangeNotifier {
 
   void signOut() {
     _signedIn = false;
+    _providerSpace = false;
     notifyListeners();
   }
 }

@@ -4,6 +4,8 @@ import 'package:flutter/widgets.dart';
 
 class PhRegular {
   PhRegular._();
+  static const IconData caretDown = IconData(0xe136, fontFamily: 'Phosphor');
+  static const IconData phone = IconData(0xe3b8, fontFamily: 'Phosphor');
   static const IconData camera = IconData(0xe10e, fontFamily: 'Phosphor');
   static const IconData image = IconData(0xe2ca, fontFamily: 'Phosphor');
   static const IconData chatsCircle = IconData(0xe17e, fontFamily: 'Phosphor');

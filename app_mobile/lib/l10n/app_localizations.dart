@@ -1053,6 +1053,300 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'Voir mon portefeuille'**
   String get seeWallet;
+
+  /// No description provided for @inService.
+  ///
+  /// In fr, this message translates to:
+  /// **'En service'**
+  String get inService;
+
+  /// No description provided for @offService.
+  ///
+  /// In fr, this message translates to:
+  /// **'Hors service'**
+  String get offService;
+
+  /// No description provided for @inServiceSub.
+  ///
+  /// In fr, this message translates to:
+  /// **'Tu reçois les demandes de {communes}'**
+  String inServiceSub(String communes);
+
+  /// No description provided for @offServiceSub.
+  ///
+  /// In fr, this message translates to:
+  /// **'Tu ne reçois pas de nouvelles demandes'**
+  String get offServiceSub;
+
+  /// No description provided for @offServiceHint.
+  ///
+  /// In fr, this message translates to:
+  /// **'Active « En service » pour recevoir les demandes des clients.'**
+  String get offServiceHint;
+
+  /// No description provided for @andList.
+  ///
+  /// In fr, this message translates to:
+  /// **'{head} et {last}'**
+  String andList(String head, String last);
+
+  /// No description provided for @securedUntilConfirm.
+  ///
+  /// In fr, this message translates to:
+  /// **'{amount} sécurisés, versés quand le client confirme'**
+  String securedUntilConfirm(String amount);
+
+  /// No description provided for @newRequests.
+  ///
+  /// In fr, this message translates to:
+  /// **'Nouvelles demandes'**
+  String get newRequests;
+
+  /// No description provided for @noRequests.
+  ///
+  /// In fr, this message translates to:
+  /// **'Pas de nouvelle demande pour l\'instant.'**
+  String get noRequests;
+
+  /// No description provided for @jobsInProgress.
+  ///
+  /// In fr, this message translates to:
+  /// **'Missions en cours'**
+  String get jobsInProgress;
+
+  /// No description provided for @newPill.
+  ///
+  /// In fr, this message translates to:
+  /// **'Nouveau'**
+  String get newPill;
+
+  /// No description provided for @minutesAgo.
+  ///
+  /// In fr, this message translates to:
+  /// **'{count} min'**
+  String minutesAgo(int count);
+
+  /// No description provided for @hoursAgo.
+  ///
+  /// In fr, this message translates to:
+  /// **'{count} h'**
+  String hoursAgo(int count);
+
+  /// No description provided for @quoteSentPill.
+  ///
+  /// In fr, this message translates to:
+  /// **'Devis envoyé'**
+  String get quoteSentPill;
+
+  /// No description provided for @sendAQuote.
+  ///
+  /// In fr, this message translates to:
+  /// **'Envoyer un devis'**
+  String get sendAQuote;
+
+  /// No description provided for @sendTheQuote.
+  ///
+  /// In fr, this message translates to:
+  /// **'Envoyer le devis'**
+  String get sendTheQuote;
+
+  /// No description provided for @yourPrice.
+  ///
+  /// In fr, this message translates to:
+  /// **'Ton prix'**
+  String get yourPrice;
+
+  /// No description provided for @priceAsked.
+  ///
+  /// In fr, this message translates to:
+  /// **'Montant demandé au client'**
+  String get priceAsked;
+
+  /// No description provided for @changeCurrency.
+  ///
+  /// In fr, this message translates to:
+  /// **'Changer de devise'**
+  String get changeCurrency;
+
+  /// No description provided for @yourSlot.
+  ///
+  /// In fr, this message translates to:
+  /// **'Ton créneau'**
+  String get yourSlot;
+
+  /// No description provided for @otherSlot.
+  ///
+  /// In fr, this message translates to:
+  /// **'Autre'**
+  String get otherSlot;
+
+  /// No description provided for @quoteSentToast.
+  ///
+  /// In fr, this message translates to:
+  /// **'Devis envoyé. Tu seras prévenu si le client le choisit.'**
+  String get quoteSentToast;
+
+  /// No description provided for @quoteFailed.
+  ///
+  /// In fr, this message translates to:
+  /// **'Le devis n\'est pas parti. Réessaie dans un instant.'**
+  String get quoteFailed;
+
+  /// No description provided for @actionFailed.
+  ///
+  /// In fr, this message translates to:
+  /// **'Ça n\'a pas marché. Réessaie dans un instant.'**
+  String get actionFailed;
+
+  /// No description provided for @jobTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'Mission'**
+  String get jobTitle;
+
+  /// No description provided for @jobToStart.
+  ///
+  /// In fr, this message translates to:
+  /// **'Payé, à toi de partir'**
+  String get jobToStart;
+
+  /// No description provided for @jobOnTheWay.
+  ///
+  /// In fr, this message translates to:
+  /// **'En route'**
+  String get jobOnTheWay;
+
+  /// No description provided for @jobArrivalPending.
+  ///
+  /// In fr, this message translates to:
+  /// **'Arrivée à confirmer par {name}'**
+  String jobArrivalPending(String name);
+
+  /// No description provided for @jobOnSite.
+  ///
+  /// In fr, this message translates to:
+  /// **'Sur place'**
+  String get jobOnSite;
+
+  /// No description provided for @jobWaitingClient.
+  ///
+  /// In fr, this message translates to:
+  /// **'Terminé, {name} doit confirmer'**
+  String jobWaitingClient(String name);
+
+  /// No description provided for @shareLocation.
+  ///
+  /// In fr, this message translates to:
+  /// **'Partager ma position'**
+  String get shareLocation;
+
+  /// No description provided for @shareLocationSub.
+  ///
+  /// In fr, this message translates to:
+  /// **'{name} voit la distance jusqu\'à ton arrivée'**
+  String shareLocationSub(String name);
+
+  /// No description provided for @pStepPaid.
+  ///
+  /// In fr, this message translates to:
+  /// **'Client a payé'**
+  String get pStepPaid;
+
+  /// No description provided for @pStepLeft.
+  ///
+  /// In fr, this message translates to:
+  /// **'Je suis parti'**
+  String get pStepLeft;
+
+  /// No description provided for @pStepArrive.
+  ///
+  /// In fr, this message translates to:
+  /// **'J\'arrive sur place'**
+  String get pStepArrive;
+
+  /// No description provided for @pStepOnSite.
+  ///
+  /// In fr, this message translates to:
+  /// **'Je suis sur place'**
+  String get pStepOnSite;
+
+  /// No description provided for @pStepDone.
+  ///
+  /// In fr, this message translates to:
+  /// **'J\'ai terminé'**
+  String get pStepDone;
+
+  /// No description provided for @btnLeave.
+  ///
+  /// In fr, this message translates to:
+  /// **'Je pars'**
+  String get btnLeave;
+
+  /// No description provided for @btnArrived.
+  ///
+  /// In fr, this message translates to:
+  /// **'Je suis arrivé'**
+  String get btnArrived;
+
+  /// No description provided for @btnFinished.
+  ///
+  /// In fr, this message translates to:
+  /// **'J\'ai terminé'**
+  String get btnFinished;
+
+  /// No description provided for @callClient.
+  ///
+  /// In fr, this message translates to:
+  /// **'Appeler {name}'**
+  String callClient(String name);
+
+  /// No description provided for @arrivalWaiting.
+  ///
+  /// In fr, this message translates to:
+  /// **'{name} doit confirmer ton arrivée sur son téléphone. Tu peux aussi taper son code de présence.'**
+  String arrivalWaiting(String name);
+
+  /// No description provided for @arrivalWaitingSub.
+  ///
+  /// In fr, this message translates to:
+  /// **'En attente de {name}'**
+  String arrivalWaitingSub(String name);
+
+  /// No description provided for @arrivalConfirmed.
+  ///
+  /// In fr, this message translates to:
+  /// **'Arrivée confirmée'**
+  String get arrivalConfirmed;
+
+  /// No description provided for @presenceCode.
+  ///
+  /// In fr, this message translates to:
+  /// **'Code de présence du client'**
+  String get presenceCode;
+
+  /// No description provided for @confirmCode.
+  ///
+  /// In fr, this message translates to:
+  /// **'Valider'**
+  String get confirmCode;
+
+  /// No description provided for @wrongCode.
+  ///
+  /// In fr, this message translates to:
+  /// **'{count, plural, =1{Code incorrect. Encore 1 essai.} other{Code incorrect. Encore {count} essais.}}'**
+  String wrongCode(int count);
+
+  /// No description provided for @codeLocked.
+  ///
+  /// In fr, this message translates to:
+  /// **'Trop d\'essais. Seul {name} peut maintenant confirmer ton arrivée.'**
+  String codeLocked(String name);
+
+  /// No description provided for @finishedNote.
+  ///
+  /// In fr, this message translates to:
+  /// **'{name} a 48 h pour confirmer ou signaler un problème. Sans réponse, l\'argent t\'est versé au bout de 48 h.'**
+  String finishedNote(String name);
 }
 
 class _AppLocalizationsDelegate

@@ -1,4 +1,5 @@
 import 'models.dart';
+import 'money.dart';
 
 /// Ce que les écrans lisent. Une seule source : le serveur Nexis.
 ///
@@ -38,4 +39,35 @@ abstract class NexisRepository {
     DisputeReason reason,
     String text,
   );
+
+  // --- Espace prestataire ---
+
+  Future<ProviderHome> providerHome();
+
+  /// « En service » : reçoit ou non les nouvelles demandes.
+  Future<void> setInService(bool value);
+
+  Future<ProviderRequest> providerRequest(int missionId);
+
+  /// Envoie un devis. Le serveur refuse un prix nul ou négatif, une
+  /// mission qui n'est plus ouverte, ou un prestataire client de la
+  /// mission.
+  Future<void> sendQuote(int missionId, Money price, DateTime slot);
+
+  Future<ProviderJob> providerJob(int missionId);
+
+  Future<ProviderJob> setSharing(int missionId, bool value);
+
+  /// « Je suis parti ».
+  Future<ProviderJob> leaveForJob(int missionId);
+
+  /// « Je suis arrivé » : prévient le client, ne confirme rien seul.
+  Future<ProviderJob> signalArrival(int missionId);
+
+  /// Le code de présence du client, tapé par le prestataire. Cinq essais
+  /// au plus ; ensuite seul l'appui du client confirme.
+  Future<PresenceResult> enterPresenceCode(int missionId, String code);
+
+  /// « J'ai terminé » : le client a 48 h pour confirmer ou signaler.
+  Future<ProviderJob> finishJob(int missionId);
 }
