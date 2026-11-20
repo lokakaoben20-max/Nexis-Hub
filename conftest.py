@@ -108,3 +108,25 @@ def _no_real_telegram(monkeypatch):
     from backend.app import notify
 
     monkeypatch.setattr(notify, "BOT_TOKEN", "")
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "conditions_reelles: le test garde la vraie exigence des conditions d'utilisation (backend.app.conditions)",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _conditions_hors_sujet(request, monkeypatch):
+    """La case des conditions d'utilisation est obligatoire en vrai : sans
+    version publiée, personne ne s'inscrit ni n'agit. Les tests qui ne
+    portent pas sur elle (missions, argent, profils...) partent d'un monde où
+    il n'y a rien à cocher. Les tests de la règle elle-même portent la marque
+    `conditions_reelles` et gardent la vraie exigence
+    (backend/tests/test_conditions*.py, tests/test_conditions_*.py)."""
+    if request.node.get_closest_marker("conditions_reelles"):
+        return
+    from backend.app import conditions
+
+    monkeypatch.setattr(conditions, "required_versions", lambda db, role, now=None: [])

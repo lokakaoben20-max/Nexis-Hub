@@ -182,7 +182,12 @@ def test_every_write_open_to_whatsapp_is_idempotent(backend):
         for method, path, endpoint in api_routes(backend)
         if method in backend.WRITE_METHODS and "whatsapp" in backend.route_channels(endpoint)
     ]
-    assert sorted(writes) == [("PATCH", "/api/me/language"), ("PATCH", "/api/me/name"), ("POST", "/api/whatsapp/client")]
+    assert sorted(writes) == [
+        ("PATCH", "/api/me/language"),
+        ("PATCH", "/api/me/name"),
+        ("POST", "/api/me/terms"),
+        ("POST", "/api/whatsapp/client"),
+    ]
     for method, path, endpoint in api_routes(backend):
         if (method, path) in writes:
             assert backend.is_idempotent(endpoint), (method, path)

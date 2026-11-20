@@ -25,12 +25,13 @@ modification de profil ne change jamais le statut d'un prestataire vérifié.
 service dans cette commune, et qui n'est pas le client lui-même.
 """
 
+import logging
 from datetime import datetime
 
 from sqlalchemy import case, func, select, update
 from sqlalchemy.orm import Session
 
-from backend.app import app_auth, fichiers
+from backend.app import app_auth, conditions, fichiers
 from backend.app.models import (
     PROVIDER_STATUSES,
     ClientProfile,
@@ -42,6 +43,8 @@ from backend.app.models import (
     ProviderServiceAddition,
     Service,
 )
+
+logger = logging.getLogger(__name__)
 
 LANGUAGES = ("fr", "ln", "en")
 MAX_NAME_LENGTH = 100
@@ -755,7 +758,14 @@ def eligible_providers(
     db: Session, service: str, commune: str, *, exclude_account_id: int | None = None
 ) -> list[ProviderProfile]:
     """Prestataires à qui proposer une mission, du mieux classé au moins bien
-    classé (à égalité, le plus ancien inscrit d'abord)."""
+    classé (à égalité, le plus ancien inscrit d'abord). Seuls ceux qui ont
+    coché les versions en vigueur des conditions des prestataires sont
+    proposés ; si aucune n'est publiée, personne ne l'est."""
+    try:
+        terms_accepted = conditions.accepted_clauses(db, ProviderProfile.account_id, conditions.PROVIDER)
+    except conditions.ConditionsError:
+        logger.error("Conditions des prestataires non publiées : aucun prestataire proposé")
+        return []
     query = (
         select(ProviderProfile)
         .join(ProviderService, ProviderService.account_id == ProviderProfile.account_id)
@@ -766,6 +776,7 @@ def eligible_providers(
             ProviderProfile.status == "available",
             ProviderProfile.verified_at.is_not(None),
             ProviderProfile.is_suspended.is_(False),
+            *terms_accepted,
         )
         .order_by(ProviderProfile.created_at, ProviderProfile.account_id)
     )

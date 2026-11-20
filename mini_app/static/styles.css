@@ -340,3 +340,9 @@ button:disabled { cursor: default; }
 }
 .row .remove svg { width: 14px; height: 14px; }
 .row .remove:disabled { opacity: .5; }
+
+/* Case des conditions d'utilisation : une vraie case à cocher, grande zone tactile. */
+.terms { display: grid; gap: 10px; }
+.check { display: flex; gap: 12px; align-items: center; background: var(--surface); border-radius: 16px; padding: 14px; box-shadow: 0 0 0 1px var(--line-2); font-size: 15px; font-weight: 600; cursor: pointer; }
+.check:focus-within { box-shadow: 0 0 0 2px var(--brand); }
+.check input { width: 22px; height: 22px; flex: none; margin: 0; accent-color: var(--brand); }

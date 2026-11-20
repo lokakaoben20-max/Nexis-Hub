@@ -104,6 +104,18 @@ class MoneyRefused(Exception):
         self.details = details or {}
 
 
+# Refus du backend faute de case cochée (backend/app/conditions.py) : le
+# filtre du bot (telegram_bot/conditions.py) oublie alors ce qu'il savait de
+# cette personne, et montre la case à l'action suivante.
+TERMS_REFUSALS = frozenset({"terms_not_accepted", "terms_version_outdated"})
+_terms_refused_listeners: list = []
+
+
+def on_terms_refused(listener) -> None:
+    if listener not in _terms_refused_listeners:
+        _terms_refused_listeners.append(listener)
+
+
 async def _call(
     method: str, path: str, payload: dict | None = None, actor: int | None = None, expect: tuple[str, ...] = ("mission",)
 ) -> dict:
@@ -121,9 +133,12 @@ async def _call(
         body = response.json()
     except ValueError as error:
         raise BackendUnavailable(f"réponse illisible ({response.status_code})") from error
-    if response.status_code in (400, 403, 404, 409, 503):
+    if response.status_code in (400, 403, 404, 409, 422, 503):
         detail = body.get("detail") if isinstance(body, dict) else None
         if isinstance(detail, dict) and isinstance(detail.get("code"), str):
+            if actor is not None and detail["code"] in TERMS_REFUSALS:
+                for listener in _terms_refused_listeners:
+                    listener(actor)
             raise MoneyRefused(detail["code"], detail.get("mission"), detail.get("money"), detail)
     if response.status_code != 200 or not isinstance(body, dict) or not any(key in body for key in expect):
         raise BackendUnavailable(f"réponse inattendue ({response.status_code})")
@@ -509,11 +524,20 @@ async def my_profile(telegram_id: int) -> dict | None:
 
 
 async def save_client_profile(
-    telegram_id: int, first_name: str, phone_number: str | None, language: str, phone_verified: bool = False
+    telegram_id: int,
+    first_name: str,
+    phone_number: str | None,
+    language: str,
+    phone_verified: bool = False,
+    terms: dict | None = None,
 ) -> dict:
     """Inscription du client. `phone_verified` : seulement pour un numéro
-    reçu par « Partager mon numéro », contact de l'expéditeur."""
+    reçu par « Partager mon numéro », contact de l'expéditeur. `terms` : la
+    case des CGU cochée ({"surface", "documents"}), obligatoire à la première
+    inscription."""
     payload = {"first_name": first_name, "phone_number": phone_number, "language": language, "phone_verified": phone_verified}
+    if terms is not None:
+        payload["terms"] = terms
     return await _call("PUT", "/api/me/client-profile", payload, actor=telegram_id, expect=("profile_type",))
 
 
@@ -521,6 +545,26 @@ async def save_provider_profile(telegram_id: int, data: dict) -> dict:
     """Inscription du prestataire (documents compris). Le backend le met en
     attente de vérification par l'équipe."""
     return await _call("PUT", "/api/me/provider-profile", data, actor=telegram_id, expect=("profile_type",))
+
+
+# --- Conditions d'utilisation (backend/app/conditions.py) ------------------------
+
+
+async def terms_status(telegram_id: int) -> dict:
+    """Ce que la personne doit cocher : `missing` (ses rôles), `by_role`
+    (inscription, bascule). Refus `terms_unavailable` si rien n'est publié."""
+    return await _call("GET", "/api/me/terms", actor=telegram_id, expect=("by_role",))
+
+
+async def accept_terms(telegram_id: int, role: str, documents: list[dict], surface: str = "telegram_bot") -> dict:
+    """Recocher la case pour un rôle que la personne a déjà."""
+    payload = {"role": role, "surface": surface, "documents": documents}
+    return await _call("POST", "/api/me/terms", payload, actor=telegram_id, expect=("by_role",))
+
+
+async def read_terms(document_key: str, version: str) -> dict:
+    """Texte exact d'une version publiée."""
+    return await _call("GET", f"/api/legal/documents/{document_key}/{version}", expect=("text",))
 
 
 async def set_my_language(telegram_id: int, language: str) -> dict:

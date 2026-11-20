@@ -208,6 +208,16 @@ et recopient l'état renvoyé, sans aucune copie locale. Backend injoignable = a
 rattachés à un compte Nexis (`accounts` + `channel_identities`), jamais à un
 canal. Détails : `CONCEPTION_ARGENT.md`.
 
+### Conditions d'utilisation (règle de structure)
+
+La case « J'ai lu et j'accepte » est obligatoire sur tous les canaux, à
+l'inscription et à la bascule client -> prestataire ; une nouvelle version
+se recoche avant toute nouvelle action. Seule source : `backend/app/conditions.py`.
+Chaque route du backend déclare `@needs_terms(...)` ou `@terms_exempt`, sinon
+le backend refuse de démarrer. Sans version publiée
+(`python -m backend.app.conditions publier ...`), personne ne s'inscrit.
+Détails : `CONCEPTION_CONDITIONS.md`.
+
 Le schéma Postgres est géré uniquement par Alembic : lancer
 `alembic upgrade head` avant de démarrer le backend (il ne crée plus ses
 tables au démarrage).

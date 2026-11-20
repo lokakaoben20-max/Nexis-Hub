@@ -28,6 +28,11 @@ WHATSAPP_ROUTES = {
     ("GET", "/api/me/profile"),
     ("PATCH", "/api/me/language"),
     ("PATCH", "/api/me/name"),
+    # Case des conditions d'utilisation : lire, voir ce qui manque, recocher.
+    ("GET", "/api/legal/documents/{document_key}"),
+    ("GET", "/api/legal/documents/{document_key}/{version}"),
+    ("GET", "/api/me/terms"),
+    ("POST", "/api/me/terms"),
 }
 
 # Actions de prestataire : jamais depuis WhatsApp, refus explicite.
