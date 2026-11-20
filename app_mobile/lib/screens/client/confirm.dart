@@ -10,6 +10,7 @@ import '../../ui/icons.dart';
 import '../../ui/loader.dart';
 import '../../ui/parts.dart';
 import '../../ui/theme.dart';
+import 'report.dart';
 
 /// 7. Confirmer que c'est fait (maquette app-ecrans-v3) : une question
 /// simple, le montant qui sera versé, et « Signaler un problème ».
@@ -75,7 +76,11 @@ class _ConfirmScreenState extends State<ConfirmScreen> {
             kind: NButtonKind.line,
             onPressed: _busy
                 ? null
-                : () => showComingSoon(context, l.reportProblem),
+                : () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ReportScreen(missionId: mission.id),
+                    ),
+                  ),
           ),
         ],
       ),

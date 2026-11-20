@@ -4,6 +4,10 @@ import 'package:flutter/widgets.dart';
 
 class PhRegular {
   PhRegular._();
+  static const IconData camera = IconData(0xe10e, fontFamily: 'Phosphor');
+  static const IconData image = IconData(0xe2ca, fontFamily: 'Phosphor');
+  static const IconData chatsCircle = IconData(0xe17e, fontFamily: 'Phosphor');
+  static const IconData scales = IconData(0xe750, fontFamily: 'Phosphor');
   static const IconData arrowCounterClockwise = IconData(
     0xe038,
     fontFamily: 'Phosphor',
@@ -70,6 +74,10 @@ class PhRegular {
 }
 
 class PhFill {
+  static const IconData lockSimple = IconData(
+    0xe308,
+    fontFamily: 'PhosphorFill',
+  );
   PhFill._();
   static const IconData arrowCounterClockwise = IconData(
     0xe038,

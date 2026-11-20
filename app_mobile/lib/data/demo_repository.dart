@@ -95,6 +95,26 @@ class DemoRepository implements NexisRepository {
       },
     ),
     Mission(
+      id: 47,
+      service: Service.climatisation,
+      commune: 'Bandal',
+      status: MissionStatus.disputed,
+      payment: PaymentState.blocked,
+      amount: const Money(6000, Currency.usd),
+      providerName: 'Rodrigue T.',
+      when: _now.subtract(const Duration(days: 1)),
+    ),
+    Mission(
+      id: 44,
+      service: Service.jardinage,
+      commune: 'Ngaliema',
+      status: MissionStatus.disputed,
+      payment: PaymentState.blocked,
+      amount: const Money(30000, Currency.cdf),
+      providerName: 'Patrick B.',
+      when: _now.subtract(const Duration(days: 4)),
+    ),
+    Mission(
       id: 53,
       service: Service.electricite,
       commune: 'Ngaliema',
@@ -166,6 +186,32 @@ class DemoRepository implements NexisRepository {
       state: PaymentState.released,
     ),
   ];
+
+  late final Map<int, Dispute> _disputes = {
+    47: Dispute(
+      missionId: 47,
+      reason: DisputeReason.badWork,
+      text: "Le climatiseur coule encore dans la chambre.",
+      photos: 2,
+      openedAt: _now.subtract(const Duration(hours: 20)),
+      providerReply: 'Je peux repasser demain matin.',
+      providerRepliedAt: _now.subtract(const Duration(hours: 17)),
+    ),
+    44: Dispute(
+      missionId: 44,
+      reason: DisputeReason.notFinished,
+      text: "La haie du fond n'a pas été taillée.",
+      photos: 1,
+      openedAt: _now.subtract(const Duration(days: 3)),
+      outcome: DisputeOutcome.refund,
+      decidedAt: _now.subtract(const Duration(hours: 2)),
+      clientAmount: const Money(30000, Currency.cdf),
+      providerAmount: const Money(0, Currency.cdf),
+      contestUntil: _now
+          .subtract(const Duration(hours: 2))
+          .add(const Duration(days: 3)),
+    ),
+  };
 
   /// Samedi prochain à [hour] h, pour les créneaux des devis.
   DateTime _saturday(int hour) {
@@ -282,11 +328,48 @@ class DemoRepository implements NexisRepository {
     return done;
   }
 
+  @override
+  Future<Dispute?> dispute(int missionId) async => _disputes[missionId];
+
+  @override
+  Future<Dispute> reportProblem(
+    int missionId,
+    DisputeReason reason,
+    String text,
+  ) async {
+    final mission = await this.mission(missionId);
+    final open = const [
+      MissionStatus.confirmed,
+      MissionStatus.inProgress,
+      MissionStatus.awaitingConfirmation,
+    ].contains(mission.status);
+    if (!open || mission.payment != PaymentState.secured) {
+      throw StateError('Plus de signalement possible sur cette mission.');
+    }
+    final dispute = Dispute(
+      missionId: missionId,
+      reason: reason,
+      text: text.trim(),
+      photos: 0,
+      openedAt: DateTime.now(),
+    );
+    _disputes[missionId] = dispute;
+    _replace(
+      mission.copyWith(
+        status: MissionStatus.disputed,
+        payment: PaymentState.blocked,
+      ),
+    );
+    return dispute;
+  }
+
   static String _label(Service service) => switch (service) {
     Service.nettoyage => 'Nettoyage',
     Service.plomberie => 'Plomberie',
     Service.electricite => 'Électricité',
     Service.coiffure => 'Coiffure',
+    Service.climatisation => 'Climatisation',
+    Service.jardinage => 'Jardinage',
     _ => service.name,
   };
 }

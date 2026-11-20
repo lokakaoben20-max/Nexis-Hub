@@ -7,6 +7,7 @@ import '../l10n/app_localizations.dart';
 import '../ui/common.dart';
 import '../ui/theme.dart';
 import 'client/confirm.dart';
+import 'client/dispute.dart';
 import 'client/quotes.dart';
 import 'client/tracking.dart';
 
@@ -31,6 +32,7 @@ void openMission(BuildContext context, Mission mission) {
     MissionStatus.confirmed ||
     MissionStatus.inProgress ||
     MissionStatus.awaitingConfirmation => TrackingScreen(missionId: mission.id),
+    MissionStatus.disputed => DisputeScreen(missionId: mission.id),
     _ => null,
   };
   if (screen == null) {

@@ -26,4 +26,16 @@ abstract class NexisRepository {
   /// Le client confirme que le travail est fait : le serveur verse
   /// l'argent sécurisé au prestataire.
   Future<Mission> confirmDone(int missionId);
+
+  /// Le litige de la mission, s'il y en a un.
+  Future<Dispute?> dispute(int missionId);
+
+  /// Le client signale un problème : le serveur ouvre le litige et bloque
+  /// l'argent sécurisé de la mission jusqu'à la décision. Refusé si la
+  /// mission n'a pas d'argent sécurisé ou si le délai de 48 h est passé.
+  Future<Dispute> reportProblem(
+    int missionId,
+    DisputeReason reason,
+    String text,
+  );
 }

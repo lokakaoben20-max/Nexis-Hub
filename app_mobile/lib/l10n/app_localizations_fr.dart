@@ -437,4 +437,149 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get messageLabel => 'Écrire';
+
+  @override
+  String get whatHappened => 'Que s\'est-il passé ?';
+
+  @override
+  String get reasonNotFinished => 'Le travail n\'est pas fini';
+
+  @override
+  String get reasonBadWork => 'Le travail est mal fait';
+
+  @override
+  String get reasonNoShow => 'Le prestataire n\'est pas venu';
+
+  @override
+  String get reasonOther => 'Autre problème';
+
+  @override
+  String get reportHint => 'Raconte en quelques mots ce qui ne va pas.';
+
+  @override
+  String get addPhoto => 'Ajouter une photo';
+
+  @override
+  String reportFrozen(String amount) {
+    return 'Les $amount sont bloqués le temps qu\'on regarde avec vous deux. Personne ne peut y toucher.';
+  }
+
+  @override
+  String get sendReport => 'Envoyer le signalement';
+
+  @override
+  String get reportFailed =>
+      'Le signalement n\'est pas parti. Réessaie dans un instant.';
+
+  @override
+  String get disputeTitle => 'Litige';
+
+  @override
+  String get nobodyTouches => 'Personne ne peut y toucher';
+
+  @override
+  String get youReported => 'Tu as signalé';
+
+  @override
+  String photosCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count photos',
+      one: '1 photo',
+      zero: 'sans photo',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String providerReplied(String name) {
+    return '$name a répondu';
+  }
+
+  @override
+  String get nexisLooking => 'Nexis Hub regarde';
+
+  @override
+  String get nexisLookingSub => 'Réponse sous 48 h · on peut vous appeler';
+
+  @override
+  String get decisionStep => 'Décision et argent';
+
+  @override
+  String get decisionStepSub => 'Versé, remboursé ou partagé';
+
+  @override
+  String settleHint(String name) {
+    return 'Tu peux encore t\'arranger avec $name. Si vous êtes d\'accord, dis-le ici et on clôt le litige.';
+  }
+
+  @override
+  String get writeNexis => 'Écrire à Nexis Hub';
+
+  @override
+  String get weSettled => 'On s\'est arrangés';
+
+  @override
+  String get disputeOver => 'Litige terminé';
+
+  @override
+  String get outcomeRefundTitle => 'On te rembourse';
+
+  @override
+  String outcomeRefundText(String name) {
+    return 'Après avoir regardé le dossier et parlé avec $name, Nexis Hub a décidé de te rembourser. L\'argent arrive dans ton portefeuille dans 3 jours si personne ne conteste.';
+  }
+
+  @override
+  String outcomeReleaseTitle(String name) {
+    return 'L\'argent va à $name';
+  }
+
+  @override
+  String outcomeReleaseText(String name) {
+    return 'Après avoir regardé le dossier avec vous deux, Nexis Hub a décidé que l\'argent revient à $name. Il part dans 3 jours si personne ne conteste.';
+  }
+
+  @override
+  String get outcomeSplitTitle => 'L\'argent est partagé';
+
+  @override
+  String outcomeSplitText(String name) {
+    return 'Après avoir regardé le dossier avec vous deux, Nexis Hub a décidé de partager l\'argent entre toi et $name. Ta part arrive dans ton portefeuille dans 3 jours si personne ne conteste.';
+  }
+
+  @override
+  String get toRefundYou => 'À te rembourser';
+
+  @override
+  String forProvider(String name) {
+    return 'Pour $name';
+  }
+
+  @override
+  String blockedDaysLeft(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Bloqué (litige) · encore $count jours',
+      one: 'Bloqué (litige) · encore 1 jour',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String contestHint(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Pas d\'accord ? Tu as $count jours pour demander à revoir la décision. L\'argent reste bloqué pendant ce temps.',
+      one: 'Pas d\'accord ? Tu as encore 1 jour pour demander à revoir la décision. L\'argent reste bloqué pendant ce temps.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get seeWallet => 'Voir mon portefeuille';
 }

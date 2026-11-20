@@ -18,6 +18,12 @@ import 'wallet.dart';
 class Shell extends StatefulWidget {
   const Shell({super.key});
 
+  /// Onglet demandé depuis un écran ouvert par-dessus (« Voir mon
+  /// portefeuille ») : la barre y bascule dès qu'on revient.
+  static final requestedTab = ValueNotifier<int?>(null);
+
+  static const walletTab = 2;
+
   @override
   State<Shell> createState() => _ShellState();
 }
@@ -30,6 +36,25 @@ class _ShellState extends State<Shell> {
     _tab = tab;
     _picking = false;
   });
+
+  void _onRequestedTab() {
+    final tab = Shell.requestedTab.value;
+    if (tab == null) return;
+    Shell.requestedTab.value = null;
+    go(tab);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    Shell.requestedTab.addListener(_onRequestedTab);
+  }
+
+  @override
+  void dispose() {
+    Shell.requestedTab.removeListener(_onRequestedTab);
+    super.dispose();
+  }
 
   void _togglePicker() => setState(() => _picking = !_picking);
 

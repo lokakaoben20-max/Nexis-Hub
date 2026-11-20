@@ -151,7 +151,7 @@ class AppLocalizationsLn extends AppLocalizations {
   String get statusCancelled => 'Ebongolami';
 
   @override
-  String get statusDisputed => 'Likambo ezali kotalelama';
+  String get statusDisputed => 'Matata ezali kotalelama';
 
   @override
   String get compareQuotes => 'Kokokanisa ba devis';
@@ -169,7 +169,7 @@ class AppLocalizationsLn extends AppLocalizations {
   String get payRefunded => 'Bazongisi';
 
   @override
-  String get payBlocked => 'Ekangami (likambo)';
+  String get payBlocked => 'Ekangami (matata)';
 
   @override
   String get payAvailable => 'Ezali';
@@ -419,13 +419,13 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String get report48h =>
-      'Likambo ? Ozali na ngonga 48 mpo na koyebisa. Mbongo ekotikala ekangami tango tozali kotala yango na bino mibale.';
+      'Mokakatano ? Ozali na 48 h mpo na koyebisa yango. Mbongo ekotikala ekangami tango tozali kotala yango na bino mibale.';
 
   @override
   String get yesDone => 'Ee, esili';
 
   @override
-  String get reportProblem => 'Koyebisa likambo';
+  String get reportProblem => 'Koyebisa mokakatano';
 
   @override
   String confirmedToast(String name) {
@@ -437,4 +437,148 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String get messageLabel => 'Kokoma';
+
+  @override
+  String get whatHappened => 'Nini esalemaki ?';
+
+  @override
+  String get reasonNotFinished => 'Mosala esili te';
+
+  @override
+  String get reasonBadWork => 'Mosala esalemi malamu te';
+
+  @override
+  String get reasonNoShow => 'Mosali ayaki te';
+
+  @override
+  String get reasonOther => 'Mokakatano mosusu';
+
+  @override
+  String get reportHint => 'Yebisa na maloba moke nini ezali malamu te.';
+
+  @override
+  String get addPhoto => 'Bakisa elilingi';
+
+  @override
+  String reportFrozen(String amount) {
+    return '$amount ekokangama tango tozali kotala yango na bino mibale. Moto moko te akoki kosimba yango.';
+  }
+
+  @override
+  String get sendReport => 'Tinda bosengi';
+
+  @override
+  String get reportFailed => 'Bosengi ekendeki te. Meka lisusu mwa moke.';
+
+  @override
+  String get disputeTitle => 'Matata';
+
+  @override
+  String get nobodyTouches => 'Moto moko te akoki kosimba yango';
+
+  @override
+  String get youReported => 'Oyebisaki';
+
+  @override
+  String photosCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'bililingi $count',
+      one: 'elilingi 1',
+      zero: 'elilingi te',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String providerReplied(String name) {
+    return '$name azongisaki';
+  }
+
+  @override
+  String get nexisLooking => 'Nexis Hub azali kotala';
+
+  @override
+  String get nexisLookingSub => 'Eyano nakati ya 48 h · tokoki kobenga bino';
+
+  @override
+  String get decisionStep => 'Mokano mpe mbongo';
+
+  @override
+  String get decisionStepSub => 'Epesami, ezongisami to ekabolami';
+
+  @override
+  String settleHint(String name) {
+    return 'Okoki naino koyokana na $name. Soki boyokani, yebisa awa mpe tokosilisa matata.';
+  }
+
+  @override
+  String get writeNexis => 'Komela Nexis Hub';
+
+  @override
+  String get weSettled => 'Toyokani';
+
+  @override
+  String get disputeOver => 'Matata esili';
+
+  @override
+  String get outcomeRefundTitle => 'Tokozongisela yo mbongo';
+
+  @override
+  String outcomeRefundText(String name) {
+    return 'Sima ya kotala likambo mpe kosolola na $name, Nexis Hub azwi mokano ya kozongisela yo mbongo. Mbongo ekokota na esika ya mbongo na yo nsima ya mikolo 3 soki moto moko te atelemeli.';
+  }
+
+  @override
+  String outcomeReleaseTitle(String name) {
+    return 'Mbongo ekokende epai ya $name';
+  }
+
+  @override
+  String outcomeReleaseText(String name) {
+    return 'Sima ya kotala likambo na bino mibale, Nexis Hub azwi mokano ete mbongo ezali ya $name. Ekokende nsima ya mikolo 3 soki moto moko te atelemeli.';
+  }
+
+  @override
+  String get outcomeSplitTitle => 'Mbongo ekabolami';
+
+  @override
+  String outcomeSplitText(String name) {
+    return 'Sima ya kotala likambo na bino mibale, Nexis Hub azwi mokano ya kokabola mbongo kati na yo mpe $name. Eteni na yo ekokota na esika ya mbongo na yo nsima ya mikolo 3 soki moto moko te atelemeli.';
+  }
+
+  @override
+  String get toRefundYou => 'Ya kozongisela yo';
+
+  @override
+  String forProvider(String name) {
+    return 'Mpo na $name';
+  }
+
+  @override
+  String blockedDaysLeft(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Ekangami (matata) · mikolo $count etikali',
+      one: 'Ekangami (matata) · mokolo 1 etikali',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String contestHint(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Oyokani te ? Ozali na mikolo $count mpo na kotelemela mokano. Mbongo ekotikala ekangami na tango yango.',
+      one: 'Oyokani te ? Otikali na mokolo 1 mpo na kotelemela mokano. Mbongo ekotikala ekangami na tango yango.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get seeWallet => 'Tala esika ya mbongo na ngai';
 }

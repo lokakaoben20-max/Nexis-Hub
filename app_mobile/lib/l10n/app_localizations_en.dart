@@ -436,4 +436,148 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get messageLabel => 'Message';
+
+  @override
+  String get whatHappened => 'What happened?';
+
+  @override
+  String get reasonNotFinished => 'The work isn\'t finished';
+
+  @override
+  String get reasonBadWork => 'The work is poorly done';
+
+  @override
+  String get reasonNoShow => 'The provider didn\'t come';
+
+  @override
+  String get reasonOther => 'Another problem';
+
+  @override
+  String get reportHint => 'Tell us in a few words what\'s wrong.';
+
+  @override
+  String get addPhoto => 'Add a photo';
+
+  @override
+  String reportFrozen(String amount) {
+    return 'The $amount stay on hold while we look into it with you both. Nobody can touch it.';
+  }
+
+  @override
+  String get sendReport => 'Send the report';
+
+  @override
+  String get reportFailed => 'The report wasn\'t sent. Try again in a moment.';
+
+  @override
+  String get disputeTitle => 'Dispute';
+
+  @override
+  String get nobodyTouches => 'Nobody can touch it';
+
+  @override
+  String get youReported => 'You reported it';
+
+  @override
+  String photosCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count photos',
+      one: '1 photo',
+      zero: 'no photo',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String providerReplied(String name) {
+    return '$name replied';
+  }
+
+  @override
+  String get nexisLooking => 'Nexis Hub is looking into it';
+
+  @override
+  String get nexisLookingSub => 'Answer within 48 h · we may call you';
+
+  @override
+  String get decisionStep => 'Decision and money';
+
+  @override
+  String get decisionStepSub => 'Paid out, refunded or split';
+
+  @override
+  String settleHint(String name) {
+    return 'You can still sort it out with $name. If you both agree, say so here and we close the dispute.';
+  }
+
+  @override
+  String get writeNexis => 'Write to Nexis Hub';
+
+  @override
+  String get weSettled => 'We sorted it out';
+
+  @override
+  String get disputeOver => 'Dispute closed';
+
+  @override
+  String get outcomeRefundTitle => 'We\'re refunding you';
+
+  @override
+  String outcomeRefundText(String name) {
+    return 'After reviewing the case and talking with $name, Nexis Hub decided to refund you. The money reaches your wallet in 3 days unless someone contests.';
+  }
+
+  @override
+  String outcomeReleaseTitle(String name) {
+    return 'The money goes to $name';
+  }
+
+  @override
+  String outcomeReleaseText(String name) {
+    return 'After reviewing the case with you both, Nexis Hub decided the money goes to $name. It\'s paid out in 3 days unless someone contests.';
+  }
+
+  @override
+  String get outcomeSplitTitle => 'The money is split';
+
+  @override
+  String outcomeSplitText(String name) {
+    return 'After reviewing the case with you both, Nexis Hub decided to split the money between you and $name. Your share reaches your wallet in 3 days unless someone contests.';
+  }
+
+  @override
+  String get toRefundYou => 'Refund to you';
+
+  @override
+  String forProvider(String name) {
+    return 'For $name';
+  }
+
+  @override
+  String blockedDaysLeft(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'On hold (dispute) · $count more days',
+      one: 'On hold (dispute) · 1 more day',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String contestHint(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'Disagree? You have $count days to ask for the decision to be reviewed. The money stays on hold meanwhile.',
+      one: 'Disagree? You have 1 more day to ask for the decision to be reviewed. The money stays on hold meanwhile.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get seeWallet => 'See my wallet';
 }

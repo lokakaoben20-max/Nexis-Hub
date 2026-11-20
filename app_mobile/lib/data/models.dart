@@ -105,6 +105,7 @@ class Mission {
     MissionStatus.confirmed,
     MissionStatus.inProgress,
     MissionStatus.awaitingConfirmation,
+    MissionStatus.disputed,
   ].contains(status);
 
   String get reference => 'NXH-${id.toString().padLeft(4, '0')}';
@@ -196,4 +197,45 @@ class PayAccount {
 
   final MobileOperator operator;
   final String? maskedNumber;
+}
+
+/// Ce qui s'est mal passé, choisi par le client (maquette 25).
+enum DisputeReason { notFinished, badWork, noShow, other }
+
+/// Les trois fins possibles d'un litige, décidées par Nexis Hub.
+enum DisputeOutcome { release, refund, split }
+
+/// Un litige : l'argent de la mission reste bloqué jusqu'à la décision,
+/// puis encore 3 jours (le temps de contester). Les montants de la
+/// décision sont calculés par le serveur, l'app ne fait que les montrer.
+class Dispute {
+  const Dispute({
+    required this.missionId,
+    required this.reason,
+    required this.text,
+    required this.photos,
+    required this.openedAt,
+    this.providerReply,
+    this.providerRepliedAt,
+    this.outcome,
+    this.decidedAt,
+    this.clientAmount,
+    this.providerAmount,
+    this.contestUntil,
+  });
+
+  final int missionId;
+  final DisputeReason reason;
+  final String text;
+  final int photos;
+  final DateTime openedAt;
+  final String? providerReply;
+  final DateTime? providerRepliedAt;
+  final DisputeOutcome? outcome;
+  final DateTime? decidedAt;
+  final Money? clientAmount;
+  final Money? providerAmount;
+  final DateTime? contestUntil;
+
+  bool get decided => outcome != null;
 }

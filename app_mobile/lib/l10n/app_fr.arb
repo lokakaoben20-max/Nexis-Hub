@@ -290,5 +290,116 @@
         "type": "String"
       }
     }
-  }
+  },
+  "whatHappened": "Que s'est-il passé ?",
+  "reasonNotFinished": "Le travail n'est pas fini",
+  "reasonBadWork": "Le travail est mal fait",
+  "reasonNoShow": "Le prestataire n'est pas venu",
+  "reasonOther": "Autre problème",
+  "reportHint": "Raconte en quelques mots ce qui ne va pas.",
+  "addPhoto": "Ajouter une photo",
+  "reportFrozen": "Les {amount} sont bloqués le temps qu'on regarde avec vous deux. Personne ne peut y toucher.",
+  "@reportFrozen": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "sendReport": "Envoyer le signalement",
+  "reportFailed": "Le signalement n'est pas parti. Réessaie dans un instant.",
+  "disputeTitle": "Litige",
+  "nobodyTouches": "Personne ne peut y toucher",
+  "youReported": "Tu as signalé",
+  "photosCount": "{count, plural, =0{sans photo} =1{1 photo} other{{count} photos}}",
+  "@photosCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "providerReplied": "{name} a répondu",
+  "@providerReplied": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "nexisLooking": "Nexis Hub regarde",
+  "nexisLookingSub": "Réponse sous 48 h · on peut vous appeler",
+  "decisionStep": "Décision et argent",
+  "decisionStepSub": "Versé, remboursé ou partagé",
+  "settleHint": "Tu peux encore t'arranger avec {name}. Si vous êtes d'accord, dis-le ici et on clôt le litige.",
+  "@settleHint": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "writeNexis": "Écrire à Nexis Hub",
+  "weSettled": "On s'est arrangés",
+  "disputeOver": "Litige terminé",
+  "outcomeRefundTitle": "On te rembourse",
+  "outcomeRefundText": "Après avoir regardé le dossier et parlé avec {name}, Nexis Hub a décidé de te rembourser. L'argent arrive dans ton portefeuille dans 3 jours si personne ne conteste.",
+  "@outcomeRefundText": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "outcomeReleaseTitle": "L'argent va à {name}",
+  "@outcomeReleaseTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "outcomeReleaseText": "Après avoir regardé le dossier avec vous deux, Nexis Hub a décidé que l'argent revient à {name}. Il part dans 3 jours si personne ne conteste.",
+  "@outcomeReleaseText": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "outcomeSplitTitle": "L'argent est partagé",
+  "outcomeSplitText": "Après avoir regardé le dossier avec vous deux, Nexis Hub a décidé de partager l'argent entre toi et {name}. Ta part arrive dans ton portefeuille dans 3 jours si personne ne conteste.",
+  "@outcomeSplitText": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "toRefundYou": "À te rembourser",
+  "forProvider": "Pour {name}",
+  "@forProvider": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "blockedDaysLeft": "{count, plural, =1{Bloqué (litige) · encore 1 jour} other{Bloqué (litige) · encore {count} jours}}",
+  "@blockedDaysLeft": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "contestHint": "{count, plural, =1{Pas d'accord ? Tu as encore 1 jour pour demander à revoir la décision. L'argent reste bloqué pendant ce temps.} other{Pas d'accord ? Tu as {count} jours pour demander à revoir la décision. L'argent reste bloqué pendant ce temps.}}",
+  "@contestHint": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "seeWallet": "Voir mon portefeuille"
 }

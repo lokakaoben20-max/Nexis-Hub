@@ -86,26 +86,33 @@ class NCard extends StatelessWidget {
   }
 }
 
-/// Note sur fond bleu clair (ou violet pour [violet]).
+/// Note sur fond bleu clair, violet pour [violet] (aide, litige) ou
+/// rose pour [danger] (argent bloqué).
 class NInfo extends StatelessWidget {
   const NInfo({
     super.key,
     required this.text,
     this.icon = PhFill.shieldCheck,
     this.violet = false,
+    this.danger = false,
   });
 
   final String text;
   final IconData icon;
   final bool violet;
+  final bool danger;
 
   @override
   Widget build(BuildContext context) {
     final dark = _dark(context);
-    final bg = violet
+    final bg = danger
+        ? (dark ? const Color(0xFF3A1715) : const Color(0xFFFFF6F5))
+        : violet
         ? (dark ? const Color(0xFF22234A) : const Color(0xFFECECF8))
         : (dark ? const Color(0xFF1A2B4D) : const Color(0xFFE8F0FE));
-    final fg = violet
+    final fg = danger
+        ? (dark ? const Color(0xFFFFB4AB) : const Color(0xFF7A3A33))
+        : violet
         ? (dark ? const Color(0xFFB3B5F2) : const Color(0xFF3B3E80))
         : (dark ? const Color(0xFF8DB4FF) : const Color(0xFF0A3D9E));
     return Container(

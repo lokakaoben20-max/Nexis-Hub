@@ -849,6 +849,210 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'Écrire'**
   String get messageLabel;
+
+  /// No description provided for @whatHappened.
+  ///
+  /// In fr, this message translates to:
+  /// **'Que s\'est-il passé ?'**
+  String get whatHappened;
+
+  /// No description provided for @reasonNotFinished.
+  ///
+  /// In fr, this message translates to:
+  /// **'Le travail n\'est pas fini'**
+  String get reasonNotFinished;
+
+  /// No description provided for @reasonBadWork.
+  ///
+  /// In fr, this message translates to:
+  /// **'Le travail est mal fait'**
+  String get reasonBadWork;
+
+  /// No description provided for @reasonNoShow.
+  ///
+  /// In fr, this message translates to:
+  /// **'Le prestataire n\'est pas venu'**
+  String get reasonNoShow;
+
+  /// No description provided for @reasonOther.
+  ///
+  /// In fr, this message translates to:
+  /// **'Autre problème'**
+  String get reasonOther;
+
+  /// No description provided for @reportHint.
+  ///
+  /// In fr, this message translates to:
+  /// **'Raconte en quelques mots ce qui ne va pas.'**
+  String get reportHint;
+
+  /// No description provided for @addPhoto.
+  ///
+  /// In fr, this message translates to:
+  /// **'Ajouter une photo'**
+  String get addPhoto;
+
+  /// No description provided for @reportFrozen.
+  ///
+  /// In fr, this message translates to:
+  /// **'Les {amount} sont bloqués le temps qu\'on regarde avec vous deux. Personne ne peut y toucher.'**
+  String reportFrozen(String amount);
+
+  /// No description provided for @sendReport.
+  ///
+  /// In fr, this message translates to:
+  /// **'Envoyer le signalement'**
+  String get sendReport;
+
+  /// No description provided for @reportFailed.
+  ///
+  /// In fr, this message translates to:
+  /// **'Le signalement n\'est pas parti. Réessaie dans un instant.'**
+  String get reportFailed;
+
+  /// No description provided for @disputeTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'Litige'**
+  String get disputeTitle;
+
+  /// No description provided for @nobodyTouches.
+  ///
+  /// In fr, this message translates to:
+  /// **'Personne ne peut y toucher'**
+  String get nobodyTouches;
+
+  /// No description provided for @youReported.
+  ///
+  /// In fr, this message translates to:
+  /// **'Tu as signalé'**
+  String get youReported;
+
+  /// No description provided for @photosCount.
+  ///
+  /// In fr, this message translates to:
+  /// **'{count, plural, =0{sans photo} =1{1 photo} other{{count} photos}}'**
+  String photosCount(int count);
+
+  /// No description provided for @providerReplied.
+  ///
+  /// In fr, this message translates to:
+  /// **'{name} a répondu'**
+  String providerReplied(String name);
+
+  /// No description provided for @nexisLooking.
+  ///
+  /// In fr, this message translates to:
+  /// **'Nexis Hub regarde'**
+  String get nexisLooking;
+
+  /// No description provided for @nexisLookingSub.
+  ///
+  /// In fr, this message translates to:
+  /// **'Réponse sous 48 h · on peut vous appeler'**
+  String get nexisLookingSub;
+
+  /// No description provided for @decisionStep.
+  ///
+  /// In fr, this message translates to:
+  /// **'Décision et argent'**
+  String get decisionStep;
+
+  /// No description provided for @decisionStepSub.
+  ///
+  /// In fr, this message translates to:
+  /// **'Versé, remboursé ou partagé'**
+  String get decisionStepSub;
+
+  /// No description provided for @settleHint.
+  ///
+  /// In fr, this message translates to:
+  /// **'Tu peux encore t\'arranger avec {name}. Si vous êtes d\'accord, dis-le ici et on clôt le litige.'**
+  String settleHint(String name);
+
+  /// No description provided for @writeNexis.
+  ///
+  /// In fr, this message translates to:
+  /// **'Écrire à Nexis Hub'**
+  String get writeNexis;
+
+  /// No description provided for @weSettled.
+  ///
+  /// In fr, this message translates to:
+  /// **'On s\'est arrangés'**
+  String get weSettled;
+
+  /// No description provided for @disputeOver.
+  ///
+  /// In fr, this message translates to:
+  /// **'Litige terminé'**
+  String get disputeOver;
+
+  /// No description provided for @outcomeRefundTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'On te rembourse'**
+  String get outcomeRefundTitle;
+
+  /// No description provided for @outcomeRefundText.
+  ///
+  /// In fr, this message translates to:
+  /// **'Après avoir regardé le dossier et parlé avec {name}, Nexis Hub a décidé de te rembourser. L\'argent arrive dans ton portefeuille dans 3 jours si personne ne conteste.'**
+  String outcomeRefundText(String name);
+
+  /// No description provided for @outcomeReleaseTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'L\'argent va à {name}'**
+  String outcomeReleaseTitle(String name);
+
+  /// No description provided for @outcomeReleaseText.
+  ///
+  /// In fr, this message translates to:
+  /// **'Après avoir regardé le dossier avec vous deux, Nexis Hub a décidé que l\'argent revient à {name}. Il part dans 3 jours si personne ne conteste.'**
+  String outcomeReleaseText(String name);
+
+  /// No description provided for @outcomeSplitTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'L\'argent est partagé'**
+  String get outcomeSplitTitle;
+
+  /// No description provided for @outcomeSplitText.
+  ///
+  /// In fr, this message translates to:
+  /// **'Après avoir regardé le dossier avec vous deux, Nexis Hub a décidé de partager l\'argent entre toi et {name}. Ta part arrive dans ton portefeuille dans 3 jours si personne ne conteste.'**
+  String outcomeSplitText(String name);
+
+  /// No description provided for @toRefundYou.
+  ///
+  /// In fr, this message translates to:
+  /// **'À te rembourser'**
+  String get toRefundYou;
+
+  /// No description provided for @forProvider.
+  ///
+  /// In fr, this message translates to:
+  /// **'Pour {name}'**
+  String forProvider(String name);
+
+  /// No description provided for @blockedDaysLeft.
+  ///
+  /// In fr, this message translates to:
+  /// **'{count, plural, =1{Bloqué (litige) · encore 1 jour} other{Bloqué (litige) · encore {count} jours}}'**
+  String blockedDaysLeft(int count);
+
+  /// No description provided for @contestHint.
+  ///
+  /// In fr, this message translates to:
+  /// **'{count, plural, =1{Pas d\'accord ? Tu as encore 1 jour pour demander à revoir la décision. L\'argent reste bloqué pendant ce temps.} other{Pas d\'accord ? Tu as {count} jours pour demander à revoir la décision. L\'argent reste bloqué pendant ce temps.}}'**
+  String contestHint(int count);
+
+  /// No description provided for @seeWallet.
+  ///
+  /// In fr, this message translates to:
+  /// **'Voir mon portefeuille'**
+  String get seeWallet;
 }
 
 class _AppLocalizationsDelegate
