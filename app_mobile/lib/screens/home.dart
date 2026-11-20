@@ -10,6 +10,7 @@ import '../ui/common.dart';
 import '../ui/loader.dart';
 import '../ui/theme.dart';
 import '../ui/wallet_card.dart';
+import 'mission_card.dart';
 
 typedef _HomeData = ({Profile profile, Wallet wallet, List<Mission> missions});
 
@@ -432,64 +433,67 @@ class _HomeScreenState extends State<HomeScreen> {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final lang = langOf(context);
     final tileColor = dark ? p.surface : const Color(0xFFEEF1F5);
-    return Container(
-      width: 106,
-      padding: const EdgeInsets.fromLTRB(8, 12, 8, 10),
-      decoration: BoxDecoration(
-        color: tileColor,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              ServiceBadge(mission.service, size: 50),
-              if (mission.rated)
-                Positioned(
-                  right: -4,
-                  top: -3,
-                  child: Container(
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: NexisColors.navy,
-                      border: Border.all(color: tileColor, width: 2),
-                    ),
-                    child: const Icon(
-                      PhFill.star,
-                      size: 11,
-                      color: Colors.white,
+    return GestureDetector(
+      onTap: () => openMission(context, mission),
+      child: Container(
+        width: 106,
+        padding: const EdgeInsets.fromLTRB(8, 12, 8, 10),
+        decoration: BoxDecoration(
+          color: tileColor,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                ServiceBadge(mission.service, size: 50),
+                if (mission.rated)
+                  Positioned(
+                    right: -4,
+                    top: -3,
+                    child: Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: NexisColors.navy,
+                        border: Border.all(color: tileColor, width: 2),
+                      ),
+                      child: const Icon(
+                        PhFill.star,
+                        size: 11,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            serviceName(mission.service, lang),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: body(12.5, weight: FontWeight.w600, color: p.ink),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            mission.providerName ?? mission.commune,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: body(11, color: dark ? p.muted : const Color(0xFF4E5B70)),
-          ),
-          const SizedBox(height: 2),
-          if (mission.amount != null)
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                formatMoney(mission.amount!, lang),
-                style: title(13, color: p.ink),
-              ),
+              ],
             ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              serviceName(mission.service, lang),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: body(12.5, weight: FontWeight.w600, color: p.ink),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              mission.providerName ?? mission.commune,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: body(11, color: dark ? p.muted : const Color(0xFF4E5B70)),
+            ),
+            const SizedBox(height: 2),
+            if (mission.amount != null)
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  formatMoney(mission.amount!, lang),
+                  style: title(13, color: p.ink),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

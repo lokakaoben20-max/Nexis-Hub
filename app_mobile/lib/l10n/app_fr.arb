@@ -163,5 +163,132 @@
         "type": "int"
       }
     }
+  },
+  "bestRated": "Le mieux noté",
+  "chooseProvider": "Choisir {name}",
+  "securedUntilDone": "Ton argent reste sécurisé par Nexis Hub jusqu'à ce que tu confirmes que c'est fait.",
+  "payTitle": "Payer",
+  "payWith": "Payer avec",
+  "addNumber": "Ajouter un numéro",
+  "paySecuredNote": "Sécurisé par Nexis Hub : {name} reçoit l'argent quand tu confirmes que c'est fait.",
+  "payAmount": "Payer {amount}",
+  "pendingTitle": "Valide sur ton téléphone",
+  "pendingText": "{operator} t'envoie une demande de {amount}. Tape ton code secret Mobile Money pour l'accepter.",
+  "pendingSent": "Demande envoyée à {operator}",
+  "pendingWaiting": "En attente de confirmation",
+  "pendingWithin": "Tu as 5 minutes",
+  "pendingSecured": "Argent sécurisé par Nexis Hub",
+  "pendingNotify": "On prévient {name} tout de suite",
+  "nothingReceived": "Je n'ai rien reçu",
+  "paymentTitle": "Paiement",
+  "trackTitle": "Suivi",
+  "distanceAway": "{name} est à {km} km",
+  "trackingOff": "Suivi non activé",
+  "stepPaid": "Payé",
+  "stepOnTheWay": "En route",
+  "stepOnTheWaySub": "Suivi de position activé",
+  "stepOnSite": "Sur place",
+  "stepWorkDone": "Travail terminé",
+  "stepConfirm": "Tu confirmes, {name} reçoit l'argent",
+  "confirmAction": "Confirmer",
+  "confirmQuestion": "{name} a terminé.\nC'est bien fait ?",
+  "confirmText": "Quand tu confirmes, Nexis Hub verse l'argent sécurisé à {name}.",
+  "paidTo": "Versé à {name}",
+  "amountFixed": "Montant fixé par Nexis Hub au paiement",
+  "report48h": "Un souci ? Tu as 48 h pour le signaler. L'argent reste alors bloqué le temps qu'on regarde avec vous deux.",
+  "yesDone": "Oui, c'est fait",
+  "reportProblem": "Signaler un problème",
+  "confirmedToast": "Merci ! {name} reçoit l'argent.",
+  "callLabel": "Appeler",
+  "messageLabel": "Écrire",
+  "@chooseProvider": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@paySecuredNote": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@payAmount": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "@pendingText": {
+    "placeholders": {
+      "operator": {
+        "type": "String"
+      },
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "@pendingSent": {
+    "placeholders": {
+      "operator": {
+        "type": "String"
+      }
+    }
+  },
+  "@pendingNotify": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@distanceAway": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "km": {
+        "type": "String"
+      }
+    }
+  },
+  "@stepConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@confirmQuestion": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@confirmText": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@paidTo": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@confirmedToast": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
   }
 }

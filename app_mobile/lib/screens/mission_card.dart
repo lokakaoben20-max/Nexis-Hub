@@ -6,6 +6,9 @@ import '../data/money.dart';
 import '../l10n/app_localizations.dart';
 import '../ui/common.dart';
 import '../ui/theme.dart';
+import 'client/confirm.dart';
+import 'client/quotes.dart';
+import 'client/tracking.dart';
 
 String missionStatusText(AppLocalizations l, Mission mission) =>
     switch (mission.status) {
@@ -20,6 +23,26 @@ String missionStatusText(AppLocalizations l, Mission mission) =>
       MissionStatus.cancelled => l.statusCancelled,
       MissionStatus.disputed => l.statusDisputed,
     };
+
+/// Ouvre l'écran qui correspond à l'état de la mission.
+void openMission(BuildContext context, Mission mission) {
+  final Widget? screen = switch (mission.status) {
+    MissionStatus.quoted => QuotesScreen(mission: mission),
+    MissionStatus.confirmed ||
+    MissionStatus.inProgress ||
+    MissionStatus.awaitingConfirmation => TrackingScreen(missionId: mission.id),
+    _ => null,
+  };
+  if (screen == null) {
+    final lang = langOf(context);
+    showComingSoon(
+      context,
+      '${serviceName(mission.service, lang)} · ${mission.commune}',
+    );
+    return;
+  }
+  Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+}
 
 /// Une mission dans « Mes missions », comme la maquette (app-ecrans-v2) :
 /// service, état et pastille à droite ; barre d'avancement et « Suivre »
@@ -74,7 +97,7 @@ class MissionCard extends StatelessWidget {
         type: MaterialType.transparency,
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
-          onTap: () => showComingSoon(context, title),
+          onTap: () => openMission(context, mission),
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(
@@ -168,11 +191,22 @@ class MissionCard extends StatelessWidget {
                     ],
                   ),
                 ],
+                if (mission.status == MissionStatus.awaitingConfirmation) ...[
+                  const SizedBox(height: 10),
+                  _SmallButton(
+                    label: l.confirmAction,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => ConfirmScreen(missionId: mission.id),
+                      ),
+                    ),
+                  ),
+                ],
                 if (mission.status == MissionStatus.quoted) ...[
                   const SizedBox(height: 10),
                   _SmallButton(
                     label: l.compareQuotes,
-                    onTap: () => showComingSoon(context, l.compareQuotes),
+                    onTap: () => openMission(context, mission),
                   ),
                 ],
               ],

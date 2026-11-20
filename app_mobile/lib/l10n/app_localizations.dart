@@ -627,6 +627,228 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'Prestataire'**
   String get spaceProvider;
+
+  /// No description provided for @bestRated.
+  ///
+  /// In fr, this message translates to:
+  /// **'Le mieux noté'**
+  String get bestRated;
+
+  /// No description provided for @chooseProvider.
+  ///
+  /// In fr, this message translates to:
+  /// **'Choisir {name}'**
+  String chooseProvider(String name);
+
+  /// No description provided for @securedUntilDone.
+  ///
+  /// In fr, this message translates to:
+  /// **'Ton argent reste sécurisé par Nexis Hub jusqu\'à ce que tu confirmes que c\'est fait.'**
+  String get securedUntilDone;
+
+  /// No description provided for @payTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'Payer'**
+  String get payTitle;
+
+  /// No description provided for @payWith.
+  ///
+  /// In fr, this message translates to:
+  /// **'Payer avec'**
+  String get payWith;
+
+  /// No description provided for @addNumber.
+  ///
+  /// In fr, this message translates to:
+  /// **'Ajouter un numéro'**
+  String get addNumber;
+
+  /// No description provided for @paySecuredNote.
+  ///
+  /// In fr, this message translates to:
+  /// **'Sécurisé par Nexis Hub : {name} reçoit l\'argent quand tu confirmes que c\'est fait.'**
+  String paySecuredNote(String name);
+
+  /// No description provided for @payAmount.
+  ///
+  /// In fr, this message translates to:
+  /// **'Payer {amount}'**
+  String payAmount(String amount);
+
+  /// No description provided for @pendingTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'Valide sur ton téléphone'**
+  String get pendingTitle;
+
+  /// No description provided for @pendingText.
+  ///
+  /// In fr, this message translates to:
+  /// **'{operator} t\'envoie une demande de {amount}. Tape ton code secret Mobile Money pour l\'accepter.'**
+  String pendingText(String operator, String amount);
+
+  /// No description provided for @pendingSent.
+  ///
+  /// In fr, this message translates to:
+  /// **'Demande envoyée à {operator}'**
+  String pendingSent(String operator);
+
+  /// No description provided for @pendingWaiting.
+  ///
+  /// In fr, this message translates to:
+  /// **'En attente de confirmation'**
+  String get pendingWaiting;
+
+  /// No description provided for @pendingWithin.
+  ///
+  /// In fr, this message translates to:
+  /// **'Tu as 5 minutes'**
+  String get pendingWithin;
+
+  /// No description provided for @pendingSecured.
+  ///
+  /// In fr, this message translates to:
+  /// **'Argent sécurisé par Nexis Hub'**
+  String get pendingSecured;
+
+  /// No description provided for @pendingNotify.
+  ///
+  /// In fr, this message translates to:
+  /// **'On prévient {name} tout de suite'**
+  String pendingNotify(String name);
+
+  /// No description provided for @nothingReceived.
+  ///
+  /// In fr, this message translates to:
+  /// **'Je n\'ai rien reçu'**
+  String get nothingReceived;
+
+  /// No description provided for @paymentTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'Paiement'**
+  String get paymentTitle;
+
+  /// No description provided for @trackTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'Suivi'**
+  String get trackTitle;
+
+  /// No description provided for @distanceAway.
+  ///
+  /// In fr, this message translates to:
+  /// **'{name} est à {km} km'**
+  String distanceAway(String name, String km);
+
+  /// No description provided for @trackingOff.
+  ///
+  /// In fr, this message translates to:
+  /// **'Suivi non activé'**
+  String get trackingOff;
+
+  /// No description provided for @stepPaid.
+  ///
+  /// In fr, this message translates to:
+  /// **'Payé'**
+  String get stepPaid;
+
+  /// No description provided for @stepOnTheWay.
+  ///
+  /// In fr, this message translates to:
+  /// **'En route'**
+  String get stepOnTheWay;
+
+  /// No description provided for @stepOnTheWaySub.
+  ///
+  /// In fr, this message translates to:
+  /// **'Suivi de position activé'**
+  String get stepOnTheWaySub;
+
+  /// No description provided for @stepOnSite.
+  ///
+  /// In fr, this message translates to:
+  /// **'Sur place'**
+  String get stepOnSite;
+
+  /// No description provided for @stepWorkDone.
+  ///
+  /// In fr, this message translates to:
+  /// **'Travail terminé'**
+  String get stepWorkDone;
+
+  /// No description provided for @stepConfirm.
+  ///
+  /// In fr, this message translates to:
+  /// **'Tu confirmes, {name} reçoit l\'argent'**
+  String stepConfirm(String name);
+
+  /// No description provided for @confirmAction.
+  ///
+  /// In fr, this message translates to:
+  /// **'Confirmer'**
+  String get confirmAction;
+
+  /// No description provided for @confirmQuestion.
+  ///
+  /// In fr, this message translates to:
+  /// **'{name} a terminé.\nC\'est bien fait ?'**
+  String confirmQuestion(String name);
+
+  /// No description provided for @confirmText.
+  ///
+  /// In fr, this message translates to:
+  /// **'Quand tu confirmes, Nexis Hub verse l\'argent sécurisé à {name}.'**
+  String confirmText(String name);
+
+  /// No description provided for @paidTo.
+  ///
+  /// In fr, this message translates to:
+  /// **'Versé à {name}'**
+  String paidTo(String name);
+
+  /// No description provided for @amountFixed.
+  ///
+  /// In fr, this message translates to:
+  /// **'Montant fixé par Nexis Hub au paiement'**
+  String get amountFixed;
+
+  /// No description provided for @report48h.
+  ///
+  /// In fr, this message translates to:
+  /// **'Un souci ? Tu as 48 h pour le signaler. L\'argent reste alors bloqué le temps qu\'on regarde avec vous deux.'**
+  String get report48h;
+
+  /// No description provided for @yesDone.
+  ///
+  /// In fr, this message translates to:
+  /// **'Oui, c\'est fait'**
+  String get yesDone;
+
+  /// No description provided for @reportProblem.
+  ///
+  /// In fr, this message translates to:
+  /// **'Signaler un problème'**
+  String get reportProblem;
+
+  /// No description provided for @confirmedToast.
+  ///
+  /// In fr, this message translates to:
+  /// **'Merci ! {name} reçoit l\'argent.'**
+  String confirmedToast(String name);
+
+  /// No description provided for @callLabel.
+  ///
+  /// In fr, this message translates to:
+  /// **'Appeler'**
+  String get callLabel;
+
+  /// No description provided for @messageLabel.
+  ///
+  /// In fr, this message translates to:
+  /// **'Écrire'**
+  String get messageLabel;
 }
 
 class _AppLocalizationsDelegate

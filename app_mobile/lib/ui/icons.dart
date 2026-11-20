@@ -57,6 +57,16 @@ class PhRegular {
   static const IconData snowflake = IconData(0xe5aa, fontFamily: 'Phosphor');
   static const IconData wrench = IconData(0xe5d4, fontFamily: 'Phosphor');
   static const IconData caretLeft = IconData(0xe138, fontFamily: 'Phosphor');
+  static const IconData calendarBlank = IconData(
+    0xe10a,
+    fontFamily: 'Phosphor',
+  );
+  static const IconData mapPin = IconData(0xe316, fontFamily: 'Phosphor');
+  static const IconData info = IconData(0xe2ce, fontFamily: 'Phosphor');
+  static const IconData deviceMobileCamera = IconData(
+    0xe1e2,
+    fontFamily: 'Phosphor',
+  );
 }
 
 class PhFill {
@@ -133,6 +143,15 @@ class PhFill {
     fontFamily: 'PhosphorFill',
   );
   static const IconData headset = IconData(0xe584, fontFamily: 'PhosphorFill');
+  static const IconData navigationArrow = IconData(
+    0xeade,
+    fontFamily: 'PhosphorFill',
+  );
+  static const IconData chatCircleDots = IconData(
+    0xe16c,
+    fontFamily: 'PhosphorFill',
+  );
+  static const IconData info = IconData(0xe2ce, fontFamily: 'PhosphorFill');
 }
 
 class PhBold {
@@ -143,4 +162,5 @@ class PhBold {
   );
   static const IconData arrowUp = IconData(0xe08e, fontFamily: 'PhosphorBold');
   static const IconData plus = IconData(0xe3d4, fontFamily: 'PhosphorBold');
+  static const IconData check = IconData(0xe182, fontFamily: 'PhosphorBold');
 }

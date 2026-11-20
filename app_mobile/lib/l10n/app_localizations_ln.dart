@@ -300,4 +300,141 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String get spaceProvider => 'Mosali';
+
+  @override
+  String get bestRated => 'Oyo balingi mingi';
+
+  @override
+  String chooseProvider(String name) {
+    return 'Pona $name';
+  }
+
+  @override
+  String get securedUntilDone =>
+      'Mbongo na yo ebatelami na Nexis Hub kino okondima ete mosala esili.';
+
+  @override
+  String get payTitle => 'Kofuta';
+
+  @override
+  String get payWith => 'Futa na';
+
+  @override
+  String get addNumber => 'Bakisa nimero';
+
+  @override
+  String paySecuredNote(String name) {
+    return 'Ebatelami na Nexis Hub : $name akozwa mbongo soki ondimi ete mosala esili.';
+  }
+
+  @override
+  String payAmount(String amount) {
+    return 'Futa $amount';
+  }
+
+  @override
+  String get pendingTitle => 'Ndima na telefone na yo';
+
+  @override
+  String pendingText(String operator, String amount) {
+    return '$operator ekotindela yo bosenga ya $amount. Kotisa code na yo ya sekele ya Mobile Money mpo na kondima.';
+  }
+
+  @override
+  String pendingSent(String operator) {
+    return 'Bosenga etindami na $operator';
+  }
+
+  @override
+  String get pendingWaiting => 'Tozali kozela bondimi';
+
+  @override
+  String get pendingWithin => 'Ozali na miniti 5';
+
+  @override
+  String get pendingSecured => 'Mbongo ebatelami na Nexis Hub';
+
+  @override
+  String pendingNotify(String name) {
+    return 'Tokoyebisa $name noki';
+  }
+
+  @override
+  String get nothingReceived => 'Nazwi eloko te';
+
+  @override
+  String get paymentTitle => 'Kofuta';
+
+  @override
+  String get trackTitle => 'Kolanda';
+
+  @override
+  String distanceAway(String name, String km) {
+    return '$name azali na $km km';
+  }
+
+  @override
+  String get trackingOff => 'Kolanda ebandi te';
+
+  @override
+  String get stepPaid => 'Efutami';
+
+  @override
+  String get stepOnTheWay => 'Azali na nzela';
+
+  @override
+  String get stepOnTheWaySub => 'Kolanda esika ebandi';
+
+  @override
+  String get stepOnSite => 'Akomi';
+
+  @override
+  String get stepWorkDone => 'Mosala esili';
+
+  @override
+  String stepConfirm(String name) {
+    return 'Ondimi, $name akozwa mbongo';
+  }
+
+  @override
+  String get confirmAction => 'Kondima';
+
+  @override
+  String confirmQuestion(String name) {
+    return '$name asilisi.\nEsalami malamu ?';
+  }
+
+  @override
+  String confirmText(String name) {
+    return 'Soki ondimi, Nexis Hub akopesa $name mbongo oyo ebatelami.';
+  }
+
+  @override
+  String paidTo(String name) {
+    return 'Ekopesama na $name';
+  }
+
+  @override
+  String get amountFixed => 'Motango etiamaki na Nexis Hub na tango ya kofuta';
+
+  @override
+  String get report48h =>
+      'Likambo ? Ozali na ngonga 48 mpo na koyebisa. Mbongo ekotikala ekangami tango tozali kotala yango na bino mibale.';
+
+  @override
+  String get yesDone => 'Ee, esili';
+
+  @override
+  String get reportProblem => 'Koyebisa likambo';
+
+  @override
+  String confirmedToast(String name) {
+    return 'Matondo ! $name akozwa mbongo.';
+  }
+
+  @override
+  String get callLabel => 'Kobenga';
+
+  @override
+  String get messageLabel => 'Kokoma';
 }

@@ -10,7 +10,19 @@ class AppState extends ChangeNotifier {
   Locale? _locale;
   bool _signedIn = false;
 
+  int _revision = 0;
+
   Locale? get locale => _locale;
+
+  /// Change quand des données changent (paiement, confirmation) : les
+  /// écrans relisent alors le dépôt.
+  int get revision => _revision;
+
+  void dataChanged() {
+    _revision++;
+    notifyListeners();
+  }
+
   bool get signedIn => _signedIn;
 
   void setLocale(Locale locale) {

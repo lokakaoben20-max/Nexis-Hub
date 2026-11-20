@@ -300,4 +300,141 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get spaceProvider => 'Prestataire';
+
+  @override
+  String get bestRated => 'Le mieux noté';
+
+  @override
+  String chooseProvider(String name) {
+    return 'Choisir $name';
+  }
+
+  @override
+  String get securedUntilDone =>
+      'Ton argent reste sécurisé par Nexis Hub jusqu\'à ce que tu confirmes que c\'est fait.';
+
+  @override
+  String get payTitle => 'Payer';
+
+  @override
+  String get payWith => 'Payer avec';
+
+  @override
+  String get addNumber => 'Ajouter un numéro';
+
+  @override
+  String paySecuredNote(String name) {
+    return 'Sécurisé par Nexis Hub : $name reçoit l\'argent quand tu confirmes que c\'est fait.';
+  }
+
+  @override
+  String payAmount(String amount) {
+    return 'Payer $amount';
+  }
+
+  @override
+  String get pendingTitle => 'Valide sur ton téléphone';
+
+  @override
+  String pendingText(String operator, String amount) {
+    return '$operator t\'envoie une demande de $amount. Tape ton code secret Mobile Money pour l\'accepter.';
+  }
+
+  @override
+  String pendingSent(String operator) {
+    return 'Demande envoyée à $operator';
+  }
+
+  @override
+  String get pendingWaiting => 'En attente de confirmation';
+
+  @override
+  String get pendingWithin => 'Tu as 5 minutes';
+
+  @override
+  String get pendingSecured => 'Argent sécurisé par Nexis Hub';
+
+  @override
+  String pendingNotify(String name) {
+    return 'On prévient $name tout de suite';
+  }
+
+  @override
+  String get nothingReceived => 'Je n\'ai rien reçu';
+
+  @override
+  String get paymentTitle => 'Paiement';
+
+  @override
+  String get trackTitle => 'Suivi';
+
+  @override
+  String distanceAway(String name, String km) {
+    return '$name est à $km km';
+  }
+
+  @override
+  String get trackingOff => 'Suivi non activé';
+
+  @override
+  String get stepPaid => 'Payé';
+
+  @override
+  String get stepOnTheWay => 'En route';
+
+  @override
+  String get stepOnTheWaySub => 'Suivi de position activé';
+
+  @override
+  String get stepOnSite => 'Sur place';
+
+  @override
+  String get stepWorkDone => 'Travail terminé';
+
+  @override
+  String stepConfirm(String name) {
+    return 'Tu confirmes, $name reçoit l\'argent';
+  }
+
+  @override
+  String get confirmAction => 'Confirmer';
+
+  @override
+  String confirmQuestion(String name) {
+    return '$name a terminé.\nC\'est bien fait ?';
+  }
+
+  @override
+  String confirmText(String name) {
+    return 'Quand tu confirmes, Nexis Hub verse l\'argent sécurisé à $name.';
+  }
+
+  @override
+  String paidTo(String name) {
+    return 'Versé à $name';
+  }
+
+  @override
+  String get amountFixed => 'Montant fixé par Nexis Hub au paiement';
+
+  @override
+  String get report48h =>
+      'Un souci ? Tu as 48 h pour le signaler. L\'argent reste alors bloqué le temps qu\'on regarde avec vous deux.';
+
+  @override
+  String get yesDone => 'Oui, c\'est fait';
+
+  @override
+  String get reportProblem => 'Signaler un problème';
+
+  @override
+  String confirmedToast(String name) {
+    return 'Merci ! $name reçoit l\'argent.';
+  }
+
+  @override
+  String get callLabel => 'Appeler';
+
+  @override
+  String get messageLabel => 'Écrire';
 }
