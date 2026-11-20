@@ -233,6 +233,16 @@ class _WalletCardState extends State<WalletCard> {
                             ),
                           ],
                         ),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 24, right: 44),
+                          child: Text(
+                            l.walletExplanation,
+                            style: body(
+                              11.5,
+                              color: Colors.white.withValues(alpha: .92),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
