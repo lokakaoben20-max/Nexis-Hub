@@ -6,35 +6,43 @@ import '../data/models.dart';
 import '../l10n/app_localizations.dart';
 import 'theme.dart';
 
-/// Icône (trait fin, comme les maquettes) et couleur de chaque service.
-({IconData icon, Color color}) serviceVisual(
-  Service service,
-) => switch (service) {
-  Service.plomberie => (icon: PhRegular.wrench, color: const Color(0xFF0350E6)),
-  Service.electricite => (
-    icon: PhRegular.lightning,
-    color: const Color(0xFFC98200),
-  ),
-  Service.climatisation => (
-    icon: PhRegular.snowflake,
-    color: const Color(0xFF0A84D6),
-  ),
-  Service.informatique => (
-    icon: PhRegular.desktop,
-    color: const Color(0xFF021937),
-  ),
-  Service.graphisme => (
-    icon: PhRegular.palette,
-    color: const Color(0xFF494C95),
-  ),
-  Service.coiffure => (
-    icon: PhRegular.scissors,
-    color: const Color(0xFFC2416B),
-  ),
-  Service.nettoyage => (icon: PhRegular.broom, color: const Color(0xFF1E8A4C)),
-  Service.jardinage => (icon: PhRegular.plant, color: const Color(0xFF4F8A10)),
-  Service.autre => (icon: PhRegular.plusCircle, color: const Color(0xFF5B667A)),
-};
+/// Icône (série finale Nexis, comme les maquettes) et couleur de chaque service.
+({IconData icon, Color color}) serviceVisual(Service service) =>
+    switch (service) {
+      Service.plomberie => (
+        icon: NxService.plomberie,
+        color: const Color(0xFF0350E6),
+      ),
+      Service.electricite => (
+        icon: NxService.electricite,
+        color: const Color(0xFFC98200),
+      ),
+      Service.climatisation => (
+        icon: NxService.climatisation,
+        color: const Color(0xFF0A84D6),
+      ),
+      Service.informatique => (
+        icon: NxService.informatique,
+        color: const Color(0xFF021937),
+      ),
+      Service.graphisme => (
+        icon: NxService.graphisme,
+        color: const Color(0xFF494C95),
+      ),
+      Service.coiffure => (
+        icon: NxService.coiffure,
+        color: const Color(0xFFC2416B),
+      ),
+      Service.nettoyage => (
+        icon: NxService.nettoyage,
+        color: const Color(0xFF1E8A4C),
+      ),
+      Service.jardinage => (
+        icon: NxService.jardinage,
+        color: const Color(0xFF4F8A10),
+      ),
+      Service.autre => (icon: NxService.autre, color: const Color(0xFF5B667A)),
+    };
 
 /// Noms des services : les mêmes que dans le bot (FR / LN / EN).
 String serviceName(Service service, String lang) {
@@ -75,7 +83,7 @@ class ServiceBadge extends StatelessWidget {
         border: Border.all(color: context.palette.line),
       ),
       alignment: Alignment.center,
-      child: Icon(visual.icon, size: size * .56, color: visual.color),
+      child: Icon(visual.icon, size: size * .5, color: visual.color),
     );
   }
 }

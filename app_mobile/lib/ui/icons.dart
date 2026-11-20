@@ -174,3 +174,21 @@ class PhBold {
   static const IconData plus = IconData(0xe3d4, fontFamily: 'PhosphorBold');
   static const IconData check = IconData(0xe182, fontFamily: 'PhosphorBold');
 }
+
+/// Icônes de services Nexis : la série finale choisie par Ben
+/// (design/icones-services.html), Phosphor pleine pour la plupart et nos
+/// dessins pour l'électricité, la climatisation et l'informatique.
+/// Police générée par outils/icones_services.py.
+class NxService {
+  NxService._();
+  static const _f = 'NexisServices';
+  static const IconData plomberie = IconData(0xe000, fontFamily: _f);
+  static const IconData electricite = IconData(0xe001, fontFamily: _f);
+  static const IconData climatisation = IconData(0xe002, fontFamily: _f);
+  static const IconData informatique = IconData(0xe003, fontFamily: _f);
+  static const IconData graphisme = IconData(0xe004, fontFamily: _f);
+  static const IconData coiffure = IconData(0xe005, fontFamily: _f);
+  static const IconData nettoyage = IconData(0xe006, fontFamily: _f);
+  static const IconData jardinage = IconData(0xe007, fontFamily: _f);
+  static const IconData autre = IconData(0xe008, fontFamily: _f);
+}

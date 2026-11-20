@@ -13,8 +13,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get slogan => 'Where trust meets service.';
 
   @override
-  String get welcomeIntro =>
-      'Plumbing, electrical, cleaning and more in Kinshasa. Your money stays secured until you confirm.';
+  String get welcomeIntro => 'We connect you with trusted professionals';
 
   @override
   String get start => 'Get started';

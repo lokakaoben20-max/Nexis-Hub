@@ -109,7 +109,7 @@ abstract class AppLocalizations {
   /// No description provided for @welcomeIntro.
   ///
   /// In fr, this message translates to:
-  /// **'Plomberie, électricité, nettoyage et plus encore à Kinshasa. Ton argent reste sécurisé jusqu\'à ce que tu confirmes.'**
+  /// **'Nous vous mettons en relation avec des professionnels de confiance'**
   String get welcomeIntro;
 
   /// No description provided for @start.

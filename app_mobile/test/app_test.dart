@@ -9,6 +9,11 @@ void main() {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
+    // L'écran de bienvenue tourne en boucle : ici, comme un téléphone qui
+    // demande moins d'animations, tout s'affiche directement.
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
     final state = AppState(repository: DemoRepository())
       ..setLocale(const Locale('fr'));
     await tester.pumpWidget(NexisApp(state: state));
@@ -29,6 +34,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(state.signedIn, isTrue);
     expect(find.text('Bonjour, Grâce'), findsOneWidget);
+  });
+
+  testWidgets('la pastille de langue passe FR, LN, EN sans liste', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1170, 2532);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final state = AppState(repository: DemoRepository())
+      ..setLocale(const Locale('fr'));
+    await tester.pumpWidget(NexisApp(state: state));
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.text('Commencer'), findsOneWidget);
+    for (final (from, to) in const [('FR', 'ln'), ('LN', 'en'), ('EN', 'fr')]) {
+      await tester.tap(find.text(from));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(state.locale?.languageCode, to);
+      expect(find.byType(BottomSheet), findsNothing);
+    }
+    // Quitter l'écran arrête les animations et les minuteries.
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('le lingala change les textes de l\'app', (tester) async {

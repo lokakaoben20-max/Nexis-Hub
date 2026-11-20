@@ -74,3 +74,8 @@ flutter:
     - family: PhosphorBold
       fonts:
         - asset: assets/fonts/PhosphorBold.ttf
+    # Icônes de services Nexis (série finale, design/icones-services.html),
+    # fabriquées par outils/icones_services.py.
+    - family: NexisServices
+      fonts:
+        - asset: assets/fonts/NexisServices.ttf

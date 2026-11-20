@@ -14,7 +14,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get welcomeIntro =>
-      'Plomberie, électricité, nettoyage et plus encore à Kinshasa. Ton argent reste sécurisé jusqu\'à ce que tu confirmes.';
+      'Nous vous mettons en relation avec des professionnels de confiance';
 
   @override
   String get start => 'Commencer';

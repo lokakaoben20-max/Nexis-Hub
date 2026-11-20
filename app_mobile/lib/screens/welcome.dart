@@ -9,100 +9,190 @@ import '../app_state.dart';
 import '../l10n/app_localizations.dart';
 import '../ui/common.dart';
 import '../ui/theme.dart';
+import 'welcome_intro.dart';
 
-/// 15 B : bienvenue, plein dégradé bleu, choix de la langue.
-class WelcomeScreen extends StatelessWidget {
+/// 15 : bienvenue, piste A retenue (design/bienvenue/bienvenue-pistes.html) :
+/// logo et slogan dans le tiers haut, une seule pastille de langue, les
+/// métiers en orbite, puis les boutons. Entrée animée d'environ 1,5 s.
+class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
+
+  @override
+  State<WelcomeScreen> createState() => _WelcomeScreenState();
+}
+
+class _WelcomeScreenState extends State<WelcomeScreen>
+    with TickerProviderStateMixin {
+  late final AnimationController _intro = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  );
+  late final AnimationController _orbit = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 38),
+  );
+  late final AnimationController _breath = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 6),
+  );
+  late final AnimationController _shine = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  );
+  late final ShineTimer _shineTimer = ShineTimer(_shine);
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _intro.value = 1;
+      return;
+    }
+    _intro.forward();
+    _orbit.repeat();
+    _breath.repeat(reverse: true);
+    _shineTimer.start(
+      const Duration(milliseconds: 1550),
+      const Duration(seconds: 5),
+    );
+  }
+
+  @override
+  void dispose() {
+    _shineTimer.dispose();
+    _intro.dispose();
+    _orbit.dispose();
+    _breath.dispose();
+    _shine.dispose();
+    super.dispose();
+  }
+
+  /// Un toucher = langue suivante (FR, LN, EN), sans liste à choisir.
+  void _nextLanguage() {
+    const order = ['fr', 'ln', 'en'];
+    final i = order.indexOf(langOf(context));
+    AppScope.of(context).setLocale(Locale(order[(i + 1) % order.length]));
+  }
 
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
-    final state = AppScope.of(context);
     final lang = langOf(context);
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [NexisColors.halo, NexisColors.gradientEnd],
-            ),
-          ),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 28, 20, 16),
-              child: Column(
-                children: [
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      const Icon(
-                        PhRegular.globe,
-                        color: Colors.white70,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 6),
-                      for (final (code, name) in const [
-                        ('fr', 'Français'),
-                        ('ln', 'Lingala'),
-                        ('en', 'English'),
-                      ])
-                        _LanguagePill(
-                          name: name,
-                          selected: lang == code,
-                          onTap: () => state.setLocale(Locale(code)),
+        backgroundColor: NexisColors.brand,
+        body: AnimatedBuilder(
+          animation: Listenable.merge([_intro, _orbit, _breath, _shine]),
+          builder: (context, _) {
+            final s = _intro.value * 1.6;
+            return BreathingBackground(
+              breath: _breath.value,
+              child: SafeArea(
+                child: LayoutBuilder(
+                  builder: (context, box) => Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+                    child: Column(
+                      children: [
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: IntroFade(
+                            seconds: s,
+                            start: 1.2,
+                            end: 1.6,
+                            rise: 0,
+                            child: _LanguagePill(
+                              code: lang.toUpperCase(),
+                              onTap: _nextLanguage,
+                            ),
+                          ),
                         ),
-                    ],
-                  ),
-                  const Spacer(flex: 3),
-                  Image.asset(
-                    'assets/images/monogramme-blanc.png',
-                    width: 92,
-                    height: 92,
-                    semanticLabel: 'Nexis Hub',
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'NEXIS HUB',
-                    style: title(
-                      14,
-                      color: Colors.white,
-                    ).copyWith(letterSpacing: 3),
-                  ),
-                  const SizedBox(height: 36),
-                  Text(
-                    l.slogan,
-                    textAlign: TextAlign.center,
-                    style: title(24, color: Colors.white, height: 1.25),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    l.welcomeIntro,
-                    textAlign: TextAlign.center,
-                    style: body(
-                      14.5,
-                      color: Colors.white.withValues(alpha: .86),
+                        SizedBox(height: box.maxHeight * .06),
+                        AssemblingMonogram(seconds: s),
+                        const SizedBox(height: 10),
+                        SpelledBrand(seconds: s),
+                        const SizedBox(height: 22),
+                        IntroFade(
+                          seconds: s,
+                          start: .82,
+                          end: 1.27,
+                          child: Text(
+                            l.slogan,
+                            textAlign: TextAlign.center,
+                            style: title(21, color: Colors.white, height: 1.28),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        IntroFade(
+                          seconds: s,
+                          start: .95,
+                          end: 1.4,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 300),
+                            child: Text(
+                              l.welcomeIntro,
+                              textAlign: TextAlign.center,
+                              style: body(
+                                14.5,
+                                color: const Color(0xFFE3F0FF),
+                              ).copyWith(height: 1.45),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Center(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: IntroFade(
+                                  seconds: s,
+                                  start: .7,
+                                  end: 1.3,
+                                  rise: 0,
+                                  child: ServiceOrbit(
+                                    seconds: s,
+                                    turn: _orbit.value,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        IntroFade(
+                          seconds: s,
+                          start: 1.15,
+                          end: 1.6,
+                          rise: 22,
+                          child: Column(
+                            children: [
+                              ShineSweep(
+                                sweep: _shine.value,
+                                child: _WhiteButton(
+                                  label: l.start,
+                                  filled: true,
+                                  onTap: () => _toNumber(context),
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              _WhiteButton(
+                                label: l.haveAccount,
+                                filled: false,
+                                onTap: () => _toNumber(context),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const Spacer(flex: 4),
-                  _WhiteButton(
-                    label: l.start,
-                    filled: true,
-                    onTap: () => _toNumber(context),
-                  ),
-                  const SizedBox(height: 10),
-                  _WhiteButton(
-                    label: l.haveAccount,
-                    filled: false,
-                    onTap: () => _toNumber(context),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
@@ -113,46 +203,52 @@ class WelcomeScreen extends StatelessWidget {
           .push(MaterialPageRoute<void>(builder: (_) => const NumberScreen()));
 }
 
+/// Une seule pastille : la langue en cours ; chaque toucher passe à la
+/// suivante (FR, LN, EN).
 class _LanguagePill extends StatelessWidget {
-  const _LanguagePill({
-    required this.name,
-    required this.selected,
-    required this.onTap,
-  });
+  const _LanguagePill({required this.code, required this.onTap});
 
-  final String name;
-  final bool selected;
+  final String code;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 3),
-    child: Semantics(
+  Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    return Semantics(
       button: true,
-      selected: selected,
+      label: l.language,
+      value: code,
+      excludeSemantics: true,
       child: Material(
-        color: selected
-            ? Colors.white.withValues(alpha: .22)
-            : Colors.transparent,
+        color: Colors.white.withValues(alpha: .16),
         shape: StadiumBorder(
-          side: BorderSide(
-            color: Colors.white.withValues(alpha: selected ? .55 : .28),
-          ),
+          side: BorderSide(color: Colors.white.withValues(alpha: .35)),
         ),
         child: InkWell(
           customBorder: const StadiumBorder(),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Text(
-              name,
-              style: body(12.5, weight: FontWeight.w600, color: Colors.white),
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(PhRegular.globe, size: 14, color: Colors.white),
+                const SizedBox(width: 6),
+                Text(
+                  code,
+                  style: body(
+                    12.5,
+                    weight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _WhiteButton extends StatelessWidget {

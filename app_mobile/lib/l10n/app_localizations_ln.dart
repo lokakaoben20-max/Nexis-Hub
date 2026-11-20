@@ -13,8 +13,7 @@ class AppLocalizationsLn extends AppLocalizations {
   String get slogan => 'Epai bosembo ekutani na mosala.';
 
   @override
-  String get welcomeIntro =>
-      'Basali ya bosembo na Kinshasa. Mbongo na yo ebatelami tii okondima ete mosala esili malamu.';
+  String get welcomeIntro => 'Tokokutanisa bino na basali ya kotyela motema';
 
   @override
   String get start => 'Kobanda';
