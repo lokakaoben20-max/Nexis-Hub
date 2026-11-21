@@ -21,6 +21,7 @@ from messages import get_message
 from telegram_bot import admin
 from telegram_bot import app_login
 from telegram_bot import catalogue
+from telegram_bot import conditions as case_conditions
 from telegram_bot import fallback
 from telegram_bot import dashboard
 from telegram_bot import mission as mission_flow
@@ -44,6 +45,12 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=build_fsm_storage())
 # Flows extraits (Phase 3) : routers séparés plutôt que des handlers directement
 # sur `dp`. Voir telegram_bot/registration.py et telegram_bot/mission.py.
+# Case des conditions d'utilisation : filtre devant chaque nouvelle action, et
+# écran pour recocher (telegram_bot/conditions.py).
+gate = case_conditions.ConditionsGate()
+dp.message.outer_middleware(gate)
+dp.callback_query.outer_middleware(gate)
+dp.include_router(case_conditions.router)
 dp.include_router(registration.router)
 dp.include_router(mission_flow.router)
 dp.include_router(payment.router)

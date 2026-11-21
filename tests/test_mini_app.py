@@ -645,3 +645,75 @@ def test_every_text_of_the_mini_app_exists_in_each_language():
     for block in blocks:
         missing = sorted(key for key in keys if not re.search(rf"^    {key}:", block, re.M))
         assert not missing, missing
+
+
+# ── Case des conditions d'utilisation ───────────────────────────
+
+
+def _publish_terms(live_backend, version="v1", text=None):
+    from backend.app import conditions
+
+    with live_backend.database.SessionLocal() as db:
+        for key in ("cgu", "conditions_prestataires"):
+            conditions.publish_version(db, key, version, text or f"Texte {key} {version}")
+        db.commit()
+
+
+def _terms_rows(live_backend):
+    from sqlalchemy import select
+
+    from backend.app import conditions
+
+    with live_backend.database.SessionLocal() as db:
+        return [(row.role, row.surface) for row in db.scalars(select(conditions.LegalAcceptance)).all()]
+
+
+PROVIDER_TERMS = [{"document_key": "cgu", "version": "v1"}, {"document_key": "conditions_prestataires", "version": "v1"}]
+
+
+@pytest.mark.conditions_reelles
+def test_nothing_published_closes_the_registration_screen(client, live_backend):
+    terms = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth()).json()["terms"]
+    assert terms["unavailable"] is True
+    response = _register(client)
+    assert (response.status_code, response.headers["X-Nexis-Code"]) == (503, "terms_unavailable")
+
+
+@pytest.mark.conditions_reelles
+def test_registration_from_the_mini_app_needs_the_box(client, live_backend):
+    _publish_terms(live_backend)
+    terms = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth()).json()["terms"]
+    assert [item["document_key"] for item in terms["by_role"]["provider"]] == ["cgu", "conditions_prestataires"]
+
+    refused = _register(client)
+    assert (refused.status_code, refused.headers["X-Nexis-Code"]) == (409, "terms_not_accepted")
+    assert live_backend.profile(CLIENT_ID)["provider"] is None
+
+    accepted = _register(client, terms_documents=PROVIDER_TERMS)
+    assert accepted.status_code == 200, accepted.json()
+    assert _terms_rows(live_backend) == [("provider", "mini_app"), ("provider", "mini_app")]
+    assert client.get(f"/api/profile/{CLIENT_ID}", headers=_auth()).json()["terms"]["missing"] == []
+
+
+@pytest.mark.conditions_reelles
+def test_an_old_account_ticks_again_in_the_mini_app_and_only_for_itself(client, live_backend):
+    _publish_terms(live_backend)
+    live_backend.client(CLIENT_ID)
+    terms = client.get(f"/api/profile/{CLIENT_ID}", headers=_auth()).json()["terms"]
+    assert ([item["document_key"] for item in terms["missing"]], terms["role"]) == (["cgu"], "client")
+
+    payload = {"role": "client", "documents": [{"document_key": "cgu", "version": "v1"}]}
+    assert client.post(f"/api/terms/{OTHER_ID}", json=payload, headers=_auth()).status_code == 403
+    response = client.post(f"/api/terms/{CLIENT_ID}", json=payload, headers=_auth())
+    assert response.status_code == 200 and response.json()["missing"] == []
+    assert _terms_rows(live_backend) == [("client", "mini_app")]
+
+
+@pytest.mark.conditions_reelles
+def test_the_reading_page_shows_the_exact_text_escaped(client, live_backend):
+    _publish_terms(live_backend, text="Article 1 <script>alert(1)</script>\nArticle 2")
+    page = client.get("/conditions/cgu/v1?lang=ln")
+    assert page.status_code == 200
+    assert "Mibeko ya kosalela Nexis Hub" in page.text
+    assert "&lt;script&gt;" in page.text and "<script>" not in page.text
+    assert client.get("/conditions/cgu/v9").status_code == 404

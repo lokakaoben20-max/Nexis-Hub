@@ -1006,3 +1006,65 @@ class IdempotencyKey(Base):
     response_status: Mapped[int] = mapped_column(Integer)
     response_body: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+# --- Conditions d'utilisation (backend/app/conditions.py) -------------------
+
+LEGAL_DOCUMENTS = ("cgu", "conditions_prestataires")
+LEGAL_ROLES = ("client", "provider")
+# D'où la personne a coché la case : le bot Telegram, la Mini App (même clé
+# de service que le bot), WhatsApp ou l'application.
+LEGAL_SURFACES = ("telegram_bot", "mini_app", "whatsapp", "app")
+
+
+class LegalDocumentVersion(Base):
+    """Une version publiée d'un document à accepter (CGU, conditions des
+    prestataires). Publiée par `python -m backend.app.conditions publier`,
+    jamais par l'API. **Jamais modifiée ni effacée** : un texte corrigé est
+    une nouvelle version. Le texte exact est gardé avec son empreinte, pour
+    prouver ce que la personne a accepté.
+
+    Version en vigueur d'un document : la dernière dont `effective_at` est
+    passée."""
+
+    __tablename__ = "legal_document_versions"
+    __table_args__ = (
+        UniqueConstraint("document_key", "version", name="uq_legal_document_versions_key_version"),
+        CheckConstraint(f"document_key IN {_sql_in(LEGAL_DOCUMENTS)}", name="ck_legal_document_versions_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    document_key: Mapped[str] = mapped_column(String(40), index=True)
+    version: Mapped[str] = mapped_column(String(30))
+    # Langue du texte publié (le français fait foi tant que le juriste n'a pas
+    # dit autre chose).
+    language: Mapped[str] = mapped_column(String(5))
+    text: Mapped[str] = mapped_column(Text)
+    text_sha256: Mapped[str] = mapped_column(String(64))
+    effective_at: Mapped[datetime] = mapped_column(DateTime)
+    published_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class LegalAcceptance(Base):
+    """Une personne a coché la case pour une version précise. **Ajout seul** :
+    aucune ligne n'est modifiée ni effacée. Une seule ligne par compte et par
+    version : cocher de nouveau ne crée rien (idempotence).
+
+    `role` : le rôle pour lequel la case a été cochée (inscription client,
+    inscription ou bascule prestataire, réacceptation). `surface` et
+    `language` : où et dans quelle langue l'écran a été montré."""
+
+    __tablename__ = "legal_acceptances"
+    __table_args__ = (
+        UniqueConstraint("account_id", "version_id", name="uq_legal_acceptances_account_version"),
+        CheckConstraint(f"role IN {_sql_in(LEGAL_ROLES)}", name="ck_legal_acceptances_role"),
+        CheckConstraint(f"surface IN {_sql_in(LEGAL_SURFACES)}", name="ck_legal_acceptances_surface"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("legal_document_versions.id"), index=True)
+    role: Mapped[str] = mapped_column(String(10))
+    surface: Mapped[str] = mapped_column(String(20))
+    language: Mapped[str] = mapped_column(String(5))
+    accepted_at: Mapped[datetime] = mapped_column(DateTime)

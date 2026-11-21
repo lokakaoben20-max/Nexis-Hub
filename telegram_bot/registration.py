@@ -11,6 +11,7 @@ import html
 import logging
 
 from aiogram import F, Router
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
@@ -18,6 +19,7 @@ from dotenv import load_dotenv
 
 from messages import get_message
 from telegram_bot import backend_client, catalogue
+from telegram_bot import conditions as case_conditions
 from telegram_bot.backend_client import (
     BackendUnavailable,
     MoneyRefused,
@@ -48,6 +50,8 @@ router = Router()
 
 class ClientRegistration(StatesGroup):
     phone = State()
+    # Dernier écran : la case des CGU (telegram_bot/conditions.py).
+    terms = State()
 
 
 class ProviderRegistration(StatesGroup):
@@ -62,6 +66,9 @@ class ProviderRegistration(StatesGroup):
     id_document = State()
     selfie = State()
     portfolio = State()
+    # Dernier écran : la case des CGU et des conditions des prestataires
+    # (aussi pour un client qui devient prestataire).
+    terms = State()
 
 
 class ProviderServicesEdit(StatesGroup):
@@ -179,31 +186,132 @@ async def enregistrer_client(message: Message, state: FSMContext):
     if phone_number is None:
         return
 
+    documents = await _documents_a_cocher(message, message.from_user.id, "client", lang, clavier_contact(lang))
+    if documents is None:
+        # L'étape reste ouverte : la personne renvoie son numéro.
+        return
+    await state.update_data(client_phone=phone_number)
+    await message.answer(get_message("phone_received", lang), reply_markup=ReplyKeyboardRemove())
+    if documents:
+        await _montrer_case(message, state, ClientRegistration.terms, "client", documents, lang)
+        return
+    # CGU en vigueur déjà acceptées (prestataire qui devient client).
+    await _terminer_inscription_client(message, message.from_user, state, lang, None)
+
+
+async def _terminer_inscription_client(target: Message, person, state: FSMContext, lang: str, terms: dict | None) -> bool:
+    """Inscription envoyée au backend avec la case cochée. Refus ou backend
+    injoignable : rien n'est enregistré, la personne le voit."""
+    data = await state.get_data()
     try:
         me = await backend_client.save_client_profile(
-            message.from_user.id,
-            first_name=message.from_user.first_name or "Client",
-            phone_number=phone_number,
+            person.id,
+            first_name=person.first_name or "Client",
+            phone_number=data["client_phone"],
             language=lang,
             # Numéro reçu par « Partager mon numéro », contact de l'expéditeur.
             phone_verified=True,
+            terms=terms,
         )
-    except (BackendUnavailable, MoneyRefused) as error:
-        # Rien n'est enregistré : l'étape reste ouverte, la personne renvoie
-        # son numéro.
-        await message.answer(money_failure_text(0, error, lang, "service_unavailable"), reply_markup=clavier_contact(lang))
-        return
+    except MoneyRefused as error:
+        if await _case_a_rafraichir(target, state, error, "client", lang):
+            return False
+        await target.answer(money_failure_text(0, error, lang, "service_unavailable"))
+        return False
+    except BackendUnavailable as error:
+        await target.answer(money_failure_text(0, error, lang, "service_unavailable"))
+        return False
     await state.clear()
     prenom = html.escape(me["client"]["first_name"])
-    await message.answer(
-        get_message("client_registered", lang),
-        reply_markup=ReplyKeyboardRemove(),
-    )
-    await message.answer(
+    await target.answer(get_message("client_registered", lang))
+    await target.answer(
         get_message("client_menu", lang, prenom=prenom),
         parse_mode="HTML",
         reply_markup=clavier_client(lang),
     )
+    return True
+
+
+# --- Case des conditions, dernier écran de l'inscription ---------------------------
+
+
+async def _documents_a_cocher(target: Message, telegram_id: int, role: str, lang: str, reply_markup=None) -> list[dict] | None:
+    """Versions que la personne doit cocher pour prendre ce rôle, ou None
+    après lui avoir dit pourquoi on ne peut pas continuer."""
+    try:
+        status = await backend_client.terms_status(telegram_id)
+    except MoneyRefused as error:
+        key = "terms_unavailable" if error.code == "terms_unavailable" else None
+        text = get_message(key, lang) if key else money_failure_text(0, error, lang, "service_unavailable")
+        await target.answer(text, reply_markup=reply_markup)
+        return None
+    except BackendUnavailable:
+        await target.answer(get_message("service_unavailable", lang), reply_markup=reply_markup)
+        return None
+    return status["by_role"][role]
+
+
+async def _montrer_case(target: Message, state: FSMContext, step, role: str, documents: list[dict], lang: str) -> None:
+    await state.set_state(step)
+    await state.update_data(terms_documents=documents, terms_ticked=False, language=lang)
+    await target.answer(
+        case_conditions.screen_text(f"terms_signup_{role}", documents, lang),
+        parse_mode="HTML",
+        reply_markup=case_conditions.keyboard(case_conditions.SIGNUP, documents, False, lang),
+    )
+
+
+async def _case_a_rafraichir(target: Message, state: FSMContext, error: MoneyRefused, role: str, lang: str) -> bool:
+    """Le backend a refusé la case (version changée entre-temps, ou case
+    manquante) : on remontre la case avec les versions en vigueur. Rend
+    False si le refus est d'une autre nature."""
+    if error.code not in ("terms_version_outdated", "terms_not_accepted", "terms_version_not_found"):
+        return False
+    documents = await _documents_a_cocher(target, target.chat.id, role, lang)
+    if documents is None:
+        return True
+    await target.answer(get_message("terms_changed", lang))
+    step = ClientRegistration.terms if role == "client" else ProviderRegistration.terms
+    await _montrer_case(target, state, step, role, documents, lang)
+    return True
+
+
+@router.callback_query(
+    StateFilter(ClientRegistration.terms, ProviderRegistration.terms), F.data == f"{case_conditions.SIGNUP}_tick"
+)
+async def cocher_case_inscription(callback: CallbackQuery, state: FSMContext):
+    await case_conditions.toggle(callback, state, case_conditions.SIGNUP)
+
+
+@router.callback_query(ClientRegistration.terms, F.data == f"{case_conditions.SIGNUP}_ok")
+async def valider_inscription_client(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get("language", "fr")
+    if not data.get("terms_ticked"):
+        await callback.answer(get_message("terms_must_tick", lang), show_alert=True)
+        return
+    terms = {"surface": case_conditions.SURFACE, "documents": case_conditions.shown(data["terms_documents"])}
+    await callback.answer()
+    if await _terminer_inscription_client(callback.message, callback.from_user, state, lang, terms):
+        await callback.message.edit_reply_markup(reply_markup=None)
+
+
+@router.callback_query(ProviderRegistration.terms, F.data == f"{case_conditions.SIGNUP}_ok")
+async def valider_inscription_prestataire(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get("language", "fr")
+    if not data.get("terms_ticked"):
+        await callback.answer(get_message("terms_must_tick", lang), show_alert=True)
+        return
+    terms = {"surface": case_conditions.SURFACE, "documents": case_conditions.shown(data["terms_documents"])}
+    await _terminer_inscription_prestataire(callback, state, terms)
+
+
+@router.callback_query(
+    StateFilter(ClientRegistration.terms, ProviderRegistration.terms), F.data.startswith(f"{case_conditions.SIGNUP}_")
+)
+async def ancien_bouton_case(callback: CallbackQuery):
+    await callback.answer()
 
 
 def _provider_menu_text(provider: dict, lang: str) -> str:
@@ -404,9 +512,26 @@ async def recevoir_portfolio(message: Message, state: FSMContext):
 
 @router.callback_query(ProviderRegistration.portfolio, F.data == "provider_portfolio_done")
 async def finaliser_inscription_prestataire(callback: CallbackQuery, state: FSMContext):
-    """Inscription complète (pièce d'identité, selfie, réalisations) envoyée
-    au backend, qui met le prestataire en attente de vérification : invisible
-    des clients tant que l'équipe ne l'a pas validé."""
+    """Documents reçus : dernier écran, la case des conditions (CGU et
+    conditions des prestataires ; seulement ce qui manque pour un client qui
+    devient prestataire)."""
+    data = await state.get_data()
+    lang = data.get("language", "fr")
+    documents = await _documents_a_cocher(callback.message, callback.from_user.id, "provider", lang)
+    if documents is None:
+        await callback.answer()
+        return
+    if documents:
+        await _montrer_case(callback.message, state, ProviderRegistration.terms, "provider", documents, lang)
+        await callback.answer()
+        return
+    await _terminer_inscription_prestataire(callback, state, None)
+
+
+async def _terminer_inscription_prestataire(callback: CallbackQuery, state: FSMContext, terms: dict | None) -> None:
+    """Inscription complète (pièce d'identité, selfie, réalisations, case
+    cochée) envoyée au backend, qui met le prestataire en attente de
+    vérification : invisible des clients tant que l'équipe ne l'a pas validé."""
     data = await state.get_data()
     lang = data.get("language", "fr")
     portfolio_file_ids = data.get("provider_portfolio_file_ids", [])
@@ -424,6 +549,7 @@ async def finaliser_inscription_prestataire(callback: CallbackQuery, state: FSMC
                 "portfolio_file_ids": portfolio_file_ids,
                 # Numéro reçu par « Partager mon numéro » (enregistrer_tel_prestataire).
                 "phone_verified": True,
+                **({"terms": terms} if terms is not None else {}),
             },
         )
     except BackendUnavailable:
@@ -431,6 +557,9 @@ async def finaliser_inscription_prestataire(callback: CallbackQuery, state: FSMC
         await _unavailable(callback, lang)
         return
     except MoneyRefused as error:
+        if await _case_a_rafraichir(callback.message, state, error, "provider", lang):
+            await callback.answer()
+            return
         await state.clear()
         await callback.message.edit_text(money_failure_text(0, error, lang), reply_markup=clavier_profil(lang))
         await callback.answer()
