@@ -580,5 +580,103 @@
         "type": "String"
       }
     }
-  }
+  },
+  "helloHome": "Mbote, {name}",
+  "@helloHome": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "heldForMissions": "{amount} bloqués pour vos missions en cours",
+  "@heldForMissions": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "heldWhy": "Pourquoi ces fonds sont bloqués",
+  "heldTip": "Cet argent reste à vous. Il est mis de côté pour payer le professionnel quand la mission est terminée et que vous l'avez confirmée.",
+  "currency": "Devise",
+  "quickActions": "Actions rapides",
+  "reviewsCount": "{count} avis",
+  "@reviewsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "completedOn": "Terminée le {date}",
+  "@completedOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "followMission": "Suivre la mission",
+  "seeMissions": "Voir les {count} missions",
+  "@seeMissions": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "recentMovements": "Derniers mouvements",
+  "newBadge": "Nouveau",
+  "allServices": "Tous les services",
+  "searchService": "Rechercher un service",
+  "recents": "Récents",
+  "newAndRecommended": "Nouveaux et recommandés",
+  "requestedIn": "Demandé en {month}",
+  "@requestedIn": {
+    "placeholders": {
+      "month": {
+        "type": "String"
+      }
+    }
+  },
+  "requestedOn": "Demandé le {date}",
+  "@requestedOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "addedThisWeek": "Ajouté cette semaine",
+  "recommendedForYou": "Recommandé pour vous",
+  "noServiceMatches": "Aucun service ne correspond.",
+  "cantFindService": "Vous ne trouvez pas votre service ?",
+  "cantFindHint": "Décrivez votre besoin avec vos mots, nous le transmettons à l'équipe.",
+  "describeNeed": "Décrire mon besoin",
+  "describeLead": "Dites-nous ce dont vous avez besoin avec vos mots. L'équipe Nexis Hub regarde votre demande et cherche le bon professionnel.",
+  "describeTypeLabel": "Quel type de service ?",
+  "describeTypeHint": "Par exemple : réparation de portail",
+  "describeTextLabel": "Décrivez votre besoin",
+  "describeTextHint": "Où, quoi, et pour quand si c'est urgent",
+  "optional": "facultatif",
+  "photos": "Photos",
+  "addShort": "Ajouter",
+  "describeNoPay": "Vous ne payez rien à cette étape. Vous êtes prévenu dans l'app dès que nous avons une réponse.",
+  "sendRequest": "Envoyer ma demande",
+  "requestSent": "Demande envoyée",
+  "requestSentText": "Nous avons bien reçu votre demande. Vous serez prévenu dans l'app, et sur WhatsApp ou Telegram, dès que nous avons une réponse.",
+  "backHome": "Retour à l'accueil",
+  "requestNotSent": "La demande n'est pas partie. Réessayez dans un instant.",
+  "notifications": "Notifications",
+  "notificationsSub": "WhatsApp et dans l'app",
+  "termsVersion": "Version du {date}",
+  "@termsVersion": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "securedByNexis": "Sécurisé par Nexis Hub"
 }

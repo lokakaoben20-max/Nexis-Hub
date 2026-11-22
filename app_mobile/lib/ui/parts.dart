@@ -362,18 +362,27 @@ class SpaceSwitch extends StatelessWidget {
           onTap: () => state.setProviderSpace(value),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            height: 38,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: on ? NexisColors.navy : Colors.transparent,
-              borderRadius: BorderRadius.circular(99),
+              color: on ? (dark ? p.bg : Colors.white) : Colors.transparent,
+              borderRadius: BorderRadius.circular(11),
+              boxShadow: on && !dark
+                  ? const [
+                      BoxShadow(
+                        color: Color(0x1F021937),
+                        offset: Offset(0, 1),
+                        blurRadius: 3,
+                      ),
+                    ]
+                  : null,
             ),
             child: Text(
               label,
               style: body(
-                12.5,
+                14.5,
                 weight: FontWeight.w600,
-                color: on ? Colors.white : p.muted,
+                color: on ? p.ink : (dark ? p.muted : const Color(0xFF4E5B70)),
               ),
             ),
           ),
@@ -381,10 +390,10 @@ class SpaceSwitch extends StatelessWidget {
       ),
     );
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: dark ? p.surface : const Color(0xFFE9EDF3),
-        borderRadius: BorderRadius.circular(99),
+        color: dark ? p.surface : const Color(0xFFE3E8F0),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         children: [

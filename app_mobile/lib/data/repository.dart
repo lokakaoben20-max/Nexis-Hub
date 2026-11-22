@@ -21,6 +21,12 @@ abstract class NexisRepository {
 
   Future<Mission> mission(int id);
 
+  /// Le catalogue des services, dans l'ordre voulu par le serveur.
+  Future<List<CatalogService>> serviceCatalog();
+
+  /// « Décrire mon besoin » : une demande libre, transmise à l'équipe.
+  Future<void> sendFreeRequest(String title, String text);
+
   /// Les devis reçus pour une mission, le mieux noté en premier.
   Future<List<Quote>> quotes(int missionId);
 

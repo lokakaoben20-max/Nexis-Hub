@@ -1413,6 +1413,258 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'Recevoir plutôt par {channel}'**
   String receiveInstead(String channel);
+
+  /// No description provided for @helloHome.
+  ///
+  /// In fr, this message translates to:
+  /// **'Mbote, {name}'**
+  String helloHome(String name);
+
+  /// No description provided for @heldForMissions.
+  ///
+  /// In fr, this message translates to:
+  /// **'{amount} bloqués pour vos missions en cours'**
+  String heldForMissions(String amount);
+
+  /// No description provided for @heldWhy.
+  ///
+  /// In fr, this message translates to:
+  /// **'Pourquoi ces fonds sont bloqués'**
+  String get heldWhy;
+
+  /// No description provided for @heldTip.
+  ///
+  /// In fr, this message translates to:
+  /// **'Cet argent reste à vous. Il est mis de côté pour payer le professionnel quand la mission est terminée et que vous l\'avez confirmée.'**
+  String get heldTip;
+
+  /// No description provided for @currency.
+  ///
+  /// In fr, this message translates to:
+  /// **'Devise'**
+  String get currency;
+
+  /// No description provided for @quickActions.
+  ///
+  /// In fr, this message translates to:
+  /// **'Actions rapides'**
+  String get quickActions;
+
+  /// No description provided for @reviewsCount.
+  ///
+  /// In fr, this message translates to:
+  /// **'{count} avis'**
+  String reviewsCount(int count);
+
+  /// No description provided for @completedOn.
+  ///
+  /// In fr, this message translates to:
+  /// **'Terminée le {date}'**
+  String completedOn(String date);
+
+  /// No description provided for @followMission.
+  ///
+  /// In fr, this message translates to:
+  /// **'Suivre la mission'**
+  String get followMission;
+
+  /// No description provided for @seeMissions.
+  ///
+  /// In fr, this message translates to:
+  /// **'Voir les {count} missions'**
+  String seeMissions(int count);
+
+  /// No description provided for @recentMovements.
+  ///
+  /// In fr, this message translates to:
+  /// **'Derniers mouvements'**
+  String get recentMovements;
+
+  /// No description provided for @newBadge.
+  ///
+  /// In fr, this message translates to:
+  /// **'Nouveau'**
+  String get newBadge;
+
+  /// No description provided for @allServices.
+  ///
+  /// In fr, this message translates to:
+  /// **'Tous les services'**
+  String get allServices;
+
+  /// No description provided for @searchService.
+  ///
+  /// In fr, this message translates to:
+  /// **'Rechercher un service'**
+  String get searchService;
+
+  /// No description provided for @recents.
+  ///
+  /// In fr, this message translates to:
+  /// **'Récents'**
+  String get recents;
+
+  /// No description provided for @newAndRecommended.
+  ///
+  /// In fr, this message translates to:
+  /// **'Nouveaux et recommandés'**
+  String get newAndRecommended;
+
+  /// No description provided for @requestedIn.
+  ///
+  /// In fr, this message translates to:
+  /// **'Demandé en {month}'**
+  String requestedIn(String month);
+
+  /// No description provided for @requestedOn.
+  ///
+  /// In fr, this message translates to:
+  /// **'Demandé le {date}'**
+  String requestedOn(String date);
+
+  /// No description provided for @addedThisWeek.
+  ///
+  /// In fr, this message translates to:
+  /// **'Ajouté cette semaine'**
+  String get addedThisWeek;
+
+  /// No description provided for @recommendedForYou.
+  ///
+  /// In fr, this message translates to:
+  /// **'Recommandé pour vous'**
+  String get recommendedForYou;
+
+  /// No description provided for @noServiceMatches.
+  ///
+  /// In fr, this message translates to:
+  /// **'Aucun service ne correspond.'**
+  String get noServiceMatches;
+
+  /// No description provided for @cantFindService.
+  ///
+  /// In fr, this message translates to:
+  /// **'Vous ne trouvez pas votre service ?'**
+  String get cantFindService;
+
+  /// No description provided for @cantFindHint.
+  ///
+  /// In fr, this message translates to:
+  /// **'Décrivez votre besoin avec vos mots, nous le transmettons à l\'équipe.'**
+  String get cantFindHint;
+
+  /// No description provided for @describeNeed.
+  ///
+  /// In fr, this message translates to:
+  /// **'Décrire mon besoin'**
+  String get describeNeed;
+
+  /// No description provided for @describeLead.
+  ///
+  /// In fr, this message translates to:
+  /// **'Dites-nous ce dont vous avez besoin avec vos mots. L\'équipe Nexis Hub regarde votre demande et cherche le bon professionnel.'**
+  String get describeLead;
+
+  /// No description provided for @describeTypeLabel.
+  ///
+  /// In fr, this message translates to:
+  /// **'Quel type de service ?'**
+  String get describeTypeLabel;
+
+  /// No description provided for @describeTypeHint.
+  ///
+  /// In fr, this message translates to:
+  /// **'Par exemple : réparation de portail'**
+  String get describeTypeHint;
+
+  /// No description provided for @describeTextLabel.
+  ///
+  /// In fr, this message translates to:
+  /// **'Décrivez votre besoin'**
+  String get describeTextLabel;
+
+  /// No description provided for @describeTextHint.
+  ///
+  /// In fr, this message translates to:
+  /// **'Où, quoi, et pour quand si c\'est urgent'**
+  String get describeTextHint;
+
+  /// No description provided for @optional.
+  ///
+  /// In fr, this message translates to:
+  /// **'facultatif'**
+  String get optional;
+
+  /// No description provided for @photos.
+  ///
+  /// In fr, this message translates to:
+  /// **'Photos'**
+  String get photos;
+
+  /// No description provided for @addShort.
+  ///
+  /// In fr, this message translates to:
+  /// **'Ajouter'**
+  String get addShort;
+
+  /// No description provided for @describeNoPay.
+  ///
+  /// In fr, this message translates to:
+  /// **'Vous ne payez rien à cette étape. Vous êtes prévenu dans l\'app dès que nous avons une réponse.'**
+  String get describeNoPay;
+
+  /// No description provided for @sendRequest.
+  ///
+  /// In fr, this message translates to:
+  /// **'Envoyer ma demande'**
+  String get sendRequest;
+
+  /// No description provided for @requestSent.
+  ///
+  /// In fr, this message translates to:
+  /// **'Demande envoyée'**
+  String get requestSent;
+
+  /// No description provided for @requestSentText.
+  ///
+  /// In fr, this message translates to:
+  /// **'Nous avons bien reçu votre demande. Vous serez prévenu dans l\'app, et sur WhatsApp ou Telegram, dès que nous avons une réponse.'**
+  String get requestSentText;
+
+  /// No description provided for @backHome.
+  ///
+  /// In fr, this message translates to:
+  /// **'Retour à l\'accueil'**
+  String get backHome;
+
+  /// No description provided for @requestNotSent.
+  ///
+  /// In fr, this message translates to:
+  /// **'La demande n\'est pas partie. Réessayez dans un instant.'**
+  String get requestNotSent;
+
+  /// No description provided for @notifications.
+  ///
+  /// In fr, this message translates to:
+  /// **'Notifications'**
+  String get notifications;
+
+  /// No description provided for @notificationsSub.
+  ///
+  /// In fr, this message translates to:
+  /// **'WhatsApp et dans l\'app'**
+  String get notificationsSub;
+
+  /// No description provided for @termsVersion.
+  ///
+  /// In fr, this message translates to:
+  /// **'Version du {date}'**
+  String termsVersion(String date);
+
+  /// No description provided for @securedByNexis.
+  ///
+  /// In fr, this message translates to:
+  /// **'Sécurisé par Nexis Hub'**
+  String get securedByNexis;
 }
 
 class _AppLocalizationsDelegate

@@ -253,5 +253,103 @@
         "type": "String"
       }
     }
-  }
+  },
+  "helloHome": "Mbote, {name}",
+  "@helloHome": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "heldForMissions": "{amount} ebombami mpo na misala na yo ezali kokende",
+  "@heldForMissions": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "heldWhy": "Mpo na nini mbongo oyo ebombami",
+  "heldTip": "Mbongo oyo ezali naino ya yo. Ebombami mpo na kofuta mosali tango mosala esili mpe ondimi yango.",
+  "currency": "Mbongo",
+  "quickActions": "Misala ya noki",
+  "reviewsCount": "{count} makanisi",
+  "@reviewsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "completedOn": "Esili na {date}",
+  "@completedOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "followMission": "Landa mosala",
+  "seeMissions": "Tala misala {count}",
+  "@seeMissions": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "recentMovements": "Makambo ya nsuka ya mbongo",
+  "newBadge": "Ya sika",
+  "allServices": "Misala nyonso",
+  "searchService": "Luka mosala",
+  "recents": "Ya nsuka",
+  "newAndRecommended": "Ya sika mpe oyo tolobi",
+  "requestedIn": "Osengaki na {month}",
+  "@requestedIn": {
+    "placeholders": {
+      "month": {
+        "type": "String"
+      }
+    }
+  },
+  "requestedOn": "Osengaki na {date}",
+  "@requestedOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "addedThisWeek": "Etondisami poso oyo",
+  "recommendedForYou": "Tozali kopesa yo yango",
+  "noServiceMatches": "Mosala moko te ekokani.",
+  "cantFindService": "Ozwi mosala na yo te?",
+  "cantFindHint": "Limbola bosengi na yo na maloba na yo, tokopesa yango na ekipi.",
+  "describeNeed": "Limbola bosengi na ngai",
+  "describeLead": "Loba na biso oyo osengi na maloba na yo. Ekipi ya Nexis Hub ekotala bosengi na yo mpe ekoluka mosali malamu.",
+  "describeTypeLabel": "Mosala ya lolenge nini?",
+  "describeTypeHint": "Ndakisa : kobongisa porte",
+  "describeTextLabel": "Limbola bosengi na yo",
+  "describeTextHint": "Wapi, nini, mpe ntango nini soki ezali lombangu",
+  "optional": "ezali ntina te",
+  "photos": "Bafoto",
+  "addShort": "Bakisa",
+  "describeNoPay": "Ofutaka eloko te na etape oyo. Tokoyebisa yo na app tango tozwi eyano.",
+  "sendRequest": "Tinda bosengi na ngai",
+  "requestSent": "Bosengi etindami",
+  "requestSentText": "Tozwi bosengi na yo. Tokoyebisa yo na app, mpe na WhatsApp to Telegram, tango tozwi eyano.",
+  "backHome": "Zonga na ebandeli",
+  "requestNotSent": "Bosengi etindami te. Meka lisusu na mwa ntango.",
+  "notifications": "Ba notifications",
+  "notificationsSub": "WhatsApp mpe na app",
+  "termsVersion": "Version ya {date}",
+  "@termsVersion": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "securedByNexis": "Ebombami na Nexis Hub"
 }

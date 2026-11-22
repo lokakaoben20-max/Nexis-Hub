@@ -1,11 +1,11 @@
 """Fabrique la police des icônes de services Nexis (série finale choisie
-par Ben, design/icones-services.html) : assets/fonts/NexisServices.ttf.
+par Ben, série B de design/app-accueil-frontend-design.html) : assets/fonts/NexisServices.ttf.
 
 Les traits (climatisation) sont convertis en surfaces et les règles
 « evenodd » ramenées au remplissage normal, pour que la police rende
 exactement les dessins de la maquette.
 
-Usage : python3 outils/icones_services.py <chemin de icones-services.html>
+Usage : python3 outils/icones_services.py <chemin de app-accueil-frontend-design.html>
 """
 
 import re

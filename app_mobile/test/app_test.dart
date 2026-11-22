@@ -33,7 +33,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
     expect(state.signedIn, isTrue);
-    expect(find.text('Bonjour, Grâce'), findsOneWidget);
+    expect(find.text('Mbote, Grâce'), findsOneWidget);
   });
 
   testWidgets('numéro : mise en forme, préfixe contrôlé, bouton grisé', (
@@ -129,7 +129,7 @@ void main() {
     await tester.pumpAndSettle();
     state.setLocale(const Locale('ln'));
     await tester.pumpAndSettle();
-    expect(find.text('Boyei malamu'), findsOneWidget);
+    expect(find.textContaining('ebombami'), findsOneWidget);
     expect(find.text('Ndako'), findsOneWidget);
   });
 }

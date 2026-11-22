@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'app_state.dart';
 import 'data/demo_repository.dart';
 import 'l10n/app_localizations.dart';
+import 'screens/launch.dart';
 import 'screens/shell.dart';
 import 'screens/welcome.dart';
 import 'ui/lingala_fallback.dart';
@@ -40,9 +41,32 @@ class NexisApp extends StatelessWidget {
             }
             return const Locale('fr');
           },
-          home: state.signedIn ? const Shell() : const WelcomeScreen(),
+          home: _Root(state: state),
         ),
       ),
     );
+  }
+}
+
+/// Lancement puis, selon la session, l'accueil ou la bienvenue. Le
+/// lancement ne revient pas quand la langue ou la session change.
+class _Root extends StatefulWidget {
+  const _Root({required this.state});
+
+  final AppState state;
+
+  @override
+  State<_Root> createState() => _RootState();
+}
+
+class _RootState extends State<_Root> {
+  bool _launched = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_launched) {
+      return LaunchScreen(onDone: () => setState(() => _launched = true));
+    }
+    return widget.state.signedIn ? const Shell() : const WelcomeScreen();
   }
 }

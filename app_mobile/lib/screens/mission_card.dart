@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../data/models.dart';
-import '../ui/icons.dart';
-import '../data/money.dart';
 import '../l10n/app_localizations.dart';
 import '../ui/common.dart';
+import '../ui/nx_icon.dart';
+import '../ui/nx_parts.dart';
 import '../ui/theme.dart';
 import 'client/confirm.dart';
 import 'client/dispute.dart';
@@ -46,55 +46,106 @@ void openMission(BuildContext context, Mission mission) {
   Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
 }
 
-/// Une mission dans « Mes missions », comme la maquette (app-ecrans-v2) :
-/// service, état et pastille à droite ; barre d'avancement et « Suivre »
-/// pour une mission en cours ; « Comparer les devis » quand des devis
-/// sont arrivés.
+/// Une mission, comme la maquette (design/app-accueil-frontend-design.html) :
+/// pastille du service, prestataire avec sa note, montant et flèche, état en
+/// clair, barre en trois temps pour une mission payée, et un bouton clair
+/// quand il y a une suite (« Suivre la mission », « Comparer les devis »,
+/// « Confirmer »). [showAction] est faux sur l'accueil, qui reste léger.
 class MissionCard extends StatelessWidget {
-  const MissionCard({super.key, required this.mission});
+  const MissionCard({super.key, required this.mission, this.showAction = true});
 
   final Mission mission;
+  final bool showAction;
+
+  /// Étapes franchies sur trois, d'après l'état et les étapes du serveur.
+  int get _rail => switch (mission.status) {
+    MissionStatus.confirmed => 1,
+    MissionStatus.inProgress =>
+      mission.steps.containsKey(TrackStep.onSite) ? 3 : 2,
+    MissionStatus.awaitingConfirmation => 3,
+    _ => 0,
+  };
 
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
     final p = context.palette;
-    final dark = Theme.of(context).brightness == Brightness.dark;
     final lang = langOf(context);
-    final grey = dark ? p.muted : const Color(0xFF5B667A);
-    final title = '${serviceName(mission.service, lang)} · ${mission.commune}';
-    final following =
-        mission.status == MissionStatus.inProgress ||
-        mission.status == MissionStatus.confirmed;
-    final Widget? pill = switch (mission.status) {
-      MissionStatus.quoted => Pill(
-        tone: PillTone.warn,
-        icon: PhRegular.clock,
-        text: l.quotesPill(mission.quotesCount),
+    final dark = isDark(context);
+    final amount = missionAmountText(mission, l, lang);
+    final rating = mission.rating;
+    final reviews = mission.reviews;
+
+    final (
+      StatusKind kind,
+      String text,
+      String? icon,
+      bool pulse,
+    ) = switch (mission.status) {
+      MissionStatus.pending => (
+        StatusKind.wait,
+        l.statusPending,
+        'clock',
+        false,
       ),
-      MissionStatus.pending => Pill(
-        tone: PillTone.wait,
-        icon: PhRegular.clock,
-        text: l.waitingPill,
+      MissionStatus.quoted => (
+        StatusKind.live,
+        l.statusQuoted(mission.quotesCount),
+        'check',
+        false,
       ),
-      _
-          when mission.payment == PaymentState.secured &&
-              mission.amount != null =>
-        PaymentPill(
-          PaymentState.secured,
-          text: formatMoney(mission.amount!, lang),
-        ),
-      _ when mission.payment != PaymentState.none => PaymentPill(
-        mission.payment,
+      MissionStatus.confirmed => (
+        StatusKind.live,
+        l.statusConfirmed,
+        'check',
+        false,
       ),
-      _ => null,
+      MissionStatus.inProgress => (
+        StatusKind.live,
+        l.statusInProgress(mission.providerName ?? ''),
+        null,
+        true,
+      ),
+      MissionStatus.awaitingConfirmation => (
+        StatusKind.warn,
+        l.statusAwaiting,
+        'alert',
+        false,
+      ),
+      MissionStatus.completed => (
+        StatusKind.done,
+        mission.when == null
+            ? l.statusCompleted
+            : l.completedOn(shortDate(context, mission.when!)),
+        'check',
+        false,
+      ),
+      MissionStatus.cancelled => (
+        StatusKind.wait,
+        l.statusCancelled,
+        null,
+        false,
+      ),
+      MissionStatus.disputed => (
+        StatusKind.bad,
+        l.statusDisputed,
+        'alert',
+        false,
+      ),
     };
+
+    final String? action = !showAction
+        ? null
+        : switch (mission.status) {
+            MissionStatus.confirmed ||
+            MissionStatus.inProgress => l.followMission,
+            MissionStatus.awaitingConfirmation => l.confirmAction,
+            MissionStatus.quoted => l.compareQuotes,
+            _ => null,
+          };
+
     return Container(
-      decoration: BoxDecoration(
-        color: p.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: dark ? p.line : const Color(0xFFEEF1F5)),
-      ),
+      decoration: nxCard(context),
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
@@ -107,148 +158,152 @@ class MissionCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    ServiceBadge(mission.service, size: 44),
+                    KnownServiceTile(mission.service),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            title,
+                            serviceName(mission.service, lang),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: body(
-                              14.5,
-                              weight: FontWeight.w700,
+                              15,
+                              weight: FontWeight.w600,
                               color: p.ink,
                             ),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            missionStatusText(l, mission),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: body(12.5, color: grey),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (pill != null) ...[const SizedBox(width: 8), pill],
-                  ],
-                ),
-                if (following) ...[
-                  const SizedBox(height: 10),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(3),
-                    child: SizedBox(
-                      height: 6,
-                      child: Stack(
-                        children: [
-                          Positioned.fill(
-                            child: ColoredBox(
-                              color: dark ? p.line : const Color(0xFFEEF1F5),
-                            ),
-                          ),
-                          const Align(
-                            alignment: Alignment.centerLeft,
-                            child: FractionallySizedBox(
-                              widthFactor: .6,
-                              heightFactor: 1,
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.all(
-                                    Radius.circular(3),
-                                  ),
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      NexisColors.halo,
-                                      NexisColors.gradientEnd,
-                                    ],
+                          const SizedBox(height: 1),
+                          if (mission.providerName == null)
+                            Text(
+                              mission.commune,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: body(13, color: mutedColor(context)),
+                            )
+                          else
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    mission.providerName!,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: body(13, color: mutedColor(context)),
                                   ),
                                 ),
-                              ),
+                                if (rating != null) ...[
+                                  const SizedBox(width: 6),
+                                  const NxIcon(
+                                    'star',
+                                    size: 13,
+                                    color: Color(0xFFF2B53A),
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    ratingText(rating, lang),
+                                    style: body(
+                                      13,
+                                      weight: FontWeight.w600,
+                                      color: p.ink,
+                                    ),
+                                  ),
+                                  if (reviews != null) ...[
+                                    const SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        l.reviewsCount(reviews),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: body(
+                                          13,
+                                          color: faintColor(context),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ],
                             ),
-                          ),
                         ],
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        if (amount != null)
+                          Text(
+                            amount,
+                            maxLines: 1,
+                            style: title(14, color: p.ink),
+                          ),
+                        const SizedBox(height: 6),
+                        NxIcon('chevron', size: 16, color: faintColor(context)),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                StatusChip(kind: kind, text: text, icon: icon, pulse: pulse),
+                if (_rail > 0) ...[
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      Expanded(
-                        child: Text(
-                          mission.reference,
-                          style: body(
-                            11.5,
-                            weight: FontWeight.w500,
-                            color: grey,
+                      for (var i = 0; i < 3; i++) ...[
+                        if (i > 0) const SizedBox(width: 4),
+                        Expanded(
+                          child: Container(
+                            height: 4,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(2),
+                              color: i < _rail
+                                  ? (dark
+                                        ? const Color(0xFF5B8CFF)
+                                        : NexisColors.brand)
+                                  : (dark ? p.line : const Color(0xFFE3E8F0)),
+                            ),
                           ),
                         ),
-                      ),
-                      Text(
-                        l.follow,
-                        style: body(11.5, weight: FontWeight.w500, color: grey),
-                      ),
+                      ],
                     ],
                   ),
                 ],
-                if (mission.status == MissionStatus.awaitingConfirmation) ...[
-                  const SizedBox(height: 10),
-                  _SmallButton(
-                    label: l.confirmAction,
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => ConfirmScreen(missionId: mission.id),
+                if (action != null) ...[
+                  const SizedBox(height: 12),
+                  Semantics(
+                    button: true,
+                    child: GestureDetector(
+                      onTap:
+                          mission.status == MissionStatus.awaitingConfirmation
+                          ? () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) =>
+                                    ConfirmScreen(missionId: mission.id),
+                              ),
+                            )
+                          : () => openMission(context, mission),
+                      child: Container(
+                        height: 42,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: p.soft,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Text(
+                          action,
+                          style: body(
+                            14.5,
+                            weight: FontWeight.w600,
+                            color: dark ? p.softInk : const Color(0xFF0A3D9E),
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ],
-                if (mission.status == MissionStatus.quoted) ...[
-                  const SizedBox(height: 10),
-                  _SmallButton(
-                    label: l.compareQuotes,
-                    onTap: () => openMission(context, mission),
-                  ),
-                ],
               ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Petit bouton en dégradé, calé à gauche (« Comparer les devis »).
-class _SmallButton extends StatelessWidget {
-  const _SmallButton({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: AlignmentDirectional.centerStart,
-      child: Semantics(
-        button: true,
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            height: 38,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [NexisColors.halo, NexisColors.gradientEnd],
-              ),
-            ),
-            child: Center(
-              widthFactor: 1,
-              child: Text(label, style: title(12.5, color: Colors.white)),
             ),
           ),
         ),
