@@ -8,6 +8,7 @@ import '../ui/icons.dart';
 import '../app_state.dart';
 import '../l10n/app_localizations.dart';
 import '../ui/common.dart';
+import '../ui/phone.dart';
 import '../ui/theme.dart';
 import 'welcome_intro.dart';
 
@@ -366,9 +367,10 @@ class _Steps extends StatelessWidget {
   );
 }
 
-enum _Channel { whatsapp, telegram }
+enum _Channel { whatsapp, telegram, sms }
 
-/// 16 : numéro (+243) et canal du code, WhatsApp ou Telegram.
+/// 16 : numéro (+243) et canal du code (WhatsApp, Telegram, ou SMS quand le
+/// serveur sait vraiment en envoyer).
 class NumberScreen extends StatefulWidget {
   const NumberScreen({super.key});
 
@@ -378,9 +380,28 @@ class NumberScreen extends StatefulWidget {
 
 class _NumberScreenState extends State<NumberScreen> {
   final _phone = TextEditingController();
-  _Channel _channel = _Channel.whatsapp;
+  _Channel? _picked;
 
-  bool get _valid => _phone.text.replaceAll(RegExp(r'\D'), '').length == 9;
+  _Channel _selected(Set<String> channels) {
+    final ordered = [
+      (_Channel.whatsapp, 'whatsapp'),
+      (_Channel.telegram, 'telegram'),
+      (_Channel.sms, 'sms'),
+    ];
+    for (final (channel, key) in ordered) {
+      if (channel == _picked && channels.contains(key)) return channel;
+    }
+    for (final (channel, key) in ordered) {
+      if (channels.contains(key)) return channel;
+    }
+    return _Channel.whatsapp;
+  }
+
+  Set<String> get _channels => AppScope.of(context).repository.codeChannels;
+
+  _Channel get _channel => _selected(_channels);
+
+  DrcPhone get _number => DrcPhone.parse(_phone.text);
 
   @override
   void dispose() {
@@ -388,12 +409,34 @@ class _NumberScreenState extends State<NumberScreen> {
     super.dispose();
   }
 
+  void _continue() {
+    final number = _number;
+    if (!number.isValid) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CodeScreen(
+          phone: number.digits,
+          channel: switch (_channel) {
+            _Channel.whatsapp => 'WhatsApp',
+            _Channel.telegram => 'Telegram',
+            _Channel.sms => 'SMS',
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
     final p = context.palette;
+    final number = _number;
+    final operator = number.operator;
+    final channels = _channels;
     return Scaffold(
       appBar: roundBackBar(context),
+      // Le bouton reste collé au-dessus du clavier : le corps se redimensionne.
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
         top: false,
         child: Padding(
@@ -401,105 +444,192 @@ class _NumberScreenState extends State<NumberScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const _Steps(1),
-              const SizedBox(height: 24),
-              Text(l.yourNumber, style: title(22, color: p.ink)),
-              const SizedBox(height: 8),
-              Text(l.yourNumberIntro, style: body(13.5, color: p.muted)),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Container(
-                    height: 56,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: p.surface,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: p.line),
-                    ),
-                    child: Text(
-                      '🇨🇩 +243',
-                      style: body(16, weight: FontWeight.w600, color: p.ink),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _phone,
-                      autofocus: false,
-                      keyboardType: TextInputType.phone,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(9),
-                      ],
-                      onChanged: (_) => setState(() {}),
-                      style: title(20, color: p.ink),
-                      decoration: InputDecoration(
-                        hintText: '81 234 54 12',
-                        hintStyle: title(
-                          20,
-                          color: p.muted.withValues(alpha: .5),
-                        ),
-                        filled: true,
-                        fillColor: p.surface,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 16,
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide(color: p.line),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(
-                            color: NexisColors.brand,
-                            width: 2,
-                          ),
-                        ),
+              Expanded(
+                child: SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const _Steps(1),
+                      const SizedBox(height: 24),
+                      Text(l.yourNumber, style: title(22, color: p.ink)),
+                      const SizedBox(height: 8),
+                      Text(
+                        l.yourNumberIntro,
+                        style: body(13.5, color: p.muted),
                       ),
-                    ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Container(
+                            height: 56,
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: p.surface,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: p.line),
+                            ),
+                            child: Text(
+                              '🇨🇩 +243',
+                              style: body(
+                                16,
+                                weight: FontWeight.w600,
+                                color: p.ink,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: _phone,
+                              autofocus: true,
+                              keyboardType: TextInputType.phone,
+                              textInputAction: TextInputAction.done,
+                              autofillHints: const [
+                                AutofillHints.telephoneNumberNational,
+                              ],
+                              inputFormatters: const [DrcPhoneFormatter()],
+                              onChanged: (_) => setState(() {}),
+                              onSubmitted: (_) => _continue(),
+                              style: title(20, color: p.ink),
+                              decoration: InputDecoration(
+                                hintText: '81 234 54 12',
+                                hintStyle: title(
+                                  20,
+                                  color: p.muted.withValues(alpha: .5),
+                                ),
+                                suffixText: operator?.label,
+                                suffixStyle: body(
+                                  12.5,
+                                  weight: FontWeight.w600,
+                                  color: p.muted,
+                                ),
+                                filled: true,
+                                fillColor: p.surface,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 16,
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide(
+                                    color: number.prefixKnown
+                                        ? p.line
+                                        : NexisColors.danger,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide(
+                                    color: number.prefixKnown
+                                        ? NexisColors.brand
+                                        : NexisColors.danger,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      if (!number.prefixKnown)
+                        Text(
+                          l.numberUnknownPrefix,
+                          style: body(
+                            12.5,
+                            weight: FontWeight.w600,
+                            color: NexisColors.danger,
+                          ),
+                        )
+                      else
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(top: 1),
+                              child: Icon(
+                                PhFill.lockSimple,
+                                size: 14,
+                                color: p.muted,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                l.numberPrivate,
+                                style: body(12.5, color: p.muted),
+                              ),
+                            ),
+                          ],
+                        ),
+                      const SizedBox(height: 22),
+                      Text(
+                        l.receiveCodeBy,
+                        style: body(14, weight: FontWeight.w600, color: p.ink),
+                      ),
+                      const SizedBox(height: 10),
+                      if (channels.isEmpty)
+                        Text(
+                          l.noCodeChannel,
+                          style: body(13, color: NexisColors.danger),
+                        ),
+                      for (final tile in [
+                        if (channels.contains('whatsapp'))
+                          _channelTile(
+                            _Channel.whatsapp,
+                            'WhatsApp',
+                            l.whatsappSub,
+                            // Logo officiel (ressources de marque de WhatsApp),
+                            // jamais redessiné.
+                            const _BrandLogo(
+                              'assets/images/whatsapp_logo_officiel.png',
+                            ),
+                          ),
+                        if (channels.contains('telegram'))
+                          _channelTile(
+                            _Channel.telegram,
+                            'Telegram',
+                            l.telegramSub,
+                            // Logo officiel, kit de presse de Telegram, inchangé.
+                            const _BrandLogo(
+                              'assets/images/telegram_logo_officiel.png',
+                            ),
+                          ),
+                        if (channels.contains('sms'))
+                          _channelTile(
+                            _Channel.sms,
+                            'SMS',
+                            l.smsSub,
+                            // Le SMS n'a pas de marque : icône générique de la charte.
+                            Container(
+                              decoration: BoxDecoration(
+                                color: NexisColors.brand,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                PhRegular.chatCircleText,
+                                color: Colors.white,
+                                size: 22,
+                              ),
+                            ),
+                          ),
+                      ])
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: tile,
+                        ),
+                    ],
                   ),
-                ],
+                ),
               ),
-              const SizedBox(height: 22),
-              Text(
-                l.receiveCodeBy,
-                style: body(14, weight: FontWeight.w600, color: p.ink),
-              ),
-              const SizedBox(height: 10),
-              _channelTile(
-                _Channel.whatsapp,
-                'WhatsApp',
-                l.whatsappSub,
-                PhFill.whatsappLogo,
-                const Color(0xFF25D366),
-              ),
-              const SizedBox(height: 10),
-              _channelTile(
-                _Channel.telegram,
-                'Telegram',
-                l.telegramSub,
-                PhFill.telegramLogo,
-                const Color(0xFF2AABEE),
-              ),
-              const Spacer(),
-              _Legal(l: l),
               const SizedBox(height: 12),
               PrimaryButton(
                 label: l.receiveCode,
-                onPressed: _valid
-                    ? () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => CodeScreen(
-                            phone: _phone.text,
-                            channel: _channel == _Channel.whatsapp
-                                ? 'WhatsApp'
-                                : 'Telegram',
-                          ),
-                        ),
-                      )
+                onPressed: number.isValid && channels.isNotEmpty
+                    ? _continue
                     : null,
               ),
             ],
@@ -509,13 +639,7 @@ class _NumberScreenState extends State<NumberScreen> {
     );
   }
 
-  Widget _channelTile(
-    _Channel channel,
-    String name,
-    String sub,
-    IconData icon,
-    Color color,
-  ) {
+  Widget _channelTile(_Channel channel, String name, String sub, Widget logo) {
     final p = context.palette;
     final selected = _channel == channel;
     return Material(
@@ -529,20 +653,12 @@ class _NumberScreenState extends State<NumberScreen> {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => setState(() => _channel = channel),
+        onTap: () => setState(() => _picked = channel),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: Colors.white, size: 22),
-              ),
+              SizedBox(width: 38, height: 38, child: logo),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -577,6 +693,21 @@ class _NumberScreenState extends State<NumberScreen> {
       ),
     );
   }
+}
+
+/// Logo officiel d'une marque, affiché tel quel (jamais redessiné ni recoloré).
+class _BrandLogo extends StatelessWidget {
+  const _BrandLogo(this.asset);
+
+  final String asset;
+
+  @override
+  Widget build(BuildContext context) => Image.asset(
+    asset,
+    fit: BoxFit.contain,
+    filterQuality: FilterQuality.medium,
+    excludeFromSemantics: true,
+  );
 }
 
 /// 17 : le code à 6 chiffres.
@@ -653,7 +784,9 @@ class _CodeScreenState extends State<CodeScreen> {
               Text(l.theCode, style: title(22, color: p.ink)),
               const SizedBox(height: 8),
               Text(
-                l.codeSentTo(widget.channel, masked),
+                widget.channel == 'SMS'
+                    ? l.codeSentBySms(masked)
+                    : l.codeSentTo(widget.channel, masked),
                 style: body(13.5, color: p.muted),
               ),
               const SizedBox(height: 22),
@@ -765,9 +898,7 @@ class _CodeScreenState extends State<CodeScreen> {
                 child: GestureDetector(
                   onTap: () => Navigator.of(context).pop(),
                   child: Text(
-                    l.receiveInstead(
-                      widget.channel == 'WhatsApp' ? 'Telegram' : 'WhatsApp',
-                    ),
+                    l.receiveOtherWay,
                     style: body(
                       13,
                       weight: FontWeight.w600,
@@ -780,39 +911,6 @@ class _CodeScreenState extends State<CodeScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Liens légaux juste au-dessus du bouton (maquette 16).
-class _Legal extends StatelessWidget {
-  const _Legal({required this.l});
-
-  final AppLocalizations l;
-
-  @override
-  Widget build(BuildContext context) {
-    final muted = context.palette.muted;
-    const marker = '\u0001';
-    final parts = l.legalText(marker, '\u0002').split(RegExp('[\u0001\u0002]'));
-    final link = body(11.5, weight: FontWeight.w600, color: NexisColors.brand);
-    final order =
-        l.legalText(marker, '\u0002').indexOf(marker) <
-            l.legalText(marker, '\u0002').indexOf('\u0002')
-        ? [l.legalTerms, l.legalPrivacy]
-        : [l.legalPrivacy, l.legalTerms];
-    return Text.rich(
-      TextSpan(
-        style: body(11.5, color: muted).copyWith(height: 1.5),
-        children: [
-          TextSpan(text: parts[0]),
-          TextSpan(text: order[0], style: link),
-          TextSpan(text: parts[1]),
-          TextSpan(text: order[1], style: link),
-          TextSpan(text: parts.length > 2 ? parts[2] : ''),
-        ],
-      ),
-      textAlign: TextAlign.center,
     );
   }
 }

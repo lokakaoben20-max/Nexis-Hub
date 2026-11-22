@@ -127,13 +127,13 @@ abstract class AppLocalizations {
   /// No description provided for @yourNumber.
   ///
   /// In fr, this message translates to:
-  /// **'Ton numéro'**
+  /// **'Votre numéro'**
   String get yourNumber;
 
   /// No description provided for @yourNumberIntro.
   ///
   /// In fr, this message translates to:
-  /// **'On t\'envoie un code pour vérifier que c\'est bien toi.'**
+  /// **'Nous vous envoyons un code pour vérifier que c\'est bien vous.'**
   String get yourNumberIntro;
 
   /// No description provided for @receiveCodeBy.
@@ -517,7 +517,7 @@ abstract class AppLocalizations {
   /// No description provided for @pickServiceHint.
   ///
   /// In fr, this message translates to:
-  /// **'Choisis, on s\'occupe du reste.'**
+  /// **'Choisissez, nous nous occupons du reste.'**
   String get pickServiceHint;
 
   /// No description provided for @otherNeed.
@@ -543,12 +543,6 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'En attente'**
   String get waitingPill;
-
-  /// No description provided for @legalText.
-  ///
-  /// In fr, this message translates to:
-  /// **'En continuant, tu acceptes les {terms} et la {privacy}.'**
-  String legalText(String terms, String privacy);
 
   /// No description provided for @legalTerms.
   ///
@@ -579,12 +573,6 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'Renvoyer le code'**
   String get resendNow;
-
-  /// No description provided for @receiveInstead.
-  ///
-  /// In fr, this message translates to:
-  /// **'Recevoir plutôt par {channel}'**
-  String receiveInstead(String channel);
 
   /// No description provided for @myInfo.
   ///
@@ -643,7 +631,7 @@ abstract class AppLocalizations {
   /// No description provided for @securedUntilDone.
   ///
   /// In fr, this message translates to:
-  /// **'Ton argent reste sécurisé par Nexis Hub jusqu\'à ce que tu confirmes que c\'est fait.'**
+  /// **'Votre argent reste sécurisé par Nexis Hub jusqu\'à ce que vous confirmiez que c\'est fait.'**
   String get securedUntilDone;
 
   /// No description provided for @payTitle.
@@ -667,7 +655,7 @@ abstract class AppLocalizations {
   /// No description provided for @paySecuredNote.
   ///
   /// In fr, this message translates to:
-  /// **'Sécurisé par Nexis Hub : {name} reçoit l\'argent quand tu confirmes que c\'est fait.'**
+  /// **'Sécurisé par Nexis Hub : {name} reçoit l\'argent quand vous confirmez que c\'est fait.'**
   String paySecuredNote(String name);
 
   /// No description provided for @payAmount.
@@ -679,13 +667,13 @@ abstract class AppLocalizations {
   /// No description provided for @pendingTitle.
   ///
   /// In fr, this message translates to:
-  /// **'Valide sur ton téléphone'**
+  /// **'Validez sur votre téléphone'**
   String get pendingTitle;
 
   /// No description provided for @pendingText.
   ///
   /// In fr, this message translates to:
-  /// **'{operator} t\'envoie une demande de {amount}. Tape ton code secret Mobile Money pour l\'accepter.'**
+  /// **'{operator} vous envoie une demande de {amount}. Tapez votre code secret Mobile Money pour l\'accepter.'**
   String pendingText(String operator, String amount);
 
   /// No description provided for @pendingSent.
@@ -703,7 +691,7 @@ abstract class AppLocalizations {
   /// No description provided for @pendingWithin.
   ///
   /// In fr, this message translates to:
-  /// **'Tu as 5 minutes'**
+  /// **'Vous avez 5 minutes'**
   String get pendingWithin;
 
   /// No description provided for @pendingSecured.
@@ -715,7 +703,7 @@ abstract class AppLocalizations {
   /// No description provided for @pendingNotify.
   ///
   /// In fr, this message translates to:
-  /// **'On prévient {name} tout de suite'**
+  /// **'Nous prévenons {name} tout de suite'**
   String pendingNotify(String name);
 
   /// No description provided for @nothingReceived.
@@ -781,7 +769,7 @@ abstract class AppLocalizations {
   /// No description provided for @stepConfirm.
   ///
   /// In fr, this message translates to:
-  /// **'Tu confirmes, {name} reçoit l\'argent'**
+  /// **'Vous confirmez, {name} reçoit l\'argent'**
   String stepConfirm(String name);
 
   /// No description provided for @confirmAction.
@@ -799,7 +787,7 @@ abstract class AppLocalizations {
   /// No description provided for @confirmText.
   ///
   /// In fr, this message translates to:
-  /// **'Quand tu confirmes, Nexis Hub verse l\'argent sécurisé à {name}.'**
+  /// **'Quand vous confirmez, Nexis Hub verse l\'argent sécurisé à {name}.'**
   String confirmText(String name);
 
   /// No description provided for @paidTo.
@@ -817,7 +805,7 @@ abstract class AppLocalizations {
   /// No description provided for @report48h.
   ///
   /// In fr, this message translates to:
-  /// **'Un souci ? Tu as 48 h pour le signaler. L\'argent reste alors bloqué le temps qu\'on regarde avec vous deux.'**
+  /// **'Un souci ? Vous avez 48 h pour le signaler. L\'argent reste alors bloqué le temps que nous regardions avec vous deux.'**
   String get report48h;
 
   /// No description provided for @yesDone.
@@ -883,7 +871,7 @@ abstract class AppLocalizations {
   /// No description provided for @reportHint.
   ///
   /// In fr, this message translates to:
-  /// **'Raconte en quelques mots ce qui ne va pas.'**
+  /// **'Racontez en quelques mots ce qui ne va pas.'**
   String get reportHint;
 
   /// No description provided for @addPhoto.
@@ -895,7 +883,7 @@ abstract class AppLocalizations {
   /// No description provided for @reportFrozen.
   ///
   /// In fr, this message translates to:
-  /// **'Les {amount} sont bloqués le temps qu\'on regarde avec vous deux. Personne ne peut y toucher.'**
+  /// **'Les {amount} sont bloqués le temps que nous regardions avec vous deux. Personne ne peut y toucher.'**
   String reportFrozen(String amount);
 
   /// No description provided for @sendReport.
@@ -907,7 +895,7 @@ abstract class AppLocalizations {
   /// No description provided for @reportFailed.
   ///
   /// In fr, this message translates to:
-  /// **'Le signalement n\'est pas parti. Réessaie dans un instant.'**
+  /// **'Le signalement n\'est pas parti. Réessayez dans un instant.'**
   String get reportFailed;
 
   /// No description provided for @disputeTitle.
@@ -925,7 +913,7 @@ abstract class AppLocalizations {
   /// No description provided for @youReported.
   ///
   /// In fr, this message translates to:
-  /// **'Tu as signalé'**
+  /// **'Vous avez signalé'**
   String get youReported;
 
   /// No description provided for @photosCount.
@@ -949,7 +937,7 @@ abstract class AppLocalizations {
   /// No description provided for @nexisLookingSub.
   ///
   /// In fr, this message translates to:
-  /// **'Réponse sous 48 h · on peut vous appeler'**
+  /// **'Réponse sous 48 h · nous pouvons vous appeler'**
   String get nexisLookingSub;
 
   /// No description provided for @decisionStep.
@@ -967,7 +955,7 @@ abstract class AppLocalizations {
   /// No description provided for @settleHint.
   ///
   /// In fr, this message translates to:
-  /// **'Tu peux encore t\'arranger avec {name}. Si vous êtes d\'accord, dis-le ici et on clôt le litige.'**
+  /// **'Vous pouvez encore vous arranger avec {name}. Si vous êtes d\'accord, dites-le ici et nous clôturons le litige.'**
   String settleHint(String name);
 
   /// No description provided for @writeNexis.
@@ -979,7 +967,7 @@ abstract class AppLocalizations {
   /// No description provided for @weSettled.
   ///
   /// In fr, this message translates to:
-  /// **'On s\'est arrangés'**
+  /// **'Nous nous sommes arrangés'**
   String get weSettled;
 
   /// No description provided for @disputeOver.
@@ -991,13 +979,13 @@ abstract class AppLocalizations {
   /// No description provided for @outcomeRefundTitle.
   ///
   /// In fr, this message translates to:
-  /// **'On te rembourse'**
+  /// **'Nous vous remboursons'**
   String get outcomeRefundTitle;
 
   /// No description provided for @outcomeRefundText.
   ///
   /// In fr, this message translates to:
-  /// **'Après avoir regardé le dossier et parlé avec {name}, Nexis Hub a décidé de te rembourser. L\'argent arrive dans ton portefeuille dans 3 jours si personne ne conteste.'**
+  /// **'Après avoir regardé le dossier et parlé avec {name}, Nexis Hub a décidé de vous rembourser. L\'argent arrive dans votre portefeuille dans 3 jours si personne ne conteste.'**
   String outcomeRefundText(String name);
 
   /// No description provided for @outcomeReleaseTitle.
@@ -1021,13 +1009,13 @@ abstract class AppLocalizations {
   /// No description provided for @outcomeSplitText.
   ///
   /// In fr, this message translates to:
-  /// **'Après avoir regardé le dossier avec vous deux, Nexis Hub a décidé de partager l\'argent entre toi et {name}. Ta part arrive dans ton portefeuille dans 3 jours si personne ne conteste.'**
+  /// **'Après avoir regardé le dossier avec vous deux, Nexis Hub a décidé de partager l\'argent entre vous et {name}. Votre part arrive dans votre portefeuille dans 3 jours si personne ne conteste.'**
   String outcomeSplitText(String name);
 
   /// No description provided for @toRefundYou.
   ///
   /// In fr, this message translates to:
-  /// **'À te rembourser'**
+  /// **'À vous rembourser'**
   String get toRefundYou;
 
   /// No description provided for @forProvider.
@@ -1045,7 +1033,7 @@ abstract class AppLocalizations {
   /// No description provided for @contestHint.
   ///
   /// In fr, this message translates to:
-  /// **'{count, plural, =1{Pas d\'accord ? Tu as encore 1 jour pour demander à revoir la décision. L\'argent reste bloqué pendant ce temps.} other{Pas d\'accord ? Tu as {count} jours pour demander à revoir la décision. L\'argent reste bloqué pendant ce temps.}}'**
+  /// **'{count, plural, =1{Pas d\'accord ? Vous avez encore 1 jour pour demander à revoir la décision. L\'argent reste bloqué pendant ce temps.} other{Pas d\'accord ? Vous avez {count} jours pour demander à revoir la décision. L\'argent reste bloqué pendant ce temps.}}'**
   String contestHint(int count);
 
   /// No description provided for @seeWallet.
@@ -1069,13 +1057,13 @@ abstract class AppLocalizations {
   /// No description provided for @inServiceSub.
   ///
   /// In fr, this message translates to:
-  /// **'Tu reçois les demandes de {communes}'**
+  /// **'Vous recevez les demandes de {communes}'**
   String inServiceSub(String communes);
 
   /// No description provided for @offServiceSub.
   ///
   /// In fr, this message translates to:
-  /// **'Tu ne reçois pas de nouvelles demandes'**
+  /// **'Vous ne recevez pas de nouvelles demandes'**
   String get offServiceSub;
 
   /// No description provided for @offServiceHint.
@@ -1153,7 +1141,7 @@ abstract class AppLocalizations {
   /// No description provided for @yourPrice.
   ///
   /// In fr, this message translates to:
-  /// **'Ton prix'**
+  /// **'Votre prix'**
   String get yourPrice;
 
   /// No description provided for @priceAsked.
@@ -1171,7 +1159,7 @@ abstract class AppLocalizations {
   /// No description provided for @yourSlot.
   ///
   /// In fr, this message translates to:
-  /// **'Ton créneau'**
+  /// **'Votre créneau'**
   String get yourSlot;
 
   /// No description provided for @otherSlot.
@@ -1183,19 +1171,19 @@ abstract class AppLocalizations {
   /// No description provided for @quoteSentToast.
   ///
   /// In fr, this message translates to:
-  /// **'Devis envoyé. Tu seras prévenu si le client le choisit.'**
+  /// **'Devis envoyé. Vous serez prévenu si le client le choisit.'**
   String get quoteSentToast;
 
   /// No description provided for @quoteFailed.
   ///
   /// In fr, this message translates to:
-  /// **'Le devis n\'est pas parti. Réessaie dans un instant.'**
+  /// **'Le devis n\'est pas parti. Réessayez dans un instant.'**
   String get quoteFailed;
 
   /// No description provided for @actionFailed.
   ///
   /// In fr, this message translates to:
-  /// **'Ça n\'a pas marché. Réessaie dans un instant.'**
+  /// **'Cela n\'a pas fonctionné. Réessayez dans un instant.'**
   String get actionFailed;
 
   /// No description provided for @jobTitle.
@@ -1207,7 +1195,7 @@ abstract class AppLocalizations {
   /// No description provided for @jobToStart.
   ///
   /// In fr, this message translates to:
-  /// **'Payé, à toi de partir'**
+  /// **'Payé, à vous de partir'**
   String get jobToStart;
 
   /// No description provided for @jobOnTheWay.
@@ -1243,7 +1231,7 @@ abstract class AppLocalizations {
   /// No description provided for @shareLocationSub.
   ///
   /// In fr, this message translates to:
-  /// **'{name} voit la distance jusqu\'à ton arrivée'**
+  /// **'{name} voit la distance jusqu\'à votre arrivée'**
   String shareLocationSub(String name);
 
   /// No description provided for @pStepPaid.
@@ -1303,7 +1291,7 @@ abstract class AppLocalizations {
   /// No description provided for @arrivalWaiting.
   ///
   /// In fr, this message translates to:
-  /// **'{name} doit confirmer ton arrivée sur son téléphone. Tu peux aussi taper son code de présence.'**
+  /// **'{name} doit confirmer votre arrivée sur son téléphone. Vous pouvez aussi taper son code de présence.'**
   String arrivalWaiting(String name);
 
   /// No description provided for @arrivalWaitingSub.
@@ -1339,14 +1327,50 @@ abstract class AppLocalizations {
   /// No description provided for @codeLocked.
   ///
   /// In fr, this message translates to:
-  /// **'Trop d\'essais. Seul {name} peut maintenant confirmer ton arrivée.'**
+  /// **'Trop d\'essais. Seul {name} peut maintenant confirmer votre arrivée.'**
   String codeLocked(String name);
 
   /// No description provided for @finishedNote.
   ///
   /// In fr, this message translates to:
-  /// **'{name} a 48 h pour confirmer ou signaler un problème. Sans réponse, l\'argent t\'est versé au bout de 48 h.'**
+  /// **'{name} a 48 h pour confirmer ou signaler un problème. Sans réponse, l\'argent vous est versé au bout de 48 h.'**
   String finishedNote(String name);
+
+  /// No description provided for @numberPrivate.
+  ///
+  /// In fr, this message translates to:
+  /// **'Votre numéro n\'est jamais montré aux prestataires.'**
+  String get numberPrivate;
+
+  /// No description provided for @numberUnknownPrefix.
+  ///
+  /// In fr, this message translates to:
+  /// **'Ce numéro ne correspond à aucun opérateur de RDC.'**
+  String get numberUnknownPrefix;
+
+  /// No description provided for @smsSub.
+  ///
+  /// In fr, this message translates to:
+  /// **'Un SMS avec le code'**
+  String get smsSub;
+
+  /// No description provided for @receiveOtherWay.
+  ///
+  /// In fr, this message translates to:
+  /// **'Recevoir le code autrement'**
+  String get receiveOtherWay;
+
+  /// No description provided for @codeSentBySms.
+  ///
+  /// In fr, this message translates to:
+  /// **'Envoyé par SMS au {phone}'**
+  String codeSentBySms(String phone);
+
+  /// No description provided for @noCodeChannel.
+  ///
+  /// In fr, this message translates to:
+  /// **'Aucun canal n\'est disponible pour le moment. Réessayez dans un instant.'**
+  String get noCodeChannel;
 }
 
 class _AppLocalizationsDelegate

@@ -245,11 +245,6 @@ class AppLocalizationsLn extends AppLocalizations {
   String get waitingPill => 'Ezali kozela';
 
   @override
-  String legalText(String terms, String privacy) {
-    return 'Soki okobi liboso, ondimi $terms mpe $privacy.';
-  }
-
-  @override
   String get legalTerms => 'Mibeko ya kosalela';
 
   @override
@@ -265,11 +260,6 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String get resendNow => 'Tinda code lisusu';
-
-  @override
-  String receiveInstead(String channel) {
-    return 'Zwa yango na $channel';
-  }
 
   @override
   String get myInfo => 'Makambo na ngai';
@@ -763,4 +753,27 @@ class AppLocalizationsLn extends AppLocalizations {
   String finishedNote(String name) {
     return '$name azali na 48 h mpo na kondima to koyebisa mokakatano. Soki azongisi te, okozwa mbongo nsima ya 48 h.';
   }
+
+  @override
+  String get numberPrivate =>
+      'Nimero na yo emonisamaka ata mokolo moko epai ya basali te.';
+
+  @override
+  String get numberUnknownPrefix =>
+      'Nimero oyo ekokani na operatɛrɛ moko ya RDC te.';
+
+  @override
+  String get smsSub => 'SMS na code';
+
+  @override
+  String get receiveOtherWay => 'Kozwa code na lolenge mosusu';
+
+  @override
+  String codeSentBySms(String phone) {
+    return 'Etindami na SMS na $phone';
+  }
+
+  @override
+  String get noCodeChannel =>
+      'Nzela moko te ezali sikoyo. Meka lisusu na mwa ntango moke.';
 }

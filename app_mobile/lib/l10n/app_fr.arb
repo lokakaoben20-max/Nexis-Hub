@@ -4,8 +4,8 @@
   "welcomeIntro": "Nous vous mettons en relation avec des professionnels de confiance",
   "start": "Commencer",
   "haveAccount": "J'ai déjà un compte",
-  "yourNumber": "Ton numéro",
-  "yourNumberIntro": "On t'envoie un code pour vérifier que c'est bien toi.",
+  "yourNumber": "Votre numéro",
+  "yourNumberIntro": "Nous vous envoyons un code pour vérifier que c'est bien vous.",
   "receiveCodeBy": "Recevoir le code par",
   "whatsappSub": "Le code arrive en quelques secondes",
   "telegramSub": "Avec le bot Nexis Hub",
@@ -107,7 +107,7 @@
   "clientBadge": "Client",
   "back": "Retour",
   "editProfile": "Modifier",
-  "pickServiceHint": "Choisis, on s'occupe du reste.",
+  "pickServiceHint": "Choisissez, nous nous occupons du reste.",
   "otherNeed": "Autre",
   "close": "Fermer",
   "quotesPill": "{count} devis",
@@ -119,33 +119,14 @@
       }
     }
   },
-  "legalText": "En continuant, tu acceptes les {terms} et la {privacy}.",
   "legalTerms": "Conditions d'utilisation",
   "legalPrivacy": "Politique de confidentialité",
   "notReceived": "Pas reçu ?",
   "resendIn": "Renvoyer dans {time}",
   "resendNow": "Renvoyer le code",
-  "receiveInstead": "Recevoir plutôt par {channel}",
-  "@legalText": {
-    "placeholders": {
-      "terms": {
-        "type": "String"
-      },
-      "privacy": {
-        "type": "String"
-      }
-    }
-  },
   "@resendIn": {
     "placeholders": {
       "time": {
-        "type": "String"
-      }
-    }
-  },
-  "@receiveInstead": {
-    "placeholders": {
-      "channel": {
         "type": "String"
       }
     }
@@ -166,19 +147,19 @@
   },
   "bestRated": "Le mieux noté",
   "chooseProvider": "Choisir {name}",
-  "securedUntilDone": "Ton argent reste sécurisé par Nexis Hub jusqu'à ce que tu confirmes que c'est fait.",
+  "securedUntilDone": "Votre argent reste sécurisé par Nexis Hub jusqu'à ce que vous confirmiez que c'est fait.",
   "payTitle": "Payer",
   "payWith": "Payer avec",
   "addNumber": "Ajouter un numéro",
-  "paySecuredNote": "Sécurisé par Nexis Hub : {name} reçoit l'argent quand tu confirmes que c'est fait.",
+  "paySecuredNote": "Sécurisé par Nexis Hub : {name} reçoit l'argent quand vous confirmez que c'est fait.",
   "payAmount": "Payer {amount}",
-  "pendingTitle": "Valide sur ton téléphone",
-  "pendingText": "{operator} t'envoie une demande de {amount}. Tape ton code secret Mobile Money pour l'accepter.",
+  "pendingTitle": "Validez sur votre téléphone",
+  "pendingText": "{operator} vous envoie une demande de {amount}. Tapez votre code secret Mobile Money pour l'accepter.",
   "pendingSent": "Demande envoyée à {operator}",
   "pendingWaiting": "En attente de confirmation",
-  "pendingWithin": "Tu as 5 minutes",
+  "pendingWithin": "Vous avez 5 minutes",
   "pendingSecured": "Argent sécurisé par Nexis Hub",
-  "pendingNotify": "On prévient {name} tout de suite",
+  "pendingNotify": "Nous prévenons {name} tout de suite",
   "nothingReceived": "Je n'ai rien reçu",
   "paymentTitle": "Paiement",
   "trackTitle": "Suivi",
@@ -189,13 +170,13 @@
   "stepOnTheWaySub": "Suivi de position activé",
   "stepOnSite": "Sur place",
   "stepWorkDone": "Travail terminé",
-  "stepConfirm": "Tu confirmes, {name} reçoit l'argent",
+  "stepConfirm": "Vous confirmez, {name} reçoit l'argent",
   "confirmAction": "Confirmer",
   "confirmQuestion": "{name} a terminé.\nC'est bien fait ?",
-  "confirmText": "Quand tu confirmes, Nexis Hub verse l'argent sécurisé à {name}.",
+  "confirmText": "Quand vous confirmez, Nexis Hub verse l'argent sécurisé à {name}.",
   "paidTo": "Versé à {name}",
   "amountFixed": "Montant fixé par Nexis Hub au paiement",
-  "report48h": "Un souci ? Tu as 48 h pour le signaler. L'argent reste alors bloqué le temps qu'on regarde avec vous deux.",
+  "report48h": "Un souci ? Vous avez 48 h pour le signaler. L'argent reste alors bloqué le temps que nous regardions avec vous deux.",
   "yesDone": "Oui, c'est fait",
   "reportProblem": "Signaler un problème",
   "confirmedToast": "Merci ! {name} reçoit l'argent.",
@@ -296,9 +277,9 @@
   "reasonBadWork": "Le travail est mal fait",
   "reasonNoShow": "Le prestataire n'est pas venu",
   "reasonOther": "Autre problème",
-  "reportHint": "Raconte en quelques mots ce qui ne va pas.",
+  "reportHint": "Racontez en quelques mots ce qui ne va pas.",
   "addPhoto": "Ajouter une photo",
-  "reportFrozen": "Les {amount} sont bloqués le temps qu'on regarde avec vous deux. Personne ne peut y toucher.",
+  "reportFrozen": "Les {amount} sont bloqués le temps que nous regardions avec vous deux. Personne ne peut y toucher.",
   "@reportFrozen": {
     "placeholders": {
       "amount": {
@@ -307,10 +288,10 @@
     }
   },
   "sendReport": "Envoyer le signalement",
-  "reportFailed": "Le signalement n'est pas parti. Réessaie dans un instant.",
+  "reportFailed": "Le signalement n'est pas parti. Réessayez dans un instant.",
   "disputeTitle": "Litige",
   "nobodyTouches": "Personne ne peut y toucher",
-  "youReported": "Tu as signalé",
+  "youReported": "Vous avez signalé",
   "photosCount": "{count, plural, =0{sans photo} =1{1 photo} other{{count} photos}}",
   "@photosCount": {
     "placeholders": {
@@ -328,10 +309,10 @@
     }
   },
   "nexisLooking": "Nexis Hub regarde",
-  "nexisLookingSub": "Réponse sous 48 h · on peut vous appeler",
+  "nexisLookingSub": "Réponse sous 48 h · nous pouvons vous appeler",
   "decisionStep": "Décision et argent",
   "decisionStepSub": "Versé, remboursé ou partagé",
-  "settleHint": "Tu peux encore t'arranger avec {name}. Si vous êtes d'accord, dis-le ici et on clôt le litige.",
+  "settleHint": "Vous pouvez encore vous arranger avec {name}. Si vous êtes d'accord, dites-le ici et nous clôturons le litige.",
   "@settleHint": {
     "placeholders": {
       "name": {
@@ -340,10 +321,10 @@
     }
   },
   "writeNexis": "Écrire à Nexis Hub",
-  "weSettled": "On s'est arrangés",
+  "weSettled": "Nous nous sommes arrangés",
   "disputeOver": "Litige terminé",
-  "outcomeRefundTitle": "On te rembourse",
-  "outcomeRefundText": "Après avoir regardé le dossier et parlé avec {name}, Nexis Hub a décidé de te rembourser. L'argent arrive dans ton portefeuille dans 3 jours si personne ne conteste.",
+  "outcomeRefundTitle": "Nous vous remboursons",
+  "outcomeRefundText": "Après avoir regardé le dossier et parlé avec {name}, Nexis Hub a décidé de vous rembourser. L'argent arrive dans votre portefeuille dans 3 jours si personne ne conteste.",
   "@outcomeRefundText": {
     "placeholders": {
       "name": {
@@ -368,7 +349,7 @@
     }
   },
   "outcomeSplitTitle": "L'argent est partagé",
-  "outcomeSplitText": "Après avoir regardé le dossier avec vous deux, Nexis Hub a décidé de partager l'argent entre toi et {name}. Ta part arrive dans ton portefeuille dans 3 jours si personne ne conteste.",
+  "outcomeSplitText": "Après avoir regardé le dossier avec vous deux, Nexis Hub a décidé de partager l'argent entre vous et {name}. Votre part arrive dans votre portefeuille dans 3 jours si personne ne conteste.",
   "@outcomeSplitText": {
     "placeholders": {
       "name": {
@@ -376,7 +357,7 @@
       }
     }
   },
-  "toRefundYou": "À te rembourser",
+  "toRefundYou": "À vous rembourser",
   "forProvider": "Pour {name}",
   "@forProvider": {
     "placeholders": {
@@ -393,7 +374,7 @@
       }
     }
   },
-  "contestHint": "{count, plural, =1{Pas d'accord ? Tu as encore 1 jour pour demander à revoir la décision. L'argent reste bloqué pendant ce temps.} other{Pas d'accord ? Tu as {count} jours pour demander à revoir la décision. L'argent reste bloqué pendant ce temps.}}",
+  "contestHint": "{count, plural, =1{Pas d'accord ? Vous avez encore 1 jour pour demander à revoir la décision. L'argent reste bloqué pendant ce temps.} other{Pas d'accord ? Vous avez {count} jours pour demander à revoir la décision. L'argent reste bloqué pendant ce temps.}}",
   "@contestHint": {
     "placeholders": {
       "count": {
@@ -404,7 +385,7 @@
   "seeWallet": "Voir mon portefeuille",
   "inService": "En service",
   "offService": "Hors service",
-  "inServiceSub": "Tu reçois les demandes de {communes}",
+  "inServiceSub": "Vous recevez les demandes de {communes}",
   "@inServiceSub": {
     "placeholders": {
       "communes": {
@@ -412,7 +393,7 @@
       }
     }
   },
-  "offServiceSub": "Tu ne reçois pas de nouvelles demandes",
+  "offServiceSub": "Vous ne recevez pas de nouvelles demandes",
   "offServiceHint": "Active « En service » pour recevoir les demandes des clients.",
   "andList": "{head} et {last}",
   "@andList": {
@@ -456,16 +437,16 @@
   "quoteSentPill": "Devis envoyé",
   "sendAQuote": "Envoyer un devis",
   "sendTheQuote": "Envoyer le devis",
-  "yourPrice": "Ton prix",
+  "yourPrice": "Votre prix",
   "priceAsked": "Montant demandé au client",
   "changeCurrency": "Changer de devise",
-  "yourSlot": "Ton créneau",
+  "yourSlot": "Votre créneau",
   "otherSlot": "Autre",
-  "quoteSentToast": "Devis envoyé. Tu seras prévenu si le client le choisit.",
-  "quoteFailed": "Le devis n'est pas parti. Réessaie dans un instant.",
-  "actionFailed": "Ça n'a pas marché. Réessaie dans un instant.",
+  "quoteSentToast": "Devis envoyé. Vous serez prévenu si le client le choisit.",
+  "quoteFailed": "Le devis n'est pas parti. Réessayez dans un instant.",
+  "actionFailed": "Cela n'a pas fonctionné. Réessayez dans un instant.",
   "jobTitle": "Mission",
-  "jobToStart": "Payé, à toi de partir",
+  "jobToStart": "Payé, à vous de partir",
   "jobOnTheWay": "En route",
   "jobArrivalPending": "Arrivée à confirmer par {name}",
   "@jobArrivalPending": {
@@ -485,7 +466,7 @@
     }
   },
   "shareLocation": "Partager ma position",
-  "shareLocationSub": "{name} voit la distance jusqu'à ton arrivée",
+  "shareLocationSub": "{name} voit la distance jusqu'à votre arrivée",
   "@shareLocationSub": {
     "placeholders": {
       "name": {
@@ -509,7 +490,7 @@
       }
     }
   },
-  "arrivalWaiting": "{name} doit confirmer ton arrivée sur son téléphone. Tu peux aussi taper son code de présence.",
+  "arrivalWaiting": "{name} doit confirmer votre arrivée sur son téléphone. Vous pouvez aussi taper son code de présence.",
   "@arrivalWaiting": {
     "placeholders": {
       "name": {
@@ -536,7 +517,7 @@
       }
     }
   },
-  "codeLocked": "Trop d'essais. Seul {name} peut maintenant confirmer ton arrivée.",
+  "codeLocked": "Trop d'essais. Seul {name} peut maintenant confirmer votre arrivée.",
   "@codeLocked": {
     "placeholders": {
       "name": {
@@ -544,12 +525,25 @@
       }
     }
   },
-  "finishedNote": "{name} a 48 h pour confirmer ou signaler un problème. Sans réponse, l'argent t'est versé au bout de 48 h.",
+  "finishedNote": "{name} a 48 h pour confirmer ou signaler un problème. Sans réponse, l'argent vous est versé au bout de 48 h.",
   "@finishedNote": {
     "placeholders": {
       "name": {
         "type": "String"
       }
     }
-  }
+  },
+  "numberPrivate": "Votre numéro n'est jamais montré aux prestataires.",
+  "numberUnknownPrefix": "Ce numéro ne correspond à aucun opérateur de RDC.",
+  "smsSub": "Un SMS avec le code",
+  "receiveOtherWay": "Recevoir le code autrement",
+  "codeSentBySms": "Envoyé par SMS au {phone}",
+  "@codeSentBySms": {
+    "placeholders": {
+      "phone": {
+        "type": "String"
+      }
+    }
+  },
+  "noCodeChannel": "Aucun canal n'est disponible pour le moment. Réessayez dans un instant."
 }

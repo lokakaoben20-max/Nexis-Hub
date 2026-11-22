@@ -74,13 +74,11 @@
   "close": "Close",
   "quotesPill": "{count} quotes",
   "waitingPill": "Waiting",
-  "legalText": "By continuing, you accept the {terms} and the {privacy}.",
   "legalTerms": "Terms of use",
   "legalPrivacy": "Privacy policy",
   "notReceived": "Didn't get it?",
   "resendIn": "Resend in {time}",
   "resendNow": "Resend the code",
-  "receiveInstead": "Get it by {channel} instead",
   "myInfo": "My details",
   "myInfoSub": "Name, photo, commune",
   "devicesCount": "{count, plural, =1{1 connected device} other{{count} connected devices}}",
@@ -207,5 +205,18 @@
   "confirmCode": "Confirm",
   "wrongCode": "{count, plural, =1{Wrong code. 1 try left.} other{Wrong code. {count} tries left.}}",
   "codeLocked": "Too many tries. Only {name} can confirm your arrival now.",
-  "finishedNote": "{name} has 48 h to confirm or report a problem. With no answer, the money is paid to you after 48 h."
+  "finishedNote": "{name} has 48 h to confirm or report a problem. With no answer, the money is paid to you after 48 h.",
+  "numberPrivate": "Your number is never shown to providers.",
+  "numberUnknownPrefix": "This number doesn't match any DRC operator.",
+  "smsSub": "A text message with the code",
+  "receiveOtherWay": "Get the code another way",
+  "codeSentBySms": "Sent by SMS to {phone}",
+  "@codeSentBySms": {
+    "placeholders": {
+      "phone": {
+        "type": "String"
+      }
+    }
+  },
+  "noCodeChannel": "No channel is available right now. Please try again in a moment."
 }

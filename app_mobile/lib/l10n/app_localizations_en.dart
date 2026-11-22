@@ -244,11 +244,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get waitingPill => 'Waiting';
 
   @override
-  String legalText(String terms, String privacy) {
-    return 'By continuing, you accept the $terms and the $privacy.';
-  }
-
-  @override
   String get legalTerms => 'Terms of use';
 
   @override
@@ -264,11 +259,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get resendNow => 'Resend the code';
-
-  @override
-  String receiveInstead(String channel) {
-    return 'Get it by $channel instead';
-  }
 
   @override
   String get myInfo => 'My details';
@@ -762,4 +752,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String finishedNote(String name) {
     return '$name has 48 h to confirm or report a problem. With no answer, the money is paid to you after 48 h.';
   }
+
+  @override
+  String get numberPrivate => 'Your number is never shown to providers.';
+
+  @override
+  String get numberUnknownPrefix =>
+      'This number doesn\'t match any DRC operator.';
+
+  @override
+  String get smsSub => 'A text message with the code';
+
+  @override
+  String get receiveOtherWay => 'Get the code another way';
+
+  @override
+  String codeSentBySms(String phone) {
+    return 'Sent by SMS to $phone';
+  }
+
+  @override
+  String get noCodeChannel =>
+      'No channel is available right now. Please try again in a moment.';
 }

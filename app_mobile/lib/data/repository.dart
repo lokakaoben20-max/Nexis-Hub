@@ -8,6 +8,12 @@ import 'money.dart';
 /// et sessions déjà en place côté backend) viendra la remplacer sans
 /// changer les écrans.
 abstract class NexisRepository {
+  /// Canaux par lesquels le serveur envoie réellement un code (`whatsapp`,
+  /// `telegram`, `sms`), comme `AVAILABLE_DELIVERIES` côté backend
+  /// (backend/app/app_auth.py). Un canal absent n'est pas montré : jamais
+  /// d'option qui fait semblant.
+  Set<String> get codeChannels;
+
   Future<Profile> profile();
   Future<Wallet> wallet();
   Future<List<Mission>> missions();

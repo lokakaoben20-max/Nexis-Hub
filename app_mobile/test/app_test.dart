@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nexis_hub/app_state.dart';
 import 'package:nexis_hub/data/demo_repository.dart';
 import 'package:nexis_hub/main.dart';
+import 'package:nexis_hub/ui/common.dart';
 
 void main() {
   testWidgets('bienvenue, numéro, code, puis accueil', (tester) async {
@@ -22,7 +23,7 @@ void main() {
 
     await tester.tap(find.text('Commencer'));
     await tester.pumpAndSettle();
-    expect(find.text('Ton numéro'), findsOneWidget);
+    expect(find.text('Votre numéro'), findsOneWidget);
     await tester.enterText(find.byType(TextField), '812345412');
     await tester.pump();
     await tester.tap(find.text('Recevoir le code'));
@@ -34,6 +35,53 @@ void main() {
     await tester.pumpAndSettle();
     expect(state.signedIn, isTrue);
     expect(find.text('Bonjour, Grâce'), findsOneWidget);
+  });
+
+  testWidgets('numéro : mise en forme, préfixe contrôlé, bouton grisé', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1170, 2532);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    final state = AppState(repository: DemoRepository())
+      ..setLocale(const Locale('fr'));
+    await tester.pumpWidget(NexisApp(state: state));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Commencer'));
+    await tester.pumpAndSettle();
+
+    TextField field() => tester.widget<TextField>(find.byType(TextField));
+    PrimaryButton button() => tester.widget<PrimaryButton>(
+      find.widgetWithText(PrimaryButton, 'Recevoir le code'),
+    );
+
+    expect(
+      find.text("Votre numéro n'est jamais montré aux prestataires."),
+      findsOneWidget,
+    );
+    expect(button().onPressed, isNull);
+
+    await tester.enterText(find.byType(TextField), '81234');
+    await tester.pump();
+    expect(field().controller!.text, '81 234');
+    expect(find.text('Vodacom'), findsOneWidget);
+    expect(button().onPressed, isNull); // incomplet
+
+    await tester.enterText(find.byType(TextField), '70 234 54 12');
+    await tester.pump();
+    expect(
+      find.text('Ce numéro ne correspond à aucun opérateur de RDC.'),
+      findsOneWidget,
+    );
+    expect(button().onPressed, isNull);
+
+    await tester.enterText(find.byType(TextField), '0812345412');
+    await tester.pump();
+    expect(field().controller!.text, '81 234 54 12');
+    expect(button().onPressed, isNotNull);
   });
 
   testWidgets('la pastille de langue ouvre un menu des trois langues', (

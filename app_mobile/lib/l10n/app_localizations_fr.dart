@@ -23,11 +23,11 @@ class AppLocalizationsFr extends AppLocalizations {
   String get haveAccount => 'J\'ai déjà un compte';
 
   @override
-  String get yourNumber => 'Ton numéro';
+  String get yourNumber => 'Votre numéro';
 
   @override
   String get yourNumberIntro =>
-      'On t\'envoie un code pour vérifier que c\'est bien toi.';
+      'Nous vous envoyons un code pour vérifier que c\'est bien vous.';
 
   @override
   String get receiveCodeBy => 'Recevoir le code par';
@@ -229,7 +229,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get editProfile => 'Modifier';
 
   @override
-  String get pickServiceHint => 'Choisis, on s\'occupe du reste.';
+  String get pickServiceHint => 'Choisissez, nous nous occupons du reste.';
 
   @override
   String get otherNeed => 'Autre';
@@ -244,11 +244,6 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get waitingPill => 'En attente';
-
-  @override
-  String legalText(String terms, String privacy) {
-    return 'En continuant, tu acceptes les $terms et la $privacy.';
-  }
 
   @override
   String get legalTerms => 'Conditions d\'utilisation';
@@ -266,11 +261,6 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get resendNow => 'Renvoyer le code';
-
-  @override
-  String receiveInstead(String channel) {
-    return 'Recevoir plutôt par $channel';
-  }
 
   @override
   String get myInfo => 'Mes informations';
@@ -311,7 +301,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get securedUntilDone =>
-      'Ton argent reste sécurisé par Nexis Hub jusqu\'à ce que tu confirmes que c\'est fait.';
+      'Votre argent reste sécurisé par Nexis Hub jusqu\'à ce que vous confirmiez que c\'est fait.';
 
   @override
   String get payTitle => 'Payer';
@@ -324,7 +314,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String paySecuredNote(String name) {
-    return 'Sécurisé par Nexis Hub : $name reçoit l\'argent quand tu confirmes que c\'est fait.';
+    return 'Sécurisé par Nexis Hub : $name reçoit l\'argent quand vous confirmez que c\'est fait.';
   }
 
   @override
@@ -333,11 +323,11 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
-  String get pendingTitle => 'Valide sur ton téléphone';
+  String get pendingTitle => 'Validez sur votre téléphone';
 
   @override
   String pendingText(String operator, String amount) {
-    return '$operator t\'envoie une demande de $amount. Tape ton code secret Mobile Money pour l\'accepter.';
+    return '$operator vous envoie une demande de $amount. Tapez votre code secret Mobile Money pour l\'accepter.';
   }
 
   @override
@@ -349,14 +339,14 @@ class AppLocalizationsFr extends AppLocalizations {
   String get pendingWaiting => 'En attente de confirmation';
 
   @override
-  String get pendingWithin => 'Tu as 5 minutes';
+  String get pendingWithin => 'Vous avez 5 minutes';
 
   @override
   String get pendingSecured => 'Argent sécurisé par Nexis Hub';
 
   @override
   String pendingNotify(String name) {
-    return 'On prévient $name tout de suite';
+    return 'Nous prévenons $name tout de suite';
   }
 
   @override
@@ -393,7 +383,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String stepConfirm(String name) {
-    return 'Tu confirmes, $name reçoit l\'argent';
+    return 'Vous confirmez, $name reçoit l\'argent';
   }
 
   @override
@@ -406,7 +396,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String confirmText(String name) {
-    return 'Quand tu confirmes, Nexis Hub verse l\'argent sécurisé à $name.';
+    return 'Quand vous confirmez, Nexis Hub verse l\'argent sécurisé à $name.';
   }
 
   @override
@@ -419,7 +409,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get report48h =>
-      'Un souci ? Tu as 48 h pour le signaler. L\'argent reste alors bloqué le temps qu\'on regarde avec vous deux.';
+      'Un souci ? Vous avez 48 h pour le signaler. L\'argent reste alors bloqué le temps que nous regardions avec vous deux.';
 
   @override
   String get yesDone => 'Oui, c\'est fait';
@@ -454,14 +444,14 @@ class AppLocalizationsFr extends AppLocalizations {
   String get reasonOther => 'Autre problème';
 
   @override
-  String get reportHint => 'Raconte en quelques mots ce qui ne va pas.';
+  String get reportHint => 'Racontez en quelques mots ce qui ne va pas.';
 
   @override
   String get addPhoto => 'Ajouter une photo';
 
   @override
   String reportFrozen(String amount) {
-    return 'Les $amount sont bloqués le temps qu\'on regarde avec vous deux. Personne ne peut y toucher.';
+    return 'Les $amount sont bloqués le temps que nous regardions avec vous deux. Personne ne peut y toucher.';
   }
 
   @override
@@ -469,7 +459,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get reportFailed =>
-      'Le signalement n\'est pas parti. Réessaie dans un instant.';
+      'Le signalement n\'est pas parti. Réessayez dans un instant.';
 
   @override
   String get disputeTitle => 'Litige';
@@ -478,7 +468,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get nobodyTouches => 'Personne ne peut y toucher';
 
   @override
-  String get youReported => 'Tu as signalé';
+  String get youReported => 'Vous avez signalé';
 
   @override
   String photosCount(int count) {
@@ -501,7 +491,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get nexisLooking => 'Nexis Hub regarde';
 
   @override
-  String get nexisLookingSub => 'Réponse sous 48 h · on peut vous appeler';
+  String get nexisLookingSub => 'Réponse sous 48 h · nous pouvons vous appeler';
 
   @override
   String get decisionStep => 'Décision et argent';
@@ -511,24 +501,24 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String settleHint(String name) {
-    return 'Tu peux encore t\'arranger avec $name. Si vous êtes d\'accord, dis-le ici et on clôt le litige.';
+    return 'Vous pouvez encore vous arranger avec $name. Si vous êtes d\'accord, dites-le ici et nous clôturons le litige.';
   }
 
   @override
   String get writeNexis => 'Écrire à Nexis Hub';
 
   @override
-  String get weSettled => 'On s\'est arrangés';
+  String get weSettled => 'Nous nous sommes arrangés';
 
   @override
   String get disputeOver => 'Litige terminé';
 
   @override
-  String get outcomeRefundTitle => 'On te rembourse';
+  String get outcomeRefundTitle => 'Nous vous remboursons';
 
   @override
   String outcomeRefundText(String name) {
-    return 'Après avoir regardé le dossier et parlé avec $name, Nexis Hub a décidé de te rembourser. L\'argent arrive dans ton portefeuille dans 3 jours si personne ne conteste.';
+    return 'Après avoir regardé le dossier et parlé avec $name, Nexis Hub a décidé de vous rembourser. L\'argent arrive dans votre portefeuille dans 3 jours si personne ne conteste.';
   }
 
   @override
@@ -546,11 +536,11 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String outcomeSplitText(String name) {
-    return 'Après avoir regardé le dossier avec vous deux, Nexis Hub a décidé de partager l\'argent entre toi et $name. Ta part arrive dans ton portefeuille dans 3 jours si personne ne conteste.';
+    return 'Après avoir regardé le dossier avec vous deux, Nexis Hub a décidé de partager l\'argent entre vous et $name. Votre part arrive dans votre portefeuille dans 3 jours si personne ne conteste.';
   }
 
   @override
-  String get toRefundYou => 'À te rembourser';
+  String get toRefundYou => 'À vous rembourser';
 
   @override
   String forProvider(String name) {
@@ -574,8 +564,8 @@ class AppLocalizationsFr extends AppLocalizations {
       count,
       locale: localeName,
       other:
-          'Pas d\'accord ? Tu as $count jours pour demander à revoir la décision. L\'argent reste bloqué pendant ce temps.',
-      one: 'Pas d\'accord ? Tu as encore 1 jour pour demander à revoir la décision. L\'argent reste bloqué pendant ce temps.',
+          'Pas d\'accord ? Vous avez $count jours pour demander à revoir la décision. L\'argent reste bloqué pendant ce temps.',
+      one: 'Pas d\'accord ? Vous avez encore 1 jour pour demander à revoir la décision. L\'argent reste bloqué pendant ce temps.',
     );
     return '$_temp0';
   }
@@ -591,11 +581,11 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String inServiceSub(String communes) {
-    return 'Tu reçois les demandes de $communes';
+    return 'Vous recevez les demandes de $communes';
   }
 
   @override
-  String get offServiceSub => 'Tu ne reçois pas de nouvelles demandes';
+  String get offServiceSub => 'Vous ne recevez pas de nouvelles demandes';
 
   @override
   String get offServiceHint =>
@@ -643,7 +633,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get sendTheQuote => 'Envoyer le devis';
 
   @override
-  String get yourPrice => 'Ton prix';
+  String get yourPrice => 'Votre prix';
 
   @override
   String get priceAsked => 'Montant demandé au client';
@@ -652,27 +642,28 @@ class AppLocalizationsFr extends AppLocalizations {
   String get changeCurrency => 'Changer de devise';
 
   @override
-  String get yourSlot => 'Ton créneau';
+  String get yourSlot => 'Votre créneau';
 
   @override
   String get otherSlot => 'Autre';
 
   @override
   String get quoteSentToast =>
-      'Devis envoyé. Tu seras prévenu si le client le choisit.';
+      'Devis envoyé. Vous serez prévenu si le client le choisit.';
 
   @override
   String get quoteFailed =>
-      'Le devis n\'est pas parti. Réessaie dans un instant.';
+      'Le devis n\'est pas parti. Réessayez dans un instant.';
 
   @override
-  String get actionFailed => 'Ça n\'a pas marché. Réessaie dans un instant.';
+  String get actionFailed =>
+      'Cela n\'a pas fonctionné. Réessayez dans un instant.';
 
   @override
   String get jobTitle => 'Mission';
 
   @override
-  String get jobToStart => 'Payé, à toi de partir';
+  String get jobToStart => 'Payé, à vous de partir';
 
   @override
   String get jobOnTheWay => 'En route';
@@ -695,7 +686,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String shareLocationSub(String name) {
-    return '$name voit la distance jusqu\'à ton arrivée';
+    return '$name voit la distance jusqu\'à votre arrivée';
   }
 
   @override
@@ -729,7 +720,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String arrivalWaiting(String name) {
-    return '$name doit confirmer ton arrivée sur son téléphone. Tu peux aussi taper son code de présence.';
+    return '$name doit confirmer votre arrivée sur son téléphone. Vous pouvez aussi taper son code de présence.';
   }
 
   @override
@@ -759,11 +750,34 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String codeLocked(String name) {
-    return 'Trop d\'essais. Seul $name peut maintenant confirmer ton arrivée.';
+    return 'Trop d\'essais. Seul $name peut maintenant confirmer votre arrivée.';
   }
 
   @override
   String finishedNote(String name) {
-    return '$name a 48 h pour confirmer ou signaler un problème. Sans réponse, l\'argent t\'est versé au bout de 48 h.';
+    return '$name a 48 h pour confirmer ou signaler un problème. Sans réponse, l\'argent vous est versé au bout de 48 h.';
   }
+
+  @override
+  String get numberPrivate =>
+      'Votre numéro n\'est jamais montré aux prestataires.';
+
+  @override
+  String get numberUnknownPrefix =>
+      'Ce numéro ne correspond à aucun opérateur de RDC.';
+
+  @override
+  String get smsSub => 'Un SMS avec le code';
+
+  @override
+  String get receiveOtherWay => 'Recevoir le code autrement';
+
+  @override
+  String codeSentBySms(String phone) {
+    return 'Envoyé par SMS au $phone';
+  }
+
+  @override
+  String get noCodeChannel =>
+      'Aucun canal n\'est disponible pour le moment. Réessayez dans un instant.';
 }
