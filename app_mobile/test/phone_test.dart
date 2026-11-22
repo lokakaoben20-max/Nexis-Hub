@@ -7,8 +7,8 @@ void main() {
     expect(DrcPhone.parse('81').formatted, '81');
     expect(DrcPhone.parse('812').formatted, '81 2');
     expect(DrcPhone.parse('812345').formatted, '81 234 5');
-    expect(DrcPhone.parse('812345454').formatted, '81 234 54 54');
-    expect(DrcPhone.parse('81234545499').formatted, '81 234 54 54');
+    expect(DrcPhone.parse('812345454').formatted, '81 234 5454');
+    expect(DrcPhone.parse('81234545499').formatted, '81 234 5454');
   });
 
   test('+243, 00243 et 0 d\'appel sont retirés', () {

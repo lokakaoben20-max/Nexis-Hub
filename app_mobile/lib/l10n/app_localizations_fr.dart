@@ -27,7 +27,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get yourNumberIntro =>
-      'Nous vous envoyons un code pour vérifier que c\'est bien vous.';
+      'Nous vous envoyons un code pour vérifier que c’est bien vous.';
 
   @override
   String get receiveCodeBy => 'Recevoir le code par';
@@ -42,11 +42,8 @@ class AppLocalizationsFr extends AppLocalizations {
   String get receiveCode => 'Recevoir le code';
 
   @override
-  String get theCode => 'Le code';
-
-  @override
   String codeSentTo(String channel, String phone) {
-    return 'Envoyé sur $channel au $phone';
+    return 'Envoyé sur $channel au $phone.';
   }
 
   @override
@@ -759,25 +756,43 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
-  String get numberPrivate =>
-      'Votre numéro n\'est jamais montré aux prestataires.';
-
-  @override
-  String get numberUnknownPrefix =>
-      'Ce numéro ne correspond à aucun opérateur de RDC.';
-
-  @override
-  String get smsSub => 'Un SMS avec le code';
-
-  @override
-  String get receiveOtherWay => 'Recevoir le code autrement';
+  String get smsSub => 'Un message texte sur ce numéro';
 
   @override
   String codeSentBySms(String phone) {
-    return 'Envoyé par SMS au $phone';
+    return 'Envoyé par SMS au $phone.';
   }
 
   @override
   String get noCodeChannel =>
       'Aucun canal n\'est disponible pour le moment. Réessayez dans un instant.';
+
+  @override
+  String get numberNotCongolese =>
+      'Ce numéro ne semble pas être un numéro congolais.';
+
+  @override
+  String get neverAskCode =>
+      'Nous ne vous demanderons jamais ce code par téléphone ni par message.';
+
+  @override
+  String get enterCode => 'Entrez le code';
+
+  @override
+  String get codeHint => 'Valable 10 minutes. Ne le partagez avec personne.';
+
+  @override
+  String codeSentToast(String channel) {
+    return 'Code envoyé par $channel.';
+  }
+
+  @override
+  String codeResentToast(String channel) {
+    return 'Nouveau code envoyé par $channel.';
+  }
+
+  @override
+  String receiveInstead(String channel) {
+    return 'Recevoir plutôt par $channel';
+  }
 }

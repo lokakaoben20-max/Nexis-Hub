@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nexis_hub/app_state.dart';
 import 'package:nexis_hub/data/demo_repository.dart';
 import 'package:nexis_hub/main.dart';
-import 'package:nexis_hub/ui/common.dart';
 
 void main() {
   testWidgets('bienvenue, numéro, code, puis accueil', (tester) async {
@@ -24,11 +23,11 @@ void main() {
     await tester.tap(find.text('Commencer'));
     await tester.pumpAndSettle();
     expect(find.text('Votre numéro'), findsOneWidget);
-    await tester.enterText(find.byType(TextField), '812345412');
+    await tester.enterText(find.byType(TextField), '812345678');
     await tester.pump();
     await tester.tap(find.text('Recevoir le code'));
     await tester.pumpAndSettle();
-    expect(find.text('Le code'), findsOneWidget);
+    expect(find.text('Entrez le code'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), '123456');
     await tester.pump(const Duration(milliseconds: 300));
@@ -54,34 +53,41 @@ void main() {
     await tester.pumpAndSettle();
 
     TextField field() => tester.widget<TextField>(find.byType(TextField));
-    PrimaryButton button() => tester.widget<PrimaryButton>(
-      find.widgetWithText(PrimaryButton, 'Recevoir le code'),
-    );
+    // Le bouton est inactif tant que le numéro n'est pas valide.
+    bool enabled() =>
+        tester
+            .widget<InkWell>(
+              find.ancestor(
+                of: find.text('Recevoir le code'),
+                matching: find.byType(InkWell),
+              ),
+            )
+            .onTap !=
+        null;
 
-    expect(
-      find.text("Votre numéro n'est jamais montré aux prestataires."),
-      findsOneWidget,
-    );
-    expect(button().onPressed, isNull);
+    expect(find.text('WhatsApp'), findsOneWidget);
+    expect(find.text('Telegram'), findsOneWidget);
+    expect(find.text('SMS'), findsOneWidget);
+    expect(find.byType(Image), findsNothing); // pas de logos, comme la maquette
+    expect(enabled(), isFalse);
 
     await tester.enterText(find.byType(TextField), '81234');
     await tester.pump();
     expect(field().controller!.text, '81 234');
-    expect(find.text('Vodacom'), findsOneWidget);
-    expect(button().onPressed, isNull); // incomplet
+    expect(enabled(), isFalse); // incomplet
 
-    await tester.enterText(find.byType(TextField), '70 234 54 12');
+    await tester.enterText(find.byType(TextField), '70 234 5678');
     await tester.pump();
     expect(
-      find.text('Ce numéro ne correspond à aucun opérateur de RDC.'),
+      find.text('Ce numéro ne semble pas être un numéro congolais.'),
       findsOneWidget,
     );
-    expect(button().onPressed, isNull);
+    expect(enabled(), isFalse);
 
-    await tester.enterText(find.byType(TextField), '0812345412');
+    await tester.enterText(find.byType(TextField), '0812345678');
     await tester.pump();
-    expect(field().controller!.text, '81 234 54 12');
-    expect(button().onPressed, isNotNull);
+    expect(field().controller!.text, '81 234 5678');
+    expect(enabled(), isTrue);
   });
 
   testWidgets('la pastille de langue ouvre un menu des trois langues', (

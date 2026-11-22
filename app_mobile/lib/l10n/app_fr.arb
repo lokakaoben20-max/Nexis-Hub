@@ -5,13 +5,12 @@
   "start": "Commencer",
   "haveAccount": "J'ai déjà un compte",
   "yourNumber": "Votre numéro",
-  "yourNumberIntro": "Nous vous envoyons un code pour vérifier que c'est bien vous.",
+  "yourNumberIntro": "Nous vous envoyons un code pour vérifier que c’est bien vous.",
   "receiveCodeBy": "Recevoir le code par",
   "whatsappSub": "Le code arrive en quelques secondes",
   "telegramSub": "Avec le bot Nexis Hub",
   "receiveCode": "Recevoir le code",
-  "theCode": "Le code",
-  "codeSentTo": "Envoyé sur {channel} au {phone}",
+  "codeSentTo": "Envoyé sur {channel} au {phone}.",
   "@codeSentTo": {
     "placeholders": {
       "channel": {
@@ -533,11 +532,8 @@
       }
     }
   },
-  "numberPrivate": "Votre numéro n'est jamais montré aux prestataires.",
-  "numberUnknownPrefix": "Ce numéro ne correspond à aucun opérateur de RDC.",
-  "smsSub": "Un SMS avec le code",
-  "receiveOtherWay": "Recevoir le code autrement",
-  "codeSentBySms": "Envoyé par SMS au {phone}",
+  "smsSub": "Un message texte sur ce numéro",
+  "codeSentBySms": "Envoyé par SMS au {phone}.",
   "@codeSentBySms": {
     "placeholders": {
       "phone": {
@@ -545,5 +541,33 @@
       }
     }
   },
-  "noCodeChannel": "Aucun canal n'est disponible pour le moment. Réessayez dans un instant."
+  "noCodeChannel": "Aucun canal n'est disponible pour le moment. Réessayez dans un instant.",
+  "numberNotCongolese": "Ce numéro ne semble pas être un numéro congolais.",
+  "neverAskCode": "Nous ne vous demanderons jamais ce code par téléphone ni par message.",
+  "enterCode": "Entrez le code",
+  "codeHint": "Valable 10 minutes. Ne le partagez avec personne.",
+  "codeSentToast": "Code envoyé par {channel}.",
+  "codeResentToast": "Nouveau code envoyé par {channel}.",
+  "receiveInstead": "Recevoir plutôt par {channel}",
+  "@receiveInstead": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "@codeSentToast": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "@codeResentToast": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  }
 }

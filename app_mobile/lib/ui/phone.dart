@@ -57,10 +57,10 @@ class DrcPhone {
   /// Vrai seulement pour un numéro complet d'un opérateur connu.
   bool get isValid => isComplete && operator != null;
 
-  /// `81 234 54 12`.
+  /// `81 234 5678` (maquette de connexion).
   String get formatted {
     final parts = <String>[];
-    const cuts = [2, 3, 2, 2];
+    const cuts = [2, 3, 4];
     var i = 0;
     for (final n in cuts) {
       if (i >= digits.length) break;

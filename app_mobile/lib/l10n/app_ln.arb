@@ -10,8 +10,7 @@
   "whatsappSub": "Code ekoya na mwa ba seconde",
   "telegramSub": "Na bot ya Nexis Hub",
   "receiveCode": "Kozwa code",
-  "theCode": "Code",
-  "codeSentTo": "Etindami na {channel} na {phone}",
+  "codeSentTo": "Etindami na {channel} na {phone}.",
   "welcomeBack": "Boyei malamu",
   "hello": "Mbote, {name}",
   "myWallets": "Esika na ngai ya mbongo",
@@ -206,11 +205,8 @@
   "wrongCode": "{count, plural, =1{Code ezali malamu te. Meka mbala 1 lisusu.} other{Code ezali malamu te. Meka mbala {count} lisusu.}}",
   "codeLocked": "Omeki mingi. Kaka {name} akoki sikoyo kondima ete okomi.",
   "finishedNote": "{name} azali na 48 h mpo na kondima to koyebisa mokakatano. Soki azongisi te, okozwa mbongo nsima ya 48 h.",
-  "numberPrivate": "Nimero na yo emonisamaka ata mokolo moko epai ya basali te.",
-  "numberUnknownPrefix": "Nimero oyo ekokani na operatɛrɛ moko ya RDC te.",
-  "smsSub": "SMS na code",
-  "receiveOtherWay": "Kozwa code na lolenge mosusu",
-  "codeSentBySms": "Etindami na SMS na {phone}",
+  "smsSub": "Message na nimero oyo",
+  "codeSentBySms": "Etindami na SMS na {phone}.",
   "@codeSentBySms": {
     "placeholders": {
       "phone": {
@@ -218,5 +214,33 @@
       }
     }
   },
-  "noCodeChannel": "Nzela moko te ezali sikoyo. Meka lisusu na mwa ntango moke."
+  "noCodeChannel": "Nzela moko te ezali sikoyo. Meka lisusu na mwa ntango moke.",
+  "numberNotCongolese": "Nimero oyo emonani lokola nimero ya Kongó te.",
+  "neverAskCode": "Tokosenga code oyo na telefone to na message soki moke te.",
+  "enterCode": "Tya code",
+  "codeHint": "Ezali malamu mpo na miniti 10. Kopesa yango na moto moko te.",
+  "codeSentToast": "Code etindami na {channel}.",
+  "codeResentToast": "Code ya sika etindami na {channel}.",
+  "receiveInstead": "Kozwa na {channel} na esika",
+  "@receiveInstead": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "@codeSentToast": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "@codeResentToast": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  }
 }

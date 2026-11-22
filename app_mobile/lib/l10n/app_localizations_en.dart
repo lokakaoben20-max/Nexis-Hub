@@ -40,11 +40,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get receiveCode => 'Get the code';
 
   @override
-  String get theCode => 'The code';
-
-  @override
   String codeSentTo(String channel, String phone) {
-    return 'Sent on $channel to $phone';
+    return 'Sent on $channel to $phone.';
   }
 
   @override
@@ -754,24 +751,43 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get numberPrivate => 'Your number is never shown to providers.';
-
-  @override
-  String get numberUnknownPrefix =>
-      'This number doesn\'t match any DRC operator.';
-
-  @override
-  String get smsSub => 'A text message with the code';
-
-  @override
-  String get receiveOtherWay => 'Get the code another way';
+  String get smsSub => 'A text message to this number';
 
   @override
   String codeSentBySms(String phone) {
-    return 'Sent by SMS to $phone';
+    return 'Sent by SMS to $phone.';
   }
 
   @override
   String get noCodeChannel =>
       'No channel is available right now. Please try again in a moment.';
+
+  @override
+  String get numberNotCongolese =>
+      'This doesn\'t look like a Congolese number.';
+
+  @override
+  String get neverAskCode =>
+      'We will never ask for this code by phone or message.';
+
+  @override
+  String get enterCode => 'Enter the code';
+
+  @override
+  String get codeHint => 'Valid for 10 minutes. Don\'t share it with anyone.';
+
+  @override
+  String codeSentToast(String channel) {
+    return 'Code sent by $channel.';
+  }
+
+  @override
+  String codeResentToast(String channel) {
+    return 'New code sent by $channel.';
+  }
+
+  @override
+  String receiveInstead(String channel) {
+    return 'Get it by $channel instead';
+  }
 }

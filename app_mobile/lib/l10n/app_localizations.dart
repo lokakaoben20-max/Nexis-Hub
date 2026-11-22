@@ -133,7 +133,7 @@ abstract class AppLocalizations {
   /// No description provided for @yourNumberIntro.
   ///
   /// In fr, this message translates to:
-  /// **'Nous vous envoyons un code pour vérifier que c\'est bien vous.'**
+  /// **'Nous vous envoyons un code pour vérifier que c’est bien vous.'**
   String get yourNumberIntro;
 
   /// No description provided for @receiveCodeBy.
@@ -160,16 +160,10 @@ abstract class AppLocalizations {
   /// **'Recevoir le code'**
   String get receiveCode;
 
-  /// No description provided for @theCode.
-  ///
-  /// In fr, this message translates to:
-  /// **'Le code'**
-  String get theCode;
-
   /// No description provided for @codeSentTo.
   ///
   /// In fr, this message translates to:
-  /// **'Envoyé sur {channel} au {phone}'**
+  /// **'Envoyé sur {channel} au {phone}.'**
   String codeSentTo(String channel, String phone);
 
   /// No description provided for @welcomeBack.
@@ -1336,34 +1330,16 @@ abstract class AppLocalizations {
   /// **'{name} a 48 h pour confirmer ou signaler un problème. Sans réponse, l\'argent vous est versé au bout de 48 h.'**
   String finishedNote(String name);
 
-  /// No description provided for @numberPrivate.
-  ///
-  /// In fr, this message translates to:
-  /// **'Votre numéro n\'est jamais montré aux prestataires.'**
-  String get numberPrivate;
-
-  /// No description provided for @numberUnknownPrefix.
-  ///
-  /// In fr, this message translates to:
-  /// **'Ce numéro ne correspond à aucun opérateur de RDC.'**
-  String get numberUnknownPrefix;
-
   /// No description provided for @smsSub.
   ///
   /// In fr, this message translates to:
-  /// **'Un SMS avec le code'**
+  /// **'Un message texte sur ce numéro'**
   String get smsSub;
-
-  /// No description provided for @receiveOtherWay.
-  ///
-  /// In fr, this message translates to:
-  /// **'Recevoir le code autrement'**
-  String get receiveOtherWay;
 
   /// No description provided for @codeSentBySms.
   ///
   /// In fr, this message translates to:
-  /// **'Envoyé par SMS au {phone}'**
+  /// **'Envoyé par SMS au {phone}.'**
   String codeSentBySms(String phone);
 
   /// No description provided for @noCodeChannel.
@@ -1371,6 +1347,48 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'Aucun canal n\'est disponible pour le moment. Réessayez dans un instant.'**
   String get noCodeChannel;
+
+  /// No description provided for @numberNotCongolese.
+  ///
+  /// In fr, this message translates to:
+  /// **'Ce numéro ne semble pas être un numéro congolais.'**
+  String get numberNotCongolese;
+
+  /// No description provided for @neverAskCode.
+  ///
+  /// In fr, this message translates to:
+  /// **'Nous ne vous demanderons jamais ce code par téléphone ni par message.'**
+  String get neverAskCode;
+
+  /// No description provided for @enterCode.
+  ///
+  /// In fr, this message translates to:
+  /// **'Entrez le code'**
+  String get enterCode;
+
+  /// No description provided for @codeHint.
+  ///
+  /// In fr, this message translates to:
+  /// **'Valable 10 minutes. Ne le partagez avec personne.'**
+  String get codeHint;
+
+  /// No description provided for @codeSentToast.
+  ///
+  /// In fr, this message translates to:
+  /// **'Code envoyé par {channel}.'**
+  String codeSentToast(String channel);
+
+  /// No description provided for @codeResentToast.
+  ///
+  /// In fr, this message translates to:
+  /// **'Nouveau code envoyé par {channel}.'**
+  String codeResentToast(String channel);
+
+  /// No description provided for @receiveInstead.
+  ///
+  /// In fr, this message translates to:
+  /// **'Recevoir plutôt par {channel}'**
+  String receiveInstead(String channel);
 }
 
 class _AppLocalizationsDelegate
