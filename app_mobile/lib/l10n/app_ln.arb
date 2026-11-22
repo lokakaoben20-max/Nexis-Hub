@@ -10,8 +10,7 @@
   "whatsappSub": "Code ekoya na mwa ba seconde",
   "telegramSub": "Na bot ya Nexis Hub",
   "receiveCode": "Kozwa code",
-  "theCode": "Code",
-  "codeSentTo": "Etindami na {channel} na {phone}",
+  "codeSentTo": "Etindami na {channel} na {phone}.",
   "welcomeBack": "Boyei malamu",
   "hello": "Mbote, {name}",
   "myWallets": "Esika na ngai ya mbongo",
@@ -84,13 +83,11 @@
   "close": "Kokanga",
   "quotesPill": "Devis {count}",
   "waitingPill": "Ezali kozela",
-  "legalText": "Soki okobi liboso, ondimi {terms} mpe {privacy}.",
   "legalTerms": "Mibeko ya kosalela",
   "legalPrivacy": "Politiki ya kobomba sango",
   "notReceived": "Ozwi te ?",
   "resendIn": "Kotinda lisusu na {time}",
   "resendNow": "Tinda code lisusu",
-  "receiveInstead": "Zwa yango na {channel}",
   "myInfo": "Makambo na ngai",
   "myInfoSub": "Nkombo, foto, commune",
   "devicesCount": "{count, plural, =1{Appareil 1 ekangami} other{Ba appareils {count} ekangami}}",
@@ -217,5 +214,43 @@
   "confirmCode": "Ndima",
   "wrongCode": "{count, plural, =1{Code ezali malamu te. Meka mbala 1 lisusu.} other{Code ezali malamu te. Meka mbala {count} lisusu.}}",
   "codeLocked": "Omeki mingi. Kaka {name} akoki sikoyo kondima ete okomi.",
-  "finishedNote": "{name} azali na 48 h mpo na kondima to koyebisa mokakatano. Soki azongisi te, okozwa mbongo nsima ya 48 h."
+  "finishedNote": "{name} azali na 48 h mpo na kondima to koyebisa mokakatano. Soki azongisi te, okozwa mbongo nsima ya 48 h.",
+  "smsSub": "Message na nimero oyo",
+  "codeSentBySms": "Etindami na SMS na {phone}.",
+  "@codeSentBySms": {
+    "placeholders": {
+      "phone": {
+        "type": "String"
+      }
+    }
+  },
+  "noCodeChannel": "Nzela moko te ezali sikoyo. Meka lisusu na mwa ntango moke.",
+  "numberNotCongolese": "Nimero oyo emonani lokola nimero ya Kongó te.",
+  "neverAskCode": "Tokosenga code oyo na telefone to na message soki moke te.",
+  "enterCode": "Tya code",
+  "codeHint": "Ezali malamu mpo na miniti 10. Kopesa yango na moto moko te.",
+  "codeSentToast": "Code etindami na {channel}.",
+  "codeResentToast": "Code ya sika etindami na {channel}.",
+  "receiveInstead": "Kozwa na {channel} na esika",
+  "@receiveInstead": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "@codeSentToast": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "@codeResentToast": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  }
 }

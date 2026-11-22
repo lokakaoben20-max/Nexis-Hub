@@ -10,8 +10,7 @@
   "whatsappSub": "The code arrives in seconds",
   "telegramSub": "With the Nexis Hub bot",
   "receiveCode": "Get the code",
-  "theCode": "The code",
-  "codeSentTo": "Sent on {channel} to {phone}",
+  "codeSentTo": "Sent on {channel} to {phone}.",
   "welcomeBack": "Welcome back",
   "hello": "Hello, {name}",
   "myWallets": "My wallets",
@@ -84,13 +83,11 @@
   "close": "Close",
   "quotesPill": "{count} quotes",
   "waitingPill": "Waiting",
-  "legalText": "By continuing, you accept the {terms} and the {privacy}.",
   "legalTerms": "Terms of use",
   "legalPrivacy": "Privacy policy",
   "notReceived": "Didn't get it?",
   "resendIn": "Resend in {time}",
   "resendNow": "Resend the code",
-  "receiveInstead": "Get it by {channel} instead",
   "myInfo": "My details",
   "myInfoSub": "Name, photo, commune",
   "devicesCount": "{count, plural, =1{1 connected device} other{{count} connected devices}}",
@@ -217,5 +214,43 @@
   "confirmCode": "Confirm",
   "wrongCode": "{count, plural, =1{Wrong code. 1 try left.} other{Wrong code. {count} tries left.}}",
   "codeLocked": "Too many tries. Only {name} can confirm your arrival now.",
-  "finishedNote": "{name} has 48 h to confirm or report a problem. With no answer, the money is paid to you after 48 h."
+  "finishedNote": "{name} has 48 h to confirm or report a problem. With no answer, the money is paid to you after 48 h.",
+  "smsSub": "A text message to this number",
+  "codeSentBySms": "Sent by SMS to {phone}.",
+  "@codeSentBySms": {
+    "placeholders": {
+      "phone": {
+        "type": "String"
+      }
+    }
+  },
+  "noCodeChannel": "No channel is available right now. Please try again in a moment.",
+  "numberNotCongolese": "This doesn't look like a Congolese number.",
+  "neverAskCode": "We will never ask for this code by phone or message.",
+  "enterCode": "Enter the code",
+  "codeHint": "Valid for 10 minutes. Don't share it with anyone.",
+  "codeSentToast": "Code sent by {channel}.",
+  "codeResentToast": "New code sent by {channel}.",
+  "receiveInstead": "Get it by {channel} instead",
+  "@receiveInstead": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "@codeSentToast": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  },
+  "@codeResentToast": {
+    "placeholders": {
+      "channel": {
+        "type": "String"
+      }
+    }
+  }
 }

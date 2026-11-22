@@ -41,11 +41,8 @@ class AppLocalizationsLn extends AppLocalizations {
   String get receiveCode => 'Kozwa code';
 
   @override
-  String get theCode => 'Code';
-
-  @override
   String codeSentTo(String channel, String phone) {
-    return 'Etindami na $channel na $phone';
+    return 'Etindami na $channel na $phone.';
   }
 
   @override
@@ -257,11 +254,6 @@ class AppLocalizationsLn extends AppLocalizations {
   String get waitingPill => 'Ezali kozela';
 
   @override
-  String legalText(String terms, String privacy) {
-    return 'Soki okobi liboso, ondimi $terms mpe $privacy.';
-  }
-
-  @override
   String get legalTerms => 'Mibeko ya kosalela';
 
   @override
@@ -277,11 +269,6 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String get resendNow => 'Tinda code lisusu';
-
-  @override
-  String receiveInstead(String channel) {
-    return 'Zwa yango na $channel';
-  }
 
   @override
   String get myInfo => 'Makambo na ngai';
@@ -774,5 +761,47 @@ class AppLocalizationsLn extends AppLocalizations {
   @override
   String finishedNote(String name) {
     return '$name azali na 48 h mpo na kondima to koyebisa mokakatano. Soki azongisi te, okozwa mbongo nsima ya 48 h.';
+  }
+
+  @override
+  String get smsSub => 'Message na nimero oyo';
+
+  @override
+  String codeSentBySms(String phone) {
+    return 'Etindami na SMS na $phone.';
+  }
+
+  @override
+  String get noCodeChannel =>
+      'Nzela moko te ezali sikoyo. Meka lisusu na mwa ntango moke.';
+
+  @override
+  String get numberNotCongolese =>
+      'Nimero oyo emonani lokola nimero ya Kongó te.';
+
+  @override
+  String get neverAskCode =>
+      'Tokosenga code oyo na telefone to na message soki moke te.';
+
+  @override
+  String get enterCode => 'Tya code';
+
+  @override
+  String get codeHint =>
+      'Ezali malamu mpo na miniti 10. Kopesa yango na moto moko te.';
+
+  @override
+  String codeSentToast(String channel) {
+    return 'Code etindami na $channel.';
+  }
+
+  @override
+  String codeResentToast(String channel) {
+    return 'Code ya sika etindami na $channel.';
+  }
+
+  @override
+  String receiveInstead(String channel) {
+    return 'Kozwa na $channel na esika';
   }
 }

@@ -8,6 +8,11 @@ class DemoRepository implements NexisRepository {
 
   final DateTime _now;
 
+  /// Aperçu : tout est fictif ici, le code aussi. La vraie connexion lira
+  /// les canaux réellement disponibles auprès du serveur.
+  @override
+  Set<String> get codeChannels => const {'whatsapp', 'telegram', 'sms'};
+
   @override
   Future<Profile> profile() async => const Profile(
     firstName: 'Grâce',

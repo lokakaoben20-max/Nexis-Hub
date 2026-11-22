@@ -46,6 +46,10 @@ class PhRegular {
   static const IconData globe = IconData(0xe288, fontFamily: 'Phosphor');
   static const IconData house = IconData(0xe2c2, fontFamily: 'Phosphor');
   static const IconData shieldCheck = IconData(0xe40c, fontFamily: 'Phosphor');
+  static const IconData warningCircle = IconData(
+    0xe4e2,
+    fontFamily: 'Phosphor',
+  );
   static const IconData slidersHorizontal = IconData(
     0xe434,
     fontFamily: 'Phosphor',
