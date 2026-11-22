@@ -1,0 +1,26 @@
+// Aperçu de la Mini App (données fictives) publié par Cloudflare Workers
+// Builds pour chaque branche : voir apercu/worker.js. Rien de la production
+// (bot, backend, Mini App réelle) ne passe par ce Worker.
+// Branche « production » réglée dans Cloudflare (Build > Production branch) :
+// celle de l'aperçu en cours ; adresse fixe nexis-hub.lokakaoben20.workers.dev.
+{
+  "name": "nexis-hub",
+  "main": "apercu/worker.js",
+  "compatibility_date": "2025-09-01",
+  // Adresses publiques *.workers.dev : nécessaires pour ouvrir l'aperçu
+  // sur un téléphone.
+  "workers_dev": true,
+  "preview_urls": true,
+  // Mini App + application Flutter (web), assemblées par ce script.
+  "build": { "command": "bash apercu/construire.sh" },
+  "assets": {
+    "directory": "./apercu/public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "observability": { "enabled": false },
+  // Date de la version publiée, affichée en bas de la page d'accueil.
+  "version_metadata": { "binding": "VERSION" },
+  // Une adresse d'aperçu par branche (commande « npx wrangler preview »).
+  "previews": {}
+}

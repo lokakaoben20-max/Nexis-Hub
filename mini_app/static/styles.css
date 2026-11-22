@@ -177,14 +177,31 @@ button:disabled { cursor: default; }
 .toggle[aria-checked="true"]::after { left: 21px; }
 .toggle:disabled { opacity: .5; }
 
-.wallet { border: 0; text-align: left; width: 100%; border-radius: 22px; padding: 16px; color: #fff; background: var(--card-grad); display: grid; gap: 4px; }
-.wallet small { font-size: 12px; opacity: .85; }
-.wallet .big { font: 600 26px/1.2 var(--title); letter-spacing: -.01em; }
-.wallet .row2 { display: flex; gap: 8px; align-items: center; font-size: 12px; margin-top: 6px; opacity: .92; }
-.wallet .row2 svg { width: 15px; height: 15px; flex: none; }
-.dots { display: flex; gap: 5px; margin-top: 6px; }
-.dots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, .45); }
-.dots i.on { width: 16px; border-radius: 3px; background: #fff; }
+.wallet-card {
+  position: relative; isolation: isolate; overflow: hidden;
+  width: 100%; border-radius: 24px; padding: 20px;
+  color: #fff; background: linear-gradient(135deg, rgba(2, 25, 55, .22), rgba(2, 25, 55, .18)), var(--card-grad);
+  box-shadow: 0 16px 30px -17px rgba(3, 80, 230, .75);
+  display: grid; gap: 6px;
+}
+.wallet-card__head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.wallet-card__brand { font: 600 10px/1.2 var(--title); letter-spacing: .16em; color: #fff; }
+.wallet-card__currencies { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px; border-radius: 14px; background: rgba(2, 25, 55, .30); border: 1px solid rgba(255,255,255,.24); }
+.wallet-card__currency { min-width: 64px; min-height: 44px; padding: 0 12px; border: 0; border-radius: 10px; color: #fff; background: transparent; font: 600 13px/1 var(--text); cursor: pointer; }
+.wallet-card__currency[aria-pressed="true"] { color: #021937; background: #fff; }
+.wallet-card__label { margin-top: 12px; color: rgba(255,255,255,.94); font-size: 13px; font-weight: 500; }
+.wallet-card__amount-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.wallet-card__amount { flex: 1; min-width: 0; font: 600 clamp(1.45rem, 7.3vw, 2.05rem)/1.25 var(--title); letter-spacing: -.035em; overflow-wrap: anywhere; animation: wallet-balance-in 240ms ease-out both; }
+.wallet-card__eye,.wallet-card__info { flex: none; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; color: #fff; background: rgba(255,255,255,.16); cursor: pointer; }
+.wallet-card__eye svg { width: 19px; height: 19px; }
+.wallet-card__locked { display: flex; align-items: center; gap: 7px; margin-top: 8px; color: #fff; font-size: 12.5px; line-height: 1.4; font-weight: 600; }
+.wallet-card__locked > svg { width: 16px; height: 16px; flex: none; }
+.wallet-card__locked-text { flex: 1; min-width: 0; }
+.wallet-card__info { width: 44px; height: 44px; background: transparent; }
+.wallet-card__info svg { width: 20px; height: 20px; }
+.wallet-card__explanation { margin: 2px 0 0; color: #fff; font-size: 12px; line-height: 1.5; }
+.wallet-card button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+@keyframes wallet-balance-in { from { opacity: .45; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .stats div { background: var(--surface); border-radius: 16px; padding: 10px 12px; box-shadow: 0 0 0 1px var(--line); display: grid; gap: 2px; }
@@ -236,6 +253,8 @@ button:disabled { cursor: default; }
 
 .chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .chips > * { font-size: 12.5px; font-weight: 600; padding: 8px 12px; border-radius: 12px; background: var(--surface); box-shadow: 0 0 0 1px var(--line-2); color: var(--ink); border: 0; }
+.lbl .count { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.chips [aria-pressed="true"]::before { content: "✓ "; }
 .chips [aria-pressed="true"], .chips .on { background: var(--brand-soft); box-shadow: 0 0 0 1.5px var(--brand); color: var(--brand); }
 
 .linkcard { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; border: 0; font-size: 13px; color: var(--muted); background: var(--surface); border-radius: 14px; padding: 12px 14px; box-shadow: 0 0 0 1px var(--line); text-align: left; }
@@ -267,6 +286,9 @@ button:disabled { cursor: default; }
 
 .info { display: flex; gap: 10px; align-items: flex-start; background: var(--brand-soft); color: var(--brand-soft-ink); border-radius: 16px; padding: 12px 14px; font-size: 12.5px; line-height: 1.45; }
 .info svg { width: 18px; height: 18px; flex: none; margin-top: 1px; }
+.info.act { width: 100%; border: 0; text-align: left; align-items: center; font: inherit; font-size: 12.5px; cursor: pointer; }
+.info.act span { flex: 1; }
+.info.act svg { margin-top: 0; }
 
 .msg { margin: 0; font-size: 13px; line-height: 1.45; border-radius: 12px; padding: 10px 12px; }
 .msg.error { background: var(--danger-soft); color: var(--danger); }
@@ -306,7 +328,7 @@ button:disabled { cursor: default; }
 .toast.error { background: var(--danger); color: #fff; }
 .toast[hidden] { display: none; }
 
-@media (prefers-reduced-motion: reduce) {
+@media (prefers-reduced-motion: reduce) { .wallet-card__amount { animation: none; }
   *, *::before, *::after { transition: none !important; animation-duration: 0s !important; }
 }
 
@@ -330,6 +352,27 @@ button:disabled { cursor: default; }
 .mv svg { width: 16px; height: 16px; }
 .mv.in { background: var(--ok-soft); color: var(--ok-ink); }
 .mv.out { background: var(--wait-bg); color: var(--wait-ink); }
+/* Carte de mission : rien de coupé, l'état lisible d'un coup d'œil */
+.row.open { align-items: flex-start; }
+.row.open > .pill { margin-top: 2px; }
+.row.open > svg:last-child { margin-top: 4px; }
+.mcard { gap: 3px; }
+.mcard b.wrap { line-height: 1.3; }
+.mstate { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.mstate::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--brand); flex: none; }
+.mstate.s-pending::before, .mstate.s-quoted::before { background: var(--faint); }
+.mstate.s-awaiting_confirmation::before { background: #E8A400; }
+.mstate.s-completed::before { background: var(--ok); }
+.mstate.s-cancelled::before { background: var(--faint); }
+.mstate.s-disputed::before { background: var(--danger); }
+.btn.sm.wide { width: 100%; justify-self: stretch; height: 42px; font-size: 13px; }
+
+.card.part { gap: 4px; justify-items: start; }
+.card.part small { font-size: 12.5px; color: var(--muted); }
+.card.part b { font: 600 26px var(--title); letter-spacing: -.01em; }
+.card.part .pill { margin-top: 6px; }
+.pills .mstate { padding: 4px 2px; }
+
 .amt { font: 600 13.5px var(--title); white-space: nowrap; }
 .amt.in { color: var(--ok-ink); }
 
