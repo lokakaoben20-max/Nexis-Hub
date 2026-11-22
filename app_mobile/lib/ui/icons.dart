@@ -72,7 +72,7 @@ class PhRegular {
     fontFamily: 'Phosphor',
   );
   static const IconData mapPin = IconData(0xe316, fontFamily: 'Phosphor');
-  static const IconData info = IconData(0xe2ce, fontFamily: 'Phosphor');
+  static const IconData info = IconData(0xe606, fontFamily: 'Phosphor');
   static const IconData deviceMobileCamera = IconData(
     0xe1e2,
     fontFamily: 'Phosphor',
@@ -80,6 +80,10 @@ class PhRegular {
 }
 
 class PhFill {
+  static const IconData sealCheck = IconData(
+    0xe606,
+    fontFamily: 'PhosphorFill',
+  );
   static const IconData lockSimple = IconData(
     0xe308,
     fontFamily: 'PhosphorFill',
@@ -165,7 +169,7 @@ class PhFill {
     0xe16c,
     fontFamily: 'PhosphorFill',
   );
-  static const IconData info = IconData(0xe2ce, fontFamily: 'PhosphorFill');
+  static const IconData info = IconData(0xe606, fontFamily: 'PhosphorFill');
 }
 
 class PhBold {

@@ -17,6 +17,9 @@ class AppLocalizationsFr extends AppLocalizations {
       'Nous vous mettons en relation avec des professionnels de confiance';
 
   @override
+  String get verifiedProvider => 'Prestataire vérifié';
+
+  @override
   String get start => 'Commencer';
 
   @override
@@ -66,6 +69,12 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
+  String get hideAmounts => 'Masquer les montants';
+
+  @override
+  String get showAmounts => 'Afficher les montants';
+
+  @override
   String walletLocked(String amount) {
     return '$amount bloqués pour vos missions en cours';
   }
@@ -76,12 +85,6 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get walletInfoLabel => 'Pourquoi ce montant est-il bloqué ?';
-
-  @override
-  String get hideAmounts => 'Masquer les montants';
-
-  @override
-  String get showAmounts => 'Afficher les montants';
 
   @override
   String get actionServices => 'Services';

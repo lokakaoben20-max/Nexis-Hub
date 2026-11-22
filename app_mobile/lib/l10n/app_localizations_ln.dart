@@ -16,6 +16,9 @@ class AppLocalizationsLn extends AppLocalizations {
   String get welcomeIntro => 'Tokokutanisa bino na basali ya kotyela motema';
 
   @override
+  String get verifiedProvider => 'Mosali vérifié';
+
+  @override
   String get start => 'Kobanda';
 
   @override
@@ -65,6 +68,12 @@ class AppLocalizationsLn extends AppLocalizations {
   }
 
   @override
+  String get hideAmounts => 'Kobomba mitango';
+
+  @override
+  String get showAmounts => 'Komonisa mitango';
+
+  @override
   String walletLocked(String amount) {
     return '$amount ekangami mpo na misala na yo oyo ezali kosalema';
   }
@@ -75,12 +84,6 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String get walletInfoLabel => 'Mpo na nini mbongo oyo ekangami?';
-
-  @override
-  String get hideAmounts => 'Kobomba mitango';
-
-  @override
-  String get showAmounts => 'Komonisa mitango';
 
   @override
   String get actionServices => 'Misala';
