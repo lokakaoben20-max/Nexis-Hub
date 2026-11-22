@@ -805,4 +805,152 @@ class AppLocalizationsEn extends AppLocalizations {
   String receiveInstead(String channel) {
     return 'Get it by $channel instead';
   }
+
+  @override
+  String helloHome(String name) {
+    return 'Hello, $name';
+  }
+
+  @override
+  String heldForMissions(String amount) {
+    return '$amount held for your ongoing missions';
+  }
+
+  @override
+  String get heldWhy => 'Why these funds are held';
+
+  @override
+  String get heldTip =>
+      'This money is still yours. It is set aside to pay the professional once the mission is done and you have confirmed it.';
+
+  @override
+  String get currency => 'Currency';
+
+  @override
+  String get quickActions => 'Quick actions';
+
+  @override
+  String reviewsCount(int count) {
+    return '$count reviews';
+  }
+
+  @override
+  String completedOn(String date) {
+    return 'Completed on $date';
+  }
+
+  @override
+  String get followMission => 'Follow the mission';
+
+  @override
+  String seeMissions(int count) {
+    return 'See all $count missions';
+  }
+
+  @override
+  String get recentMovements => 'Latest movements';
+
+  @override
+  String get newBadge => 'New';
+
+  @override
+  String get allServices => 'All services';
+
+  @override
+  String get searchService => 'Search for a service';
+
+  @override
+  String get recents => 'Recent';
+
+  @override
+  String get newAndRecommended => 'New and recommended';
+
+  @override
+  String requestedIn(String month) {
+    return 'Requested in $month';
+  }
+
+  @override
+  String requestedOn(String date) {
+    return 'Requested on $date';
+  }
+
+  @override
+  String get addedThisWeek => 'Added this week';
+
+  @override
+  String get recommendedForYou => 'Recommended for you';
+
+  @override
+  String get noServiceMatches => 'No service matches.';
+
+  @override
+  String get cantFindService => 'Can\'t find your service?';
+
+  @override
+  String get cantFindHint =>
+      'Describe your need in your own words, we pass it on to the team.';
+
+  @override
+  String get describeNeed => 'Describe my need';
+
+  @override
+  String get describeLead =>
+      'Tell us what you need in your own words. The Nexis Hub team looks at your request and finds the right professional.';
+
+  @override
+  String get describeTypeLabel => 'What kind of service?';
+
+  @override
+  String get describeTypeHint => 'For example: gate repair';
+
+  @override
+  String get describeTextLabel => 'Describe your need';
+
+  @override
+  String get describeTextHint => 'Where, what, and when if it is urgent';
+
+  @override
+  String get optional => 'optional';
+
+  @override
+  String get photos => 'Photos';
+
+  @override
+  String get addShort => 'Add';
+
+  @override
+  String get describeNoPay =>
+      'You pay nothing at this step. You are notified in the app as soon as we have an answer.';
+
+  @override
+  String get sendRequest => 'Send my request';
+
+  @override
+  String get requestSent => 'Request sent';
+
+  @override
+  String get requestSentText =>
+      'We have received your request. You will be notified in the app, and on WhatsApp or Telegram, as soon as we have an answer.';
+
+  @override
+  String get backHome => 'Back to home';
+
+  @override
+  String get requestNotSent =>
+      'The request was not sent. Try again in a moment.';
+
+  @override
+  String get notifications => 'Notifications';
+
+  @override
+  String get notificationsSub => 'WhatsApp and in the app';
+
+  @override
+  String termsVersion(String date) {
+    return 'Version of $date';
+  }
+
+  @override
+  String get securedByNexis => 'Secured by Nexis Hub';
 }

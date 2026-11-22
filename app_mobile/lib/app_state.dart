@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import 'data/money.dart';
 import 'data/repository.dart';
 
 /// État partagé de l'app : langue choisie et accès aux données.
@@ -24,6 +25,26 @@ class AppState extends ChangeNotifier {
   }
 
   bool get signedIn => _signedIn;
+
+  Currency _walletCurrency = Currency.cdf;
+  bool _amountsHidden = false;
+
+  /// Devise montrée sur la carte du portefeuille (accueil et portefeuille
+  /// la partagent) et masquage des montants.
+  Currency get walletCurrency => _walletCurrency;
+  bool get amountsHidden => _amountsHidden;
+
+  void setWalletCurrency(Currency value) {
+    if (value == _walletCurrency) return;
+    _walletCurrency = value;
+    notifyListeners();
+  }
+
+  void setAmountsHidden(bool value) {
+    if (value == _amountsHidden) return;
+    _amountsHidden = value;
+    notifyListeners();
+  }
 
   bool _providerSpace = false;
 
@@ -50,6 +71,7 @@ class AppState extends ChangeNotifier {
   void signOut() {
     _signedIn = false;
     _providerSpace = false;
+    _amountsHidden = false;
     notifyListeners();
   }
 }

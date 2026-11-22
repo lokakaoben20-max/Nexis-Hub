@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
-import '../ui/icons.dart';
+import '../ui/nx_icon.dart';
+import '../ui/nx_parts.dart';
+import '../ui/loader.dart';
+import 'services_list.dart';
 
 import '../data/models.dart';
 import '../l10n/app_localizations.dart';
@@ -148,6 +151,14 @@ class _ShellState extends State<Shell> {
                     _togglePicker();
                     showComingSoon(context, label);
                   },
+                  onOther: () {
+                    _togglePicker();
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AllServicesScreen(),
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
@@ -189,26 +200,16 @@ class _ShellState extends State<Shell> {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _item(0, PhRegular.house, PhFill.house, l.navHome),
+                            _item(0, 'home', 'homeFilled', l.navHome),
                             _item(
                               1,
-                              PhRegular.clipboardText,
-                              PhFill.clipboardText,
+                              'missions',
+                              'missionsFilled',
                               l.navMissions,
                             ),
                             const Expanded(child: SizedBox()),
-                            _item(
-                              2,
-                              PhRegular.wallet,
-                              PhFill.wallet,
-                              l.navWallet,
-                            ),
-                            _item(
-                              3,
-                              PhRegular.userCircle,
-                              PhFill.userCircle,
-                              l.navProfile,
-                            ),
+                            _item(2, 'wallet', 'walletFilled', l.navWallet),
+                            _item(3, 'profile', 'profileFilled', l.navProfile),
                           ],
                         ),
                       ),
@@ -237,7 +238,7 @@ class _ShellState extends State<Shell> {
     );
   }
 
-  Widget _item(int index, IconData icon, IconData active, String label) {
+  Widget _item(int index, String glyph, String active, String label) {
     final selected = _tab == index;
     final color = selected ? NexisColors.brand : const Color(0xFF8A94A6);
     final dark = Theme.of(context).brightness == Brightness.dark;
@@ -253,7 +254,7 @@ class _ShellState extends State<Shell> {
           onTap: () => go(index),
           child: Column(
             children: [
-              Icon(selected ? active : icon, color: shown, size: 23),
+              NxIcon(selected ? active : glyph, color: shown, size: 25),
               const SizedBox(height: 5),
               Text(
                 label,
@@ -338,7 +339,7 @@ class _PlusButton extends StatelessWidget {
             turns: open ? 135 / 360 : 0,
             duration: Duration(milliseconds: reduce ? 0 : 350),
             curve: const Cubic(.3, 1.4, .5, 1),
-            child: const Icon(PhBold.plus, color: Colors.white, size: 26),
+            child: const NxIcon('add', color: Colors.white, size: 26),
           ),
         ),
       ),
@@ -346,30 +347,27 @@ class _PlusButton extends StatelessWidget {
   }
 }
 
-/// « Quel service ? » : neuf ronds sur trois colonnes, comme la maquette.
-/// Le neuvième, « Autre », mène à « Mon besoin n'est pas dans la liste ».
+/// « Quel service ? » (maquette validée) : huit services en tuiles sur trois
+/// colonnes, les demandés récemment d'abord, puis « Autre », qui ouvre la
+/// liste complète. La liste vient du serveur.
 class _ServiceSheet extends StatelessWidget {
   const _ServiceSheet({
     required this.open,
     required this.reduce,
     required this.onPicked,
+    required this.onOther,
   });
 
   final bool open;
   final bool reduce;
   final void Function(String label) onPicked;
+  final VoidCallback onOther;
 
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
-    final lang = langOf(context);
     final p = context.palette;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final services = Service.values.where((s) => s != Service.autre).toList();
-    final tiles = <(Service, String, String)>[
-      for (final s in services) (s, serviceName(s, lang), serviceName(s, lang)),
-      (Service.autre, l.otherNeed, l.notInList),
-    ];
+    final dark = isDark(context);
     return AnimatedSlide(
       offset: open ? Offset.zero : const Offset(0, 1.1),
       duration: Duration(milliseconds: reduce ? 0 : 380),
@@ -384,25 +382,50 @@ class _ServiceSheet extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(l.whichService, style: title(17, color: p.ink)),
+            Text(l.whichService, style: title(18, color: p.ink)),
             const SizedBox(height: 4),
             Text(
               l.pickServiceHint,
-              style: body(13, color: dark ? p.muted : const Color(0xFF5B667A)),
+              style: body(14, color: mutedColor(context)),
             ),
-            const SizedBox(height: 16),
-            GridView.count(
-              crossAxisCount: 3,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: EdgeInsets.zero,
-              mainAxisSpacing: 16,
-              crossAxisSpacing: 6,
-              childAspectRatio: 1.3,
-              children: [
-                for (var i = 0; i < tiles.length; i++)
-                  _tile(context, tiles[i], i),
-              ],
+            const SizedBox(height: 14),
+            Loaded<List<CatalogService>>(
+              load: AppScope.of(context).repository.serviceCatalog,
+              builder: (context, all) {
+                final shown = sheetServices(all);
+                return GridView(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.zero,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    mainAxisExtent: 88,
+                  ),
+                  children: [
+                    for (final s in shown)
+                      _tile(
+                        context,
+                        label: s.name,
+                        icon: catalogTile(
+                          s,
+                          size: 44,
+                          badge: s.isNew
+                              ? NewBadge(ringColor: _tileBg(context))
+                              : null,
+                        ),
+                        onTap: () => onPicked(s.name),
+                      ),
+                    _tile(
+                      context,
+                      label: l.otherNeed,
+                      icon: KnownServiceTile(Service.autre, size: 44),
+                      onTap: onOther,
+                    ),
+                  ],
+                );
+              },
             ),
           ],
         ),
@@ -410,47 +433,41 @@ class _ServiceSheet extends StatelessWidget {
     );
   }
 
-  Widget _tile(BuildContext context, (Service, String, String) tile, int i) {
-    final (service, label, picked) = tile;
-    final visual = serviceVisual(service);
+  Color _tileBg(BuildContext context) =>
+      isDark(context) ? context.palette.bg : const Color(0xFFF3F5F9);
+
+  Widget _tile(
+    BuildContext context, {
+    required String label,
+    required Widget icon,
+    required VoidCallback onTap,
+  }) {
     final p = context.palette;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return AnimatedOpacity(
-      opacity: open ? 1 : 0,
-      duration: Duration(milliseconds: reduce ? 0 : 250 + 30 * i),
-      child: AnimatedSlide(
-        offset: open ? Offset.zero : const Offset(0, .12),
-        duration: Duration(milliseconds: reduce ? 0 : 250 + 30 * i),
-        child: Semantics(
-          button: true,
-          label: label,
-          excludeSemantics: true,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => onPicked(picked),
-            child: Column(
-              children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: dark ? p.bg : Colors.white,
-                    border: Border.all(
-                      color: dark ? p.line : const Color(0xFFE3E7EE),
-                    ),
-                  ),
-                  child: Icon(visual.icon, size: 28, color: visual.color),
-                ),
-                const SizedBox(height: 7),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: body(12, weight: FontWeight.w600, color: p.ink),
-                ),
-              ],
-            ),
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+          decoration: BoxDecoration(
+            color: _tileBg(context),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: [
+              icon,
+              const SizedBox(height: 6),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: body(12.5, weight: FontWeight.w600, color: p.ink),
+              ),
+            ],
           ),
         ),
       ),

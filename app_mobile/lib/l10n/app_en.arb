@@ -253,5 +253,103 @@
         "type": "String"
       }
     }
-  }
+  },
+  "helloHome": "Hello, {name}",
+  "@helloHome": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "heldForMissions": "{amount} held for your ongoing missions",
+  "@heldForMissions": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "heldWhy": "Why these funds are held",
+  "heldTip": "This money is still yours. It is set aside to pay the professional once the mission is done and you have confirmed it.",
+  "currency": "Currency",
+  "quickActions": "Quick actions",
+  "reviewsCount": "{count} reviews",
+  "@reviewsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "completedOn": "Completed on {date}",
+  "@completedOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "followMission": "Follow the mission",
+  "seeMissions": "See all {count} missions",
+  "@seeMissions": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "recentMovements": "Latest movements",
+  "newBadge": "New",
+  "allServices": "All services",
+  "searchService": "Search for a service",
+  "recents": "Recent",
+  "newAndRecommended": "New and recommended",
+  "requestedIn": "Requested in {month}",
+  "@requestedIn": {
+    "placeholders": {
+      "month": {
+        "type": "String"
+      }
+    }
+  },
+  "requestedOn": "Requested on {date}",
+  "@requestedOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "addedThisWeek": "Added this week",
+  "recommendedForYou": "Recommended for you",
+  "noServiceMatches": "No service matches.",
+  "cantFindService": "Can't find your service?",
+  "cantFindHint": "Describe your need in your own words, we pass it on to the team.",
+  "describeNeed": "Describe my need",
+  "describeLead": "Tell us what you need in your own words. The Nexis Hub team looks at your request and finds the right professional.",
+  "describeTypeLabel": "What kind of service?",
+  "describeTypeHint": "For example: gate repair",
+  "describeTextLabel": "Describe your need",
+  "describeTextHint": "Where, what, and when if it is urgent",
+  "optional": "optional",
+  "photos": "Photos",
+  "addShort": "Add",
+  "describeNoPay": "You pay nothing at this step. You are notified in the app as soon as we have an answer.",
+  "sendRequest": "Send my request",
+  "requestSent": "Request sent",
+  "requestSentText": "We have received your request. You will be notified in the app, and on WhatsApp or Telegram, as soon as we have an answer.",
+  "backHome": "Back to home",
+  "requestNotSent": "The request was not sent. Try again in a moment.",
+  "notifications": "Notifications",
+  "notificationsSub": "WhatsApp and in the app",
+  "termsVersion": "Version of {date}",
+  "@termsVersion": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "securedByNexis": "Secured by Nexis Hub"
 }

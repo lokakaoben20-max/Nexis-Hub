@@ -45,6 +45,8 @@ class Mission {
     this.chosen,
     this.distanceKm,
     this.steps = const {},
+    this.providerRating,
+    this.providerReviews,
   });
 
   final int id;
@@ -74,6 +76,14 @@ class Mission {
   /// Heure de chaque étape franchie du suivi.
   final Map<TrackStep, DateTime> steps;
 
+  /// Note et nombre d'avis du prestataire, tels que le serveur les donne
+  /// (jamais calculés dans l'app).
+  final double? providerRating;
+  final int? providerReviews;
+
+  double? get rating => chosen?.rating ?? providerRating;
+  int? get reviews => chosen?.reviews ?? providerReviews;
+
   Mission copyWith({
     MissionStatus? status,
     PaymentState? payment,
@@ -97,6 +107,8 @@ class Mission {
     chosen: chosen ?? this.chosen,
     distanceKm: distanceKm,
     steps: steps ?? this.steps,
+    providerRating: providerRating,
+    providerReviews: providerReviews,
   );
 
   bool get isActive => const [
@@ -146,7 +158,12 @@ class Profile {
     required this.phone,
     required this.commune,
     required this.isProvider,
+    this.termsVersion,
   });
+
+  /// Date de la version des conditions d'utilisation en vigueur et
+  /// acceptée (donnée du serveur).
+  final DateTime? termsVersion;
 
   final String firstName;
   final String lastName;
@@ -360,3 +377,32 @@ class ProviderHome {
 
 /// Réponse au code de présence tapé par le prestataire.
 enum PresenceResult { confirmed, wrongCode, locked }
+
+/// Un service du catalogue tel que le serveur le publie : les services
+/// existants, plus ceux que l'équipe vient d'approuver. L'app ne décide
+/// ni de la liste, ni de qui est « nouveau », ni de l'ordre.
+class CatalogService {
+  const CatalogService({
+    required this.id,
+    required this.name,
+    required this.color,
+    this.service,
+    this.glyph,
+    this.isNew = false,
+    this.lastRequested,
+    this.recommended = false,
+  });
+
+  final String id;
+  final String name;
+  final int color;
+
+  /// Service connu de l'app (icône de la police Nexis) ; sinon `glyph`.
+  final Service? service;
+  final String? glyph;
+
+  /// Ajouté récemment : le serveur fixe la durée de la mention « Nouveau ».
+  final bool isNew;
+  final DateTime? lastRequested;
+  final bool recommended;
+}

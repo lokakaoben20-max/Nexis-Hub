@@ -14,12 +14,13 @@ class DemoRepository implements NexisRepository {
   Set<String> get codeChannels => const {'whatsapp', 'telegram', 'sms'};
 
   @override
-  Future<Profile> profile() async => const Profile(
+  Future<Profile> profile() async => Profile(
     firstName: 'Grâce',
     lastName: 'Nsimba',
     phone: '+243812345412',
     commune: 'Limete',
     isProvider: true,
+    termsVersion: DateTime(2026, 11, 20),
   );
 
   @override
@@ -137,6 +138,8 @@ class DemoRepository implements NexisRepository {
       providerName: 'Jean M.',
       when: _now.subtract(const Duration(days: 2)),
       rated: true,
+      providerRating: 4.8,
+      providerReviews: 92,
     ),
     Mission(
       id: 38,
@@ -148,6 +151,8 @@ class DemoRepository implements NexisRepository {
       providerName: 'Prisca K.',
       when: _now.subtract(const Duration(days: 6)),
       rated: true,
+      providerRating: 4.9,
+      providerReviews: 212,
     ),
     Mission(
       id: 33,
@@ -158,6 +163,8 @@ class DemoRepository implements NexisRepository {
       amount: const Money(18000, Currency.cdf),
       providerName: 'Alain L.',
       when: _now.subtract(const Duration(days: 12)),
+      providerRating: 4.6,
+      providerReviews: 58,
     ),
   ];
 
@@ -269,6 +276,81 @@ class DemoRepository implements NexisRepository {
   @override
   Future<Mission> mission(int id) async =>
       _missions.firstWhere((m) => m.id == id);
+
+  /// Fictif : « Peinture » et « Déménagement » n'existent pas encore, ils
+  /// montrent seulement comment un service tout juste approuvé apparaît.
+  @override
+  Future<List<CatalogService>> serviceCatalog() async => [
+    CatalogService(
+      id: 'plomberie',
+      name: 'Plomberie',
+      service: Service.plomberie,
+      color: 0xFF0350E6,
+      lastRequested: _now.subtract(const Duration(days: 2)),
+    ),
+    CatalogService(
+      id: 'nettoyage',
+      name: 'Nettoyage',
+      service: Service.nettoyage,
+      color: 0xFF1E8A4C,
+      lastRequested: _now.subtract(const Duration(days: 6)),
+    ),
+    const CatalogService(
+      id: 'electricite',
+      name: 'Électricité',
+      service: Service.electricite,
+      color: 0xFFC98200,
+      recommended: true,
+    ),
+    const CatalogService(
+      id: 'climatisation',
+      name: 'Climatisation',
+      service: Service.climatisation,
+      color: 0xFF0A84D6,
+    ),
+    const CatalogService(
+      id: 'informatique',
+      name: 'Informatique',
+      service: Service.informatique,
+      color: 0xFF021937,
+    ),
+    const CatalogService(
+      id: 'peinture',
+      name: 'Peinture',
+      glyph: 'svcPeinture',
+      color: 0xFFB4531A,
+      isNew: true,
+    ),
+    const CatalogService(
+      id: 'coiffure',
+      name: 'Coiffure',
+      service: Service.coiffure,
+      color: 0xFFC2416B,
+    ),
+    const CatalogService(
+      id: 'graphisme',
+      name: 'Graphisme',
+      service: Service.graphisme,
+      color: 0xFF494C95,
+    ),
+    const CatalogService(
+      id: 'jardinage',
+      name: 'Jardinage',
+      service: Service.jardinage,
+      color: 0xFF4F8A10,
+    ),
+    const CatalogService(
+      id: 'demenagement',
+      name: 'Déménagement',
+      glyph: 'svcDemenagement',
+      color: 0xFF2B6CB0,
+      isNew: true,
+    ),
+  ];
+
+  /// Aperçu : la demande n'est envoyée nulle part.
+  @override
+  Future<void> sendFreeRequest(String title, String text) async {}
 
   @override
   Future<List<Quote>> quotes(int missionId) async {

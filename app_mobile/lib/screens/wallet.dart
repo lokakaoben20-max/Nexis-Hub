@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
 
-import '../ui/icons.dart';
-
 import '../app_state.dart';
 import '../data/models.dart';
 import '../data/money.dart';
 import '../l10n/app_localizations.dart';
 import '../ui/common.dart';
 import '../ui/loader.dart';
+import '../ui/nx_icon.dart';
+import '../ui/nx_parts.dart';
 import '../ui/theme.dart';
-import '../ui/wallet_card.dart';
+import '../ui/wallet_panel.dart';
 
-/// 5. Portefeuille : la carte, Dépôt et Retrait, puis chaque mouvement
-/// avec son état en mots.
+/// 5. Portefeuille, d'après la maquette validée : la carte, trois actions,
+/// puis les derniers mouvements de la devise choisie, chacun avec son état
+/// en mots. Les montants et les états sont ceux du serveur.
 class WalletScreen extends StatelessWidget {
   const WalletScreen({super.key});
 
@@ -20,137 +21,123 @@ class WalletScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
     final p = context.palette;
-    final repo = AppScope.of(context).repository;
-    return SafeArea(
-      bottom: false,
-      child: Loaded<({Wallet wallet, List<Movement> movements})>(
-        load: () async =>
-            (wallet: await repo.wallet(), movements: await repo.movements()),
-        builder: (context, data) => ListView(
-          padding: const EdgeInsets.fromLTRB(0, 16, 0, 24),
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: Text(l.navWallet, style: title(22, color: p.ink)),
-            ),
-            const SizedBox(height: 14),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: WalletCard(wallet: data.wallet, alignStart: true),
-            ),
-            const SizedBox(height: 18),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _button(
-                      context,
-                      PhRegular.arrowFatLineDown,
-                      l.actionDeposit,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _button(
-                      context,
-                      PhRegular.arrowFatLineUp,
-                      l.actionWithdraw,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  Expanded(
-                    child: Text(
-                      l.movements,
-                      style: body(15, weight: FontWeight.w600, color: p.ink),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () => showComingSoon(context, l.movements),
-                    child: Text(
-                      l.seeAll,
-                      style: body(
-                        12.5,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 18),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-              decoration: BoxDecoration(
-                color: p.surface,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? p.line
-                      : const Color(0xFFEEF1F5),
+    final state = AppScope.of(context);
+    final repo = state.repository;
+    return ColoredBox(
+      color: pageColor(context),
+      child: SafeArea(
+        bottom: false,
+        child: Loaded<({Wallet wallet, List<Movement> movements})>(
+          load: () async =>
+              (wallet: await repo.wallet(), movements: await repo.movements()),
+          builder: (context, data) {
+            final movements = data.movements
+                .where((m) => m.amount.currency == state.walletCurrency)
+                .toList();
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+              children: [
+                Text(
+                  l.navWallet,
+                  style: title(21, color: p.ink).copyWith(letterSpacing: -.21),
                 ),
-              ),
-              child: Column(
-                children: [
-                  for (var i = 0; i < data.movements.length; i++) ...[
-                    if (i > 0)
-                      Divider(
-                        height: 1,
-                        thickness: 1,
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? p.line
-                            : const Color(0xFFEEF1F5),
-                      ),
-                    _movement(context, data.movements[i]),
+                const SizedBox(height: 16),
+                WalletPanel(wallet: data.wallet),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    _action(context, 'deposit', l.actionDeposit),
+                    _action(context, 'withdraw', l.actionWithdraw),
+                    _action(
+                      context,
+                      'history',
+                      l.actionHistory,
+                      onTap: () => showComingSoon(context, l.movements),
+                    ),
                   ],
+                ),
+                const SizedBox(height: 22),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Text(
+                    l.recentMovements,
+                    style: body(15, weight: FontWeight.w600, color: p.ink),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                for (final m in movements) ...[
+                  _MovementTile(movement: m),
+                  const SizedBox(height: 8),
                 ],
-              ),
-            ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _button(BuildContext context, IconData icon, String label) {
+  Widget _action(
+    BuildContext context,
+    String glyph,
+    String label, {
+    VoidCallback? onTap,
+  }) {
     final p = context.palette;
-    return Semantics(
-      button: true,
-      child: GestureDetector(
-        onTap: () => showComingSoon(context, label),
-        child: Container(
-          height: 50,
-          decoration: BoxDecoration(
-            color: p.soft,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+    return Expanded(
+      child: Semantics(
+        button: true,
+        label: label,
+        excludeSemantics: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap ?? () => showComingSoon(context, label),
+          child: Column(
             children: [
-              Icon(icon, size: 20, color: p.softInk),
-              const SizedBox(width: 8),
-              Text(label, style: title(14.5, color: p.softInk)),
+              Container(
+                width: 52,
+                height: 52,
+                decoration: nxCard(context, radius: 18),
+                alignment: Alignment.center,
+                child: NxIcon(
+                  glyph,
+                  size: 26,
+                  color: isDark(context) ? p.softInk : NexisColors.brand,
+                ),
+              ),
+              const SizedBox(height: 7),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: body(
+                  12,
+                  weight: FontWeight.w500,
+                  color: mutedColor(context),
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _movement(BuildContext context, Movement movement) {
+class _MovementTile extends StatelessWidget {
+  const _MovementTile({required this.movement});
+
+  final Movement movement;
+
+  @override
+  Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
     final p = context.palette;
     final lang = langOf(context);
+    final dark = isDark(context);
+    final amount = AppScope.of(context).amountsHidden
+        ? '•••• ${movement.amount.currency == Currency.cdf ? 'CDF' : 'USD'}'
+        : '${movement.amount.minorUnits > 0 ? '+' : ''}${formatMoney(Money(movement.amount.minorUnits.abs(), movement.amount.currency), lang)}';
     final now = DateTime.now();
     final days = DateTime(now.year, now.month, now.day)
         .difference(
@@ -161,33 +148,60 @@ class WalletScreen extends StatelessWidget {
         ? l.today
         : days == 1
         ? l.yesterday
-        : MaterialLocalizations.of(context).formatShortMonthDay(movement.when);
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final (IconData icon, Color bg, Color fg) = switch (movement.kind) {
-      MovementKind.payment => (PhFill.shieldCheck, p.soft, p.softInk),
+        : shortDate(context, movement.when);
+
+    // Icône et couleur de la pastille de gauche.
+    final (String glyph, Color bg, Color fg) = switch (movement.kind) {
+      MovementKind.payment => (
+        'lock',
+        dark ? const Color(0xFF22234A) : const Color(0xFFEEEEF8),
+        dark ? const Color(0xFFB3B5F2) : const Color(0xFF494C95),
+      ),
       MovementKind.refund => (
-        PhRegular.arrowCounterClockwise,
-        dark ? const Color(0xFF22234A) : const Color(0xFFECECF8),
-        dark ? const Color(0xFFB3B5F2) : NexisColors.violet,
+        'refund',
+        dark ? const Color(0xFF22234A) : const Color(0xFFEEEEF8),
+        dark ? const Color(0xFFB3B5F2) : const Color(0xFF494C95),
       ),
       MovementKind.release => (
-        PhFill.checkCircle,
-        dark ? const Color(0xFF12301F) : const Color(0xFFE3F5EA),
-        dark ? const Color(0xFF5BD08A) : NexisColors.ok,
+        'check',
+        dark ? const Color(0xFF1A2740) : const Color(0xFFF0F3F8),
+        dark ? const Color(0xFFA9B4C6) : const Color(0xFF4E5B70),
       ),
-      MovementKind.deposit => (PhRegular.arrowDown, p.soft, p.softInk),
-      MovementKind.withdrawal => (PhRegular.arrowUp, p.soft, p.softInk),
+      MovementKind.deposit => (
+        'moneyIn',
+        dark ? const Color(0xFF12301F) : const Color(0xFFE6F4EA),
+        dark ? const Color(0xFF5BD08A) : const Color(0xFF1E7A3C),
+      ),
+      MovementKind.withdrawal => (
+        'moneyOut',
+        dark ? const Color(0xFF1A2740) : const Color(0xFFF0F3F8),
+        dark ? const Color(0xFFA9B4C6) : const Color(0xFF4E5B70),
+      ),
     };
-    final amount = movement.amount;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+    final (StatusKind kind, String stateText) = switch (movement.state) {
+      PaymentState.secured => (StatusKind.secured, l.paySecured),
+      PaymentState.released => (StatusKind.done, l.payReleased),
+      PaymentState.refunded => (StatusKind.secured, l.payRefunded),
+      PaymentState.blocked => (StatusKind.bad, l.payBlocked),
+      PaymentState.available => (StatusKind.done, l.payAvailable),
+      PaymentState.none => (StatusKind.wait, ''),
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: nxCard(context, radius: 18),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 40,
             height: 40,
-            decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-            child: Icon(icon, color: fg, size: 19),
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(13),
+            ),
+            alignment: Alignment.center,
+            child: NxIcon(glyph, size: 21, color: fg),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -196,32 +210,20 @@ class WalletScreen extends StatelessWidget {
               children: [
                 Text(
                   movement.label,
-                  style: body(14, weight: FontWeight.w700, color: p.ink),
+                  style: body(14.5, weight: FontWeight.w600, color: p.ink),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  when,
-                  style: body(
-                    12,
-                    color: dark ? p.muted : const Color(0xFF5B667A),
-                  ),
-                ),
+                Text(when, style: body(12.5, color: mutedColor(context))),
+                if (stateText.isNotEmpty) ...[
+                  const SizedBox(height: 7),
+                  StatusChip(kind: kind, text: stateText, compact: true),
+                ],
               ],
             ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                formatMoney(
-                  Money(amount.minorUnits.abs(), amount.currency),
-                  lang,
-                ),
-                style: title(13, color: p.ink),
-              ),
-              const SizedBox(height: 3),
-              PaymentPill(movement.state, compact: true),
-            ],
+          const SizedBox(width: 8),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(amount, maxLines: 1, style: title(13, color: p.ink)),
           ),
         ],
       ),

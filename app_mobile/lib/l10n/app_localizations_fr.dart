@@ -810,4 +810,152 @@ class AppLocalizationsFr extends AppLocalizations {
   String receiveInstead(String channel) {
     return 'Recevoir plutôt par $channel';
   }
+
+  @override
+  String helloHome(String name) {
+    return 'Mbote, $name';
+  }
+
+  @override
+  String heldForMissions(String amount) {
+    return '$amount bloqués pour vos missions en cours';
+  }
+
+  @override
+  String get heldWhy => 'Pourquoi ces fonds sont bloqués';
+
+  @override
+  String get heldTip =>
+      'Cet argent reste à vous. Il est mis de côté pour payer le professionnel quand la mission est terminée et que vous l\'avez confirmée.';
+
+  @override
+  String get currency => 'Devise';
+
+  @override
+  String get quickActions => 'Actions rapides';
+
+  @override
+  String reviewsCount(int count) {
+    return '$count avis';
+  }
+
+  @override
+  String completedOn(String date) {
+    return 'Terminée le $date';
+  }
+
+  @override
+  String get followMission => 'Suivre la mission';
+
+  @override
+  String seeMissions(int count) {
+    return 'Voir les $count missions';
+  }
+
+  @override
+  String get recentMovements => 'Derniers mouvements';
+
+  @override
+  String get newBadge => 'Nouveau';
+
+  @override
+  String get allServices => 'Tous les services';
+
+  @override
+  String get searchService => 'Rechercher un service';
+
+  @override
+  String get recents => 'Récents';
+
+  @override
+  String get newAndRecommended => 'Nouveaux et recommandés';
+
+  @override
+  String requestedIn(String month) {
+    return 'Demandé en $month';
+  }
+
+  @override
+  String requestedOn(String date) {
+    return 'Demandé le $date';
+  }
+
+  @override
+  String get addedThisWeek => 'Ajouté cette semaine';
+
+  @override
+  String get recommendedForYou => 'Recommandé pour vous';
+
+  @override
+  String get noServiceMatches => 'Aucun service ne correspond.';
+
+  @override
+  String get cantFindService => 'Vous ne trouvez pas votre service ?';
+
+  @override
+  String get cantFindHint =>
+      'Décrivez votre besoin avec vos mots, nous le transmettons à l\'équipe.';
+
+  @override
+  String get describeNeed => 'Décrire mon besoin';
+
+  @override
+  String get describeLead =>
+      'Dites-nous ce dont vous avez besoin avec vos mots. L\'équipe Nexis Hub regarde votre demande et cherche le bon professionnel.';
+
+  @override
+  String get describeTypeLabel => 'Quel type de service ?';
+
+  @override
+  String get describeTypeHint => 'Par exemple : réparation de portail';
+
+  @override
+  String get describeTextLabel => 'Décrivez votre besoin';
+
+  @override
+  String get describeTextHint => 'Où, quoi, et pour quand si c\'est urgent';
+
+  @override
+  String get optional => 'facultatif';
+
+  @override
+  String get photos => 'Photos';
+
+  @override
+  String get addShort => 'Ajouter';
+
+  @override
+  String get describeNoPay =>
+      'Vous ne payez rien à cette étape. Vous êtes prévenu dans l\'app dès que nous avons une réponse.';
+
+  @override
+  String get sendRequest => 'Envoyer ma demande';
+
+  @override
+  String get requestSent => 'Demande envoyée';
+
+  @override
+  String get requestSentText =>
+      'Nous avons bien reçu votre demande. Vous serez prévenu dans l\'app, et sur WhatsApp ou Telegram, dès que nous avons une réponse.';
+
+  @override
+  String get backHome => 'Retour à l\'accueil';
+
+  @override
+  String get requestNotSent =>
+      'La demande n\'est pas partie. Réessayez dans un instant.';
+
+  @override
+  String get notifications => 'Notifications';
+
+  @override
+  String get notificationsSub => 'WhatsApp et dans l\'app';
+
+  @override
+  String termsVersion(String date) {
+    return 'Version du $date';
+  }
+
+  @override
+  String get securedByNexis => 'Sécurisé par Nexis Hub';
 }

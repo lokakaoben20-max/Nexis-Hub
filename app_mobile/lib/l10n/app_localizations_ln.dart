@@ -807,4 +807,153 @@ class AppLocalizationsLn extends AppLocalizations {
   String receiveInstead(String channel) {
     return 'Kozwa na $channel na esika';
   }
+
+  @override
+  String helloHome(String name) {
+    return 'Mbote, $name';
+  }
+
+  @override
+  String heldForMissions(String amount) {
+    return '$amount ebombami mpo na misala na yo ezali kokende';
+  }
+
+  @override
+  String get heldWhy => 'Mpo na nini mbongo oyo ebombami';
+
+  @override
+  String get heldTip =>
+      'Mbongo oyo ezali naino ya yo. Ebombami mpo na kofuta mosali tango mosala esili mpe ondimi yango.';
+
+  @override
+  String get currency => 'Mbongo';
+
+  @override
+  String get quickActions => 'Misala ya noki';
+
+  @override
+  String reviewsCount(int count) {
+    return '$count makanisi';
+  }
+
+  @override
+  String completedOn(String date) {
+    return 'Esili na $date';
+  }
+
+  @override
+  String get followMission => 'Landa mosala';
+
+  @override
+  String seeMissions(int count) {
+    return 'Tala misala $count';
+  }
+
+  @override
+  String get recentMovements => 'Makambo ya nsuka ya mbongo';
+
+  @override
+  String get newBadge => 'Ya sika';
+
+  @override
+  String get allServices => 'Misala nyonso';
+
+  @override
+  String get searchService => 'Luka mosala';
+
+  @override
+  String get recents => 'Ya nsuka';
+
+  @override
+  String get newAndRecommended => 'Ya sika mpe oyo tolobi';
+
+  @override
+  String requestedIn(String month) {
+    return 'Osengaki na $month';
+  }
+
+  @override
+  String requestedOn(String date) {
+    return 'Osengaki na $date';
+  }
+
+  @override
+  String get addedThisWeek => 'Etondisami poso oyo';
+
+  @override
+  String get recommendedForYou => 'Tozali kopesa yo yango';
+
+  @override
+  String get noServiceMatches => 'Mosala moko te ekokani.';
+
+  @override
+  String get cantFindService => 'Ozwi mosala na yo te?';
+
+  @override
+  String get cantFindHint =>
+      'Limbola bosengi na yo na maloba na yo, tokopesa yango na ekipi.';
+
+  @override
+  String get describeNeed => 'Limbola bosengi na ngai';
+
+  @override
+  String get describeLead =>
+      'Loba na biso oyo osengi na maloba na yo. Ekipi ya Nexis Hub ekotala bosengi na yo mpe ekoluka mosali malamu.';
+
+  @override
+  String get describeTypeLabel => 'Mosala ya lolenge nini?';
+
+  @override
+  String get describeTypeHint => 'Ndakisa : kobongisa porte';
+
+  @override
+  String get describeTextLabel => 'Limbola bosengi na yo';
+
+  @override
+  String get describeTextHint =>
+      'Wapi, nini, mpe ntango nini soki ezali lombangu';
+
+  @override
+  String get optional => 'ezali ntina te';
+
+  @override
+  String get photos => 'Bafoto';
+
+  @override
+  String get addShort => 'Bakisa';
+
+  @override
+  String get describeNoPay =>
+      'Ofutaka eloko te na etape oyo. Tokoyebisa yo na app tango tozwi eyano.';
+
+  @override
+  String get sendRequest => 'Tinda bosengi na ngai';
+
+  @override
+  String get requestSent => 'Bosengi etindami';
+
+  @override
+  String get requestSentText =>
+      'Tozwi bosengi na yo. Tokoyebisa yo na app, mpe na WhatsApp to Telegram, tango tozwi eyano.';
+
+  @override
+  String get backHome => 'Zonga na ebandeli';
+
+  @override
+  String get requestNotSent =>
+      'Bosengi etindami te. Meka lisusu na mwa ntango.';
+
+  @override
+  String get notifications => 'Ba notifications';
+
+  @override
+  String get notificationsSub => 'WhatsApp mpe na app';
+
+  @override
+  String termsVersion(String date) {
+    return 'Version ya $date';
+  }
+
+  @override
+  String get securedByNexis => 'Ebombami na Nexis Hub';
 }
