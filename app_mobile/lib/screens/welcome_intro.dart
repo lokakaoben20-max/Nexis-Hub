@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../data/models.dart';
+import '../l10n/app_localizations.dart';
 import '../ui/common.dart';
 import '../ui/icons.dart';
 import '../ui/theme.dart';
@@ -136,153 +137,160 @@ class IntroFade extends StatelessWidget {
   }
 }
 
-/// Les huit métiers en orbite autour du bouclier. [turn] avance de 0 à 1
-/// en continu (un tour lent) ; [seconds] règle l'apparition.
-class ServiceOrbit extends StatelessWidget {
-  const ServiceOrbit({super.key, required this.seconds, required this.turn});
+/// Les trois cartes « Prestataire vérifié » empilées (proposition C
+/// retenue par Ben le 2026-11-22, design/app-connexion-frontend-design.html) :
+/// elles tombent l'une après l'autre et rebondissent deux fois.
+class VerifiedFan extends StatelessWidget {
+  const VerifiedFan({super.key, required this.elapsed});
 
-  final double seconds;
-  final double turn;
+  /// Secondes écoulées depuis le début de l'écran ; 99 = état final.
+  final double elapsed;
 
-  static const _inner = [
-    Service.plomberie,
-    Service.electricite,
-    Service.climatisation,
+  static const fallSeconds = 2.8;
+  static const totalSeconds = 1.45 + fallSeconds;
+
+  // (service, haut, rotation en degrés, échelle, fond, délai) : dans
+  // l'ordre de peinture de la maquette, la carte du haut est dessinée
+  // en dernier.
+  static const _cards = [
+    (Service.plomberie, 128.0, -1.5, 1.0, Color(0xFFFFFFFF), .85),
+    (Service.electricite, 64.0, 3.0, .97, Color(0xFFF2F7FF), 1.15),
+    (Service.nettoyage, 0.0, -5.0, .94, Color(0xFFE3EEFF), 1.45),
   ];
-  static const _outer = [
-    Service.informatique,
-    Service.graphisme,
-    Service.coiffure,
-    Service.nettoyage,
-    Service.jardinage,
-  ];
+
+  /// Hauteur (en px) et opacité de la chute : mêmes jalons que les
+  /// images clés `fall` de la maquette.
+  static (double, double) pose(double t) {
+    t = t.clamp(0.0, 1.0);
+    const fall = Cubic(.55, 0, 1, .45);
+    const settle = Cubic(.2, .6, .4, 1);
+    double seg(double a, double b, double from, double to, Curve c) =>
+        from + (to - from) * c.transform((t - a) / (b - a));
+    final y = t < .52
+        ? seg(0, .52, -820, 0, fall)
+        : t < .68
+        ? seg(.52, .68, 0, -22, settle)
+        : t < .80
+        ? seg(.68, .80, -22, 0, fall)
+        : t < .89
+        ? seg(.80, .89, 0, -7, settle)
+        : t < .96
+        ? seg(.89, .96, -7, 0, fall)
+        : 0.0;
+    return (y, (t / .06).clamp(0.0, 1.0));
+  }
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final lang = langOf(context);
     return ExcludeSemantics(
       child: SizedBox(
-        width: 190,
-        height: 190,
+        width: 280,
+        height: 216,
         child: Stack(
           clipBehavior: Clip.none,
-          alignment: Alignment.center,
           children: [
-            const CustomPaint(size: Size(190, 190), painter: _RingsPainter()),
-            ..._satellites(_inner, 46, -90, turn, 0),
-            ..._satellites(_outer, 76, -60, -turn * 38 / 52, 3),
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: .95),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.white.withValues(alpha: .07),
-                    spreadRadius: 16,
-                  ),
-                  BoxShadow(
-                    color: Colors.white.withValues(alpha: .14),
-                    spreadRadius: 7,
-                  ),
-                ],
+            for (final (service, top, rotation, scale, fill, delay) in _cards)
+              Builder(
+                builder: (context) {
+                  final (dy, opacity) = pose((elapsed - delay) / fallSeconds);
+                  final visual = serviceVisual(service);
+                  return Positioned(
+                    top: top,
+                    left: 0,
+                    right: 0,
+                    child: Opacity(
+                      opacity: opacity,
+                      child: Transform.translate(
+                        offset: Offset(0, dy),
+                        child: Transform.rotate(
+                          angle: rotation * math.pi / 180,
+                          child: Transform.scale(
+                            scale: scale,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: fill,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x8C021937),
+                                    offset: Offset(0, 18),
+                                    blurRadius: 30,
+                                    spreadRadius: -16,
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: visual.color,
+                                      borderRadius: BorderRadius.circular(13),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.white.withValues(
+                                            alpha: .9,
+                                          ),
+                                          spreadRadius: 2,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Icon(
+                                      visual.icon,
+                                      size: 24,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          serviceName(service, lang),
+                                          style: title(
+                                            15,
+                                            color: NexisColors.navy,
+                                          ),
+                                        ),
+                                        Text(
+                                          l.verifiedProvider,
+                                          style: body(
+                                            12.5,
+                                            color: const Color(0xFF4E5B70),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(
+                                    PhFill.sealCheck,
+                                    size: 24,
+                                    color: NexisColors.brand,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
-              child: const Icon(
-                PhRegular.shieldCheck,
-                size: 23,
-                color: NexisColors.brand,
-              ),
-            ),
           ],
         ),
       ),
     );
   }
-
-  List<Widget> _satellites(
-    List<Service> services,
-    double radius,
-    double offsetDeg,
-    double turns,
-    int first,
-  ) => [
-    for (var k = 0; k < services.length; k++)
-      Builder(
-        builder: (context) {
-          final angle =
-              (k / services.length * 360 + offsetDeg) * math.pi / 180 +
-              turns * 2 * math.pi;
-          final t = introStep(
-            seconds,
-            .75 + (first + k) * .06,
-            1.15 + (first + k) * .06,
-          );
-          final visual = serviceVisual(services[k]);
-          return Transform.translate(
-            offset: Offset(math.cos(angle) * radius, math.sin(angle) * radius),
-            child: Opacity(
-              opacity: t,
-              child: Transform.scale(
-                scale: .2 + .8 * Curves.easeOutBack.transform(t),
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Color(0x73021937),
-                        offset: Offset(0, 6),
-                        blurRadius: 14,
-                        spreadRadius: -6,
-                      ),
-                    ],
-                  ),
-                  child: Icon(visual.icon, size: 16, color: visual.color),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-  ];
-}
-
-class _RingsPainter extends CustomPainter {
-  const _RingsPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = size.center(Offset.zero);
-    canvas.drawCircle(
-      c,
-      76,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1
-        ..color = Colors.white.withValues(alpha: .18),
-    );
-    // Cercle intérieur en pointillés.
-    final dash = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1
-      ..color = Colors.white.withValues(alpha: .32);
-    const r = 46.0, segments = 36;
-    for (var i = 0; i < segments; i++) {
-      final a = i / segments * 2 * math.pi;
-      canvas.drawArc(
-        Rect.fromCircle(center: c, radius: r),
-        a,
-        math.pi / segments,
-        false,
-        dash,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_RingsPainter old) => false;
 }
 
 /// Fond bleu de la maquette, avec une lueur qui « respire » ([breath]

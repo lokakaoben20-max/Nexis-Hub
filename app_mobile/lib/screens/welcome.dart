@@ -28,9 +28,11 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     vsync: this,
     duration: const Duration(milliseconds: 1600),
   );
-  late final AnimationController _orbit = AnimationController(
+  late final AnimationController _fall = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 38),
+    duration: Duration(
+      milliseconds: (VerifiedFan.totalSeconds * 1000).round() + 200,
+    ),
   );
   late final AnimationController _breath = AnimationController(
     vsync: this,
@@ -50,10 +52,11 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     _started = true;
     if (MediaQuery.disableAnimationsOf(context)) {
       _intro.value = 1;
+      _fall.value = 1;
       return;
     }
     _intro.forward();
-    _orbit.repeat();
+    _fall.forward();
     _breath.repeat(reverse: true);
     _shineTimer.start(
       const Duration(milliseconds: 1550),
@@ -65,7 +68,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   void dispose() {
     _shineTimer.dispose();
     _intro.dispose();
-    _orbit.dispose();
+    _fall.dispose();
     _breath.dispose();
     _shine.dispose();
     super.dispose();
@@ -136,7 +139,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       child: Scaffold(
         backgroundColor: NexisColors.brand,
         body: AnimatedBuilder(
-          animation: Listenable.merge([_intro, _orbit, _breath, _shine]),
+          animation: Listenable.merge([_intro, _fall, _breath, _shine]),
           builder: (context, _) {
             final s = _intro.value * 1.6;
             return BreathingBackground(
@@ -198,15 +201,12 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                               fit: BoxFit.scaleDown,
                               child: Padding(
                                 padding: const EdgeInsets.all(8),
-                                child: IntroFade(
-                                  seconds: s,
-                                  start: .7,
-                                  end: 1.3,
-                                  rise: 0,
-                                  child: ServiceOrbit(
-                                    seconds: s,
-                                    turn: _orbit.value,
-                                  ),
+                                child: VerifiedFan(
+                                  elapsed: _fall.isCompleted
+                                      ? 99
+                                      : _fall.value *
+                                            _fall.duration!.inMilliseconds /
+                                            1000,
                                 ),
                               ),
                             ),

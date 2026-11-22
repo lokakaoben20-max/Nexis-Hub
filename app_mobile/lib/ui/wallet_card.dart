@@ -40,9 +40,12 @@ class _WalletCardState extends State<WalletCard> {
     final amount = widget.wallet.available[_currency] ?? Money(0, _currency);
     final secured = widget.wallet.secured[_currency] ?? Money(0, _currency);
     final label = _currency == Currency.cdf ? 'FC' : 'USD';
-    final shownAmount = _hidden ? '•••••• $label' : _formatWalletMoney(amount, lang);
-    final shownSecured =
-        _hidden ? '•••••• $label' : _formatWalletMoney(secured, lang);
+    final shownAmount = _hidden
+        ? '•••••• $label'
+        : _formatWalletMoney(amount, lang);
+    final shownSecured = _hidden
+        ? '•••••• $label'
+        : _formatWalletMoney(secured, lang);
 
     return Align(
       alignment: widget.alignStart ? Alignment.centerLeft : Alignment.center,
@@ -138,15 +141,15 @@ class _WalletCardState extends State<WalletCard> {
                                 switchOutCurve: Curves.easeIn,
                                 transitionBuilder: (child, animation) =>
                                     FadeTransition(
-                                  opacity: animation,
-                                  child: SlideTransition(
-                                    position: Tween<Offset>(
-                                      begin: const Offset(0, .08),
-                                      end: Offset.zero,
-                                    ).animate(animation),
-                                    child: child,
-                                  ),
-                                ),
+                                      opacity: animation,
+                                      child: SlideTransition(
+                                        position: Tween<Offset>(
+                                          begin: const Offset(0, .08),
+                                          end: Offset.zero,
+                                        ).animate(animation),
+                                        child: child,
+                                      ),
+                                    ),
                                 child: SizedBox(
                                   key: ValueKey(_currency),
                                   width: double.infinity,
@@ -156,8 +159,10 @@ class _WalletCardState extends State<WalletCard> {
                                     child: Text(
                                       shownAmount,
                                       maxLines: 1,
-                                      style: title(31, color: Colors.white)
-                                          .copyWith(letterSpacing: -.5),
+                                      style: title(
+                                        31,
+                                        color: Colors.white,
+                                      ).copyWith(letterSpacing: -.5),
                                     ),
                                   ),
                                 ),
@@ -167,8 +172,9 @@ class _WalletCardState extends State<WalletCard> {
                               button: true,
                               label: _hidden ? l.showAmounts : l.hideAmounts,
                               child: IconButton(
-                                tooltip:
-                                    _hidden ? l.showAmounts : l.hideAmounts,
+                                tooltip: _hidden
+                                    ? l.showAmounts
+                                    : l.hideAmounts,
                                 onPressed: () =>
                                     setState(() => _hidden = !_hidden),
                                 constraints: const BoxConstraints.tightFor(

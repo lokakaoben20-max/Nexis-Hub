@@ -112,6 +112,12 @@ abstract class AppLocalizations {
   /// **'Nous vous mettons en relation avec des professionnels de confiance'**
   String get welcomeIntro;
 
+  /// No description provided for @verifiedProvider.
+  ///
+  /// In fr, this message translates to:
+  /// **'Prestataire vérifié'**
+  String get verifiedProvider;
+
   /// No description provided for @start.
   ///
   /// In fr, this message translates to:
@@ -195,15 +201,6 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'{amount} sécurisés'**
   String securedAmount(String amount);
-  
-  /// Amount held until a client's confirmation.
-  String walletLocked(String amount);
-
-  /// Explains when the held funds are paid out.
-  String get walletExplanation;
-
-  /// Accessible label for the held-funds explanation.
-  String get walletInfoLabel;
 
   /// No description provided for @hideAmounts.
   ///
@@ -216,6 +213,24 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'Afficher les montants'**
   String get showAmounts;
+
+  /// No description provided for @walletLocked.
+  ///
+  /// In fr, this message translates to:
+  /// **'{amount} bloqués pour vos missions en cours'**
+  String walletLocked(String amount);
+
+  /// No description provided for @walletExplanation.
+  ///
+  /// In fr, this message translates to:
+  /// **'Cet argent est versé au prestataire uniquement après confirmation du client.'**
+  String get walletExplanation;
+
+  /// No description provided for @walletInfoLabel.
+  ///
+  /// In fr, this message translates to:
+  /// **'Pourquoi ce montant est-il bloqué ?'**
+  String get walletInfoLabel;
 
   /// No description provided for @actionServices.
   ///
