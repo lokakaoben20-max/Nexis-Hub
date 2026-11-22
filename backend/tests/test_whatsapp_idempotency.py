@@ -182,7 +182,12 @@ def test_every_write_open_to_whatsapp_is_idempotent(backend):
         for method, path, endpoint in api_routes(backend)
         if method in backend.WRITE_METHODS and "whatsapp" in backend.route_channels(endpoint)
     ]
-    assert sorted(writes) == [("PATCH", "/api/me/language"), ("PATCH", "/api/me/name"), ("POST", "/api/whatsapp/client")]
+    assert sorted(writes) == [
+        ("PATCH", "/api/me/language"),
+        ("PATCH", "/api/me/name"),
+        ("POST", "/api/me/terms"),
+        ("POST", "/api/whatsapp/client"),
+    ]
     for method, path, endpoint in api_routes(backend):
         if (method, path) in writes:
             assert backend.is_idempotent(endpoint), (method, path)
@@ -269,3 +274,44 @@ def test_the_purge_runs_every_day():
     # Par nom : d'autres tests rechargent les modules.
     assert (tache.fonction.__module__, tache.fonction.__name__) == ("backend.app.tasks", "purge_idempotency_keys")
     assert tache.frequence.cron == "15 3 * * *"
+
+
+# --- Deux messages de la même personne au même instant ----------------------------
+
+
+def test_a_parallel_first_message_of_the_same_person_finds_its_account(backend, monkeypatch):
+    # Interclassement réel sur Postgres : la demande B lit « identité inconnue »,
+    # puis la demande A (même personne, même numéro) valide compte et numéro,
+    # puis B voit le numéro prouvé. Ce n'est pas un conflit : c'est son compte.
+    from backend.app import crud, ledger
+
+    with TestClient(backend.app) as test_client:
+        first = post(test_client, key=f"wamid.{uuid.uuid4().hex}")
+    assert first.status_code == 200
+
+    real = ledger.account_id_for
+    stale = {"left": 1}
+
+    def first_read_before_a_commits(db, channel, external_id, create=False):
+        if not create and stale["left"]:
+            stale["left"] -= 1
+            return None
+        return real(db, channel, external_id, create=create)
+
+    monkeypatch.setattr(crud.ledger, "account_id_for", first_read_before_a_commits)
+    with TestClient(backend.app) as test_client:
+        second = post(test_client, key=f"wamid.{uuid.uuid4().hex}")
+
+    assert stale["left"] == 0
+    assert second.status_code == 200
+    assert second.json()["account"]["account_id"] == first.json()["account"]["account_id"]
+    assert second.json()["created"] is False
+    assert counts(backend)[0] == 1
+
+
+def test_another_identity_with_the_same_phone_is_still_refused(backend):
+    with TestClient(backend.app) as test_client:
+        assert post(test_client, key=f"wamid.{uuid.uuid4().hex}").status_code == 200
+        refused = post(test_client, key=f"wamid.{uuid.uuid4().hex}", bsuid=OTHER_BSUID)
+    assert (refused.status_code, refused.json()["detail"]["code"]) == (409, "phone_owned_by_account")
+    assert counts(backend)[0] == 1

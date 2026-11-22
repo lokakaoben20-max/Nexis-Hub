@@ -15,7 +15,10 @@ from datetime import datetime
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app import app_auth, app_sessions
+from sqlalchemy import select
+
+from backend.app import app_auth, app_sessions, conditions, ledger
+from backend.tests import profils_de_test
 from test_app_sessions import PHONE, Phone
 
 API = "/api/app/v1"
@@ -377,3 +380,50 @@ def test_the_role_must_be_client_or_provider(client, env, alerts):
 
     assert response.status_code == 400
     assert response.json()["detail"] == {"code": "invalid_role"}
+
+
+# --- Conditions d'utilisation (backend/app/conditions.py) -------------------------
+
+
+def publish_terms(database, key, version):
+    with database.SessionLocal() as db:
+        conditions.publish_version(db, key, version, f"Texte {key} {version}")
+        db.commit()
+
+
+@pytest.mark.conditions_reelles
+def test_the_app_reads_the_texts_and_re_accepts_for_a_role_it_has(client, env, alerts):
+    database, _ = env
+    publish_terms(database, "cgu", "v1")
+    publish_terms(database, "conditions_prestataires", "v1")
+    tokens = login(client, database, Phone(), telegram_id=601)
+
+    assert client.get(f"{API}/legal/documents/cgu", headers=VERSION).json()["text"] == "Texte cgu v1"
+    assert client.get(f"{API}/legal/documents/cgu/v9", headers=VERSION).status_code == 404
+    # Compte encore sans rôle : rien à recocher, et recocher n'a pas de sens.
+    assert client.get(f"{API}/me/terms", headers=bearer(tokens)).json()["missing"] == []
+    no_role = client.post(
+        f"{API}/me/terms", json={"role": "client", "documents": [{"document_key": "cgu", "version": "v1"}]}, headers=bearer(tokens)
+    )
+    assert (no_role.status_code, no_role.json()["detail"]["code"]) == (409, "role_not_held")
+
+    with database.SessionLocal() as db:
+        profils_de_test.client(db, 601)  # client inscrit avant la règle
+    status = client.get(f"{API}/me/terms", headers=bearer(tokens)).json()
+    assert [item["document_key"] for item in status["missing"]] == ["cgu"]
+    outdated = client.post(
+        f"{API}/me/terms", json={"role": "client", "documents": [{"document_key": "cgu", "version": "v0"}]}, headers=bearer(tokens)
+    )
+    assert outdated.status_code == 404
+    accepted = client.post(
+        f"{API}/me/terms", json={"role": "client", "documents": [{"document_key": "cgu", "version": "v1"}]}, headers=bearer(tokens)
+    )
+    assert accepted.status_code == 200 and accepted.json()["complete"] is True
+    with database.SessionLocal() as db:
+        account_id = ledger.account_id_for(db, ledger.TELEGRAM, 601)
+        rows = db.scalars(select(conditions.LegalAcceptance)).all()
+        assert [(row.account_id, row.role, row.surface) for row in rows] == [(account_id, "client", "app")]
+
+
+def test_the_app_needs_a_session_for_my_terms(client, env):
+    assert client.get(f"{API}/me/terms", headers=VERSION).status_code == 401

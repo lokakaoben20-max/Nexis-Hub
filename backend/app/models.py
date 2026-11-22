@@ -8,6 +8,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from backend.app.database import Base
 
 
+def _in(column: str, values: tuple[str, ...]) -> str:
+    return f"{column} IN ({', '.join(repr(value) for value in values)})"
+
+
 class BotMission(Base):
     __tablename__ = "bot_missions"
     __table_args__ = (
@@ -438,9 +442,14 @@ class PaymentIntent(Base):
             sqlite_where=text("status IN ('created', 'pending')"),
         ),
         UniqueConstraint("gateway", "gateway_reference", name="uq_payment_intents_gateway_reference"),
+        UniqueConstraint("reference", name="uq_payment_intents_reference"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Notre référence, unique dans toute l'histoire de Nexis Hub (tous
+    # environnements) : créée avant tout appel, envoyée à l'agrégateur, qui
+    # s'en sert pour le statut et refuse un second ordre qui la porte.
+    reference: Mapped[str] = mapped_column(String(40))
     mission_id: Mapped[int] = mapped_column(ForeignKey("bot_missions.mission_id"), index=True)
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     gateway: Mapped[str] = mapped_column(String(30))
@@ -472,9 +481,15 @@ class Payout(Base):
     le wallet (refus ou échec)."""
 
     __tablename__ = "payouts"
-    __table_args__ = (UniqueConstraint("gateway", "gateway_reference", name="uq_payouts_gateway_reference"),)
+    __table_args__ = (
+        UniqueConstraint("gateway", "gateway_reference", name="uq_payouts_gateway_reference"),
+        UniqueConstraint("reference", name="uq_payouts_reference"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Notre référence (voir PaymentIntent.reference) : un versement renvoyé
+    # après une coupure porte toujours la même.
+    reference: Mapped[str] = mapped_column(String(40))
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     # Identité Telegram du demandeur (audit, messages) ; vide pour un autre canal.
     requested_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -489,8 +504,56 @@ class Payout(Base):
     needs_review_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     decided_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     failure_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Dernier envoi de l'ordre à l'agrégateur (réponse reçue ou non). Un
+    # versement inconnu de l'agrégateur n'est renvoyé qu'après un délai depuis
+    # ce moment, pour ne pas croiser une demande encore en route.
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Nombre d'envois de l'ordre (même référence à chaque fois), plafonné par
+    # `mobile_money.MAX_PAYOUT_SENDS`.
+    send_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+MONEY_SWITCHES = ("collections", "payouts")
+MONEY_SWITCH_SOURCES = ("bot", "cli")
+
+
+class MoneySwitch(Base):
+    """Interrupteur d'arrêt d'un flux Mobile Money (`backend.app.interrupteurs`) :
+    `collections` (encaissements) ou `payouts` (versements). Une ligne par
+    interrupteur, créée au premier changement ; sans ligne, le flux est
+    ouvert. Seul `interrupteurs.switch` l'écrit, avec une ligne de journal
+    dans la même transaction."""
+
+    __tablename__ = "money_switches"
+    __table_args__ = (CheckConstraint(_in("name", MONEY_SWITCHES), name="ck_money_switches_name"),)
+
+    name: Mapped[str] = mapped_column(String(20), primary_key=True)
+    is_open: Mapped[bool] = mapped_column(Boolean)
+    changed_at: Mapped[datetime] = mapped_column(DateTime)
+    # Admin qui a changé l'interrupteur depuis le bot ; vide depuis la
+    # commande serveur (la personne a alors accès à la machine).
+    changed_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    reason: Mapped[str] = mapped_column(Text)
+
+
+class MoneySwitchEvent(Base):
+    """Journal des changements d'interrupteur, jamais modifié ni effacé."""
+
+    __tablename__ = "money_switch_events"
+    __table_args__ = (
+        CheckConstraint(_in("name", MONEY_SWITCHES), name="ck_money_switch_events_name"),
+        CheckConstraint(_in("source", MONEY_SWITCH_SOURCES), name="ck_money_switch_events_source"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(20), index=True)
+    is_open: Mapped[bool] = mapped_column(Boolean)
+    at: Mapped[datetime] = mapped_column(DateTime)
+    by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    source: Mapped[str] = mapped_column(String(10))
+    reason: Mapped[str] = mapped_column(Text)
 
 
 # ---------------------------------------------------------------------------
@@ -511,10 +574,6 @@ DEVICE_ATTESTATIONS = ("verified", "unverified")
 LOGIN_PURPOSES = ("signup", "login")
 LOGIN_DELIVERIES = ("whatsapp", "telegram")
 MAX_CODE_ATTEMPTS = 5
-
-
-def _in(column: str, values: tuple[str, ...]) -> str:
-    return f"{column} IN ({', '.join(repr(value) for value in values)})"
 
 
 class Device(Base):
@@ -947,3 +1006,65 @@ class IdempotencyKey(Base):
     response_status: Mapped[int] = mapped_column(Integer)
     response_body: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+# --- Conditions d'utilisation (backend/app/conditions.py) -------------------
+
+LEGAL_DOCUMENTS = ("cgu", "conditions_prestataires")
+LEGAL_ROLES = ("client", "provider")
+# D'où la personne a coché la case : le bot Telegram, la Mini App (même clé
+# de service que le bot), WhatsApp ou l'application.
+LEGAL_SURFACES = ("telegram_bot", "mini_app", "whatsapp", "app")
+
+
+class LegalDocumentVersion(Base):
+    """Une version publiée d'un document à accepter (CGU, conditions des
+    prestataires). Publiée par `python -m backend.app.conditions publier`,
+    jamais par l'API. **Jamais modifiée ni effacée** : un texte corrigé est
+    une nouvelle version. Le texte exact est gardé avec son empreinte, pour
+    prouver ce que la personne a accepté.
+
+    Version en vigueur d'un document : la dernière dont `effective_at` est
+    passée."""
+
+    __tablename__ = "legal_document_versions"
+    __table_args__ = (
+        UniqueConstraint("document_key", "version", name="uq_legal_document_versions_key_version"),
+        CheckConstraint(f"document_key IN {_sql_in(LEGAL_DOCUMENTS)}", name="ck_legal_document_versions_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    document_key: Mapped[str] = mapped_column(String(40), index=True)
+    version: Mapped[str] = mapped_column(String(30))
+    # Langue du texte publié (le français fait foi tant que le juriste n'a pas
+    # dit autre chose).
+    language: Mapped[str] = mapped_column(String(5))
+    text: Mapped[str] = mapped_column(Text)
+    text_sha256: Mapped[str] = mapped_column(String(64))
+    effective_at: Mapped[datetime] = mapped_column(DateTime)
+    published_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+class LegalAcceptance(Base):
+    """Une personne a coché la case pour une version précise. **Ajout seul** :
+    aucune ligne n'est modifiée ni effacée. Une seule ligne par compte et par
+    version : cocher de nouveau ne crée rien (idempotence).
+
+    `role` : le rôle pour lequel la case a été cochée (inscription client,
+    inscription ou bascule prestataire, réacceptation). `surface` et
+    `language` : où et dans quelle langue l'écran a été montré."""
+
+    __tablename__ = "legal_acceptances"
+    __table_args__ = (
+        UniqueConstraint("account_id", "version_id", name="uq_legal_acceptances_account_version"),
+        CheckConstraint(f"role IN {_sql_in(LEGAL_ROLES)}", name="ck_legal_acceptances_role"),
+        CheckConstraint(f"surface IN {_sql_in(LEGAL_SURFACES)}", name="ck_legal_acceptances_surface"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("legal_document_versions.id"), index=True)
+    role: Mapped[str] = mapped_column(String(10))
+    surface: Mapped[str] = mapped_column(String(20))
+    language: Mapped[str] = mapped_column(String(5))
+    accepted_at: Mapped[datetime] = mapped_column(DateTime)

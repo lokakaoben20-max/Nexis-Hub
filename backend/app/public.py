@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from backend.app import app_auth, app_sessions, crud, ledger
+from backend.app import app_auth, app_sessions, conditions, crud, ledger, profils
 from backend.app.app_auth import AuthError
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, NexisAccount
@@ -351,6 +351,88 @@ def get_mission(mission_id: int, authorization: str | None = Header(default=None
             "viewer_role": role,
         }
     return _public(view)
+
+
+# --- Conditions d'utilisation (backend/app/conditions.py) -----------------------
+# Mêmes règles que les bots. L'inscription dans l'app (à venir) portera la
+# case cochée comme `PUT /api/me/client-profile` (conditions.accept_for_signup,
+# surface `app`) ; ici : lire les textes, voir ce qui manque, recocher.
+
+
+class TermsDocument(BaseModel):
+    document_key: str = Field(max_length=40)
+    version: str = Field(max_length=30)
+
+
+class TermsAcceptance(BaseModel):
+    role: str = Field(max_length=10)
+    documents: list[TermsDocument] = Field(min_length=1, max_length=2)
+
+
+def _terms_error(error: conditions.ConditionsError) -> HTTPException:
+    return HTTPException(status_code=error.http_status, detail=error.detail())
+
+
+def _terms_text(version) -> dict[str, Any]:
+    return {
+        **conditions.version_view(version),
+        "language": version.language,
+        "text": version.text,
+        "text_sha256": version.text_sha256,
+    }
+
+
+@router.get("/legal/documents/{document_key}")
+def current_terms(document_key: str) -> dict[str, Any]:
+    with SessionLocal() as db:
+        version = conditions.current_version(db, document_key) if document_key in conditions.LEGAL_DOCUMENTS else None
+        if version is None:
+            raise HTTPException(status_code=404, detail={"code": "terms_version_not_found"})
+        return _terms_text(version)
+
+
+@router.get("/legal/documents/{document_key}/{version}")
+def terms_version(document_key: str, version: str) -> dict[str, Any]:
+    with SessionLocal() as db:
+        row = conditions.find_version(db, document_key, version)
+        if row is None:
+            raise HTTPException(status_code=404, detail={"code": "terms_version_not_found"})
+        return _terms_text(row)
+
+
+@router.get("/me/terms")
+def my_terms(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    """Ce que la personne doit cocher avant toute nouvelle action."""
+    with SessionLocal() as db:
+        principal = _session(db, authorization)
+        try:
+            return conditions.status(db, principal.account_id)
+        except conditions.ConditionsError as error:
+            raise _terms_error(error) from error
+
+
+@router.post("/me/terms")
+def accept_my_terms(payload: TermsAcceptance, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    """Recocher la case, pour un rôle que la personne a. Recocher une version
+    déjà acceptée ne crée rien."""
+    with SessionLocal() as db:
+        principal = _session(db, authorization)
+        try:
+            if payload.role not in conditions.held_roles(db, principal.account_id):
+                raise conditions.ConditionsError("role_not_held", 409)
+            conditions.accept(
+                db,
+                principal.account_id,
+                payload.role,
+                [document.model_dump() for document in payload.documents],
+                surface="app",
+                language=profils.language_of(db, principal.account_id),
+            )
+            db.commit()
+            return conditions.status(db, principal.account_id)
+        except conditions.ConditionsError as error:
+            db.rollback()
+            raise _terms_error(error) from error
 
 
 app.include_router(open_router)

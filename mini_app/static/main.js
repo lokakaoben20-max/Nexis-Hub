@@ -341,6 +341,7 @@ function render() {
   else if (state.sub?.name === "request_service") screen = requestServiceScreen();
   else if (state.sub?.name === "add_commune") screen = addCommuneScreen();
   else if (state.sub?.name === "register") screen = registerScreen();
+  else if (mustAcceptTerms()) screen = termsScreen();
   else if (!provider()) screen = state.data?.client ? clientHomeScreen() : registerScreen();
   else if (state.space === "client") screen = clientHomeScreen();
   else if (state.tab === "missions") screen = missionsScreen();
@@ -1242,8 +1243,17 @@ function registerScreen() {
   // Compteur « 1/3 » à côté du titre : la limite se voit avant d'être atteinte.
   const servicesCount = typeof limit === "number" ? el("span", { class: "count", text: `0/${limit}` }) : null;
   const status = el("p", { class: "msg error", role: "alert" });
+  // Dernière étape : la case des conditions (CGU et conditions des
+  // prestataires, ou seulement ce qui manque à un client qui bascule).
+  const terms = state.data?.terms;
+  const termsDocuments = terms?.by_role?.provider || [];
+  const box = termsDocuments.length ? termsBlock(termsDocuments) : null;
   const create = button(t("create"), () => busy(create, t("creating"), async () => {
     status.textContent = "";
+    if (box && !box.ticked()) {
+      status.textContent = t("terms_must_tick");
+      return;
+    }
     try {
       const result = await api(`/api/provider/${telegramUser.id}/register`, {
         full_name: fullName.value.trim(),
@@ -1251,15 +1261,34 @@ function registerScreen() {
         services: [...services],
         communes: [...communes],
         language: state.lang,
+        terms_documents: termsDocuments.map(({ document_key, version }) => ({ document_key, version })),
       });
       state.data.provider = result.provider;
       state.data.provider_missions = [];
       state.data.service_requests = [];
+      // Ce qui reste à cocher vient du backend : on relit tout le profil,
+      // puis on ouvre l'espace prestataire.
+      await load();
       setSpace("provider");
     } catch (error) {
+      if (isTermsRefusal(error)) {
+        // Version changée entre-temps : la page relit les conditions en
+        // vigueur, la case est à recocher.
+        await reloadTerms();
+        render();
+        toast(t("terms_changed"), true);
+        return;
+      }
       status.textContent = errorText(error);
     }
   }));
+  if (terms?.unavailable) {
+    return [
+      state.data?.client ? subHeader(t("become_provider")) : null,
+      el("h1", { class: "h1", text: t("register_title") }),
+      el("div", { class: "info" }, icon("i-info"), el("span", { text: t("terms_unavailable") })),
+    ].filter(Boolean);
+  }
 
   return [
     state.data?.client ? subHeader(t("become_provider")) : null,
@@ -1272,9 +1301,97 @@ function registerScreen() {
     el("div", { class: "chips" }, providerServiceKeys().map((key) => chip(services, key, serviceName(key), limit))),
     el("div", { class: "lbl" }, el("span", { text: t("your_communes") })),
     el("div", { class: "chips" }, (state.data?.available_communes || []).map((commune) => chip(communes, commune, commune))),
+    box ? box.node : null,
     status,
     create,
   ].filter(Boolean);
+}
+
+// --- Case des conditions d'utilisation ---------------------------------------
+// Le backend décide (backend/app/conditions.py) : la page montre les versions
+// qu'il demande, avec un lien vers leur texte exact et une vraie case à
+// cocher. Rien ne part sans la case cochée.
+
+function termsUrl(item) {
+  return `${window.location.origin}/conditions/${encodeURIComponent(item.document_key)}/${encodeURIComponent(item.version)}?lang=${state.lang}`;
+}
+
+function termsBlock(documents) {
+  const id = `terms-${Math.random().toString(36).slice(2, 8)}`;
+  const input = el("input", { type: "checkbox", id });
+  const links = documents.map((item) => el("button", {
+    class: "pick",
+    type: "button",
+    onclick: () => {
+      const url = termsUrl(item);
+      if (tg?.openLink) tg.openLink(url);
+      else window.open(url, "_blank", "noopener");
+    },
+  },
+  el("span", { class: "pi" }, icon("i-info")),
+  el("div", {}, el("b", { text: t(`terms_doc.${item.document_key}`) }), el("small", { text: t("terms_read") })),
+  icon("i-chev")));
+  const node = el("div", { class: "terms" },
+    el("div", { class: "lbl" }, el("span", { text: t("terms_title") })),
+    ...links,
+    el("label", { class: "check", for: id }, input, el("span", { text: t("terms_checkbox") })));
+  return { node, ticked: () => input.checked };
+}
+
+function mustAcceptTerms() {
+  const terms = state.data?.terms;
+  return Boolean((state.data?.client || provider()) && terms && !terms.unavailable && terms.missing?.length);
+}
+
+function isTermsRefusal(error) {
+  return error instanceof ApiError && ["terms_not_accepted", "terms_version_outdated", "terms_version_not_found"].includes(error.code);
+}
+
+async function reloadTerms() {
+  try {
+    const data = await api(`/api/profile/${telegramUser.id}`);
+    state.data.terms = data.terms;
+  } catch (error) {
+    // L'écran garde l'ancienne liste ; le backend refusera de nouveau.
+  }
+}
+
+// Nouvelle version en vigueur (ou compte d'avant la règle) : rien d'autre
+// n'est affiché tant que la case n'est pas cochée. Le reste (missions en
+// cours, argent) reste accessible dans le bot.
+function termsScreen() {
+  const terms = state.data.terms;
+  const box = termsBlock(terms.missing);
+  const status = el("p", { class: "msg error", role: "alert" });
+  const confirm = button(t("terms_confirm"), () => busy(confirm, t("creating"), async () => {
+    status.textContent = "";
+    if (!box.ticked()) {
+      status.textContent = t("terms_must_tick");
+      return;
+    }
+    try {
+      await api(`/api/terms/${telegramUser.id}`, {
+        role: terms.role,
+        documents: terms.missing.map(({ document_key, version }) => ({ document_key, version })),
+      });
+      await load();
+    } catch (error) {
+      if (isTermsRefusal(error)) {
+        await reloadTerms();
+        render();
+        toast(t("terms_changed"), true);
+        return;
+      }
+      status.textContent = errorText(error);
+    }
+  }));
+  return [
+    el("h1", { class: "h1", text: t("terms_again_title") }),
+    el("p", { class: "h1s", text: t("terms_again_intro") }),
+    box.node,
+    status,
+    confirm,
+  ];
 }
 
 // --- Personne seulement cliente ---------------------------------------------

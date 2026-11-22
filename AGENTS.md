@@ -4,6 +4,34 @@ Ce fichier est le point d'entrée commun pour **tout outil IA** qui travaille su
 (remplace l'ancien `MANUS_HANDOFF.md`, qui était spécifique à un seul outil — son contenu
 a été fusionné ici).
 
+## État actuel
+
+- Le dépôt à jour est la branche d'intégration `feature/mobile-money` (HEAD du 2026-11-20 : `fed4a85a`). Les branches de travail doivent partir de cette base, pas de `main`, `develop/nexis-unification` ou `agent/frontend-ux`.
+- Le backend V5 est la source de vérité métier et financière dans PostgreSQL. `db.py` a été supprimé le 2026-11-14.
+- Le bot et la Mini App utilisent Redis pour les états de conversation. Le dépôt fournit Postgres 17 et Redis 7 dans `docker-compose.yml`.
+- Les migrations du backend sont gérées par Alembic. Toujours exécuter `python -m alembic upgrade head` avant de lancer le backend.
+- Les tâches planifiées n'utilisent plus Celery : `backend/app/taches.py` porte le calendrier, lancé localement avec `python -m backend.app.taches planificateur`.
+- Les flows Telegram sont extraits dans `telegram_bot/` et chargés dans le même processus que `main.py`. Il n'existe pas encore de processus `whatsapp_bot/`, malgré le support WhatsApp déjà présent dans certaines routes du backend.
+
+### Démarrage local — état du code au 2026-11-20
+
+À lancer depuis la racine du dépôt, dans des terminaux séparés :
+
+1. Copier `.env.example` en `.env`, renseigner le jeton Telegram, l'URL Postgres et une clé `BACKEND_API_KEY_TELEGRAM` identique dans les processus backend, bot et Mini App (32 caractères au moins).
+2. Démarrer Postgres 17 et Redis 7 : `docker compose up -d`.
+3. Appliquer le schéma : `python -m alembic upgrade head`.
+4. Démarrer le backend : `python -m uvicorn backend.app.main:app --reload`.
+5. Démarrer le bot : `python main.py`.
+6. Démarrer le calendrier local des tâches : `python -m backend.app.taches planificateur`.
+
+### Admins et interrupteurs Mobile Money
+
+Les rôles admin sont conservés dans `admin_roles`. Utiliser `python -m backend.app.admins ajouter <telegram_id> --raison "..."`, `python -m backend.app.admins retirer <telegram_id> --raison "..."` ou `python -m backend.app.admins liste`. La raison est obligatoire pour ajouter ou retirer un rôle, pas pour afficher la liste. `ADMIN_TELEGRAM_ID` ne confère aucun rôle et sa présence est refusée hors développement.
+
+Les admins Telegram peuvent afficher l'état avec `/interrupteurs`, couper un flux avec `/couper encaissements <raison>` ou `/couper versements <raison>`, et le rouvrir avec `/rouvrir encaissements <raison>` ou `/rouvrir versements <raison>`. En secours depuis le serveur : `python -m backend.app.interrupteurs etat`, puis les sous-commandes `couper` / `rouvrir` avec `--raison`.
+
+**Adresse publique :** le code de cette branche ne lit pas `NEXIS_PUBLIC_URL`. Il lit `MINI_APP_URL` pour le lien Mini App et `WEBHOOK_URL` pour le webhook Telegram. Le tunnel de test indiqué (`https://nexishub.dpdns.org`) n'est donc pas encore un réglage unique reconnu par le code ; ne pas présenter cette unification comme déjà implémentée.
+
 ## Exigence de qualité (non négociable, demandée par Ben le 2026-10-02)
 
 Nexis Hub manipule de l'argent réel. Ben veut un produit très solide et n'acceptera
@@ -28,6 +56,32 @@ et passe avant la rapidité.
     l'opération plutôt que de risquer un mauvais mouvement d'argent.
 - Une recommandation présentée à Ben est la solution définitive visée, jamais une
   étape « en attendant ».
+
+## Intelligence artificielle dans le produit (décidé par Ben le 2026-11-20)
+
+Ceci concerne l'IA **dans Nexis** (assistants, tri, détection), pas les agents qui codent.
+
+- **L'IA aide, elle ne décide jamais seule** une action irréversible. Aucune IA ne déclenche,
+  ne bloque ni ne calcule un mouvement d'argent (paiement, libération, remboursement,
+  retrait, partage de litige), ne valide ni ne refuse un prestataire, ne sanctionne personne
+  et ne fixe aucun prix. Ces décisions restent au backend (règles écrites et testées) ou à un
+  humain de l'équipe Nexis.
+- Toute suggestion d'IA est **tracée** (entrée, réponse, qui l'a suivie ou écartée) et
+  **contestable** par la personne concernée.
+- **Consentement et confidentialité** : aucune donnée personnelle (pièce d'identité, selfie,
+  numéro, position) n'est envoyée à un service d'IA extérieur sans avis juridique préalable
+  et accord explicite de Ben.
+- L'**antifraude** commence par des **règles explicites** (seuils, journal d'alertes, revue
+  humaine, recours), pas par de l'IA.
+- Aucune fonctionnalité d'IA n'est présentée comme « opérationnelle » sans test de bout en
+  bout, ni sans mesure du coût, de la qualité (y compris en lingala) et des faux positifs.
+- **Ordre décidé** : pas d'IA avant le lancement. Après le lancement, avec de vraies données :
+  1) pilote d'**assistant interne pour l'équipe admin** (résumé d'un litige avant décision,
+  tri des alertes et des « Mon besoin n'est pas dans la liste ») ; 2) plus tard, assistant
+  client limité (aider à choisir le bon service), après relecture du lingala, avis juridique
+  et vérification des règles Meta sur l'IA dans WhatsApp ; 3) en dernier, aide au contrôle
+  des pièces d'identité, seulement si l'avocat l'autorise. L'aide à la rédaction des devis
+  n'est pas prévue : le prix reste la décision du prestataire.
 
 ## Objectif du projet
 
@@ -143,18 +197,11 @@ Toujours lancer depuis la racine du dépôt (`messages` y est importé).
 
 ## État actuel
 
-- Le bot est connecté à un backend V5 pour plusieurs flows clés : inscription utilisateur,
-  création de mission, profil, lifecycle mission, paiement.
-- **Phase 0 de la migration V5 terminée** (voir [V5_MIGRATION_PLAN.md](V5_MIGRATION_PLAN.md)) :
-  le backend V5 persiste maintenant dans PostgreSQL (via SQLAlchemy + Alembic), plus dans un
-  fichier JSON. Le contrat d'API vu par le bot (`main.py`) n'a pas changé.
-- Plus de couche SQLite legacy : `db.py` a été supprimé le 2026-11-14, le backend est la
-  seule mémoire (profils, missions, argent).
-- **Phase 2 terminée** (Celery + Redis, tâches asynchrones).
-- **Phase 3 en cours** : 3 flows sur 5 extraits vers `telegram_bot/` (inscription/profil,
-  mission/devis, paiement/lifecycle/notation) + vérification obligatoire des prestataires
-  ajoutée dans la foulée. Il reste l'admin (12 handlers) et l'affichage missions/wallet
-  (6 handlers) — voir "Prochaine étape logique" ci-dessous.
+- Le backend V5 persiste dans PostgreSQL, et `db.py` a été supprimé le 2026-11-14 : il n'y a plus de couche SQLite métier locale.
+- Redis conserve les états du bot et les updates webhook.
+- Les tâches périodiques sont pilotées par `backend/app/taches.py`, sans Celery ni worker/beat Celery.
+- Les flows Telegram (inscription, mission/devis, paiement/lifecycle, admin, tableau de bord) sont extraits dans `telegram_bot/` mais tournent dans le même processus que `main.py`.
+- Le backend possède des routes explicitement ouvertes au canal WhatsApp et une garde par canal. Le dépôt ne contient pas encore de service `whatsapp_bot/` ni de webhook Meta opérationnel.
 
 ## Avant toute modification
 
@@ -181,6 +228,16 @@ libération, litige, décision admin, soldes. Le bot et la Mini App demandent
 et recopient l'état renvoyé, sans aucune copie locale. Backend injoignable = aucune action d'argent. Les wallets sont
 rattachés à un compte Nexis (`accounts` + `channel_identities`), jamais à un
 canal. Détails : `CONCEPTION_ARGENT.md`.
+
+### Conditions d'utilisation (règle de structure)
+
+La case « J'ai lu et j'accepte » est obligatoire sur tous les canaux, à
+l'inscription et à la bascule client -> prestataire ; une nouvelle version
+se recoche avant toute nouvelle action. Seule source : `backend/app/conditions.py`.
+Chaque route du backend déclare `@needs_terms(...)` ou `@terms_exempt`, sinon
+le backend refuse de démarrer. Sans version publiée
+(`python -m backend.app.conditions publier ...`), personne ne s'inscrit.
+Détails : `CONCEPTION_CONDITIONS.md`.
 
 Le schéma Postgres est géré uniquement par Alembic : lancer
 `alembic upgrade head` avant de démarrer le backend (il ne crée plus ses
@@ -243,7 +300,7 @@ c:/Users/Ben L/OneDrive/Desktop/Startup_Nexis_Hub/nexis_hub_bot/.venv/Scripts/py
 
 ## Branch Git actuelle
 
-- Branche de travail : `feature/v5-migration`
+- Branche d'intégration à jour : `feature/mobile-money` (au 2026-11-20). Créer une branche dédiée depuis cette base pour chaque tâche, sans utiliser `main`.
 
 ## Prochaine étape logique — reprendre ici (2026-08-08)
 
@@ -519,49 +576,15 @@ Ce qui a été fait pour finaliser le transfert :
   (schéma de données, terminologie des statuts) même si l'implémentation reste incrémentale ici.
 - Les tests sont un bon garde-fou avant toute modification majeure.
 
-## Reprise identité multicanal / WhatsApp (mise à jour 2026-10-07)
+## Reprise identité multicanal / WhatsApp — état vérifié le 2026-11-20
 
-La référence complète est maintenant versionnée dans
-[`docs/ARCHITECTURE_WHATSAPP.md`](docs/ARCHITECTURE_WHATSAPP.md). Elle reprend
-le document approuvé et complété sur `origin/claude/project-thread-ojlicd`
-(commits `f64f322`, `fd8402a`) ; ne pas repartir de l'ancien lien d'artefact,
-qui ne contient pas les précisions sur les comptes contestés, les notifications
-incertaines, la conservation et l'exploitation.
+La référence produit reste [`docs/ARCHITECTURE_WHATSAPP.md`](docs/ARCHITECTURE_WHATSAPP.md). Le code ci-dessous a été vérifié sur `feature/mobile-money`, HEAD `fed4a85a`.
 
-Le travail continue sur `feature/mobile-money` (HEAD `c72499b`, après fusion du
-chantier identité et Mobile Money). Les comptes Nexis et wallets uniques sont
-déjà établis. La migration `e6f7a8b9c0d1_account_identity_metadata.py` ajoute
-les rôles, la langue commune et les champs du téléphone vérifié. Les numéros
-historiques ne sont pas considérés vérifiés. Les écritures de profil Telegram
-synchronisent le rôle et la langue sur le compte Nexis.
+- Les comptes Nexis, les profils par compte, les wallets par compte et les rôles admin persistés dans `admin_roles` sont dans le backend PostgreSQL.
+- Le backend résout l'acteur depuis son canal et son identifiant. La clé de service identifie le canal ; les routes WhatsApp sont ouvertes explicitement et les écritures multicanales sont protégées par idempotence.
+- Les routes client WhatsApp sont présentes côté backend, dont `POST /api/whatsapp/client`. Le dépôt n'a pas de service `whatsapp_bot/` ni d'exécution de webhook Meta : l'expérience WhatsApp complète reste à construire.
+- Les tâches périodiques tournent via `python -m backend.app.taches planificateur`; Celery n'est plus utilisé.
+- Les notifications WhatsApp fiables (outbox, statuts Meta, reprises incertaines) restent à construire. Le backend envoie actuellement les notifications Telegram par `backend/app/notify.py`.
+- Le code ne lit pas `NEXIS_PUBLIC_URL` : `MINI_APP_URL` et `WEBHOOK_URL` restent deux réglages distincts. Le tunnel Cloudflare de test `nexishub.dpdns.org` n'est pas encore exposé comme configuration unique.
 
-**Fait (2026-11-06) : règles d'argent par compte**, migration
-`b2c3d4e5f6a7`, vérifiée sur PostgreSQL 16 (aller-retour, arrêt si une
-intention n'a pas de compte). Voir `CONCEPTION_ARGENT.md`.
-
-**Fait (2026-11-06) : acteur résolu par le backend.** Toute action faite au nom
-d'une personne porte les en-têtes `X-Actor-Channel` / `X-Actor-Id` (identité
-de l'expéditeur Telegram, jamais lue dans `db.py`) ; le backend en déduit le
-compte (`current_actor` / `_actor_account` dans `backend/app/main.py`). Plus
-aucun identifiant d'acteur dans les corps de requête ; admin vérifié sur
-l'acteur ; accepter/refuser un devis réservé au client de la mission ; wallet
-lu par `GET /api/me/wallet` (le sien seulement) ; la Mini App affiche le solde
-du registre ou « Solde indisponible ». Reste : rapport de migration sur une
-copie de la vraie base, puis le socle (missions et devis uniquement dans le
-backend, fin de la copie `db.py`), qui n'est pas couvert par ce chantier.
-
-**Étape précédente : références métier.** La migration
-`a1b2c3d4e5f6_business_account_references.py` ajoute et rétro-remplit les
-références de compte des missions, devis, avis et demandes de service. Les
-créations backend écrivent désormais ces références ; l'acceptation d'un devis
-transfère le compte prestataire à la mission et les statistiques préfèrent la
-relation compte tout en gardant le repli Telegram historique. Aucun montant ni
-mouvement du registre n'est modifié. Les sérialisations exposent l'`account_id`
-en plus des identifiants Telegram historiques ; les routes restent encore
-adressées par Telegram. Cette modification est en cours et n'a pas encore été
-vérifiée par exécution de tests ou de migration. À reprendre : examiner la
-migration sur PostgreSQL et les historiques incomplets, adapter authentification
-et routes des API ainsi que les parcours Telegram/Mini App vers `account_id`,
-puis vérifier parité et non-régression avant toute liaison WhatsApp. Conserver ce fichier et
-`CONCEPTION_ARGENT.md` à jour pour les agents suivants. La liaison de canaux,
-les notifications multicanal et le bot WhatsApp restent ultérieurs.
+Avant de poursuivre WhatsApp : construire et exploiter le service de canal, puis implémenter l'outbox multicanale et la configuration publique commune. Garder cette note et la section d'état au début du fichier synchronisées avec le code.

@@ -605,6 +605,7 @@ def clavier_admin_menu():
     builder.button(text="🙋 Besoins des clients", callback_data="admin_client_requests")
     builder.button(text="💸 Retraits", callback_data="admin_payouts")
     builder.button(text="⚖️ Montants différents", callback_data="admin_mismatches")
+    builder.button(text="🛑 Interrupteurs", callback_data="admin_switches")
     builder.adjust(2)
     return builder.as_markup()
 

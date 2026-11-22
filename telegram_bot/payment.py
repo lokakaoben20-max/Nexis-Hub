@@ -207,7 +207,10 @@ async def _show_mobile_money_status(callback: CallbackQuery, result: dict, lang:
         )
         markup = clavier_client(lang)
     elif intent["status"] in ("created", "pending"):
-        text = get_message("payment_mobile_pending_client", lang, total=float(intent["amount"]), currency=intent["currency"])
+        # « created » : l'agrégateur n'a pas encore accusé réception de la
+        # demande ; on ne sait pas si elle est arrivée sur le téléphone.
+        key = "payment_mobile_pending_client" if intent["status"] == "pending" else "payment_mobile_unconfirmed_client"
+        text = get_message(key, lang, total=float(intent["amount"]), currency=intent["currency"])
         markup = clavier_verifier_paiement(intent["id"], lang)
     elif intent["status"] == "overpaid":
         text = get_message("payment_overpaid_client", lang, mission_id=mission_id, amount=intent["amount"], currency=intent["currency"])

@@ -63,12 +63,25 @@ class StatusUpdate(BaseModel):
     status: str
 
 
+class TermsDocument(BaseModel):
+    document_key: str = Field(max_length=40)
+    version: str = Field(max_length=30)
+
+
 class ProviderRegistrationCreate(BaseModel):
     phone_number: str
     full_name: str
     services: list[str]
     communes: list[str]
     language: str = "fr"
+    # Case des conditions cochée sur l'écran d'inscription : les versions
+    # montrées. Vide : le backend refuse si une case manque.
+    terms_documents: list[TermsDocument] = Field(default_factory=list, max_length=2)
+
+
+class TermsAcceptanceCreate(BaseModel):
+    role: str = Field(max_length=10)
+    documents: list[TermsDocument] = Field(min_length=1, max_length=2)
 
 
 STATIC_DIR = BASE_DIR / "static"
@@ -215,6 +228,11 @@ PROFILE_REFUSALS = {
     "unsupported_file_type": "Ce fichier n'est pas une photo",
     "too_many_files": "Trop de photos envoyees aujourd'hui",
     "file_storage_unavailable": "Envoi de photos indisponible",
+    "terms_not_accepted": "Coche la case des conditions pour continuer",
+    "terms_version_outdated": "Les conditions viennent d'etre mises a jour",
+    "terms_version_not_found": "Les conditions viennent d'etre mises a jour",
+    "terms_unavailable": "Conditions pas encore publiees",
+    "role_not_held": "Action refusee",
 }
 
 
@@ -236,6 +254,10 @@ REFUSAL_STATUS = {
     "unsupported_file_type": 415,
     "too_many_files": 429,
     "file_storage_unavailable": 503,
+    "terms_not_accepted": 409,
+    "terms_version_outdated": 409,
+    "terms_version_not_found": 409,
+    "terms_unavailable": 503,
 }
 
 
@@ -283,6 +305,7 @@ async def profile(telegram_id: int, telegram_user: dict = Depends(verify_telegra
     except (BackendUnavailable, MoneyRefused):
         wallet_history = None  # la page dit « indisponible », jamais une liste vide inventée
     wallet = wallets.get("wallet") if isinstance(wallets, dict) else None
+    terms = await _terms_status(telegram_id)
 
     # Personne encore inconnue (ni cliente ni prestataire) : pas de langue
     # choisie, la page prend celle de Telegram.
@@ -303,7 +326,91 @@ async def profile(telegram_id: int, telegram_user: dict = Depends(verify_telegra
         "available_communes": catalogue["communes"],
         "max_services": catalogue.get("provider_max_services"),
         "provider_excluded_services": catalogue.get("provider_excluded_services", []),
+        # Case des conditions : `missing` (à recocher avant de continuer),
+        # `by_role.provider` (écran d'inscription), ou `unavailable`.
+        "terms": terms,
     }
+
+
+async def _terms_status(telegram_id: int) -> dict:
+    """Ce que la personne doit cocher. Rien de publié : `unavailable`, la
+    page n'ouvre pas l'inscription. Backend injoignable : 503, comme le
+    reste du profil."""
+    try:
+        status = await backend_client.terms_status(telegram_id)
+    except MoneyRefused as error:
+        if error.code == "terms_unavailable":
+            return {"unavailable": True, "missing": [], "by_role": {"client": [], "provider": []}}
+        raise refused(400, "refused", "Action refusee")
+    except BackendUnavailable:
+        raise refused(503, "backend_unavailable", UNAVAILABLE)
+    return {
+        "unavailable": False,
+        "missing": status["missing"],
+        "role": status["role"],
+        "by_role": status["by_role"],
+    }
+
+
+@app.post("/api/terms/{telegram_id}")
+async def accept_terms(
+    telegram_id: int,
+    payload: TermsAcceptanceCreate,
+    telegram_user: dict = Depends(verify_telegram_init_data),
+):
+    """Recocher la case (nouvelle version, compte d'avant la règle)."""
+    require_same_telegram_user(telegram_id, telegram_user)
+    documents = [document.model_dump() for document in payload.documents]
+    status = await _backend(backend_client.accept_terms(telegram_id, payload.role, documents, surface="mini_app"))
+    return {"status": "ok", "missing": status["missing"]}
+
+
+TERMS_PAGE_TEXTS = {
+    "fr": {"cgu": "Conditions générales d'utilisation", "conditions_prestataires": "Conditions des prestataires",
+           "version": "Version {version}, en vigueur depuis le {date}", "missing": "Ce texte n'existe pas."},
+    "ln": {"cgu": "Mibeko ya kosalela Nexis Hub", "conditions_prestataires": "Mibeko ya basali",
+           "version": "Version {version}, ezali kosalela banda {date}", "missing": "Makomi oyo ezali te."},
+    "en": {"cgu": "Terms of Use", "conditions_prestataires": "Provider Terms",
+           "version": "Version {version}, in force since {date}", "missing": "This text does not exist."},
+}
+
+
+@app.get("/conditions/{document_key}/{version}", response_class=HTMLResponse)
+async def terms_page(document_key: str, version: str, lang: str = "fr"):
+    """Page de lecture d'une version publiée, ouverte depuis la case à cocher
+    (bot, Mini App, plus tard WhatsApp). Publique : le texte des conditions
+    n'est pas un secret. Texte exact, échappé, sans mise en forme ajoutée."""
+    texts = TERMS_PAGE_TEXTS.get(lang, TERMS_PAGE_TEXTS["fr"])
+    lang = lang if lang in TERMS_PAGE_TEXTS else "fr"
+    try:
+        body = await backend_client.read_terms(document_key, version)
+    except MoneyRefused:
+        return HTMLResponse(_terms_html(lang, "Nexis Hub", "", texts["missing"]), status_code=404)
+    except BackendUnavailable:
+        return HTMLResponse(_terms_html(lang, "Nexis Hub", "", UNAVAILABLE), status_code=503)
+    title = texts.get(body["document_key"], "Nexis Hub")
+    date = body["effective_at"][:10]
+    subtitle = texts["version"].format(version=body["version"], date=date)
+    return HTMLResponse(_terms_html(body.get("language") or lang, title, subtitle, body["text"]))
+
+
+def _terms_html(lang: str, title: str, subtitle: str, text: str) -> str:
+    from html import escape
+
+    return f"""<!doctype html>
+<html lang="{escape(lang)}"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{escape(title)} · Nexis Hub</title>
+<style>
+:root {{ color-scheme: light dark; --ink:#021937; --bg:#F6F8FB; --muted:#5B667A; --brand:#0350E6; }}
+@media (prefers-color-scheme: dark) {{ :root {{ --ink:#E8EEF8; --bg:#0B1424; --muted:#9AA6BA; }} }}
+body {{ margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }}
+main {{ max-width:720px; margin:0 auto; padding:24px 16px 48px; }}
+h1 {{ font-size:22px; line-height:1.3; margin:0 0 4px; }}
+p.v {{ color:var(--muted); font-size:13px; margin:0 0 20px; border-bottom:2px solid var(--brand); padding-bottom:12px; }}
+div.t {{ white-space:pre-wrap; overflow-wrap:anywhere; }}
+</style></head>
+<body><main><h1>{escape(title)}</h1><p class="v">{escape(subtitle)}</p><div class="t">{escape(text)}</div></main></body></html>"""
 
 
 @app.post("/api/provider/{telegram_id}/register")
@@ -338,6 +445,11 @@ async def register_provider(
                 "services": payload.services,
                 "communes": payload.communes,
                 "language": payload.language,
+                **(
+                    {"terms": {"surface": "mini_app", "documents": [doc.model_dump() for doc in payload.terms_documents]}}
+                    if payload.terms_documents
+                    else {}
+                ),
             },
         )
     )

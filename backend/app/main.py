@@ -16,9 +16,11 @@ from backend.app import (
     admins,
     app_auth,
     app_sessions,
+    conditions,
     crud,
     fichiers,
     idempotency,
+    interrupteurs,
     ledger,
     mobile_money,
     payment_gateway,
@@ -116,14 +118,51 @@ def is_idempotent(endpoint) -> bool:
     return getattr(endpoint, _IDEMPOTENT_ATTR, False)
 
 
+# --- Conditions d'utilisation par route ---------------------------------------
+# Chaque route du router déclare ce qu'elle exige (backend/app/conditions.py) :
+# `@needs_terms(CLIENT)` ou `@needs_terms(PROVIDER)` pour une nouvelle action
+# (mission, devis, paiement, offre de service...), refusée tant que la
+# personne n'a pas coché la version en vigueur ; `@terms_exempt` pour ce qui
+# reste toujours possible (lire, finir ce qui est engagé, retirer son argent,
+# s'inscrire — l'inscription porte elle-même la case cochée —, régler sa
+# langue, sécurité du compte, admin). Une route qui ne déclare rien empêche
+# le démarrage (`check_route_policies`) : aucune n'est oubliée.
+
+_TERMS_ATTR = "__nexis_terms__"
+_TERMS_EXEMPT = "exempt"
+
+
+def needs_terms(role: str):
+    if role not in conditions.REQUIRED_DOCUMENTS:
+        raise RuntimeError(f"Rôle inconnu : {role}")
+
+    def decorate(endpoint):
+        setattr(endpoint, _TERMS_ATTR, role)
+        return endpoint
+
+    return decorate
+
+
+def terms_exempt(endpoint):
+    setattr(endpoint, _TERMS_ATTR, _TERMS_EXEMPT)
+    return endpoint
+
+
+def route_terms(endpoint) -> str | None:
+    return getattr(endpoint, _TERMS_ATTR, None)
+
+
 def check_route_policies() -> None:
     """Refus de démarrer si une écriture est ouverte à WhatsApp sans
-    idempotence : un message reçu deux fois agirait deux fois."""
+    idempotence (un message reçu deux fois agirait deux fois), ou si une
+    route ne dit pas si elle exige les conditions d'utilisation."""
     for route in router.routes:
         methods = set(getattr(route, "methods", ()) or ()) & WRITE_METHODS
         channels = route_channels(getattr(route, "endpoint", None))
         if methods and channels - {ledger.TELEGRAM} and not is_idempotent(route.endpoint):
             raise RuntimeError(f"{sorted(methods)} {route.path} : écriture ouverte à {sorted(channels)} sans @idempotent")
+        if route_terms(getattr(route, "endpoint", None)) is None:
+            raise RuntimeError(f"{route.path} : ni @needs_terms ni @terms_exempt")
 
 
 def verify_service_key(request: Request, x_api_key: str | None = Header(default=None)) -> str:
@@ -149,10 +188,35 @@ def verify_service_key(request: Request, x_api_key: str | None = Header(default=
     return channel
 
 
+def enforce_terms(
+    request: Request,
+    service_channel: str = Depends(verify_service_key),
+    x_actor_channel: str | None = Header(default=None),
+    x_actor_id: str | None = Header(default=None),
+) -> None:
+    """Refuse une nouvelle action (`@needs_terms`) à qui n'a pas coché la
+    version en vigueur des conditions de ce rôle : 409 `terms_not_accepted`,
+    avec les versions à accepter, que le canal montre avec la case à cocher.
+    Rien de publié : 503 `terms_unavailable`. Une route sans déclaration est
+    refusée aussi (elle n'aurait pas dû démarrer)."""
+    role = route_terms(request.scope.get("endpoint"))
+    if role == _TERMS_EXEMPT:
+        return
+    if role is None:
+        raise HTTPException(status_code=500, detail={"code": "route_policy_missing"})
+    actor = current_actor(service_channel, x_actor_channel, x_actor_id)
+    with SessionLocal() as db:
+        account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
+        try:
+            conditions.require(db, account_id, role)
+        except conditions.ConditionsError as error:
+            raise HTTPException(status_code=error.http_status, detail=error.detail()) from error
+
+
 # Toutes les routes /api/* passent par ce router protégé. /health reste sur
 # `app` directement, sans authentification, pour rester utilisable par un
 # outil de supervision externe.
-router = APIRouter(dependencies=[Depends(verify_service_key)])
+router = APIRouter(dependencies=[Depends(verify_service_key), Depends(enforce_terms)])
 
 
 # Canaux dont le backend sait résoudre l'identité d'un acteur déclaré par
@@ -258,6 +322,28 @@ def _actor_account(
     return account_id
 
 
+class TermsDocumentPayload(BaseModel):
+    document_key: str = Field(max_length=40)
+    version: str = Field(max_length=30)
+
+
+class AcceptedTermsPayload(BaseModel):
+    """La case cochée : les versions montrées à la personne, et où (bot
+    Telegram, Mini App, WhatsApp). Voir backend/app/conditions.py."""
+
+    surface: str = Field(max_length=20)
+    documents: list[TermsDocumentPayload] = Field(min_length=1, max_length=2)
+
+    def as_terms(self) -> dict:
+        return {"surface": self.surface, "documents": [document.model_dump() for document in self.documents]}
+
+
+class TermsAcceptancePayload(AcceptedTermsPayload):
+    """Recocher après une nouvelle version, pour un rôle que la personne a."""
+
+    role: str = Field(max_length=10)
+
+
 class MissionMediaPayload(BaseModel):
     kind: str
     id: str = Field(min_length=1, max_length=255)
@@ -336,6 +422,11 @@ class PayoutPayload(BaseModel):
 
 class PayoutDecisionPayload(BaseModel):
     reason: str = ""
+
+
+class MoneySwitchPayload(BaseModel):
+    open: bool
+    reason: str
 
 
 class MismatchDecisionPayload(BaseModel):
@@ -602,6 +693,104 @@ def _profile_refused(db, refusal: profils.ProfileRefused) -> HTTPException:
     return HTTPException(status_code=refusal.http_status, detail={"code": refusal.code})
 
 
+def _terms_refused(db, error: conditions.ConditionsError) -> HTTPException:
+    db.rollback()
+    return HTTPException(status_code=error.http_status, detail=error.detail())
+
+
+# --- Conditions d'utilisation -------------------------------------------------
+
+
+@router.get("/api/legal/documents/{document_key}")
+@terms_exempt
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+def read_current_terms(document_key: str):
+    """Texte en vigueur d'un document, pour la page de lecture ouverte
+    depuis la case à cocher."""
+    with SessionLocal() as db:
+        version = conditions.current_version(db, document_key) if document_key in conditions.LEGAL_DOCUMENTS else None
+        if version is None:
+            raise HTTPException(status_code=404, detail={"code": "terms_version_not_found"})
+        return _terms_text(version)
+
+
+@router.get("/api/legal/documents/{document_key}/{version}")
+@terms_exempt
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+def read_terms_version(document_key: str, version: str):
+    """Texte exact d'une version publiée (y compris une ancienne, ou une à
+    venir) : ce qu'une personne a accepté reste lisible."""
+    with SessionLocal() as db:
+        row = conditions.find_version(db, document_key, version)
+        if row is None:
+            raise HTTPException(status_code=404, detail={"code": "terms_version_not_found"})
+        return _terms_text(row)
+
+
+def _terms_text(version) -> dict:
+    return {
+        "status": "ok",
+        **conditions.version_view(version),
+        "language": version.language,
+        "text": version.text,
+        "text_sha256": version.text_sha256,
+    }
+
+
+@router.get("/api/me/terms")
+@terms_exempt
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+def my_terms(actor: Actor = Depends(current_actor)):
+    """Ce que la personne doit cocher : pour ses rôles (`missing`, à montrer
+    avant toute nouvelle action) et pour chaque rôle (`by_role`, écran
+    d'inscription ou de bascule). Personne inconnue : tout est à cocher."""
+    with SessionLocal() as db:
+        account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
+        try:
+            return {"status": "ok", **conditions.status(db, account_id)}
+        except conditions.ConditionsError as error:
+            raise HTTPException(status_code=error.http_status, detail=error.detail()) from error
+
+
+@router.post("/api/me/terms")
+@terms_exempt
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+@idempotent
+def accept_my_terms(
+    payload: TermsAcceptancePayload,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    """Recocher la case (nouvelle version en vigueur, ou compte d'avant la
+    règle), pour un rôle que la personne a déjà. S'inscrire passe par les
+    routes d'inscription, qui portent elles-mêmes la case. Le même message
+    WhatsApp rejoué rend la même réponse sans rien refaire."""
+
+    def action(db) -> dict:
+        try:
+            account_id = _actor_account(db, actor)
+            if payload.role not in conditions.held_roles(db, account_id):
+                raise conditions.ConditionsError("role_not_held", 409)
+            conditions.accept(
+                db,
+                account_id,
+                payload.role,
+                payload.as_terms()["documents"],
+                surface=conditions.checked_surface(actor.channel, payload.surface),
+                language=profils.language_of(db, account_id),
+            )
+            db.flush()
+            return {"status": "ok", **conditions.status(db, account_id)}
+        except conditions.ConditionsError as error:
+            raise HTTPException(status_code=error.http_status, detail=error.detail()) from error
+        except ledger.MoneyError as error:
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+
+    return _run_idempotent(request, response, actor, idempotency_key, payload.model_dump(mode="json"), action)
+
+
 def _telegram_account(db, telegram_id: int, *, create: bool = False) -> int | None:
     return ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=create)
 
@@ -614,9 +803,12 @@ class WhatsAppClientPayload(BaseModel):
     display_name: str = Field(min_length=1, max_length=crud.MAX_DISPLAY_NAME_LENGTH)
     language: str = Field(min_length=2, max_length=5)
     phone: str | None = Field(default=None, max_length=32)
+    # Case des CGU cochée (bouton « J'accepte ») à la fin de l'inscription.
+    terms: AcceptedTermsPayload | None = None
 
 
 @router.post("/api/whatsapp/client")
+@terms_exempt
 @open_to(ledger.WHATSAPP)
 @idempotent
 def register_whatsapp_client(
@@ -643,6 +835,17 @@ def register_whatsapp_client(
             )
         except crud.ClientRefused as refusal:
             raise HTTPException(status_code=refusal.http_status, detail={"code": refusal.code}) from refusal
+        try:
+            conditions.accept_for_signup(
+                db,
+                account.id,
+                conditions.CLIENT,
+                payload.terms.as_terms() if payload.terms is not None else None,
+                channel=actor.channel,
+                language=account.language,
+            )
+        except conditions.ConditionsError as error:
+            raise HTTPException(status_code=error.http_status, detail=error.detail()) from error
         return {
             "status": "ok",
             "created": created,
@@ -665,6 +868,7 @@ class AppLoginTelegramContactPayload(BaseModel):
 
 
 @router.post("/api/bot/app-login/telegram-contact")
+@terms_exempt
 def app_login_telegram_contact(payload: AppLoginTelegramContactPayload, actor: Actor = Depends(current_actor)):
     """Connexion à l'application par Telegram : la personne a ouvert le bot
     par le lien de l'app et partagé son propre contact (vérifié par le bot).
@@ -687,6 +891,7 @@ def _alert_admin_not_me(device_id: int, account_id: int) -> None:
 
 
 @router.post("/api/bot/app-devices/{device_id}/not-me")
+@terms_exempt
 def app_device_not_me(device_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
     """« Ce n'est pas moi », appuyé sous l'alerte « Nouvel appareil » : le
     téléphone est coupé tout de suite, avec toutes ses sessions, et l'admin
@@ -707,6 +912,7 @@ def app_device_not_me(device_id: int, background_tasks: BackgroundTasks, actor: 
 
 
 @router.post("/api/bot/missions")
+@needs_terms(conditions.CLIENT)
 def create_bot_mission(payload: MissionCreatePayload, actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
         try:
@@ -756,6 +962,7 @@ def _mission_view(db, mission: BotMission, role: str) -> dict:
 
 
 @router.post("/api/bot/quotes")
+@needs_terms(conditions.PROVIDER)
 @provider_action
 def create_quote(payload: QuoteCreatePayload, actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
@@ -779,6 +986,7 @@ def create_quote(payload: QuoteCreatePayload, actor: Actor = Depends(current_act
 
 
 @router.post("/api/bot/reviews")
+@terms_exempt
 def create_review(payload: ReviewCreatePayload, actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
         try:
@@ -810,6 +1018,7 @@ def _quote_decision(quote_id: int, actor: Actor, decide) -> dict:
 
 
 @router.get("/api/bot/quotes/{quote_id}")
+@terms_exempt
 def get_quote(quote_id: int, actor: Actor = Depends(current_actor)):
     """Lisible par le client de la mission et par l'auteur du devis (et
     l'admin) ; pour tout autre, le devis n'existe pas."""
@@ -826,11 +1035,13 @@ def get_quote(quote_id: int, actor: Actor = Depends(current_actor)):
 
 
 @router.post("/api/bot/quotes/{quote_id}/accept")
+@needs_terms(conditions.CLIENT)
 def accept_quote(quote_id: int, actor: Actor = Depends(current_actor)):
     return _quote_decision(quote_id, actor, crud.accept_quote)
 
 
 @router.post("/api/bot/quotes/{quote_id}/reject")
+@terms_exempt
 def reject_quote(quote_id: int, actor: Actor = Depends(current_actor)):
     return _quote_decision(quote_id, actor, crud.reject_quote)
 
@@ -869,6 +1080,7 @@ def _money_call(operation):
 
 
 @router.post("/api/bot/missions/{mission_id}/fund")
+@needs_terms(conditions.CLIENT)
 def fund_mission(mission_id: int, payload: FundPayload, actor: Actor = Depends(current_actor)):
     # Seul le wallet paie directement : un paiement Mobile Money n'existe que
     # confirmé par l'agrégateur (/payment-intents, CONCEPTION_MOBILE_MONEY.md).
@@ -888,6 +1100,7 @@ def fund_mission(mission_id: int, payload: FundPayload, actor: Actor = Depends(c
 def _intent_to_dict(intent: PaymentIntent) -> dict:
     return {
         "id": intent.id,
+        "reference": intent.reference,
         "mission_id": intent.mission_id,
         "status": intent.status,
         "operator": intent.operator,
@@ -903,6 +1116,7 @@ def _intent_to_dict(intent: PaymentIntent) -> dict:
 def _payout_to_dict(payout: Payout) -> dict:
     return {
         "id": payout.id,
+        "reference": payout.reference,
         "status": payout.status,
         "requested_by_telegram_id": payout.requested_by_telegram_id,
         "amount": str(payout.amount),
@@ -922,6 +1136,7 @@ def _intent_response(db, intent: PaymentIntent) -> dict:
 
 
 @router.post("/api/bot/missions/{mission_id}/payment-intents")
+@needs_terms(conditions.CLIENT)
 def create_payment_intent(mission_id: int, payload: PaymentIntentPayload, actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
         try:
@@ -939,6 +1154,7 @@ def create_payment_intent(mission_id: int, payload: PaymentIntentPayload, actor:
 
 
 @router.post("/api/bot/payment-intents/{intent_id}/refresh")
+@terms_exempt
 def refresh_payment_intent(intent_id: int):
     with SessionLocal() as db:
         from backend.app.tasks import refresh_and_notify_intent
@@ -966,6 +1182,7 @@ def _payout_call(operation):
 
 
 @router.post("/api/bot/payouts")
+@terms_exempt
 def request_payout(payload: PayoutPayload, actor: Actor = Depends(current_actor)):
     return _payout_call(
         lambda db: mobile_money.request_payout(
@@ -981,6 +1198,7 @@ def request_payout(payload: PayoutPayload, actor: Actor = Depends(current_actor)
 
 
 @router.get("/api/bot/payouts")
+@terms_exempt
 def list_payouts(status: str = "awaiting_approval", limit: int = 20, actor: Actor = Depends(current_actor)):
     # Téléphones des prestataires : réservé à l'admin.
     _require_admin(actor)
@@ -1009,6 +1227,7 @@ def _is_admin(actor: Actor) -> bool:
 
 
 @router.get("/api/bot/admin/me")
+@terms_exempt
 def admin_me(actor: Actor = Depends(current_actor)):
     """La personne qui écrit au bot est-elle admin ? Le bot n'a aucune liste
     locale : il demande au backend à chaque écran admin."""
@@ -1016,6 +1235,7 @@ def admin_me(actor: Actor = Depends(current_actor)):
 
 
 @router.get("/api/bot/admins")
+@terms_exempt
 def admin_list():
     """Identifiants Telegram des admins, pour que le bot les prévienne (nouveau
     prestataire à vérifier). Route réservée au canal Telegram."""
@@ -1028,6 +1248,7 @@ class AppDevicesRevokePayload(BaseModel):
 
 
 @router.post("/api/bot/admin/app-devices/revoke")
+@terms_exempt
 def admin_revoke_app_devices(payload: AppDevicesRevokePayload, actor: Actor = Depends(current_actor)):
     """L'admin coupe tous les téléphones de l'application d'une personne,
     désignée par son identifiant Telegram (téléphone volé, compte suspect).
@@ -1041,19 +1262,48 @@ def admin_revoke_app_devices(payload: AppDevicesRevokePayload, actor: Actor = De
         return {"status": "ok", "revoked": revoked}
 
 
+@router.get("/api/bot/admin/money-switches")
+@terms_exempt
+def money_switches(actor: Actor = Depends(current_actor)):
+    """État des interrupteurs d'arrêt Mobile Money (`backend.app.interrupteurs`)."""
+    _require_admin(actor)
+    with SessionLocal() as db:
+        return {"status": "ok", "switches": interrupteurs.state(db)}
+
+
+@router.post("/api/bot/admin/money-switches/{name}")
+@terms_exempt
+def set_money_switch(name: str, payload: MoneySwitchPayload, actor: Actor = Depends(current_actor)):
+    """Un admin coupe ou rouvre les encaissements (`collections`) ou les
+    versements (`payouts`), avec une raison gardée au journal."""
+    admin_telegram_id = _require_admin(actor)
+    with SessionLocal() as db:
+        try:
+            _, changed = interrupteurs.switch(
+                db, name, open=payload.open, reason=payload.reason, source="bot", by_telegram_id=admin_telegram_id
+            )
+        except ledger.MoneyError as error:
+            db.rollback()
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+        return {"status": "ok", "changed": changed, "switches": interrupteurs.state(db)}
+
+
 @router.post("/api/bot/payouts/{payout_id}/approve")
+@terms_exempt
 def approve_payout(payout_id: int, payload: PayoutDecisionPayload, actor: Actor = Depends(current_actor)):
     admin_telegram_id = _require_admin(actor)
     return _payout_call(lambda db: mobile_money.approve_payout(db, payout_id, admin_telegram_id))
 
 
 @router.post("/api/bot/payouts/{payout_id}/reject")
+@terms_exempt
 def reject_payout(payout_id: int, payload: PayoutDecisionPayload, actor: Actor = Depends(current_actor)):
     admin_telegram_id = _require_admin(actor)
     return _payout_call(lambda db: mobile_money.reject_payout(db, payout_id, admin_telegram_id, payload.reason))
 
 
 @router.get("/api/bot/payment-intents/mismatches")
+@terms_exempt
 def list_payment_mismatches(limit: int = 20, actor: Actor = Depends(current_actor)):
     # Téléphone et identifiant du client : réservé à l'admin.
     _require_admin(actor)
@@ -1081,6 +1331,7 @@ def _notify_mismatch_resolved(intent_id: int) -> None:
 
 
 @router.post("/api/bot/payment-intents/{intent_id}/resolve-mismatch")
+@terms_exempt
 def resolve_payment_mismatch(
     intent_id: int, payload: MismatchDecisionPayload, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)
 ):
@@ -1096,6 +1347,21 @@ def resolve_payment_mismatch(
         return _intent_response(db, intent)
 
 
+def _webhook_target(db, gateway_name: str, notice) -> tuple[PaymentIntent | None, Payout | None]:
+    """Intention ou retrait que désigne un webhook : par notre référence
+    d'abord (connue dès la demande, même si l'agrégateur n'a jamais répondu),
+    sinon par la sienne."""
+    for column, value in (("reference", notice.reference), ("gateway_reference", notice.gateway_reference)):
+        if not value:
+            continue
+        filters = {"gateway": gateway_name, column: value}
+        intent = db.query(PaymentIntent).filter_by(**filters).one_or_none()
+        payout = db.query(Payout).filter_by(**filters).one_or_none()
+        if intent is not None or payout is not None:
+            return intent, payout
+    return None, None
+
+
 @app.post("/api/payments/webhook/{gateway_name}")
 async def payment_webhook(gateway_name: str, request: Request):
     """Confirmation de l'agrégateur. Hors clé API (c'est l'agrégateur qui
@@ -1105,14 +1371,13 @@ async def payment_webhook(gateway_name: str, request: Request):
     if gateway_name != gateway.name:
         raise HTTPException(status_code=404, detail={"code": "unknown_gateway"})
     try:
-        reference = gateway.verify_webhook(request.headers, await request.body())
+        notice = gateway.verify_webhook(request.headers, await request.body())
     except payment_gateway.InvalidWebhook as error:
         raise HTTPException(status_code=401, detail={"code": "invalid_signature"}) from error
     from backend.app.tasks import refresh_and_notify_intent, refresh_and_notify_payout
 
     with SessionLocal() as db:
-        intent = db.query(PaymentIntent).filter_by(gateway=gateway.name, gateway_reference=reference).one_or_none()
-        payout = db.query(Payout).filter_by(gateway=gateway.name, gateway_reference=reference).one_or_none()
+        intent, payout = _webhook_target(db, gateway.name, notice)
         if intent is not None:
             refresh_and_notify_intent(db, intent.id)
         elif payout is not None:
@@ -1190,12 +1455,14 @@ def _client_account(db, actor: Actor) -> int:
 
 
 @router.post("/api/bot/missions/{mission_id}/presence/arrived")
+@terms_exempt
 @provider_action
 def declare_arrival(mission_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
     return _presence_call(lambda db: presence.declare_arrival(db, mission_id, _provider_account(db, actor)), background_tasks, "provider")
 
 
 @router.post("/api/bot/missions/{mission_id}/presence/code")
+@terms_exempt
 @provider_action
 def confirm_presence_by_code(
     mission_id: int, payload: PresenceCodePayload, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)
@@ -1206,21 +1473,25 @@ def confirm_presence_by_code(
 
 
 @router.post("/api/bot/missions/{mission_id}/presence/confirm")
+@terms_exempt
 def confirm_presence_by_client(mission_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
     return _presence_call(lambda db: presence.confirm_by_client(db, mission_id, _client_account(db, actor)), background_tasks, "client")
 
 
 @router.post("/api/bot/missions/{mission_id}/presence/not-yet")
+@terms_exempt
 def presence_not_yet(mission_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
     return _presence_call(lambda db: presence.answer_not_yet(db, mission_id, _client_account(db, actor)), background_tasks, "client")
 
 
 @router.post("/api/bot/missions/{mission_id}/presence/wrong-person")
+@terms_exempt
 def presence_wrong_person(mission_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
     return _presence_call(lambda db: presence.report_wrong_person(db, mission_id, _client_account(db, actor)), background_tasks, "client")
 
 
 @router.get("/api/bot/missions/{mission_id}/presence")
+@terms_exempt
 def get_presence(mission_id: int, actor: Actor = Depends(current_actor)):
     """État de l'arrivée. Le code de présence n'est donné qu'au client de la
     mission ; pour qui n'est ni client, ni prestataire choisi, ni admin : 404,
@@ -1241,6 +1512,7 @@ def get_presence(mission_id: int, actor: Actor = Depends(current_actor)):
 
 
 @router.post("/api/bot/missions/{mission_id}/finish")
+@terms_exempt
 @provider_action
 def finish_mission(mission_id: int, actor: Actor = Depends(current_actor)):
     return _money_call(
@@ -1249,6 +1521,7 @@ def finish_mission(mission_id: int, actor: Actor = Depends(current_actor)):
 
 
 @router.post("/api/bot/missions/{mission_id}/confirm")
+@terms_exempt
 def confirm_mission(mission_id: int, actor: Actor = Depends(current_actor)):
     return _money_call(
         lambda db: ledger.confirm_completion(db, mission_id, _actor_account(db, actor, missing="not_mission_client", http_status=403))
@@ -1256,6 +1529,7 @@ def confirm_mission(mission_id: int, actor: Actor = Depends(current_actor)):
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute")
+@terms_exempt
 def open_dispute(mission_id: int, payload: DisputeOpenPayload, actor: Actor = Depends(current_actor)):
     return _money_call(
         lambda db: ledger.open_dispute(
@@ -1265,6 +1539,7 @@ def open_dispute(mission_id: int, payload: DisputeOpenPayload, actor: Actor = De
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute/decide")
+@terms_exempt
 def decide_dispute(
     mission_id: int, payload: DisputeDecidePayload, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)
 ):
@@ -1296,6 +1571,7 @@ def decide_dispute(
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute/contest")
+@terms_exempt
 def contest_dispute(
     mission_id: int, payload: DisputeContestPayload, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)
 ):
@@ -1319,6 +1595,7 @@ def contest_dispute(
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute/offers")
+@terms_exempt
 def propose_dispute_settlement(
     mission_id: int, payload: DisputeOfferPayload, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)
 ):
@@ -1347,6 +1624,7 @@ def propose_dispute_settlement(
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute/offers/{offer_id}/accept")
+@terms_exempt
 @provider_action
 def accept_dispute_settlement(mission_id: int, offer_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
     """Le prestataire accepte : le prestataire repasse, ou le règlement est
@@ -1355,6 +1633,7 @@ def accept_dispute_settlement(mission_id: int, offer_id: int, background_tasks: 
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute/offers/{offer_id}/decline")
+@terms_exempt
 @provider_action
 def decline_dispute_settlement(mission_id: int, offer_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
     """Le prestataire refuse : le litige continue. Le client est prévenu une fois."""
@@ -1399,6 +1678,7 @@ def _notify_dispute(mission_id: int, event: str) -> None:
 
 
 @router.get("/api/bot/missions/{mission_id}")
+@terms_exempt
 def get_mission(mission_id: int, actor: Actor = Depends(current_actor)):
     """Lisible par le client, le prestataire concerné, un prestataire prévenu
     et l'admin. Pour tout autre, la mission n'existe pas (même réponse qu'un
@@ -1418,6 +1698,7 @@ def get_mission(mission_id: int, actor: Actor = Depends(current_actor)):
 
 
 @router.get("/api/bot/missions/{mission_id}/destination")
+@terms_exempt
 def get_mission_destination(mission_id: int, actor: Actor = Depends(current_actor)):
     """Lieu exact de la mission, à part du reste de la mission : le client et
     l'admin le lisent toujours, le prestataire choisi seulement une fois la
@@ -1450,6 +1731,7 @@ def get_mission_destination(mission_id: int, actor: Actor = Depends(current_acto
 
 
 @router.get("/api/me/missions")
+@terms_exempt
 @open_to(ledger.TELEGRAM, ledger.WHATSAPP)
 def my_missions(role: str = "client", limit: int = 20, actor: Actor = Depends(current_actor)):
     """Missions de l'acteur : celles qu'il a commandées (`client`) ou qui lui
@@ -1497,6 +1779,7 @@ def _admin_decision(decision) -> dict:
 
 
 @router.get("/api/admin/missions")
+@terms_exempt
 def admin_list_missions(status: str | None = None, limit: int = 10, actor: Actor = Depends(current_actor)):
     _require_admin(actor)
     with SessionLocal() as db:
@@ -1505,6 +1788,7 @@ def admin_list_missions(status: str | None = None, limit: int = 10, actor: Actor
 
 
 @router.get("/api/admin/stats")
+@terms_exempt
 def admin_stats(actor: Actor = Depends(current_actor)):
     _require_admin(actor)
     with SessionLocal() as db:
@@ -1521,6 +1805,7 @@ def admin_stats(actor: Actor = Depends(current_actor)):
 
 
 @router.get("/api/admin/clients")
+@terms_exempt
 def admin_list_clients(limit: int = 20, actor: Actor = Depends(current_actor)):
     _require_admin(actor)
     with SessionLocal() as db:
@@ -1531,6 +1816,7 @@ def admin_list_clients(limit: int = 20, actor: Actor = Depends(current_actor)):
 
 
 @router.get("/api/me/wallet")
+@terms_exempt
 @open_to(ledger.TELEGRAM, ledger.WHATSAPP)
 def get_my_wallet(actor: Actor = Depends(current_actor)):
     """Wallet de l'acteur, et de lui seul : un canal ne lit jamais le solde
@@ -1554,6 +1840,7 @@ def get_my_wallet(actor: Actor = Depends(current_actor)):
 
 
 @router.get("/api/me/wallet/history")
+@terms_exempt
 def get_my_wallet_history(limit: int = 20, actor: Actor = Depends(current_actor)):
     """Derniers mouvements du wallet de l'acteur, et de lui seul."""
     with SessionLocal() as db:
@@ -1562,6 +1849,7 @@ def get_my_wallet_history(limit: int = 20, actor: Actor = Depends(current_actor)
 
 
 @router.post("/api/me/client-requests")
+@needs_terms(conditions.CLIENT)
 def create_client_request(payload: ClientRequestPayload, actor: Actor = Depends(current_actor)):
     """Le client envoie à l'équipe un besoin qui n'est dans aucun service."""
     with SessionLocal() as db:
@@ -1574,6 +1862,7 @@ def create_client_request(payload: ClientRequestPayload, actor: Actor = Depends(
 
 
 @router.get("/api/me/client-requests")
+@terms_exempt
 def list_my_client_requests(actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
         account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
@@ -1582,6 +1871,7 @@ def list_my_client_requests(actor: Actor = Depends(current_actor)):
 
 
 @router.post("/api/bot/service-requests")
+@needs_terms(conditions.PROVIDER)
 @provider_action
 def create_service_request(payload: ServiceRequestPayload, actor: Actor = Depends(current_actor)):
     """Le prestataire acteur propose un service manquant au catalogue ; un
@@ -1607,6 +1897,9 @@ class ClientProfilePayload(BaseModel):
     # Vrai seulement si le numéro vient du bouton « Partager mon numéro »
     # (contact de l'expéditeur, vérifié par le bot).
     phone_verified: bool = False
+    # Case des CGU cochée à la fin de l'inscription. Sans elle, pas
+    # d'inscription (sauf si le compte a déjà accepté la version en vigueur).
+    terms: AcceptedTermsPayload | None = None
 
 
 class ProviderProfilePayload(BaseModel):
@@ -1619,6 +1912,9 @@ class ProviderProfilePayload(BaseModel):
     selfie_file_id: str | None = Field(default=None, max_length=profils.MAX_FILE_ID_LENGTH)
     portfolio_file_ids: list[str] | None = Field(default=None, max_length=profils.MAX_PORTFOLIO_FILES)
     phone_verified: bool = False
+    # Case des CGU et des conditions des prestataires, cochée à la fin de
+    # l'inscription ou de la bascule client -> prestataire.
+    terms: AcceptedTermsPayload | None = None
 
 
 class ProviderCommunesPayload(BaseModel):
@@ -1646,6 +1942,7 @@ def _my_provider(db, actor: Actor) -> ProviderProfile:
 
 
 @router.get("/api/me/service-requests")
+@terms_exempt
 @provider_action
 def list_my_service_requests(actor: Actor = Depends(current_actor)):
     """Les dernières propositions de service du prestataire acteur."""
@@ -1660,6 +1957,7 @@ def list_my_service_requests(actor: Actor = Depends(current_actor)):
 
 
 @router.get("/api/bot/telegram/{telegram_id}/language")
+@terms_exempt
 def telegram_person_language(telegram_id: int):
     """Langue dans laquelle le bot écrit à cette personne (alerte de mission,
     notification à l'autre partie). Rien d'autre de son profil. Personne
@@ -1670,6 +1968,7 @@ def telegram_person_language(telegram_id: int):
 
 
 @router.get("/api/services")
+@terms_exempt
 @open_to(ledger.TELEGRAM, ledger.WHATSAPP)
 def list_services():
     """Catalogue actif et communes servies, dans l'ordre d'affichage. Les
@@ -1700,6 +1999,7 @@ def list_services():
 
 
 @router.get("/api/me/profile")
+@terms_exempt
 @open_to(ledger.TELEGRAM, ledger.WHATSAPP)
 def get_my_profile(actor: Actor = Depends(current_actor)):
     """Profil de l'acteur : client, prestataire, les deux ou aucun (`guest`)."""
@@ -1708,6 +2008,7 @@ def get_my_profile(actor: Actor = Depends(current_actor)):
 
 
 @router.put("/api/me/client-profile")
+@terms_exempt
 def save_my_client_profile(payload: ClientProfilePayload, actor: Actor = Depends(current_actor)):
     """Inscription ou mise à jour du client Telegram. Le client WhatsApp
     s'inscrit par /api/whatsapp/client."""
@@ -1719,13 +2020,25 @@ def save_my_client_profile(payload: ClientProfilePayload, actor: Actor = Depends
                 profils.set_language(db, account_id, payload.language)
             if payload.phone_verified:
                 profils.record_proven_phone(db, account_id, payload.phone_number)
+            # Même transaction que le profil : pas de client sans case cochée.
+            conditions.accept_for_signup(
+                db,
+                account_id,
+                conditions.CLIENT,
+                payload.terms.as_terms() if payload.terms is not None else None,
+                channel=actor.channel,
+                language=profils.language_of(db, account_id),
+            )
             db.commit()
         except profils.ProfileRefused as refusal:
             raise _profile_refused(db, refusal) from refusal
+        except conditions.ConditionsError as error:
+            raise _terms_refused(db, error) from error
         return _me(db, actor, account_id)
 
 
 @router.patch("/api/me/language")
+@terms_exempt
 @open_to(ledger.TELEGRAM, ledger.WHATSAPP)
 @idempotent
 def set_my_language(
@@ -1753,6 +2066,7 @@ def set_my_language(
 
 
 @router.patch("/api/me/name")
+@terms_exempt
 @open_to(ledger.TELEGRAM, ledger.WHATSAPP)
 @idempotent
 def set_my_name(
@@ -1777,6 +2091,7 @@ def set_my_name(
 
 
 @router.put("/api/me/provider-profile")
+@terms_exempt
 @provider_action
 def save_my_provider_profile(payload: ProviderProfilePayload, actor: Actor = Depends(current_actor)):
     """Inscription prestataire (ou nouvelle inscription). Un nouveau
@@ -1800,13 +2115,26 @@ def save_my_provider_profile(payload: ProviderProfilePayload, actor: Actor = Dep
                 profils.set_language(db, account_id, payload.language)
             if payload.phone_verified:
                 profils.record_proven_phone(db, account_id, payload.phone_number)
+            # Même transaction que le profil : pas de prestataire (ni de
+            # bascule client -> prestataire) sans case cochée.
+            conditions.accept_for_signup(
+                db,
+                account_id,
+                conditions.PROVIDER,
+                payload.terms.as_terms() if payload.terms is not None else None,
+                channel=actor.channel,
+                language=profils.language_of(db, account_id),
+            )
             db.commit()
         except profils.ProfileRefused as refusal:
             raise _profile_refused(db, refusal) from refusal
+        except conditions.ConditionsError as error:
+            raise _terms_refused(db, error) from error
         return _me(db, actor, account_id)
 
 
 @router.put("/api/me/provider-profile/services")
+@needs_terms(conditions.PROVIDER)
 @provider_action
 def set_my_services(payload: ProviderServicesPayload, actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
@@ -1845,6 +2173,7 @@ async def _bounded_body(request: Request, limit: int) -> bytes:
 
 
 @router.post("/api/me/files/service-photos")
+@needs_terms(conditions.PROVIDER)
 @provider_action
 async def upload_service_photo(request: Request, actor: Actor = Depends(current_actor)):
     """Une photo de réalisation, envoyée telle quelle dans le corps (octets de
@@ -1869,6 +2198,7 @@ async def upload_service_photo(request: Request, actor: Actor = Depends(current_
 
 
 @router.post("/api/me/provider-profile/service-additions")
+@needs_terms(conditions.PROVIDER)
 @provider_action
 def request_my_service_addition(payload: ServiceAdditionPayload, actor: Actor = Depends(current_actor)):
     """Le prestataire vérifié demande à proposer un service de plus ; il ne
@@ -1886,6 +2216,7 @@ def request_my_service_addition(payload: ServiceAdditionPayload, actor: Actor = 
 
 
 @router.get("/api/me/provider-profile/service-additions")
+@terms_exempt
 @provider_action
 def list_my_service_additions(actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
@@ -1895,6 +2226,7 @@ def list_my_service_additions(actor: Actor = Depends(current_actor)):
 
 
 @router.post("/api/me/provider-profile/service-additions/{addition_id}/cancel")
+@terms_exempt
 @provider_action
 def cancel_my_service_addition(addition_id: int, actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
@@ -1908,6 +2240,7 @@ def cancel_my_service_addition(addition_id: int, actor: Actor = Depends(current_
 
 
 @router.put("/api/me/provider-profile/communes")
+@needs_terms(conditions.PROVIDER)
 @provider_action
 def set_my_communes(payload: ProviderCommunesPayload, actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
@@ -1921,6 +2254,7 @@ def set_my_communes(payload: ProviderCommunesPayload, actor: Actor = Depends(cur
 
 
 @router.patch("/api/me/provider-profile/status")
+@terms_exempt
 @provider_action
 def set_my_availability(payload: ProviderStatusPayload, actor: Actor = Depends(current_actor)):
     """Disponible ou hors ligne, et rien d'autre : vérification, refus et
@@ -1928,14 +2262,22 @@ def set_my_availability(payload: ProviderStatusPayload, actor: Actor = Depends(c
     with SessionLocal() as db:
         provider = _my_provider(db, actor)
         try:
+            # Se mettre hors ligne reste toujours possible ; se rendre
+            # disponible (recevoir de nouvelles missions) exige les
+            # conditions des prestataires en vigueur.
+            if payload.status == "available":
+                conditions.require(db, provider.account_id, conditions.PROVIDER)
             profils.set_own_availability(db, provider.account_id, payload.status)
             db.commit()
         except profils.ProfileRefused as refusal:
             raise _profile_refused(db, refusal) from refusal
+        except conditions.ConditionsError as error:
+            raise _terms_refused(db, error) from error
         return _me(db, actor, provider.account_id)
 
 
 @router.post("/api/bot/missions/{mission_id}/decline")
+@terms_exempt
 @provider_action
 def decline_mission_alert(mission_id: int, actor: Actor = Depends(current_actor)):
     """« Pas disponible » sur l'alerte d'une mission : compte un refus, une
@@ -1962,6 +2304,7 @@ def decline_mission_alert(mission_id: int, actor: Actor = Depends(current_actor)
 
 
 @router.get("/api/admin/providers")
+@terms_exempt
 def admin_list_providers(status: str | None = None, limit: int = 20, actor: Actor = Depends(current_actor)):
     _require_admin(actor)
     with SessionLocal() as db:
@@ -1986,26 +2329,31 @@ def _admin_provider_decision(account_id: int, actor: Actor, decide) -> dict:
 
 
 @router.post("/api/admin/providers/{account_id}/verify")
+@terms_exempt
 def admin_verify_provider(account_id: int, actor: Actor = Depends(current_actor)):
     return _admin_provider_decision(account_id, actor, profils.verify_provider)
 
 
 @router.post("/api/admin/providers/{account_id}/reject")
+@terms_exempt
 def admin_reject_provider(account_id: int, actor: Actor = Depends(current_actor)):
     return _admin_provider_decision(account_id, actor, profils.reject_provider)
 
 
 @router.post("/api/admin/providers/{account_id}/suspend")
+@terms_exempt
 def admin_suspend_provider(account_id: int, actor: Actor = Depends(current_actor)):
     return _admin_provider_decision(account_id, actor, lambda db, account: profils.set_suspended(db, account, True))
 
 
 @router.post("/api/admin/providers/{account_id}/unsuspend")
+@terms_exempt
 def admin_unsuspend_provider(account_id: int, actor: Actor = Depends(current_actor)):
     return _admin_provider_decision(account_id, actor, lambda db, account: profils.set_suspended(db, account, False))
 
 
 @router.get("/api/admin/client-requests")
+@terms_exempt
 def admin_list_client_requests(limit: int = 10, actor: Actor = Depends(current_actor)):
     _require_admin(actor)
     with SessionLocal() as db:
@@ -2014,6 +2362,7 @@ def admin_list_client_requests(limit: int = 10, actor: Actor = Depends(current_a
 
 
 @router.post("/api/admin/client-requests/{request_id}/decision")
+@terms_exempt
 def admin_decide_client_request(request_id: int, payload: ClientRequestDecisionPayload, actor: Actor = Depends(current_actor)):
     """Réponse de l'équipe à un besoin de client, une seule fois : le canal
     prévient le client avec ce que renvoie cette route."""
@@ -2027,6 +2376,7 @@ def admin_decide_client_request(request_id: int, payload: ClientRequestDecisionP
 
 
 @router.get("/api/admin/files/{file_id}")
+@terms_exempt
 def admin_read_file(file_id: str, actor: Actor = Depends(current_actor)):
     """Contenu déchiffré d'un fichier, pour un admin seulement."""
     _require_admin(actor)
@@ -2048,6 +2398,7 @@ def admin_read_file(file_id: str, actor: Actor = Depends(current_actor)):
 
 
 @router.get("/api/admin/service-additions")
+@terms_exempt
 def admin_list_service_additions(limit: int = 10, actor: Actor = Depends(current_actor)):
     _require_admin(actor)
     with SessionLocal() as db:
@@ -2056,6 +2407,7 @@ def admin_list_service_additions(limit: int = 10, actor: Actor = Depends(current
 
 
 @router.post("/api/admin/service-additions/{addition_id}/decision")
+@terms_exempt
 def admin_decide_service_addition(addition_id: int, payload: ServiceAdditionDecisionPayload, actor: Actor = Depends(current_actor)):
     """Décision de l'équipe sur une demande d'ajout de service, une seule fois.
     `decided_now` faux : la même décision était déjà prise (double clic), le
@@ -2078,6 +2430,7 @@ def admin_decide_service_addition(addition_id: int, payload: ServiceAdditionDeci
 
 
 @router.get("/api/admin/service-requests")
+@terms_exempt
 def admin_list_service_requests(limit: int = 10, actor: Actor = Depends(current_actor)):
     _require_admin(actor)
     with SessionLocal() as db:
@@ -2086,6 +2439,7 @@ def admin_list_service_requests(limit: int = 10, actor: Actor = Depends(current_
 
 
 @router.patch("/api/admin/service-requests/{request_id}")
+@terms_exempt
 def admin_decide_service_request(request_id: int, payload: ServiceRequestStatusPayload, actor: Actor = Depends(current_actor)):
     _require_admin(actor)
     with SessionLocal() as db:

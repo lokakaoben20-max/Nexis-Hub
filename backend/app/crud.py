@@ -90,9 +90,18 @@ def register_whatsapp_client(
         account_id = ledger.account_id_for(db, ledger.WHATSAPP, bsuid)
         created = account_id is None
         if created:
-            if normalized_phone and app_auth.account_with_proven_phone(db, normalized_phone) is not None:
-                _refuse_whatsapp_phone_conflict(db, normalized_phone)
-            account_id = ledger.account_id_for(db, ledger.WHATSAPP, bsuid, create=True)
+            holder = app_auth.account_with_proven_phone(db, normalized_phone) if normalized_phone else None
+            if holder is not None:
+                # Le numéro est déjà prouvé. Si c'est par le compte de cette
+                # même identité, créé par un message parallèle de la même
+                # personne et validé entre la première lecture et maintenant
+                # (il valide identité et numéro ensemble), ce n'est pas un
+                # conflit : c'est son compte. Sinon, refus.
+                if ledger.account_id_for(db, ledger.WHATSAPP, bsuid) != holder.id:
+                    _refuse_whatsapp_phone_conflict(db, normalized_phone)
+                account_id, created = holder.id, False
+            else:
+                account_id = ledger.account_id_for(db, ledger.WHATSAPP, bsuid, create=True)
         account = db.get(NexisAccount, account_id, with_for_update=True)
         if account is None:  # défense contre une identité orpheline en base
             raise RuntimeError("Compte Nexis introuvable pour une identité WhatsApp")
