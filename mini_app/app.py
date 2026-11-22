@@ -204,10 +204,10 @@ async def my_missions(telegram_id: int, role: str) -> list[dict] | None:
 UNAVAILABLE = "Service momentanément indisponible. Rien n'a changé, réessayez dans un instant."
 PROFILE_REFUSALS = {
     "unknown_service": "Service invalide",
-    "services_required": "Choisis au moins un service",
+    "services_required": "Choisissez au moins un service",
     "invalid_services": "Service invalide",
     "unknown_commune": "Commune invalide",
-    "communes_required": "Choisis au moins une commune",
+    "communes_required": "Choisissez au moins une commune",
     "too_many_services": "Nombre maximum de services atteint",
     "service_not_for_providers": "Ce service ne peut pas etre choisi par un prestataire",
     "invalid_communes": "Commune invalide",
@@ -217,7 +217,7 @@ PROFILE_REFUSALS = {
     "provider_not_verified": "Profil en attente de validation par Nexis",
     "provider_suspended": "Profil suspendu par Nexis",
     "service_needs_review": "Un nouveau service doit etre valide par l'equipe",
-    "service_already_offered": "Tu proposes deja ce service",
+    "service_already_offered": "Vous proposez deja ce service",
     "service_addition_pending": "Une demande pour ce service attend deja l'equipe",
     "service_addition_not_found": "Demande introuvable",
     "already_decided": "L'equipe a deja repondu a cette demande",
@@ -432,9 +432,9 @@ async def register_provider(
     if len(phone_number) < 8:
         raise refused(400, "invalid_phone", "Numero WhatsApp invalide")
     if not payload.services:
-        raise refused(400, "services_required", "Choisis au moins un service")
+        raise refused(400, "services_required", "Choisissez au moins un service")
     if not payload.communes:
-        raise refused(400, "communes_required", "Choisis au moins une commune")
+        raise refused(400, "communes_required", "Choisissez au moins une commune")
 
     me = await _backend(
         backend_client.save_provider_profile(
@@ -464,7 +464,7 @@ async def save_provider_services(
 ):
     require_same_telegram_user(telegram_id, telegram_user)
     if not payload.services:
-        raise refused(400, "services_required", "Choisis au moins un service")
+        raise refused(400, "services_required", "Choisissez au moins un service")
     me = await _backend(backend_client.set_my_services(telegram_id, payload.services))
     return {"status": "ok", "provider": page_provider(me["provider"])}
 
@@ -479,7 +479,7 @@ async def save_provider_communes(
     existent au catalogue."""
     require_same_telegram_user(telegram_id, telegram_user)
     if not payload.communes:
-        raise refused(400, "communes_required", "Choisis au moins une commune")
+        raise refused(400, "communes_required", "Choisissez au moins une commune")
     me = await _backend(backend_client.set_my_communes(telegram_id, payload.communes))
     return {"status": "ok", "provider": page_provider(me["provider"])}
 
