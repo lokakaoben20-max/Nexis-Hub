@@ -918,6 +918,19 @@ class AppLocalizationsLn extends AppLocalizations {
       'Limbola bosengi na yo na maloba na yo, tokopesa yango na ekipi.';
 
   @override
+  String get serviceRequestDemo => 'Bosengi oyo ezali ya komeka.';
+
+  @override
+  String get serviceRequestNoPay => 'Okofuta eloko te na etape oyo.';
+
+  @override
+  String get serviceRequestSaved => 'Bosengi ya komeka ebombami';
+
+  @override
+  String get serviceRequestSavedText =>
+      'Okokuta yango na Misala na ngai, na kati ya misala oyo ezali kozela devis.';
+
+  @override
   String get describeNeed => 'Limbola bosengi na ngai';
 
   @override

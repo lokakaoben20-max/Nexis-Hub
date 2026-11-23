@@ -35,6 +35,7 @@ class Mission {
     required this.commune,
     required this.status,
     required this.payment,
+    this.catalogService,
     this.amount,
     this.providerName,
     this.quotesCount = 0,
@@ -51,6 +52,7 @@ class Mission {
 
   final int id;
   final Service service;
+  final CatalogService? catalogService;
   final String commune;
   final MissionStatus status;
   final PaymentState payment;
@@ -94,6 +96,7 @@ class Mission {
   }) => Mission(
     id: id,
     service: service,
+    catalogService: catalogService,
     commune: commune,
     status: status ?? this.status,
     payment: payment ?? this.payment,

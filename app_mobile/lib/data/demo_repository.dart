@@ -27,7 +27,13 @@ class DemoRepository implements NexisRepository {
   }
 
   @override
-  List<String> get signupCommunes => const [
+  List<String> get signupCommunes => [
+    ...serviceRequestCommunes,
+    'Autre commune',
+  ];
+
+  @override
+  List<String> get serviceRequestCommunes => const [
     'Gombe',
     'Kinshasa',
     'Limete',
@@ -36,7 +42,6 @@ class DemoRepository implements NexisRepository {
     'Kalamu',
     'Barumbu',
     'Lingwala',
-    'Autre commune',
   ];
 
   @override
@@ -98,6 +103,9 @@ class DemoRepository implements NexisRepository {
             Currency.usd: Money(500, Currency.usd),
           },
         );
+
+  final _requestedMissions = <String, List<Mission>>{};
+  int _nextRequestId = 1000;
 
   late final List<Mission> _missions = [
     Mission(
@@ -332,8 +340,10 @@ class DemoRepository implements NexisRepository {
   };
 
   @override
-  Future<List<Mission>> missions() async =>
-      _activePhone == _samplePhone ? List.of(_missions) : [];
+  Future<List<Mission>> missions() async => [
+    ...?_requestedMissions[_activePhone],
+    if (_activePhone == _samplePhone) ..._missions,
+  ];
 
   @override
   Future<List<Movement>> movements() async =>
@@ -341,7 +351,7 @@ class DemoRepository implements NexisRepository {
 
   @override
   Future<Mission> mission(int id) async =>
-      _missions.firstWhere((m) => m.id == id);
+      (await missions()).firstWhere((m) => m.id == id);
 
   /// Fictif : « Peinture » et « Déménagement » n'existent pas encore, ils
   /// montrent seulement comment un service tout juste approuvé apparaît.
@@ -423,6 +433,37 @@ class DemoRepository implements NexisRepository {
   /// Aperçu : la demande n'est envoyée nulle part.
   @override
   Future<void> sendFreeRequest(String title, String text) async {}
+
+  @override
+  Future<void> requestService({
+    required String serviceId,
+    required String commune,
+    required String description,
+  }) async {
+    final phone = _activePhone;
+    final catalog = await serviceCatalog();
+    final service = catalog.firstWhere((service) => service.id == serviceId);
+    final detail = description.trim();
+    if (!serviceRequestCommunes.contains(commune) ||
+        detail.length < 10 ||
+        detail.length > 500) {
+      throw ArgumentError('Invalid service request');
+    }
+    final requests = _requestedMissions.putIfAbsent(phone, () => []);
+    requests.insert(
+      0,
+      Mission(
+        id: _nextRequestId++,
+        service: service.service ?? Service.autre,
+        catalogService: service,
+        commune: commune,
+        status: MissionStatus.pending,
+        payment: PaymentState.none,
+        detail: detail,
+        when: _now,
+      ),
+    );
+  }
 
   @override
   Future<List<Quote>> quotes(int missionId) async {

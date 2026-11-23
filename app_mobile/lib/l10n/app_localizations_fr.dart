@@ -921,6 +921,19 @@ class AppLocalizationsFr extends AppLocalizations {
       'Décrivez votre besoin avec vos mots, nous le transmettons à l\'équipe.';
 
   @override
+  String get serviceRequestDemo => 'Cette demande est une simulation.';
+
+  @override
+  String get serviceRequestNoPay => 'Vous ne payez rien à cette étape.';
+
+  @override
+  String get serviceRequestSaved => 'Demande de test enregistrée';
+
+  @override
+  String get serviceRequestSavedText =>
+      'Retrouvez-la dans vos missions, sous « En attente de devis ».';
+
+  @override
   String get describeNeed => 'Décrire mon besoin';
 
   @override

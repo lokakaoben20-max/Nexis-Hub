@@ -916,6 +916,19 @@ class AppLocalizationsEn extends AppLocalizations {
       'Describe your need in your own words, we pass it on to the team.';
 
   @override
+  String get serviceRequestDemo => 'This is a test request.';
+
+  @override
+  String get serviceRequestNoPay => 'There is no charge at this step.';
+
+  @override
+  String get serviceRequestSaved => 'Test request saved';
+
+  @override
+  String get serviceRequestSavedText =>
+      'Find it in My missions under “Waiting for quotes”.';
+
+  @override
   String get describeNeed => 'Describe my need';
 
   @override

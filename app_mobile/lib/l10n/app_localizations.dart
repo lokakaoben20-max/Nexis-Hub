@@ -1594,6 +1594,30 @@ abstract class AppLocalizations {
   /// **'Décrivez votre besoin avec vos mots, nous le transmettons à l\'équipe.'**
   String get cantFindHint;
 
+  /// No description provided for @serviceRequestDemo.
+  ///
+  /// In fr, this message translates to:
+  /// **'Cette demande est une simulation.'**
+  String get serviceRequestDemo;
+
+  /// No description provided for @serviceRequestNoPay.
+  ///
+  /// In fr, this message translates to:
+  /// **'Vous ne payez rien à cette étape.'**
+  String get serviceRequestNoPay;
+
+  /// No description provided for @serviceRequestSaved.
+  ///
+  /// In fr, this message translates to:
+  /// **'Demande de test enregistrée'**
+  String get serviceRequestSaved;
+
+  /// No description provided for @serviceRequestSavedText.
+  ///
+  /// In fr, this message translates to:
+  /// **'Retrouvez-la dans vos missions, sous « En attente de devis ».'**
+  String get serviceRequestSavedText;
+
   /// No description provided for @describeNeed.
   ///
   /// In fr, this message translates to:

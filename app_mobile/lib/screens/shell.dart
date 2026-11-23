@@ -63,6 +63,15 @@ class _ShellState extends State<Shell> {
     super.dispose();
   }
 
+  void _showClientMissions() {
+    AppScope.of(context).setProviderSpace(false);
+    setState(() {
+      _shownProvider = false;
+      _tab = 1;
+      _picking = false;
+    });
+  }
+
   void _togglePicker() => setState(() => _picking = !_picking);
 
   @override
@@ -152,15 +161,24 @@ class _ShellState extends State<Shell> {
                     child: _ServiceSheet(
                       open: _picking,
                       reduce: reduce,
-                      onPicked: (label) {
+                      onPicked: (service) {
                         _togglePicker();
-                        showComingSoon(context, label);
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => DescribeNeedScreen.forService(
+                              service: service,
+                              onViewMissions: _showClientMissions,
+                            ),
+                          ),
+                        );
                       },
                       onAllServices: () {
                         _togglePicker();
                         Navigator.of(context).push(
                           MaterialPageRoute<void>(
-                            builder: (_) => const AllServicesScreen(),
+                            builder: (_) => AllServicesScreen(
+                              onViewMissions: _showClientMissions,
+                            ),
                           ),
                         );
                       },
@@ -481,7 +499,7 @@ class _ServiceSheet extends StatelessWidget {
 
   final bool open;
   final bool reduce;
-  final void Function(String label) onPicked;
+  final ValueChanged<CatalogService> onPicked;
   final VoidCallback onAllServices;
 
   @override
@@ -534,8 +552,7 @@ class _ServiceSheet extends StatelessWidget {
                           size: 44,
                           badge: s.isNew ? const NewBadge() : null,
                         ),
-                        onTap: () =>
-                            onPicked(catalogServiceName(s, langOf(context))),
+                        onTap: () => onPicked(s),
                       ),
                     _tile(
                       context,

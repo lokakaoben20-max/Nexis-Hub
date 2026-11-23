@@ -42,6 +42,15 @@ abstract class NexisRepository {
   /// « Décrire mon besoin » : une demande libre, transmise à l'équipe.
   Future<void> sendFreeRequest(String title, String text);
 
+  List<String> get serviceRequestCommunes;
+
+  /// Crée une mission en attente de devis pour un service du catalogue.
+  Future<void> requestService({
+    required String serviceId,
+    required String commune,
+    required String description,
+  });
+
   /// Les devis reçus pour une mission, le mieux noté en premier.
   Future<List<Quote>> quotes(int missionId);
 
