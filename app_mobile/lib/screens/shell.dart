@@ -306,10 +306,17 @@ class _PlusButtonState extends State<_PlusButton>
     with SingleTickerProviderStateMixin {
   late final _hint = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 1550),
+    duration: const Duration(milliseconds: 2650),
   );
   late final _pulse = _hint.drive(
-    CurveTween(curve: const Interval(650 / 1550, 1)),
+    TweenSequence<double>([
+      TweenSequenceItem(tween: ConstantTween(0.0), weight: 650),
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 520),
+      TweenSequenceItem(tween: ConstantTween(0.0), weight: 130),
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 520),
+      TweenSequenceItem(tween: ConstantTween(0.0), weight: 130),
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 700),
+    ]),
   );
   late final _scale = _pulse.drive(
     TweenSequence<double>([

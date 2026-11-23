@@ -156,7 +156,7 @@ void main() {
     expect(find.text('Comparer les devis'), findsOneWidget);
   });
 
-  testWidgets('le bouton plus pulse une fois au premier accueil', (
+  testWidgets('le bouton plus pulse trois fois au premier accueil', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1170, 2532);
@@ -181,7 +181,15 @@ void main() {
         .value;
 
     expect(scale(), 1);
-    await tester.pump(const Duration(milliseconds: 520));
+    await tester.pump(const Duration(milliseconds: 410)); // 830 ms
+    expect(scale(), greaterThan(1.15));
+    await tester.pump(const Duration(milliseconds: 390)); // 1220 ms
+    expect(scale(), 1);
+    await tester.pump(const Duration(milliseconds: 260)); // 1480 ms
+    expect(scale(), greaterThan(1.15));
+    await tester.pump(const Duration(milliseconds: 390)); // 1870 ms
+    expect(scale(), 1);
+    await tester.pump(const Duration(milliseconds: 325)); // 2195 ms
     expect(scale(), greaterThan(1.15));
     await tester.pumpAndSettle();
     expect(scale(), 1);
