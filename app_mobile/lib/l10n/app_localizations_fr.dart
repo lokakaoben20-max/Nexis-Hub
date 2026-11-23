@@ -818,6 +818,11 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
+  String eveningHome(String name) {
+    return 'Bonsoir, $name';
+  }
+
+  @override
   String helloHome(String name) {
     return 'Bonjour, $name';
   }

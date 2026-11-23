@@ -256,6 +256,7 @@
       }
     }
   },
+  "eveningHome": "Hello, {name}",
   "helloHome": "Hello, {name}",
   "@helloHome": {
     "placeholders": {

@@ -2,10 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nexis_hub/app_state.dart';
 import 'package:nexis_hub/data/demo_repository.dart';
+import 'package:nexis_hub/l10n/app_localizations_fr.dart';
 import 'package:nexis_hub/main.dart';
+import 'package:nexis_hub/screens/home.dart';
 import 'package:nexis_hub/ui/common.dart';
 
 void main() {
+  test('la salutation française change à midi', () {
+    final l = AppLocalizationsFr();
+    expect(
+      homeGreeting(l, 'Amina', DateTime(2026, 11, 23, 11, 59)),
+      'Bonjour, Amina',
+    );
+    expect(
+      homeGreeting(l, 'Amina', DateTime(2026, 11, 23, 12)),
+      'Bonsoir, Amina',
+    );
+  });
+
   testWidgets('un compte existant ouvre directement son accueil', (
     tester,
   ) async {
@@ -36,7 +50,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
     expect(state.signedIn, isTrue);
-    expect(find.text('Bonjour, Grâce'), findsOneWidget);
+    expect(
+      find.text(homeGreeting(AppLocalizationsFr(), 'Grâce', DateTime.now())),
+      findsOneWidget,
+    );
     expect(find.text('De quoi avez-vous besoin ?'), findsNothing);
   });
 
@@ -96,7 +113,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(state.signedIn, isTrue);
-    expect(find.text('Bonjour, Amina'), findsOneWidget);
+    expect(
+      find.text(homeGreeting(AppLocalizationsFr(), 'Amina', DateTime.now())),
+      findsOneWidget,
+    );
     expect(find.text('De quoi avez-vous besoin ?'), findsOneWidget);
     expect(find.text('Terminées'), findsNothing);
     await tester.tap(find.widgetWithText(FilledButton, 'Demander un service'));

@@ -256,6 +256,7 @@
       }
     }
   },
+  "eveningHome": "Mbote, {name}",
   "helloHome": "Mbote, {name}",
   "@helloHome": {
     "placeholders": {

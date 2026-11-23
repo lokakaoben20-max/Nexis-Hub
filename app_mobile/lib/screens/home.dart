@@ -13,6 +13,9 @@ import 'mission_card.dart';
 
 typedef _HomeData = ({Profile profile, Wallet wallet, List<Mission> missions});
 
+String homeGreeting(AppLocalizations l, String name, DateTime time) =>
+    time.hour < 12 ? l.helloHome(name) : l.eveningHome(name);
+
 /// 1. Accueil client, d'après la maquette validée le 2026-11-22
 /// (design/app-accueil-frontend-design.html) : fond uni, une seule carte de
 /// portefeuille, cinq actions en tuiles, puis les prestations (En cours en
@@ -195,7 +198,7 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         Expanded(
           child: Text(
-            l.helloHome(data.profile.firstName),
+            homeGreeting(l, data.profile.firstName, DateTime.now()),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: title(21, color: p.ink).copyWith(letterSpacing: -.21),

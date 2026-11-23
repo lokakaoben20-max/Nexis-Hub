@@ -815,6 +815,11 @@ class AppLocalizationsLn extends AppLocalizations {
   }
 
   @override
+  String eveningHome(String name) {
+    return 'Mbote, $name';
+  }
+
+  @override
   String helloHome(String name) {
     return 'Mbote, $name';
   }

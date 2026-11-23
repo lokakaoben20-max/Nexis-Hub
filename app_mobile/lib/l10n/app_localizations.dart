@@ -1426,6 +1426,12 @@ abstract class AppLocalizations {
   /// **'Recevoir plutôt par {channel}'**
   String receiveInstead(String channel);
 
+  /// No description provided for @eveningHome.
+  ///
+  /// In fr, this message translates to:
+  /// **'Bonsoir, {name}'**
+  String eveningHome(String name);
+
   /// No description provided for @helloHome.
   ///
   /// In fr, this message translates to:

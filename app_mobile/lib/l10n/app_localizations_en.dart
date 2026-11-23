@@ -813,6 +813,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String eveningHome(String name) {
+    return 'Hello, $name';
+  }
+
+  @override
   String helloHome(String name) {
     return 'Hello, $name';
   }
