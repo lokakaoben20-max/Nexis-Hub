@@ -130,6 +130,30 @@ abstract class AppLocalizations {
   /// **'J\'ai déjà un compte'**
   String get haveAccount;
 
+  /// No description provided for @signInTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'Connectez-vous'**
+  String get signInTitle;
+
+  /// No description provided for @noAccountTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'Aucun compte trouvé'**
+  String get noAccountTitle;
+
+  /// No description provided for @noAccountHint.
+  ///
+  /// In fr, this message translates to:
+  /// **'Vérifiez le numéro saisi ou créez un profil avec ce numéro.'**
+  String get noAccountHint;
+
+  /// No description provided for @changeLoginNumber.
+  ///
+  /// In fr, this message translates to:
+  /// **'Changer de numéro'**
+  String get changeLoginNumber;
+
   /// No description provided for @yourNumber.
   ///
   /// In fr, this message translates to:

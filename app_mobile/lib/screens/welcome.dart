@@ -225,14 +225,16 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                 child: _WhiteButton(
                                   label: l.start,
                                   filled: true,
-                                  onTap: () => _toNumber(context),
+                                  onTap: () =>
+                                      _toNumber(context, fromSignup: true),
                                 ),
                               ),
                               const SizedBox(height: 10),
                               _WhiteButton(
                                 label: l.haveAccount,
                                 filled: false,
-                                onTap: () => _toNumber(context),
+                                onTap: () =>
+                                    _toNumber(context, fromSignup: false),
                               ),
                             ],
                           ),
@@ -249,9 +251,12 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     );
   }
 
-  void _toNumber(BuildContext context) =>
-      Navigator.of(context)
-          .push(MaterialPageRoute<void>(builder: (_) => const NumberScreen()));
+  void _toNumber(BuildContext context, {required bool fromSignup}) =>
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => NumberScreen(fromSignup: fromSignup),
+        ),
+      );
 }
 
 /// Une seule pastille : la langue en cours ; la toucher ouvre le menu.
@@ -508,7 +513,9 @@ class _LoginError extends StatelessWidget {
 /// SMS seulement quand un vrai fournisseur envoie les codes. Pas de logos :
 /// trois cartes de choix, comme dans la maquette approuvée.
 class NumberScreen extends StatefulWidget {
-  const NumberScreen({super.key});
+  const NumberScreen({super.key, required this.fromSignup});
+
+  final bool fromSignup;
 
   @override
   State<NumberScreen> createState() => _NumberScreenState();
@@ -554,8 +561,11 @@ class _NumberScreenState extends State<NumberScreen> {
     if (!number.isValid || channel == null) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) =>
-            CodeScreen(phone: number.digits, channel: channel.label),
+        builder: (_) => CodeScreen(
+          phone: number.digits,
+          channel: channel.label,
+          fromSignup: widget.fromSignup,
+        ),
       ),
     );
   }
@@ -594,7 +604,7 @@ class _NumberScreenState extends State<NumberScreen> {
                     children: [
                       const SizedBox(height: 18),
                       Text(
-                        l.yourNumber,
+                        widget.fromSignup ? l.yourNumber : l.signInTitle,
                         style: title(25, color: p.ink, height: 1.18),
                       ),
                       const SizedBox(height: 8),
@@ -840,10 +850,16 @@ class _NumberScreenState extends State<NumberScreen> {
 /// 17 : le code à 6 chiffres, d'après la maquette de connexion. Le clavier
 /// du téléphone sert à le saisir ; le serveur seul décide s'il est bon.
 class CodeScreen extends StatefulWidget {
-  const CodeScreen({super.key, required this.phone, required this.channel});
+  const CodeScreen({
+    super.key,
+    required this.phone,
+    required this.channel,
+    required this.fromSignup,
+  });
 
   final String phone;
   final String channel;
+  final bool fromSignup;
 
   @override
   State<CodeScreen> createState() => _CodeScreenState();
@@ -916,11 +932,37 @@ class _CodeScreenState extends State<CodeScreen> {
   }
 
   Future<void> _afterCode() async {
+    if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
     final navigator = Navigator.of(context);
     final state = AppScope.of(context);
     final phone = '+243${widget.phone}';
     if (!state.repository.openDemoAccount(phone)) {
       _timer?.cancel();
+      if (!widget.fromSignup) {
+        final l = AppLocalizations.of(context);
+        final wantsSignup = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(l.noAccountTitle),
+            content: Text(l.noAccountHint),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: Text(l.changeLoginNumber),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: Text(l.signupCreateProfile),
+              ),
+            ],
+          ),
+        );
+        if (!mounted) return;
+        if (wantsSignup != true) {
+          navigator.pop();
+          return;
+        }
+      }
       final created = await navigator.push<bool>(
         MaterialPageRoute(builder: (_) => SignupScreen(phone: phone)),
       );

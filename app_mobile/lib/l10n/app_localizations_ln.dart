@@ -25,6 +25,19 @@ class AppLocalizationsLn extends AppLocalizations {
   String get haveAccount => 'Nazali na compte';
 
   @override
+  String get signInTitle => 'Kɔtá na compte na yo';
+
+  @override
+  String get noAccountTitle => 'Compte moko te ezwami';
+
+  @override
+  String get noAccountHint =>
+      'Talá nimero oyo okotisi to salá profil na nimero oyo.';
+
+  @override
+  String get changeLoginNumber => 'Bongolá nimero';
+
+  @override
   String get yourNumber => 'Nimero na yo';
 
   @override

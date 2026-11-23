@@ -26,6 +26,19 @@ class AppLocalizationsFr extends AppLocalizations {
   String get haveAccount => 'J\'ai déjà un compte';
 
   @override
+  String get signInTitle => 'Connectez-vous';
+
+  @override
+  String get noAccountTitle => 'Aucun compte trouvé';
+
+  @override
+  String get noAccountHint =>
+      'Vérifiez le numéro saisi ou créez un profil avec ce numéro.';
+
+  @override
+  String get changeLoginNumber => 'Changer de numéro';
+
+  @override
   String get yourNumber => 'Votre numéro';
 
   @override

@@ -25,6 +25,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get haveAccount => 'I already have an account';
 
   @override
+  String get signInTitle => 'Sign in';
+
+  @override
+  String get noAccountTitle => 'No account found';
+
+  @override
+  String get noAccountHint =>
+      'Check the number you entered or create a profile with this number.';
+
+  @override
+  String get changeLoginNumber => 'Change number';
+
+  @override
   String get yourNumber => 'Your number';
 
   @override

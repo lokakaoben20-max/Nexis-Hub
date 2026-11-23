@@ -39,7 +39,7 @@ void main() {
 
     await tester.tap(find.text("J'ai déjà un compte"));
     await tester.pumpAndSettle();
-    expect(find.text('Votre numéro'), findsOneWidget);
+    expect(find.text('Connectez-vous'), findsOneWidget);
     await tester.enterText(find.byType(TextField), '812345412');
     await tester.pump();
     await tester.tap(find.text('Recevoir le code'));
@@ -55,6 +55,50 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('De quoi avez-vous besoin ?'), findsNothing);
+  });
+
+  testWidgets('un numéro inconnu en connexion demande un choix explicite', (
+    tester,
+  ) async {
+    final dispatcher = tester.platformDispatcher;
+    dispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(
+      disableAnimations: true,
+    );
+    addTearDown(dispatcher.clearAccessibilityFeaturesTestValue);
+    tester.view.physicalSize = const Size(1170, 2532);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final state = AppState(repository: DemoRepository())
+      ..setLocale(const Locale('fr'));
+    await tester.pumpWidget(NexisApp(state: state));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text("J'ai déjà un compte"));
+    await tester.pumpAndSettle();
+
+    Future<void> submitUnknownNumber() async {
+      await tester.enterText(find.byType(TextField), '812345678');
+      await tester.pump();
+      await tester.tap(find.text('Recevoir le code'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '123456');
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+    }
+
+    await submitUnknownNumber();
+    expect(find.text('Aucun compte trouvé'), findsOneWidget);
+    expect(find.text('Faisons connaissance'), findsNothing);
+    expect(state.signedIn, isFalse);
+    await tester.tap(find.text('Changer de numéro'));
+    await tester.pumpAndSettle();
+    expect(find.text('Connectez-vous'), findsOneWidget);
+
+    await submitUnknownNumber();
+    await tester.tap(find.text('Créer mon profil'));
+    await tester.pumpAndSettle();
+    expect(find.text('Faisons connaissance'), findsOneWidget);
+    expect(state.signedIn, isFalse);
   });
 
   testWidgets('un nouveau client doit remplir le profil et accepter les CGU', (
