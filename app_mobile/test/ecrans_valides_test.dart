@@ -25,6 +25,15 @@ Future<AppState> _home(WidgetTester tester) async {
 }
 
 void main() {
+  test('les formulaires proposent les 24 communes de Kinshasa', () {
+    final repo = DemoRepository();
+    final communes = repo.serviceRequestCommunes;
+    expect(communes.toSet(), hasLength(24));
+    expect(communes.first, 'Bandalungwa');
+    expect(communes.last, 'Selembao');
+    expect(repo.signupCommunes, [...communes, 'Autre commune']);
+  });
+
   test('la recherche ignore accents et casse', () {
     expect(foldText('Électricité'), 'electricite');
     expect(foldText('DÉMÉNAGEMENT'), 'demenagement');
@@ -137,7 +146,13 @@ void main() {
     expect(find.text('Limete'), findsOneWidget);
     await tester.tap(find.text('Limete'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Gombe').last);
+    final maluku = find.text('Maluku').hitTestable();
+    await tester.scrollUntilVisible(
+      maluku,
+      160,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.tap(maluku);
     await tester.pumpAndSettle();
     await tester.enterText(description, 'Réparer la fuite sous l’évier.');
     await tester.pumpAndSettle();
@@ -149,7 +164,7 @@ void main() {
     final missions = await state.repository.missions();
     final mission = missions.first;
     expect(mission.catalogService?.id, 'plomberie');
-    expect(mission.commune, 'Gombe');
+    expect(mission.commune, 'Maluku');
     expect(mission.detail, 'Réparer la fuite sous l’évier.');
     expect(mission.status, MissionStatus.pending);
     expect(mission.payment, PaymentState.none);

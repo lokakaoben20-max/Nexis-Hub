@@ -34,14 +34,30 @@ class DemoRepository implements NexisRepository {
 
   @override
   List<String> get serviceRequestCommunes => const [
-    'Gombe',
-    'Kinshasa',
-    'Limete',
-    'Ngaliema',
-    'Lemba',
-    'Kalamu',
+    'Bandalungwa',
     'Barumbu',
+    'Bumbu',
+    'Gombe',
+    'Kalamu',
+    'Kasa-Vubu',
+    'Kimbanseke',
+    'Kinshasa',
+    'Kintambo',
+    'Kisenso',
+    'Lemba',
+    'Limete',
     'Lingwala',
+    'Makala',
+    'Maluku',
+    'Masina',
+    'Matete',
+    'Mont-Ngafula',
+    "N'djili",
+    'Ngaba',
+    'Ngaliema',
+    'Ngiri-Ngiri',
+    "N'sele",
+    'Selembao',
   ];
 
   @override
