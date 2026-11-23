@@ -1671,6 +1671,66 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'Sécurisé par Nexis Hub'**
   String get securedByNexis;
+
+  /// No description provided for @signupTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'Faisons connaissance'**
+  String get signupTitle;
+
+  /// No description provided for @signupFirstName.
+  ///
+  /// In fr, this message translates to:
+  /// **'Prénom'**
+  String get signupFirstName;
+
+  /// No description provided for @signupLastName.
+  ///
+  /// In fr, this message translates to:
+  /// **'Nom'**
+  String get signupLastName;
+
+  /// No description provided for @signupOtherCommune.
+  ///
+  /// In fr, this message translates to:
+  /// **'Autre commune'**
+  String get signupOtherCommune;
+
+  /// No description provided for @signupDemoNotice.
+  ///
+  /// In fr, this message translates to:
+  /// **'Inscription de démonstration. Utilisez des informations fictives.'**
+  String get signupDemoNotice;
+
+  /// No description provided for @signupReadTerms.
+  ///
+  /// In fr, this message translates to:
+  /// **'Lire les CGU'**
+  String get signupReadTerms;
+
+  /// No description provided for @signupAcceptTerms.
+  ///
+  /// In fr, this message translates to:
+  /// **'J’ai lu et j’accepte les CGU'**
+  String get signupAcceptTerms;
+
+  /// No description provided for @signupCreateProfile.
+  ///
+  /// In fr, this message translates to:
+  /// **'Créer mon profil'**
+  String get signupCreateProfile;
+
+  /// No description provided for @signupFailed.
+  ///
+  /// In fr, this message translates to:
+  /// **'Le profil n’a pas pu être créé. Vérifiez les informations et réessayez.'**
+  String get signupFailed;
+
+  /// No description provided for @signupDemoTerms.
+  ///
+  /// In fr, this message translates to:
+  /// **'Document de démonstration. Cet écran sert à tester la lecture et l’acceptation des conditions. Les profils créés, les missions et les paiements de cet aperçu sont fictifs. Les informations de cette inscription sont effacées au rechargement de l’app.'**
+  String get signupDemoTerms;
 }
 
 class _AppLocalizationsDelegate

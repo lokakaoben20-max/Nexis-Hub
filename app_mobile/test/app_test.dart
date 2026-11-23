@@ -3,9 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nexis_hub/app_state.dart';
 import 'package:nexis_hub/data/demo_repository.dart';
 import 'package:nexis_hub/main.dart';
+import 'package:nexis_hub/ui/common.dart';
 
 void main() {
-  testWidgets('bienvenue, numéro, code, puis accueil', (tester) async {
+  testWidgets('un compte existant ouvre directement son accueil', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
@@ -20,10 +23,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Commencer'), findsOneWidget);
 
-    await tester.tap(find.text('Commencer'));
+    await tester.tap(find.text("J'ai déjà un compte"));
     await tester.pumpAndSettle();
     expect(find.text('Votre numéro'), findsOneWidget);
-    await tester.enterText(find.byType(TextField), '812345678');
+    await tester.enterText(find.byType(TextField), '812345412');
     await tester.pump();
     await tester.tap(find.text('Recevoir le code'));
     await tester.pumpAndSettle();
@@ -34,6 +37,77 @@ void main() {
     await tester.pumpAndSettle();
     expect(state.signedIn, isTrue);
     expect(find.text('Mbote, Grâce'), findsOneWidget);
+  });
+
+  testWidgets('un nouveau client doit remplir le profil et accepter les CGU', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1170, 2532);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+
+    final repo = DemoRepository();
+    final state = AppState(repository: repo)..setLocale(const Locale('fr'));
+    await tester.pumpWidget(NexisApp(state: state));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Commencer'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '812345678');
+    await tester.pump();
+    await tester.tap(find.text('Recevoir le code'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Faisons connaissance'), findsOneWidget);
+    expect(state.signedIn, isFalse);
+    await tester.enterText(find.byType(TextField).at(0), '  Amina ');
+    await tester.enterText(find.byType(TextField).at(1), ' Lemba  ');
+    await tester.tap(find.text('Commune'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Gombe').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Créer mon profil'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(state.signedIn, isFalse);
+    expect(repo.openDemoAccount('+243812345678'), isFalse);
+
+    await tester.ensureVisible(find.text('Lire les CGU'));
+    await tester.tap(find.text('Lire les CGU'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Document de démonstration.'), findsOneWidget);
+    await tester.tap(find.byType(RoundBack));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+      isFalse,
+    );
+
+    await tester.ensureVisible(find.byType(CheckboxListTile));
+    await tester.tap(find.byType(CheckboxListTile));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Créer mon profil'));
+    await tester.pumpAndSettle();
+
+    expect(state.signedIn, isTrue);
+    expect(find.text('Mbote, Amina'), findsOneWidget);
+    final profile = await repo.profile();
+    expect(profile.lastName, 'Lemba');
+    expect(profile.commune, 'Gombe');
+    expect(profile.termsVersion, repo.signupTermsVersion);
+    expect(profile.isProvider, isFalse);
+    expect(await repo.missions(), isEmpty);
+    expect(await repo.movements(), isEmpty);
+    expect((await repo.wallet()).available, isEmpty);
+    expect(repo.openDemoAccount('+243812345412'), isTrue);
+    expect((await repo.profile()).firstName, 'Grâce');
+    expect(repo.openDemoAccount('+243812345678'), isTrue);
+    expect((await repo.profile()).firstName, 'Amina');
   });
 
   testWidgets('numéro : mise en forme, préfixe contrôlé, bouton grisé', (

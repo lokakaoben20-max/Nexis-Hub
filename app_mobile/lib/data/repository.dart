@@ -14,6 +14,21 @@ abstract class NexisRepository {
   /// d'option qui fait semblant.
   Set<String> get codeChannels;
 
+  /// Parcours de démonstration, après la vérification fictive du numéro.
+  bool openDemoAccount(String phone);
+
+  List<String> get signupCommunes;
+  DateTime get signupTermsVersion;
+
+  /// Crée et sélectionne le profil fictif seulement si ses CGU sont acceptées.
+  bool registerDemoClient({
+    required String phone,
+    required String firstName,
+    required String lastName,
+    required String commune,
+    required DateTime? acceptedTermsVersion,
+  });
+
   Future<Profile> profile();
   Future<Wallet> wallet();
   Future<List<Mission>> missions();

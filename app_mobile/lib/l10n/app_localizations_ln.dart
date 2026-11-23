@@ -959,4 +959,37 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String get securedByNexis => 'Ebombami na Nexis Hub';
+
+  @override
+  String get signupTitle => 'Tóyebana';
+
+  @override
+  String get signupFirstName => 'Nkombo ya liboso';
+
+  @override
+  String get signupLastName => 'Nkombo ya libota';
+
+  @override
+  String get signupOtherCommune => 'Komini mosusu';
+
+  @override
+  String get signupDemoNotice =>
+      'Komikomisa ya komeka. Salelá ba sango ya ndakisa.';
+
+  @override
+  String get signupReadTerms => 'Tángá mibeko ya kosalela app';
+
+  @override
+  String get signupAcceptTerms => 'Natángi mpe nandimi mibeko ya kosalela app';
+
+  @override
+  String get signupCreateProfile => 'Salá profil na ngai';
+
+  @override
+  String get signupFailed =>
+      'Profil esalemi te. Talá sango na yo mpe mekisa lisusu.';
+
+  @override
+  String get signupDemoTerms =>
+      'Mokanda ya komeka. Awa okoki komeka kotánga mpe kondima mibeko. Ba profil, misala mpe mbongo na aperçu oyo ezali ya ndakisa. Sango ya komikomisa elongwaka ntango app efungwami lisusu.';
 }

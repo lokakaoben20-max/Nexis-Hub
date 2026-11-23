@@ -956,4 +956,36 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get securedByNexis => 'Secured by Nexis Hub';
+
+  @override
+  String get signupTitle => 'Let’s get to know you';
+
+  @override
+  String get signupFirstName => 'First name';
+
+  @override
+  String get signupLastName => 'Last name';
+
+  @override
+  String get signupOtherCommune => 'Other municipality';
+
+  @override
+  String get signupDemoNotice => 'Demo sign-up. Use fictional information.';
+
+  @override
+  String get signupReadTerms => 'Read the terms of use';
+
+  @override
+  String get signupAcceptTerms => 'I’ve read and accept the terms of use';
+
+  @override
+  String get signupCreateProfile => 'Create my profile';
+
+  @override
+  String get signupFailed =>
+      'Your profile could not be created. Check your details and try again.';
+
+  @override
+  String get signupDemoTerms =>
+      'Demo document. Use this screen to try reading and accepting the terms. Profiles, missions and payments in this preview are fictional. Your sign-up details are cleared when the app reloads.';
 }

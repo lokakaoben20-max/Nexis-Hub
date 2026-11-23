@@ -10,6 +10,7 @@ import '../l10n/app_localizations.dart';
 import '../ui/common.dart';
 import '../ui/phone.dart';
 import '../ui/theme.dart';
+import 'signup.dart';
 import 'welcome_intro.dart';
 
 /// 15 : bienvenue, piste A retenue (design/bienvenue/bienvenue-pistes.html) :
@@ -852,6 +853,7 @@ class _CodeScreenState extends State<CodeScreen> {
   final _code = TextEditingController();
   final _focus = FocusNode();
   Timer? _timer;
+  Timer? _verification;
   late String _channel = widget.channel;
   // Délai avant de pouvoir redemander un code : 60 s (choix de Ben).
   int _left = 60;
@@ -905,21 +907,38 @@ class _CodeScreenState extends State<CodeScreen> {
     _restart();
     _code.addListener(() {
       setState(() {});
+      _verification?.cancel();
       if (_code.text.length == 6) {
-        // Aperçu : n'importe quel code est accepté. La vraie app envoie le
-        // code au serveur (backend/app/app_auth.py) qui seul décide.
-        Future<void>.delayed(const Duration(milliseconds: 250), () {
-          if (!mounted) return;
-          Navigator.of(context).popUntil((route) => route.isFirst);
-          AppScope.of(context).signIn();
-        });
+        // Aperçu : code simulé. La vraie vérification appartient au serveur.
+        _verification = Timer(const Duration(milliseconds: 250), _afterCode);
       }
     });
+  }
+
+  Future<void> _afterCode() async {
+    final navigator = Navigator.of(context);
+    final state = AppScope.of(context);
+    final phone = '+243${widget.phone}';
+    if (!state.repository.openDemoAccount(phone)) {
+      _timer?.cancel();
+      final created = await navigator.push<bool>(
+        MaterialPageRoute(builder: (_) => SignupScreen(phone: phone)),
+      );
+      if (!mounted) return;
+      if (created != true) {
+        _code.clear();
+        _restart();
+        return;
+      }
+    }
+    navigator.popUntil((route) => route.isFirst);
+    state.signIn();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _verification?.cancel();
     _code.dispose();
     _focus.dispose();
     super.dispose();

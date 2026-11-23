@@ -13,27 +13,91 @@ class DemoRepository implements NexisRepository {
   @override
   Set<String> get codeChannels => const {'whatsapp', 'telegram', 'sms'};
 
+  static const _samplePhone = '+243812345412';
+  String _activePhone = _samplePhone;
+  final _registeredClients = <String, Profile>{};
+
   @override
-  Future<Profile> profile() async => Profile(
+  bool openDemoAccount(String phone) {
+    if (phone != _samplePhone && !_registeredClients.containsKey(phone)) {
+      return false;
+    }
+    _activePhone = phone;
+    return true;
+  }
+
+  @override
+  List<String> get signupCommunes => const [
+    'Gombe',
+    'Kinshasa',
+    'Limete',
+    'Ngaliema',
+    'Lemba',
+    'Kalamu',
+    'Barumbu',
+    'Lingwala',
+    'Autre commune',
+  ];
+
+  @override
+  DateTime get signupTermsVersion => DateTime(2026, 11, 20);
+
+  @override
+  bool registerDemoClient({
+    required String phone,
+    required String firstName,
+    required String lastName,
+    required String commune,
+    required DateTime? acceptedTermsVersion,
+  }) {
+    final first = firstName.trim();
+    final last = lastName.trim();
+    if (phone == _samplePhone ||
+        _registeredClients.containsKey(phone) ||
+        first.isEmpty ||
+        last.isEmpty ||
+        !signupCommunes.contains(commune) ||
+        acceptedTermsVersion != signupTermsVersion) {
+      return false;
+    }
+    _registeredClients[phone] = Profile(
+      firstName: first,
+      lastName: last,
+      phone: phone,
+      commune: commune,
+      isProvider: false,
+      termsVersion: acceptedTermsVersion,
+    );
+    _activePhone = phone;
+    return true;
+  }
+
+  @override
+  Future<Profile> profile() async =>
+      _registeredClients[_activePhone] ?? _sampleProfile;
+
+  late final _sampleProfile = Profile(
     firstName: 'Grâce',
     lastName: 'Nsimba',
-    phone: '+243812345412',
+    phone: _samplePhone,
     commune: 'Limete',
     isProvider: true,
-    termsVersion: DateTime(2026, 11, 20),
+    termsVersion: signupTermsVersion,
   );
 
   @override
-  Future<Wallet> wallet() async => const Wallet(
-    available: {
-      Currency.cdf: Money(45000, Currency.cdf),
-      Currency.usd: Money(1250, Currency.usd),
-    },
-    secured: {
-      Currency.cdf: Money(35000, Currency.cdf),
-      Currency.usd: Money(500, Currency.usd),
-    },
-  );
+  Future<Wallet> wallet() async => _activePhone != _samplePhone
+      ? const Wallet(available: {}, secured: {})
+      : const Wallet(
+          available: {
+            Currency.cdf: Money(45000, Currency.cdf),
+            Currency.usd: Money(1250, Currency.usd),
+          },
+          secured: {
+            Currency.cdf: Money(35000, Currency.cdf),
+            Currency.usd: Money(500, Currency.usd),
+          },
+        );
 
   late final List<Mission> _missions = [
     Mission(
@@ -268,10 +332,12 @@ class DemoRepository implements NexisRepository {
   };
 
   @override
-  Future<List<Mission>> missions() async => List.of(_missions);
+  Future<List<Mission>> missions() async =>
+      _activePhone == _samplePhone ? List.of(_missions) : [];
 
   @override
-  Future<List<Movement>> movements() async => List.of(_movements);
+  Future<List<Movement>> movements() async =>
+      _activePhone == _samplePhone ? List.of(_movements) : [];
 
   @override
   Future<Mission> mission(int id) async =>
@@ -286,14 +352,18 @@ class DemoRepository implements NexisRepository {
       name: 'Plomberie',
       service: Service.plomberie,
       color: 0xFF0350E6,
-      lastRequested: _now.subtract(const Duration(days: 2)),
+      lastRequested: _activePhone == _samplePhone
+          ? _now.subtract(const Duration(days: 2))
+          : null,
     ),
     CatalogService(
       id: 'nettoyage',
       name: 'Nettoyage',
       service: Service.nettoyage,
       color: 0xFF1E8A4C,
-      lastRequested: _now.subtract(const Duration(days: 6)),
+      lastRequested: _activePhone == _samplePhone
+          ? _now.subtract(const Duration(days: 6))
+          : null,
     ),
     const CatalogService(
       id: 'electricite',

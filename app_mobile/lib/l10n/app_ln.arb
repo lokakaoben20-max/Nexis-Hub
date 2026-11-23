@@ -352,5 +352,15 @@
       }
     }
   },
-  "securedByNexis": "Ebombami na Nexis Hub"
+  "securedByNexis": "Ebombami na Nexis Hub",
+  "signupTitle": "Tóyebana",
+  "signupFirstName": "Nkombo ya liboso",
+  "signupLastName": "Nkombo ya libota",
+  "signupOtherCommune": "Komini mosusu",
+  "signupDemoNotice": "Komikomisa ya komeka. Salelá ba sango ya ndakisa.",
+  "signupReadTerms": "Tángá mibeko ya kosalela app",
+  "signupAcceptTerms": "Natángi mpe nandimi mibeko ya kosalela app",
+  "signupCreateProfile": "Salá profil na ngai",
+  "signupFailed": "Profil esalemi te. Talá sango na yo mpe mekisa lisusu.",
+  "signupDemoTerms": "Mokanda ya komeka. Awa okoki komeka kotánga mpe kondima mibeko. Ba profil, misala mpe mbongo na aperçu oyo ezali ya ndakisa. Sango ya komikomisa elongwaka ntango app efungwami lisusu."
 }

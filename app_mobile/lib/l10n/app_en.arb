@@ -352,5 +352,15 @@
       }
     }
   },
-  "securedByNexis": "Secured by Nexis Hub"
+  "securedByNexis": "Secured by Nexis Hub",
+  "signupTitle": "Let’s get to know you",
+  "signupFirstName": "First name",
+  "signupLastName": "Last name",
+  "signupOtherCommune": "Other municipality",
+  "signupDemoNotice": "Demo sign-up. Use fictional information.",
+  "signupReadTerms": "Read the terms of use",
+  "signupAcceptTerms": "I’ve read and accept the terms of use",
+  "signupCreateProfile": "Create my profile",
+  "signupFailed": "Your profile could not be created. Check your details and try again.",
+  "signupDemoTerms": "Demo document. Use this screen to try reading and accepting the terms. Profiles, missions and payments in this preview are fictional. Your sign-up details are cleared when the app reloads."
 }
