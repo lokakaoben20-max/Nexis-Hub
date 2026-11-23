@@ -1750,12 +1750,6 @@ abstract class AppLocalizations {
   /// **'Nom'**
   String get signupLastName;
 
-  /// No description provided for @signupOtherCommune.
-  ///
-  /// In fr, this message translates to:
-  /// **'Autre commune'**
-  String get signupOtherCommune;
-
   /// No description provided for @signupDemoNotice.
   ///
   /// In fr, this message translates to:

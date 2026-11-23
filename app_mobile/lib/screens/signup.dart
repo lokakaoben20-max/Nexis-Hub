@@ -95,13 +95,8 @@ class _SignupScreenState extends State<SignupScreen> {
           isExpanded: true,
           decoration: InputDecoration(labelText: l.commune),
           items: [
-            for (final commune in repo.signupCommunes)
-              DropdownMenuItem(
-                value: commune,
-                child: Text(
-                  commune == 'Autre commune' ? l.signupOtherCommune : commune,
-                ),
-              ),
+            for (final commune in repo.communes)
+              DropdownMenuItem(value: commune, child: Text(commune)),
           ],
           onChanged: (value) => setState(() {
             _commune = value;

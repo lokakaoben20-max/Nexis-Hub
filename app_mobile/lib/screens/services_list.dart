@@ -477,7 +477,7 @@ class _DescribeNeedScreenState extends State<DescribeNeedScreen> {
     Profile? profile,
   }) {
     final service = widget.service;
-    final communes = AppScope.of(context).repository.serviceRequestCommunes;
+    final communes = AppScope.of(context).repository.communes;
     final defaultCommune = profile?.commune;
     final commune =
         _commune ?? (communes.contains(defaultCommune) ? defaultCommune : null);
@@ -510,9 +510,17 @@ class _DescribeNeedScreenState extends State<DescribeNeedScreen> {
           DropdownButtonFormField<String>(
             initialValue: commune,
             isExpanded: true,
-            decoration: InputDecoration(
-              labelText: l.commune,
-              border: const OutlineInputBorder(),
+            decoration: _requestFieldDecoration(context, label: l.commune),
+            dropdownColor: p.surface,
+            borderRadius: BorderRadius.circular(16),
+            style: body(15, weight: FontWeight.w500, color: p.ink),
+            icon: RotatedBox(
+              quarterTurns: 1,
+              child: NxIcon(
+                'chevron',
+                size: 18,
+                color: _sending ? faintColor(context) : p.ink,
+              ),
             ),
             items: [
               for (final name in communes)
@@ -667,11 +675,6 @@ class _DescribeNeedScreenState extends State<DescribeNeedScreen> {
     int lines = 1,
   }) {
     final p = context.palette;
-    final ring = isDark(context) ? p.line : const Color(0x1A021937);
-    OutlineInputBorder border(Color c, double w) => OutlineInputBorder(
-      borderRadius: BorderRadius.circular(16),
-      borderSide: BorderSide(color: c, width: w),
-    );
     return TextField(
       controller: controller,
       readOnly: _sending,
@@ -687,20 +690,31 @@ class _DescribeNeedScreenState extends State<DescribeNeedScreen> {
         required isFocused,
         maxLength,
       }) => null,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        hintStyle: body(15, color: faintColor(context)),
-        filled: true,
-        fillColor: p.surface,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 14,
-        ),
-        enabledBorder: border(ring, 1),
-        focusedBorder: border(NexisColors.brand, 2),
-        border: border(ring, 1),
-      ),
+      decoration: _requestFieldDecoration(context, label: label, hint: hint),
+    );
+  }
+
+  InputDecoration _requestFieldDecoration(
+    BuildContext context, {
+    String? label,
+    String? hint,
+  }) {
+    final palette = context.palette;
+    final ring = isDark(context) ? palette.line : const Color(0x1A021937);
+    OutlineInputBorder border(Color color, double width) => OutlineInputBorder(
+      borderRadius: BorderRadius.circular(16),
+      borderSide: BorderSide(color: color, width: width),
+    );
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      hintStyle: body(15, color: faintColor(context)),
+      filled: true,
+      fillColor: palette.surface,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      enabledBorder: border(ring, 1),
+      focusedBorder: border(NexisColors.brand, 2),
+      border: border(ring, 1),
     );
   }
 
