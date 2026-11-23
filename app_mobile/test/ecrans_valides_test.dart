@@ -124,6 +124,62 @@ void main() {
     expect(find.text('Portail'), findsOneWidget);
   });
 
+  testWidgets('une tuile de service crée une mission dans la commune choisie', (
+    tester,
+  ) async {
+    final state = await _home(tester);
+    await tester.tap(find.bySemanticsLabel('Demander un service'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Plomberie'));
+    await tester.pumpAndSettle();
+
+    final description = find.byType(TextField);
+    expect(find.text('Limete'), findsOneWidget);
+    await tester.tap(find.text('Limete'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Gombe').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(description, 'Réparer la fuite sous l’évier.');
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Envoyer ma demande'));
+    await tester.tap(find.text('Envoyer ma demande'));
+    await tester.pumpAndSettle();
+    expect(find.text('Demande de test enregistrée'), findsOneWidget);
+
+    final missions = await state.repository.missions();
+    final mission = missions.first;
+    expect(mission.catalogService?.id, 'plomberie');
+    expect(mission.commune, 'Gombe');
+    expect(mission.detail, 'Réparer la fuite sous l’évier.');
+    expect(mission.status, MissionStatus.pending);
+    expect(mission.payment, PaymentState.none);
+
+    await tester.ensureVisible(find.text('Mes missions'));
+    await tester.tap(find.text('Mes missions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Mes missions'), findsOneWidget);
+    await tester.tap(find.text('Plomberie').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Réparer la fuite sous l’évier.'), findsOneWidget);
+  });
+
+  testWidgets('un résultat du catalogue ouvre le formulaire du service', (
+    tester,
+  ) async {
+    await _home(tester);
+    await tester.tap(find.bySemanticsLabel('Demander un service'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Tous les services'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'demenagement');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Déménagement'));
+    await tester.pumpAndSettle();
+    expect(find.text('Déménagement'), findsOneWidget);
+    expect(find.text('Cette demande est une simulation.'), findsOneWidget);
+    expect(find.text('Envoyer ma demande'), findsOneWidget);
+  });
+
   testWidgets('les services partagent leur palette en clair et en sombre', (
     tester,
   ) async {

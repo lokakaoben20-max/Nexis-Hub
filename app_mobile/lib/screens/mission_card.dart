@@ -25,8 +25,43 @@ String missionStatusText(AppLocalizations l, Mission mission) =>
       MissionStatus.disputed => l.statusDisputed,
     };
 
+String _missionServiceName(Mission mission, String lang) {
+  final catalogService = mission.catalogService;
+  return catalogService == null
+      ? serviceName(mission.service, lang)
+      : catalogServiceName(catalogService, lang);
+}
+
 /// Ouvre l'écran qui correspond à l'état de la mission.
 void openMission(BuildContext context, Mission mission) {
+  if (mission.status == MissionStatus.pending) {
+    final l = AppLocalizations.of(context);
+    final service = _missionServiceName(mission, langOf(context));
+    final detail = mission.detail;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(service),
+        scrollable: true,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(mission.commune),
+            Text(l.statusPending),
+            if (detail != null) ...[const SizedBox(height: 12), Text(detail)],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(l.close),
+          ),
+        ],
+      ),
+    );
+    return;
+  }
   final Widget? screen = switch (mission.status) {
     MissionStatus.quoted => QuotesScreen(mission: mission),
     MissionStatus.confirmed ||
@@ -161,14 +196,17 @@ class MissionCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    KnownServiceTile(mission.service),
+                    if (mission.catalogService case final service?)
+                      catalogTile(service)
+                    else
+                      KnownServiceTile(mission.service),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            serviceName(mission.service, lang),
+                            _missionServiceName(mission, lang),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: body(
