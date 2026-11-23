@@ -17,7 +17,6 @@ abstract class NexisRepository {
   /// Parcours de démonstration, après la vérification fictive du numéro.
   bool openDemoAccount(String phone);
 
-  List<String> get signupCommunes;
   DateTime get signupTermsVersion;
 
   /// Crée et sélectionne le profil fictif seulement si ses CGU sont acceptées.
@@ -42,7 +41,7 @@ abstract class NexisRepository {
   /// « Décrire mon besoin » : une demande libre, transmise à l'équipe.
   Future<void> sendFreeRequest(String title, String text);
 
-  List<String> get serviceRequestCommunes;
+  List<String> get communes;
 
   /// Crée une mission en attente de devis pour un service du catalogue.
   Future<void> requestService({

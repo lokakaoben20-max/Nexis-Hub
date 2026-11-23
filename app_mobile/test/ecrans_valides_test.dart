@@ -27,11 +27,11 @@ Future<AppState> _home(WidgetTester tester) async {
 void main() {
   test('les formulaires proposent les 24 communes de Kinshasa', () {
     final repo = DemoRepository();
-    final communes = repo.serviceRequestCommunes;
+    final communes = repo.communes;
     expect(communes.toSet(), hasLength(24));
     expect(communes.first, 'Bandalungwa');
     expect(communes.last, 'Selembao');
-    expect(repo.signupCommunes, [...communes, 'Autre commune']);
+    expect(communes, isNot(contains('Autre commune')));
   });
 
   test('la recherche ignore accents et casse', () {

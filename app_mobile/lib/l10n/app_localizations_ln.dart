@@ -1004,9 +1004,6 @@ class AppLocalizationsLn extends AppLocalizations {
   String get signupLastName => 'Nkombo ya libota';
 
   @override
-  String get signupOtherCommune => 'Komini mosusu';
-
-  @override
   String get signupDemoNotice =>
       'Komikomisa ya komeka. Salelá ba sango ya ndakisa.';
 

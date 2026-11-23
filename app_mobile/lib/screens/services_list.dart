@@ -477,7 +477,7 @@ class _DescribeNeedScreenState extends State<DescribeNeedScreen> {
     Profile? profile,
   }) {
     final service = widget.service;
-    final communes = AppScope.of(context).repository.serviceRequestCommunes;
+    final communes = AppScope.of(context).repository.communes;
     final defaultCommune = profile?.commune;
     final commune =
         _commune ?? (communes.contains(defaultCommune) ? defaultCommune : null);

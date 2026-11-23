@@ -27,13 +27,7 @@ class DemoRepository implements NexisRepository {
   }
 
   @override
-  List<String> get signupCommunes => [
-    ...serviceRequestCommunes,
-    'Autre commune',
-  ];
-
-  @override
-  List<String> get serviceRequestCommunes => const [
+  List<String> get communes => const [
     'Bandalungwa',
     'Barumbu',
     'Bumbu',
@@ -77,7 +71,7 @@ class DemoRepository implements NexisRepository {
         _registeredClients.containsKey(phone) ||
         first.isEmpty ||
         last.isEmpty ||
-        !signupCommunes.contains(commune) ||
+        !communes.contains(commune) ||
         acceptedTermsVersion != signupTermsVersion) {
       return false;
     }
@@ -460,7 +454,7 @@ class DemoRepository implements NexisRepository {
     final catalog = await serviceCatalog();
     final service = catalog.firstWhere((service) => service.id == serviceId);
     final detail = description.trim();
-    if (!serviceRequestCommunes.contains(commune) ||
+    if (!communes.contains(commune) ||
         detail.length < 10 ||
         detail.length > 500) {
       throw ArgumentError('Invalid service request');

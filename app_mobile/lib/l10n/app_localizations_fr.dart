@@ -1006,9 +1006,6 @@ class AppLocalizationsFr extends AppLocalizations {
   String get signupLastName => 'Nom';
 
   @override
-  String get signupOtherCommune => 'Autre commune';
-
-  @override
   String get signupDemoNotice =>
       'Inscription de démonstration. Utilisez des informations fictives.';
 

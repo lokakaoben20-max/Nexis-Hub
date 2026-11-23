@@ -1001,9 +1001,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signupLastName => 'Last name';
 
   @override
-  String get signupOtherCommune => 'Other municipality';
-
-  @override
   String get signupDemoNotice => 'Demo sign-up. Use fictional information.';
 
   @override
