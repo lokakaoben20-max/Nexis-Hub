@@ -161,8 +161,6 @@ class _HomeScreenState extends State<HomeScreen> {
           constraints: const BoxConstraints(maxWidth: 340),
           child: Column(
             children: [
-              const SoftIconBox(glyph: 'services', size: 44),
-              const SizedBox(height: 12),
               Text(
                 l.firstRequestTitle,
                 textAlign: TextAlign.center,
