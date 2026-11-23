@@ -306,32 +306,29 @@ class _PlusButtonState extends State<_PlusButton>
     with SingleTickerProviderStateMixin {
   late final _hint = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 720),
+    duration: const Duration(milliseconds: 1550),
   );
-  late final _scale = TweenSequence<double>([
-    TweenSequenceItem(tween: ConstantTween(1.0), weight: 20),
-    TweenSequenceItem(
-      tween: Tween(
-        begin: 1.0,
-        end: 0.96,
-      ).chain(CurveTween(curve: Curves.easeOut)),
-      weight: 12,
-    ),
-    TweenSequenceItem(
-      tween: Tween(
-        begin: 0.96,
-        end: 1.13,
-      ).chain(CurveTween(curve: Curves.easeOutCubic)),
-      weight: 28,
-    ),
-    TweenSequenceItem(
-      tween: Tween(
-        begin: 1.13,
-        end: 1.0,
-      ).chain(CurveTween(curve: Curves.easeInOut)),
-      weight: 40,
-    ),
-  ]).animate(_hint);
+  late final _pulse = _hint.drive(
+    CurveTween(curve: const Interval(650 / 1550, 1)),
+  );
+  late final _scale = _pulse.drive(
+    TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(
+          begin: 1.0,
+          end: 1.18,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 35,
+      ),
+      TweenSequenceItem(
+        tween: Tween(
+          begin: 1.18,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeInOutCubic)),
+        weight: 65,
+      ),
+    ]),
+  );
 
   @override
   void didChangeDependencies() {
@@ -373,51 +370,85 @@ class _PlusButtonState extends State<_PlusButton>
       excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,
-        child: ScaleTransition(
-          scale: _scale,
-          child: AnimatedContainer(
-            duration: Duration(milliseconds: reduce ? 0 : 300),
-            curve: Curves.ease,
-            width: 62,
-            height: 62,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: ringColor, width: 5),
-              color: open ? NexisColors.navy : null,
-              gradient: open
-                  ? null
-                  : const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [NexisColors.halo, NexisColors.gradientEnd],
-                    ),
-              boxShadow: open
-                  ? const [
-                      BoxShadow(color: Color(0xFFE3E7EE), spreadRadius: 6),
-                      BoxShadow(
-                        color: Color(0x73021937),
-                        offset: Offset(0, 10),
-                        blurRadius: 20,
-                        spreadRadius: -8,
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: _pulse,
+                  builder: (context, _) {
+                    final progress = _pulse.value;
+                    if (progress == 0 || progress == 1) {
+                      return const SizedBox.shrink();
+                    }
+                    final expansion = Curves.easeOutCubic.transform(progress);
+                    return Transform.scale(
+                      scale: 1.18 + 0.45 * expansion,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: NexisColors.brand.withValues(
+                              alpha: 0.65 * (1 - progress),
+                            ),
+                            width: 2.5,
+                          ),
+                        ),
                       ),
-                    ]
-                  : const [
-                      BoxShadow(color: Color(0xFFDCEBFF), spreadRadius: 6),
-                      BoxShadow(
-                        color: Color(0x800350E6),
-                        offset: Offset(0, 10),
-                        blurRadius: 20,
-                        spreadRadius: -6,
-                      ),
-                    ],
+                    );
+                  },
+                ),
+              ),
             ),
-            child: AnimatedRotation(
-              turns: open ? 135 / 360 : 0,
-              duration: Duration(milliseconds: reduce ? 0 : 350),
-              curve: const Cubic(.3, 1.4, .5, 1),
-              child: const NxIcon('add', color: Colors.white, size: 26),
+            ScaleTransition(
+              scale: _scale,
+              child: AnimatedContainer(
+                duration: Duration(milliseconds: reduce ? 0 : 300),
+                curve: Curves.ease,
+                width: 62,
+                height: 62,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: ringColor, width: 5),
+                  color: open ? NexisColors.navy : null,
+                  gradient: open
+                      ? null
+                      : const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [NexisColors.halo, NexisColors.gradientEnd],
+                        ),
+                  boxShadow: open
+                      ? const [
+                          BoxShadow(color: Color(0xFFE3E7EE), spreadRadius: 6),
+                          BoxShadow(
+                            color: Color(0x73021937),
+                            offset: Offset(0, 10),
+                            blurRadius: 20,
+                            spreadRadius: -8,
+                          ),
+                        ]
+                      : const [
+                          BoxShadow(color: Color(0xFFDCEBFF), spreadRadius: 6),
+                          BoxShadow(
+                            color: Color(0x800350E6),
+                            offset: Offset(0, 10),
+                            blurRadius: 20,
+                            spreadRadius: -6,
+                          ),
+                        ],
+                ),
+                child: AnimatedRotation(
+                  turns: open ? 135 / 360 : 0,
+                  duration: Duration(milliseconds: reduce ? 0 : 350),
+                  curve: const Cubic(.3, 1.4, .5, 1),
+                  child: const NxIcon('add', color: Colors.white, size: 26),
+                ),
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -425,7 +456,7 @@ class _PlusButtonState extends State<_PlusButton>
 }
 
 /// « Quel service ? » (maquette validée) : huit services en tuiles sur trois
-/// colonnes, les demandés récemment d'abord, puis « Autre », qui ouvre la
+/// colonnes, les demandés récemment d'abord, puis « Tous les services », qui ouvre la
 /// liste complète. La liste vient du serveur.
 class _ServiceSheet extends StatelessWidget {
   const _ServiceSheet({

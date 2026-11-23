@@ -180,14 +180,16 @@ void main() {
         .scale
         .value;
 
-    expect(scale(), greaterThan(1));
+    expect(scale(), 1);
+    await tester.pump(const Duration(milliseconds: 520));
+    expect(scale(), greaterThan(1.15));
     await tester.pumpAndSettle();
     expect(scale(), 1);
     await tester.tap(find.bySemanticsLabel('Missions'));
     await tester.pumpAndSettle();
     await tester.tap(find.bySemanticsLabel('Accueil'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 420));
+    await tester.pump(const Duration(milliseconds: 950));
     expect(scale(), 1);
     await tester.pumpAndSettle();
   });
