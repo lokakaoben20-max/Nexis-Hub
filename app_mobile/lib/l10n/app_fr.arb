@@ -66,6 +66,7 @@
   "navWallet": "Portefeuille",
   "navProfile": "Profil",
   "requestService": "Demander un service",
+  "firstRequestTitle": "De quoi avez-vous besoin ?",
   "whichService": "Quel service ?",
   "notInList": "Mon besoin n'est pas dans la liste",
   "myMissions": "Mes missions",
@@ -582,7 +583,7 @@
       }
     }
   },
-  "helloHome": "Mbote, {name}",
+  "helloHome": "Bonjour, {name}",
   "@helloHome": {
     "placeholders": {
       "name": {

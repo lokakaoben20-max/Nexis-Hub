@@ -102,44 +102,88 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 22),
-            UnderlineTabs(
-              labels: [l.tabOngoing, l.tabDone],
-              selected: _tab,
-              badges: {0: ongoing.length},
-              onChanged: (i) => setState(() => _tab = i),
-            ),
-            const SizedBox(height: 12),
-            if (list.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(24),
-                child: Center(
-                  child: Text(l.noMissions, style: body(14, color: p.muted)),
-                ),
-              )
-            else
-              for (final mission in list.take(_shown)) ...[
-                MissionCard(mission: mission, showAction: false),
-                const SizedBox(height: 10),
-              ],
-            if (list.length > _shown)
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => widget.onTab(1),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Text(
-                    l.seeMissions(list.length),
-                    textAlign: TextAlign.center,
-                    style: body(
-                      13.5,
-                      weight: FontWeight.w600,
-                      color: isDark(context) ? p.softInk : NexisColors.brand,
+            if (data.missions.isEmpty)
+              _firstRequest(context, l)
+            else ...[
+              const SizedBox(height: 22),
+              UnderlineTabs(
+                labels: [l.tabOngoing, l.tabDone],
+                selected: _tab,
+                badges: {0: ongoing.length},
+                onChanged: (i) => setState(() => _tab = i),
+              ),
+              const SizedBox(height: 12),
+              if (list.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Center(
+                    child: Text(l.noMissions, style: body(14, color: p.muted)),
+                  ),
+                )
+              else
+                for (final mission in list.take(_shown)) ...[
+                  MissionCard(mission: mission, showAction: false),
+                  const SizedBox(height: 10),
+                ],
+              if (list.length > _shown)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => widget.onTab(1),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Text(
+                      l.seeMissions(list.length),
+                      textAlign: TextAlign.center,
+                      style: body(
+                        13.5,
+                        weight: FontWeight.w600,
+                        color: isDark(context) ? p.softInk : NexisColors.brand,
+                      ),
                     ),
                   ),
                 ),
-              ),
+            ],
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _firstRequest(BuildContext context, AppLocalizations l) {
+    final p = context.palette;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 24, 12, 8),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 340),
+          child: Column(
+            children: [
+              const SoftIconBox(glyph: 'services', size: 44),
+              const SizedBox(height: 12),
+              Text(
+                l.firstRequestTitle,
+                textAlign: TextAlign.center,
+                style: title(17, color: p.ink),
+              ),
+              const SizedBox(height: 14),
+              FilledButton(
+                onPressed: widget.onPickService,
+                style: FilledButton.styleFrom(
+                  backgroundColor: NexisColors.brand,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(0, 48),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 22,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: Text(l.requestService, textAlign: TextAlign.center),
+              ),
+            ],
+          ),
         ),
       ),
     );

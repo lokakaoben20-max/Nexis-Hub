@@ -126,6 +126,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get requestService => 'Demander un service';
 
   @override
+  String get firstRequestTitle => 'De quoi avez-vous besoin ?';
+
+  @override
   String get whichService => 'Quel service ?';
 
   @override
@@ -816,7 +819,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String helloHome(String name) {
-    return 'Mbote, $name';
+    return 'Bonjour, $name';
   }
 
   @override

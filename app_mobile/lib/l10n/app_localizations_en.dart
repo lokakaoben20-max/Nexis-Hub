@@ -124,6 +124,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get requestService => 'Request a service';
 
   @override
+  String get firstRequestTitle => 'What do you need help with?';
+
+  @override
   String get whichService => 'Which service?';
 
   @override

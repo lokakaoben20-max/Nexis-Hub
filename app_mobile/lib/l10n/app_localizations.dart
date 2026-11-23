@@ -310,6 +310,12 @@ abstract class AppLocalizations {
   /// **'Demander un service'**
   String get requestService;
 
+  /// No description provided for @firstRequestTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'De quoi avez-vous besoin ?'**
+  String get firstRequestTitle;
+
   /// No description provided for @whichService.
   ///
   /// In fr, this message translates to:
@@ -1423,7 +1429,7 @@ abstract class AppLocalizations {
   /// No description provided for @helloHome.
   ///
   /// In fr, this message translates to:
-  /// **'Mbote, {name}'**
+  /// **'Bonjour, {name}'**
   String helloHome(String name);
 
   /// No description provided for @heldForMissions.

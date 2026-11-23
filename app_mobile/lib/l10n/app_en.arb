@@ -42,6 +42,7 @@
   "navWallet": "Wallet",
   "navProfile": "Profile",
   "requestService": "Request a service",
+  "firstRequestTitle": "What do you need help with?",
   "whichService": "Which service?",
   "notInList": "My need isn't in the list",
   "myMissions": "My missions",

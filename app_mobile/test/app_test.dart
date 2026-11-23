@@ -36,7 +36,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
     expect(state.signedIn, isTrue);
-    expect(find.text('Mbote, Grâce'), findsOneWidget);
+    expect(find.text('Bonjour, Grâce'), findsOneWidget);
+    expect(find.text('De quoi avez-vous besoin ?'), findsNothing);
   });
 
   testWidgets('un nouveau client doit remplir le profil et accepter les CGU', (
@@ -95,7 +96,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(state.signedIn, isTrue);
-    expect(find.text('Mbote, Amina'), findsOneWidget);
+    expect(find.text('Bonjour, Amina'), findsOneWidget);
+    expect(find.text('De quoi avez-vous besoin ?'), findsOneWidget);
+    expect(find.text('Terminées'), findsNothing);
+    await tester.tap(find.widgetWithText(FilledButton, 'Demander un service'));
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('Fermer'), findsOneWidget);
+    expect(find.text('Quel service ?'), findsOneWidget);
+    expect(find.bySemanticsLabel('Tous les services'), findsOneWidget);
     final profile = await repo.profile();
     expect(profile.lastName, 'Lemba');
     expect(profile.commune, 'Gombe');
@@ -205,5 +213,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('ebombami'), findsOneWidget);
     expect(find.text('Ndako'), findsOneWidget);
+    expect(find.text('Mbote, Grâce'), findsOneWidget);
   });
 }

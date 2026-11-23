@@ -125,6 +125,9 @@ class AppLocalizationsLn extends AppLocalizations {
   String get requestService => 'Kosenga mosala';
 
   @override
+  String get firstRequestTitle => 'Ozali na mposa ya mosala nini ?';
+
+  @override
   String get whichService => 'Mosala nini ?';
 
   @override
