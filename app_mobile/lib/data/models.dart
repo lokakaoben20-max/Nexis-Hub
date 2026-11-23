@@ -386,6 +386,7 @@ class CatalogService {
     required this.id,
     required this.name,
     required this.color,
+    this.translations = const {},
     this.service,
     this.glyph,
     this.isNew = false,
@@ -396,6 +397,7 @@ class CatalogService {
   final String id;
   final String name;
   final int color;
+  final Map<String, String> translations;
 
   /// Service connu de l'app (icône de la police Nexis) ; sinon `glyph`.
   final Service? service;

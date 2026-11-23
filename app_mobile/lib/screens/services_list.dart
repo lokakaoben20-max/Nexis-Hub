@@ -32,7 +32,7 @@ String foldText(String text) {
   List<CatalogService> highlights,
   List<CatalogService> others,
 })
-catalogSections(List<CatalogService> all) {
+catalogSections(List<CatalogService> all, {String lang = 'fr'}) {
   final recents = all.where((s) => s.lastRequested != null).toList()
     ..sort((a, b) => b.lastRequested!.compareTo(a.lastRequested!));
   final highlights = all
@@ -42,7 +42,11 @@ catalogSections(List<CatalogService> all) {
       all
           .where((s) => s.lastRequested == null && !(s.isNew || s.recommended))
           .toList()
-        ..sort((a, b) => foldText(a.name).compareTo(foldText(b.name)));
+        ..sort(
+          (a, b) =>
+              foldText(catalogServiceName(a, lang))
+                  .compareTo(foldText(catalogServiceName(b, lang))),
+        );
   return (recents: recents, highlights: highlights, others: others);
 }
 
@@ -77,11 +81,20 @@ class _AllServicesScreenState extends State<AllServicesScreen> {
         child: Loaded<List<CatalogService>>(
           load: AppScope.of(context).repository.serviceCatalog,
           builder: (context, all) {
+            final lang = langOf(context);
             final q = foldText(_query.trim());
             final sections = catalogSections(
               q.isEmpty
                   ? all
-                  : all.where((s) => foldText(s.name).contains(q)).toList(),
+                  : all
+                        .where(
+                          (s) =>
+                              foldText(catalogServiceName(s, lang))
+                                  .contains(q) ||
+                              foldText(s.name).contains(q),
+                        )
+                        .toList(),
+              lang: lang,
             );
             final empty =
                 sections.recents.isEmpty &&
@@ -187,7 +200,10 @@ class _AllServicesScreenState extends State<AllServicesScreen> {
               button: true,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: () => showComingSoon(context, s.name),
+                onTap: () => showComingSoon(
+                  context,
+                  catalogServiceName(s, langOf(context)),
+                ),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
@@ -206,7 +222,7 @@ class _AllServicesScreenState extends State<AllServicesScreen> {
                               children: [
                                 Flexible(
                                   child: Text(
-                                    s.name,
+                                    catalogServiceName(s, langOf(context)),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: body(

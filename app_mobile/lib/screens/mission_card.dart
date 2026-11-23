@@ -50,7 +50,7 @@ void openMission(BuildContext context, Mission mission) {
 /// pastille du service, prestataire avec sa note, montant et flèche, état en
 /// clair, barre en trois temps pour une mission payée, et un bouton clair
 /// quand il y a une suite (« Suivre la mission », « Comparer les devis »,
-/// « Confirmer »). [showAction] est faux sur l'accueil, qui reste léger.
+/// « Confirmer »). Sur l'accueil, seuls les devis ont une action dédiée.
 class MissionCard extends StatelessWidget {
   const MissionCard({super.key, required this.mission, this.showAction = true});
 
@@ -72,7 +72,10 @@ class MissionCard extends StatelessWidget {
     final p = context.palette;
     final lang = langOf(context);
     final dark = isDark(context);
-    final amount = missionAmountText(mission, l, lang);
+    final amount =
+        mission.status == MissionStatus.quoted && mission.amount == null
+        ? null
+        : missionAmountText(mission, l, lang);
     final rating = mission.rating;
     final reviews = mission.reviews;
 
@@ -135,7 +138,7 @@ class MissionCard extends StatelessWidget {
     };
 
     final String? action = !showAction
-        ? null
+        ? (mission.status == MissionStatus.quoted ? l.viewQuotes : null)
         : switch (mission.status) {
             MissionStatus.confirmed ||
             MissionStatus.inProgress => l.followMission,
@@ -239,8 +242,13 @@ class MissionCard extends StatelessWidget {
                             maxLines: 1,
                             style: title(14, color: p.ink),
                           ),
-                        const SizedBox(height: 6),
-                        NxIcon('chevron', size: 16, color: faintColor(context)),
+                        if (amount != null) const SizedBox(height: 6),
+                        if (mission.status != MissionStatus.quoted)
+                          NxIcon(
+                            'chevron',
+                            size: 16,
+                            color: faintColor(context),
+                          ),
                       ],
                     ),
                   ],

@@ -55,6 +55,7 @@
   "statusCancelled": "Cancelled",
   "statusDisputed": "Dispute open",
   "compareQuotes": "Compare quotes",
+  "viewQuotes": "View quotes",
   "follow": "Track",
   "paySecured": "Secured by Nexis Hub",
   "payReleased": "Paid to provider",

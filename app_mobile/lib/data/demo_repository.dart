@@ -317,6 +317,7 @@ class DemoRepository implements NexisRepository {
     const CatalogService(
       id: 'peinture',
       name: 'Peinture',
+      translations: {'en': 'Painting', 'ln': 'Kopakola langi'},
       glyph: 'svcPeinture',
       color: 0xFFB4531A,
       isNew: true,
@@ -342,6 +343,7 @@ class DemoRepository implements NexisRepository {
     const CatalogService(
       id: 'demenagement',
       name: 'Déménagement',
+      translations: {'en': 'Moving', 'ln': 'Kokende kofanda esika mosusu'},
       glyph: 'svcDemenagement',
       color: 0xFF2B6CB0,
       isNew: true,

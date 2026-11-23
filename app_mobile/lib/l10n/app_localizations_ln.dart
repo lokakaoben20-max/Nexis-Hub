@@ -168,6 +168,9 @@ class AppLocalizationsLn extends AppLocalizations {
   String get compareQuotes => 'Kokokanisa ba devis';
 
   @override
+  String get viewQuotes => 'Kotala ba devis';
+
+  @override
   String get follow => 'Kolanda';
 
   @override

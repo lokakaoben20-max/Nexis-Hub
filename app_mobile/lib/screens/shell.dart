@@ -74,7 +74,8 @@ class _ShellState extends State<Shell> {
     final safeBottom = MediaQuery.paddingOf(context).bottom;
     // 96 dans la maquette, dont 34 pour la barre d'accueil de l'iPhone.
     final double barHeight = 62 + (safeBottom < 16 ? 16 : safeBottom);
-    final provider = AppScope.of(context).providerSpace;
+    final app = AppScope.of(context);
+    final provider = app.providerSpace;
     if (_shownProvider != provider) {
       // Changer d'espace ramène à son accueil.
       _shownProvider = provider;
@@ -151,7 +152,7 @@ class _ShellState extends State<Shell> {
                     _togglePicker();
                     showComingSoon(context, label);
                   },
-                  onOther: () {
+                  onAllServices: () {
                     _togglePicker();
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
@@ -223,6 +224,8 @@ class _ShellState extends State<Shell> {
                       child: _PlusButton(
                         open: _picking,
                         reduce: reduce,
+                        onClientHome: !provider && _tab == 0,
+                        takeHint: app.takeServiceHint,
                         label: _picking ? l.close : l.requestService,
                         ringColor: barColor,
                         onTap: _togglePicker,
@@ -276,10 +279,12 @@ class _ShellState extends State<Shell> {
 
 /// Le « + » sans texte : dégradé E, bord blanc, anneau bleu clair.
 /// Ouvert : fond bleu nuit, anneau gris, l'icône tourne de 135° (un X).
-class _PlusButton extends StatelessWidget {
+class _PlusButton extends StatefulWidget {
   const _PlusButton({
     required this.open,
     required this.reduce,
+    required this.onClientHome,
+    required this.takeHint,
     required this.label,
     required this.ringColor,
     required this.onTap,
@@ -287,59 +292,131 @@ class _PlusButton extends StatelessWidget {
 
   final bool open;
   final bool reduce;
+  final bool onClientHome;
+  final bool Function() takeHint;
   final String label;
   final Color ringColor;
   final VoidCallback onTap;
 
   @override
+  State<_PlusButton> createState() => _PlusButtonState();
+}
+
+class _PlusButtonState extends State<_PlusButton>
+    with SingleTickerProviderStateMixin {
+  late final _hint = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 720),
+  );
+  late final _scale = TweenSequence<double>([
+    TweenSequenceItem(tween: ConstantTween(1.0), weight: 20),
+    TweenSequenceItem(
+      tween: Tween(
+        begin: 1.0,
+        end: 0.96,
+      ).chain(CurveTween(curve: Curves.easeOut)),
+      weight: 12,
+    ),
+    TweenSequenceItem(
+      tween: Tween(
+        begin: 0.96,
+        end: 1.13,
+      ).chain(CurveTween(curve: Curves.easeOutCubic)),
+      weight: 28,
+    ),
+    TweenSequenceItem(
+      tween: Tween(
+        begin: 1.13,
+        end: 1.0,
+      ).chain(CurveTween(curve: Curves.easeInOut)),
+      weight: 40,
+    ),
+  ]).animate(_hint);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateHint();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PlusButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _updateHint();
+  }
+
+  void _updateHint() {
+    if (!widget.onClientHome || widget.open) {
+      if (_hint.isAnimating) _hint.reset();
+      return;
+    }
+    final firstEntry = widget.takeHint();
+    if (widget.reduce) {
+      if (_hint.isAnimating) _hint.reset();
+    } else if (firstEntry) {
+      _hint.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _hint.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final _PlusButton(:open, :reduce, :label, :ringColor, :onTap) = widget;
     return Semantics(
       button: true,
       label: label,
       excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,
-        child: AnimatedContainer(
-          duration: Duration(milliseconds: reduce ? 0 : 300),
-          curve: Curves.ease,
-          width: 62,
-          height: 62,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: ringColor, width: 5),
-            color: open ? NexisColors.navy : null,
-            gradient: open
-                ? null
-                : const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [NexisColors.halo, NexisColors.gradientEnd],
-                  ),
-            boxShadow: open
-                ? const [
-                    BoxShadow(color: Color(0xFFE3E7EE), spreadRadius: 6),
-                    BoxShadow(
-                      color: Color(0x73021937),
-                      offset: Offset(0, 10),
-                      blurRadius: 20,
-                      spreadRadius: -8,
+        child: ScaleTransition(
+          scale: _scale,
+          child: AnimatedContainer(
+            duration: Duration(milliseconds: reduce ? 0 : 300),
+            curve: Curves.ease,
+            width: 62,
+            height: 62,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: ringColor, width: 5),
+              color: open ? NexisColors.navy : null,
+              gradient: open
+                  ? null
+                  : const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [NexisColors.halo, NexisColors.gradientEnd],
                     ),
-                  ]
-                : const [
-                    BoxShadow(color: Color(0xFFDCEBFF), spreadRadius: 6),
-                    BoxShadow(
-                      color: Color(0x800350E6),
-                      offset: Offset(0, 10),
-                      blurRadius: 20,
-                      spreadRadius: -6,
-                    ),
-                  ],
-          ),
-          child: AnimatedRotation(
-            turns: open ? 135 / 360 : 0,
-            duration: Duration(milliseconds: reduce ? 0 : 350),
-            curve: const Cubic(.3, 1.4, .5, 1),
-            child: const NxIcon('add', color: Colors.white, size: 26),
+              boxShadow: open
+                  ? const [
+                      BoxShadow(color: Color(0xFFE3E7EE), spreadRadius: 6),
+                      BoxShadow(
+                        color: Color(0x73021937),
+                        offset: Offset(0, 10),
+                        blurRadius: 20,
+                        spreadRadius: -8,
+                      ),
+                    ]
+                  : const [
+                      BoxShadow(color: Color(0xFFDCEBFF), spreadRadius: 6),
+                      BoxShadow(
+                        color: Color(0x800350E6),
+                        offset: Offset(0, 10),
+                        blurRadius: 20,
+                        spreadRadius: -6,
+                      ),
+                    ],
+            ),
+            child: AnimatedRotation(
+              turns: open ? 135 / 360 : 0,
+              duration: Duration(milliseconds: reduce ? 0 : 350),
+              curve: const Cubic(.3, 1.4, .5, 1),
+              child: const NxIcon('add', color: Colors.white, size: 26),
+            ),
           ),
         ),
       ),
@@ -355,13 +432,13 @@ class _ServiceSheet extends StatelessWidget {
     required this.open,
     required this.reduce,
     required this.onPicked,
-    required this.onOther,
+    required this.onAllServices,
   });
 
   final bool open;
   final bool reduce;
   final void Function(String label) onPicked;
-  final VoidCallback onOther;
+  final VoidCallback onAllServices;
 
   @override
   Widget build(BuildContext context) {
@@ -407,7 +484,7 @@ class _ServiceSheet extends StatelessWidget {
                     for (final s in shown)
                       _tile(
                         context,
-                        label: s.name,
+                        label: catalogServiceName(s, langOf(context)),
                         icon: catalogTile(
                           s,
                           size: 44,
@@ -415,13 +492,18 @@ class _ServiceSheet extends StatelessWidget {
                               ? NewBadge(ringColor: _tileBg(context))
                               : null,
                         ),
-                        onTap: () => onPicked(s.name),
+                        onTap: () =>
+                            onPicked(catalogServiceName(s, langOf(context))),
                       ),
                     _tile(
                       context,
-                      label: l.otherNeed,
-                      icon: KnownServiceTile(Service.autre, size: 44),
-                      onTap: onOther,
+                      label: l.allServices,
+                      icon: ServiceTile(
+                        color: const Color(0xFF5B667A),
+                        glyph: 'search',
+                        size: 44,
+                      ),
+                      onTap: onAllServices,
                     ),
                   ],
                 );
@@ -451,21 +533,29 @@ class _ServiceSheet extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
           decoration: BoxDecoration(
             color: _tileBg(context),
             borderRadius: BorderRadius.circular(16),
           ),
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               icon,
-              const SizedBox(height: 6),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: body(12.5, weight: FontWeight.w600, color: p.ink),
+              const SizedBox(height: 4),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: body(
+                    12.5,
+                    weight: FontWeight.w600,
+                    color: p.ink,
+                    height: 1.1,
+                  ),
+                ),
               ),
             ],
           ),

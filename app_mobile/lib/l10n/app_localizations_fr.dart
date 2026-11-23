@@ -169,6 +169,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get compareQuotes => 'Comparer les devis';
 
   @override
+  String get viewQuotes => 'Voir les devis';
+
+  @override
   String get follow => 'Suivre';
 
   @override

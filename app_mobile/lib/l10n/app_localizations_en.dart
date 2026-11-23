@@ -167,6 +167,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get compareQuotes => 'Compare quotes';
 
   @override
+  String get viewQuotes => 'View quotes';
+
+  @override
   String get follow => 'Track';
 
   @override

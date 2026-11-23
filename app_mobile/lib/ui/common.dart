@@ -65,6 +65,13 @@ String serviceName(Service service, String lang) {
   return names[service]![index < 0 ? 0 : index];
 }
 
+String catalogServiceName(CatalogService item, String lang) {
+  final translation = item.translations[lang];
+  if (translation != null && translation.trim().isNotEmpty) return translation;
+  final service = item.service;
+  return service == null ? item.name : serviceName(service, lang);
+}
+
 class ServiceBadge extends StatelessWidget {
   const ServiceBadge(this.service, {super.key, this.size = 44});
 

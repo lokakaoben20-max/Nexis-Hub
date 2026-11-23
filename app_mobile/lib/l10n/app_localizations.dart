@@ -388,6 +388,12 @@ abstract class AppLocalizations {
   /// **'Comparer les devis'**
   String get compareQuotes;
 
+  /// No description provided for @viewQuotes.
+  ///
+  /// In fr, this message translates to:
+  /// **'Voir les devis'**
+  String get viewQuotes;
+
   /// No description provided for @follow.
   ///
   /// In fr, this message translates to:

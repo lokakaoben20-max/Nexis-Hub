@@ -78,7 +78,7 @@ void main() {
     expect(find.textContaining('Cet argent reste à vous'), findsOneWidget);
   });
 
-  testWidgets('« + » : Autre ouvre la liste, la demande libre part', (
+  testWidgets('« + » : le catalogue s’ouvre et la demande libre part', (
     tester,
   ) async {
     await _home(tester);
@@ -86,7 +86,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Quel service ?'), findsOneWidget);
     expect(find.text('Nouveau'), findsOneWidget);
-    await tester.tap(find.text('Autre'));
+    await tester.tap(find.bySemanticsLabel('Tous les services'));
     await tester.pumpAndSettle();
     expect(find.text('Tous les services'), findsWidgets);
 
@@ -120,6 +120,76 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Demande envoyée'), findsOneWidget);
     expect(find.text('Portail'), findsOneWidget);
+  });
+
+  testWidgets('le catalogue suit la langue et recherche les noms traduits', (
+    tester,
+  ) async {
+    final state = await _home(tester);
+    state.setLocale(const Locale('en'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.bySemanticsLabel('Request a service'));
+    await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel('Plumbing'), findsOneWidget);
+    expect(find.bySemanticsLabel('Painting'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('All services'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'moving');
+    await tester.pumpAndSettle();
+    expect(find.text('Moving'), findsOneWidget);
+    expect(find.text('Déménagement'), findsNothing);
+    await tester.enterText(find.byType(TextField), 'demenag');
+    await tester.pumpAndSettle();
+    expect(find.text('Moving'), findsOneWidget);
+  });
+
+  testWidgets('la carte de devis indique une seule fois le nombre', (
+    tester,
+  ) async {
+    await _home(tester);
+    expect(find.text('3 devis reçus'), findsOneWidget);
+    expect(find.text('3 devis'), findsNothing);
+    await tester.tap(find.text('Voir les devis'));
+    await tester.pumpAndSettle();
+    expect(find.text('Comparer les devis'), findsOneWidget);
+  });
+
+  testWidgets('le bouton plus pulse une fois au premier accueil', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1170, 2532);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final state = AppState(repository: DemoRepository())
+      ..setLocale(const Locale('fr'))
+      ..signIn();
+    await tester.pumpWidget(NexisApp(state: state));
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 420));
+
+    double scale() => tester
+        .widget<ScaleTransition>(
+          find.descendant(
+            of: find.bySemanticsLabel('Demander un service'),
+            matching: find.byType(ScaleTransition),
+          ),
+        )
+        .scale
+        .value;
+
+    expect(scale(), greaterThan(1));
+    await tester.pumpAndSettle();
+    expect(scale(), 1);
+    await tester.tap(find.bySemanticsLabel('Missions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.bySemanticsLabel('Accueil'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 420));
+    expect(scale(), 1);
+    await tester.pumpAndSettle();
   });
 
   testWidgets('le lancement précède la bienvenue', (tester) async {
