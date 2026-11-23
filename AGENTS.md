@@ -99,7 +99,7 @@ Pour les parcours Telegram et WhatsApp, appliquer les mêmes principes de
 hiérarchie, de libellés et de retour après une action, selon les capacités du canal.
 
 - Partir de l'interface réellement déployée et des décisions de design validées
-  par Ben. Conserver l'identité Nexis : bleu `#0350E6`, Unbounded pour les
+  par Ben. Conserver l'identité Nexis : bleu vif `#0A63F0` comme couleur principale, monogramme blanc sur l’icône, Unbounded pour les
   titres et Inter pour le texte, avec une mise en page premium et épurée.
 - Donner la priorité à l'action utile sur chaque écran. Limiter le mouvement
   aux interactions et aux indications ponctuelles, respecter la réduction des
