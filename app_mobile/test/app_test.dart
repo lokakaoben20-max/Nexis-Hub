@@ -119,7 +119,24 @@ void main() {
     );
     expect(find.text('De quoi avez-vous besoin ?'), findsOneWidget);
     expect(find.text('Terminées'), findsNothing);
-    await tester.tap(find.widgetWithText(FilledButton, 'Demander un service'));
+    final home = find.byType(HomeScreen);
+    final bottom =
+        tester.getBottomLeft(home).dy -
+        tester.widget<HomeScreen>(home).bottomInset;
+    final top = tester
+        .getBottomLeft(find.bySemanticsLabel('Actions rapides'))
+        .dy;
+    final heading = find.text('De quoi avez-vous besoin ?');
+    final requestButton = find.widgetWithText(
+      FilledButton,
+      'Demander un service',
+    );
+    final blockCenter =
+        (tester.getTopLeft(heading).dy +
+            tester.getBottomRight(requestButton).dy) /
+        2;
+    expect(blockCenter, closeTo((top + bottom) / 2, 1));
+    await tester.tap(requestButton);
     await tester.pumpAndSettle();
     expect(find.bySemanticsLabel('Fermer'), findsOneWidget);
     expect(find.text('Quel service ?'), findsOneWidget);
