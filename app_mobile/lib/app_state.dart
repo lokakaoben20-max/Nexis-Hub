@@ -10,6 +10,14 @@ class AppState extends ChangeNotifier {
   final NexisRepository repository;
   Locale? _locale;
   bool _signedIn = false;
+  bool _serviceHintShown = false;
+
+  /// L'indication du bouton de service ne joue qu'une fois par lancement.
+  bool takeServiceHint() {
+    if (_serviceHintShown) return false;
+    _serviceHintShown = true;
+    return true;
+  }
 
   int _revision = 0;
 

@@ -26,6 +26,19 @@ class AppLocalizationsFr extends AppLocalizations {
   String get haveAccount => 'J\'ai déjà un compte';
 
   @override
+  String get signInTitle => 'Connectez-vous';
+
+  @override
+  String get noAccountTitle => 'Aucun compte trouvé';
+
+  @override
+  String get noAccountHint =>
+      'Vérifiez le numéro saisi ou créez un profil avec ce numéro.';
+
+  @override
+  String get changeLoginNumber => 'Changer de numéro';
+
+  @override
   String get yourNumber => 'Votre numéro';
 
   @override
@@ -126,6 +139,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get requestService => 'Demander un service';
 
   @override
+  String get firstRequestTitle => 'De quoi avez-vous besoin ?';
+
+  @override
   String get whichService => 'Quel service ?';
 
   @override
@@ -167,6 +183,9 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get compareQuotes => 'Comparer les devis';
+
+  @override
+  String get viewQuotes => 'Voir les devis';
 
   @override
   String get follow => 'Suivre';
@@ -812,8 +831,13 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
+  String eveningHome(String name) {
+    return 'Bonsoir, $name';
+  }
+
+  @override
   String helloHome(String name) {
-    return 'Mbote, $name';
+    return 'Bonjour, $name';
   }
 
   @override
@@ -958,4 +982,37 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get securedByNexis => 'Sécurisé par Nexis Hub';
+
+  @override
+  String get signupTitle => 'Faisons connaissance';
+
+  @override
+  String get signupFirstName => 'Prénom';
+
+  @override
+  String get signupLastName => 'Nom';
+
+  @override
+  String get signupOtherCommune => 'Autre commune';
+
+  @override
+  String get signupDemoNotice =>
+      'Inscription de démonstration. Utilisez des informations fictives.';
+
+  @override
+  String get signupReadTerms => 'Lire les CGU';
+
+  @override
+  String get signupAcceptTerms => 'J’ai lu et j’accepte les CGU';
+
+  @override
+  String get signupCreateProfile => 'Créer mon profil';
+
+  @override
+  String get signupFailed =>
+      'Le profil n’a pas pu être créé. Vérifiez les informations et réessayez.';
+
+  @override
+  String get signupDemoTerms =>
+      'Document de démonstration. Cet écran sert à tester la lecture et l’acceptation des conditions. Les profils créés, les missions et les paiements de cet aperçu sont fictifs. Les informations de cette inscription sont effacées au rechargement de l’app.';
 }

@@ -5,6 +5,10 @@
   "verifiedProvider": "Prestataire vérifié",
   "start": "Commencer",
   "haveAccount": "J'ai déjà un compte",
+  "signInTitle": "Connectez-vous",
+  "noAccountTitle": "Aucun compte trouvé",
+  "noAccountHint": "Vérifiez le numéro saisi ou créez un profil avec ce numéro.",
+  "changeLoginNumber": "Changer de numéro",
   "yourNumber": "Votre numéro",
   "yourNumberIntro": "Nous vous envoyons un code pour vérifier que c’est bien vous.",
   "receiveCodeBy": "Recevoir le code par",
@@ -66,6 +70,7 @@
   "navWallet": "Portefeuille",
   "navProfile": "Profil",
   "requestService": "Demander un service",
+  "firstRequestTitle": "De quoi avez-vous besoin ?",
   "whichService": "Quel service ?",
   "notInList": "Mon besoin n'est pas dans la liste",
   "myMissions": "Mes missions",
@@ -93,6 +98,7 @@
   "statusCancelled": "Annulée",
   "statusDisputed": "Litige en cours",
   "compareQuotes": "Comparer les devis",
+  "viewQuotes": "Voir les devis",
   "follow": "Suivre",
   "paySecured": "Sécurisé par Nexis Hub",
   "payReleased": "Versé au prestataire",
@@ -581,7 +587,15 @@
       }
     }
   },
-  "helloHome": "Mbote, {name}",
+  "eveningHome": "Bonsoir, {name}",
+  "@eveningHome": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "helloHome": "Bonjour, {name}",
   "@helloHome": {
     "placeholders": {
       "name": {
@@ -678,5 +692,15 @@
       }
     }
   },
-  "securedByNexis": "Sécurisé par Nexis Hub"
+  "securedByNexis": "Sécurisé par Nexis Hub",
+  "signupTitle": "Faisons connaissance",
+  "signupFirstName": "Prénom",
+  "signupLastName": "Nom",
+  "signupOtherCommune": "Autre commune",
+  "signupDemoNotice": "Inscription de démonstration. Utilisez des informations fictives.",
+  "signupReadTerms": "Lire les CGU",
+  "signupAcceptTerms": "J’ai lu et j’accepte les CGU",
+  "signupCreateProfile": "Créer mon profil",
+  "signupFailed": "Le profil n’a pas pu être créé. Vérifiez les informations et réessayez.",
+  "signupDemoTerms": "Document de démonstration. Cet écran sert à tester la lecture et l’acceptation des conditions. Les profils créés, les missions et les paiements de cet aperçu sont fictifs. Les informations de cette inscription sont effacées au rechargement de l’app."
 }

@@ -35,20 +35,53 @@ BoxDecoration nxCard(BuildContext context, {double radius = 20}) =>
       ),
     );
 
-/// Pastille de service : pictogramme blanc plein sur carré arrondi de la
-/// couleur du service (série B). [glyph] sert aux services que l'app ne
-/// connaît pas encore (publiés par le serveur).
+/// Couleurs des services dans le sélecteur et le catalogue.
+ButtonStyle serviceChoiceStyle(
+  BuildContext context, {
+  required double radius,
+  required EdgeInsets padding,
+}) {
+  final p = context.palette;
+  final dark = isDark(context);
+  bool highlighted(Set<WidgetState> states) =>
+      states.contains(WidgetState.pressed) ||
+      states.contains(WidgetState.focused);
+  return ButtonStyle(
+    padding: WidgetStatePropertyAll(padding),
+    minimumSize: const WidgetStatePropertyAll(Size(0, 48)),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    shape: WidgetStatePropertyAll(
+      RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
+    ),
+    backgroundColor: WidgetStateProperty.resolveWith(
+      (states) => highlighted(states)
+          ? (dark ? p.soft : const Color(0xFFE8F0FF))
+          : p.surface,
+    ),
+    side: WidgetStateProperty.resolveWith(
+      (states) => BorderSide(
+        color: highlighted(states)
+            ? p.softInk
+            : (dark ? p.line : const Color(0xFFE3E9F2)),
+      ),
+    ),
+  );
+}
+
+/// Pictogramme sur fond bleu-gris dans le catalogue. Les cartes de mission
+/// peuvent fournir leur couleur de service. [glyph] sert aux nouveaux
+/// services publiés par le serveur.
 class ServiceTile extends StatelessWidget {
   const ServiceTile({
     super.key,
-    required this.color,
+    this.color,
     this.icon,
     this.glyph,
     this.size = 46,
     this.badge,
   }) : assert(icon != null || glyph != null);
 
-  final Color color;
+  final Color? color;
   final IconData? icon;
   final String? glyph;
   final double size;
@@ -59,27 +92,32 @@ class ServiceTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final inner = size * .565;
+    final p = context.palette;
+    final dark = isDark(context);
+    final accent = color;
+    final foreground = accent == null ? p.ink : Colors.white;
     final tile = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: color,
+        color: accent ?? (dark ? p.soft : const Color(0xFFEDF2FA)),
         borderRadius: BorderRadius.circular(size * .32),
         boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: .5),
-            offset: Offset(0, size * .17),
-            blurRadius: size * .3,
-            spreadRadius: -size * .17,
-          ),
+          if (accent != null)
+            BoxShadow(
+              color: accent.withValues(alpha: .5),
+              offset: Offset(0, size * .17),
+              blurRadius: size * .3,
+              spreadRadius: -size * .17,
+            ),
         ],
       ),
       alignment: Alignment.center,
       child: icon != null
           ? ExcludeSemantics(
-              child: Icon(icon, size: inner, color: Colors.white),
+              child: Icon(icon, size: inner, color: foreground),
             )
-          : NxIcon(glyph!, size: inner, color: Colors.white),
+          : NxIcon(glyph!, size: inner, color: foreground),
     );
     if (badge == null) return tile;
     return Stack(
@@ -106,11 +144,9 @@ class KnownServiceTile extends StatelessWidget {
   }
 }
 
-/// « Nouveau » : petite pastille rouge de la maquette.
+/// Indique une nouveauté dans le catalogue et le sélecteur.
 class NewBadge extends StatelessWidget {
-  const NewBadge({super.key, this.ringColor});
-
-  final Color? ringColor;
+  const NewBadge({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -118,18 +154,15 @@ class NewBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: const Color(0xFFE5484D),
+        color: context.palette.soft,
         borderRadius: BorderRadius.circular(99),
-        boxShadow: ringColor == null
-            ? null
-            : [BoxShadow(color: ringColor!, spreadRadius: 2)],
       ),
       child: Text(
         l.newBadge,
         style: body(
           10,
           weight: FontWeight.w700,
-          color: Colors.white,
+          color: context.palette.softInk,
           height: 1.2,
         ),
       ),
@@ -460,19 +493,9 @@ class SoftIconBox extends StatelessWidget {
 Widget catalogTile(CatalogService s, {double size = 46, Widget? badge}) {
   if (s.service != null) {
     final visual = serviceVisual(s.service!);
-    return ServiceTile(
-      color: Color(s.color),
-      icon: visual.icon,
-      size: size,
-      badge: badge,
-    );
+    return ServiceTile(icon: visual.icon, size: size, badge: badge);
   }
-  return ServiceTile(
-    color: Color(s.color),
-    glyph: s.glyph ?? 'svcPeinture',
-    size: size,
-    badge: badge,
-  );
+  return ServiceTile(glyph: s.glyph ?? 'svcPeinture', size: size, badge: badge);
 }
 
 /// Date en toutes lettres (« 20 novembre »). Le lingala emprunte les noms

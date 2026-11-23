@@ -32,7 +32,7 @@ String foldText(String text) {
   List<CatalogService> highlights,
   List<CatalogService> others,
 })
-catalogSections(List<CatalogService> all) {
+catalogSections(List<CatalogService> all, {String lang = 'fr'}) {
   final recents = all.where((s) => s.lastRequested != null).toList()
     ..sort((a, b) => b.lastRequested!.compareTo(a.lastRequested!));
   final highlights = all
@@ -42,7 +42,11 @@ catalogSections(List<CatalogService> all) {
       all
           .where((s) => s.lastRequested == null && !(s.isNew || s.recommended))
           .toList()
-        ..sort((a, b) => foldText(a.name).compareTo(foldText(b.name)));
+        ..sort(
+          (a, b) =>
+              foldText(catalogServiceName(a, lang))
+                  .compareTo(foldText(catalogServiceName(b, lang))),
+        );
   return (recents: recents, highlights: highlights, others: others);
 }
 
@@ -77,11 +81,20 @@ class _AllServicesScreenState extends State<AllServicesScreen> {
         child: Loaded<List<CatalogService>>(
           load: AppScope.of(context).repository.serviceCatalog,
           builder: (context, all) {
+            final lang = langOf(context);
             final q = foldText(_query.trim());
             final sections = catalogSections(
               q.isEmpty
                   ? all
-                  : all.where((s) => foldText(s.name).contains(q)).toList(),
+                  : all
+                        .where(
+                          (s) =>
+                              foldText(catalogServiceName(s, lang))
+                                  .contains(q) ||
+                              foldText(s.name).contains(q),
+                        )
+                        .toList(),
+              lang: lang,
             );
             final empty =
                 sections.recents.isEmpty &&
@@ -183,57 +196,57 @@ class _AllServicesScreenState extends State<AllServicesScreen> {
         for (final s in items)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Semantics(
-              button: true,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => showComingSoon(context, s.name),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: nxCard(context, radius: 18),
-                  child: Row(
-                    children: [
-                      catalogTile(s),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+            child: OutlinedButton(
+              onPressed: () => showComingSoon(
+                context,
+                catalogServiceName(s, langOf(context)),
+              ),
+              style: serviceChoiceStyle(
+                context,
+                radius: 18,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+              ),
+              child: Row(
+                children: [
+                  catalogTile(s),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           children: [
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    s.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: body(
-                                      15,
-                                      weight: FontWeight.w600,
-                                      color: p.ink,
-                                    ),
-                                  ),
+                            Flexible(
+                              child: Text(
+                                catalogServiceName(s, langOf(context)),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: body(
+                                  15,
+                                  weight: FontWeight.w600,
+                                  color: p.ink,
                                 ),
-                                if (s.isNew) ...[
-                                  const SizedBox(width: 8),
-                                  const NewBadge(),
-                                ],
-                              ],
-                            ),
-                            if (sub(s) != null)
-                              Text(
-                                sub(s)!,
-                                style: body(12.5, color: mutedColor(context)),
                               ),
+                            ),
+                            if (s.isNew) ...[
+                              const SizedBox(width: 8),
+                              const NewBadge(),
+                            ],
                           ],
                         ),
-                      ),
-                      NxIcon('chevron', size: 16, color: faintColor(context)),
-                    ],
+                        if (sub(s) != null)
+                          Text(
+                            sub(s)!,
+                            style: body(12.5, color: mutedColor(context)),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
+                  NxIcon('chevron', size: 16, color: faintColor(context)),
+                ],
               ),
             ),
           ),

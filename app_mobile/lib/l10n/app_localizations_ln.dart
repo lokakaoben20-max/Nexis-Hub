@@ -25,6 +25,19 @@ class AppLocalizationsLn extends AppLocalizations {
   String get haveAccount => 'Nazali na compte';
 
   @override
+  String get signInTitle => 'Kɔtá na compte na yo';
+
+  @override
+  String get noAccountTitle => 'Compte moko te ezwami';
+
+  @override
+  String get noAccountHint =>
+      'Talá nimero oyo okotisi to salá profil na nimero oyo.';
+
+  @override
+  String get changeLoginNumber => 'Bongolá nimero';
+
+  @override
   String get yourNumber => 'Nimero na yo';
 
   @override
@@ -125,6 +138,9 @@ class AppLocalizationsLn extends AppLocalizations {
   String get requestService => 'Kosenga mosala';
 
   @override
+  String get firstRequestTitle => 'Ozali na mposa ya mosala nini ?';
+
+  @override
   String get whichService => 'Mosala nini ?';
 
   @override
@@ -166,6 +182,9 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String get compareQuotes => 'Kokokanisa ba devis';
+
+  @override
+  String get viewQuotes => 'Kotala ba devis';
 
   @override
   String get follow => 'Kolanda';
@@ -809,6 +828,11 @@ class AppLocalizationsLn extends AppLocalizations {
   }
 
   @override
+  String eveningHome(String name) {
+    return 'Mbote, $name';
+  }
+
+  @override
   String helloHome(String name) {
     return 'Mbote, $name';
   }
@@ -956,4 +980,37 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String get securedByNexis => 'Ebombami na Nexis Hub';
+
+  @override
+  String get signupTitle => 'Tóyebana';
+
+  @override
+  String get signupFirstName => 'Nkombo ya liboso';
+
+  @override
+  String get signupLastName => 'Nkombo ya libota';
+
+  @override
+  String get signupOtherCommune => 'Komini mosusu';
+
+  @override
+  String get signupDemoNotice =>
+      'Komikomisa ya komeka. Salelá ba sango ya ndakisa.';
+
+  @override
+  String get signupReadTerms => 'Tángá mibeko ya kosalela app';
+
+  @override
+  String get signupAcceptTerms => 'Natángi mpe nandimi mibeko ya kosalela app';
+
+  @override
+  String get signupCreateProfile => 'Salá profil na ngai';
+
+  @override
+  String get signupFailed =>
+      'Profil esalemi te. Talá sango na yo mpe mekisa lisusu.';
+
+  @override
+  String get signupDemoTerms =>
+      'Mokanda ya komeka. Awa okoki komeka kotánga mpe kondima mibeko. Ba profil, misala mpe mbongo na aperçu oyo ezali ya ndakisa. Sango ya komikomisa elongwaka ntango app efungwami lisusu.';
 }

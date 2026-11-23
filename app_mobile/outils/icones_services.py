@@ -2,8 +2,8 @@
 par Ben, série B de design/app-accueil-frontend-design.html) : assets/fonts/NexisServices.ttf.
 
 Les traits (climatisation) sont convertis en surfaces et les règles
-« evenodd » ramenées au remplissage normal, pour que la police rende
-exactement les dessins de la maquette.
+« evenodd » ramenées au remplissage normal. Les contours de la maquette
+sont conservés et centrés dans le carré de chaque glyphe.
 
 Usage : python3 outils/icones_services.py <chemin de app-accueil-frontend-design.html>
 """
@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pathops
 from fontTools.fontBuilder import FontBuilder
+from fontTools.misc.roundTools import otRound
+from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.cu2quPen import Cu2QuPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.pens.ttGlyphPen import TTGlyphPen
@@ -63,6 +65,22 @@ def symbole(html: str, nom: str) -> pathops.Path:
     return total
 
 
+def centrer_glyphes(table_glyf, noms: list[str]) -> dict[str, tuple[int, int]]:
+    metriques = {".notdef": (EM, 0)}
+    for nom in noms:
+        glyphe = table_glyf[nom]
+        contour = BoundsPen(None)
+        glyphe.draw(contour, table_glyf)
+        gauche, bas, droite, haut = contour.bounds
+        dx = otRound((EM - gauche - droite) / 2)
+        dy = otRound((EM - bas - haut) / 2)
+        glyphe.coordinates.translate((dx, dy))
+        glyphe.recalcBounds(table_glyf)
+        # TrueType place le bord gauche du dessin à cette marge.
+        metriques[nom] = (EM, glyphe.xMin)
+    return metriques
+
+
 def main(source: str) -> None:
     html = Path(source).read_text(encoding="utf-8")
     noms = [".notdef"] + [f"nx_{n}" for n in ICONES]
@@ -80,7 +98,7 @@ def main(source: str) -> None:
     fb.setupGlyphOrder(noms)
     fb.setupCharacterMap(cmap)
     fb.setupGlyf(glyphes)
-    fb.setupHorizontalMetrics({n: (EM, 0) for n in noms})
+    fb.setupHorizontalMetrics(centrer_glyphes(fb.font["glyf"], noms[1:]))
     fb.setupHorizontalHeader(ascent=EM, descent=0)
     fb.setupOS2(sTypoAscender=EM, sTypoDescender=0, usWinAscent=EM, usWinDescent=0)
     fb.setupNameTable({"familyName": "NexisServices", "styleName": "Regular"})
