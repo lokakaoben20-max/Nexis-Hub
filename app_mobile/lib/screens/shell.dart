@@ -143,23 +143,29 @@ class _ShellState extends State<Shell> {
               left: 0,
               right: 0,
               bottom: barHeight - 10,
-              child: IgnorePointer(
-                ignoring: !_picking,
-                child: _ServiceSheet(
-                  open: _picking,
-                  reduce: reduce,
-                  onPicked: (label) {
-                    _togglePicker();
-                    showComingSoon(context, label);
-                  },
-                  onAllServices: () {
-                    _togglePicker();
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const AllServicesScreen(),
-                      ),
-                    );
-                  },
+              child: ExcludeFocus(
+                excluding: !_picking,
+                child: ExcludeSemantics(
+                  excluding: !_picking,
+                  child: IgnorePointer(
+                    ignoring: !_picking,
+                    child: _ServiceSheet(
+                      open: _picking,
+                      reduce: reduce,
+                      onPicked: (label) {
+                        _togglePicker();
+                        showComingSoon(context, label);
+                      },
+                      onAllServices: () {
+                        _togglePicker();
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const AllServicesScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -526,9 +532,7 @@ class _ServiceSheet extends StatelessWidget {
                         icon: catalogTile(
                           s,
                           size: 44,
-                          badge: s.isNew
-                              ? NewBadge(ringColor: _tileBg(context))
-                              : null,
+                          badge: s.isNew ? const NewBadge() : null,
                         ),
                         onTap: () =>
                             onPicked(catalogServiceName(s, langOf(context))),
@@ -536,11 +540,7 @@ class _ServiceSheet extends StatelessWidget {
                     _tile(
                       context,
                       label: l.allServices,
-                      icon: ServiceTile(
-                        color: const Color(0xFF5B667A),
-                        glyph: 'search',
-                        size: 44,
-                      ),
+                      icon: const ServiceTile(glyph: 'search', size: 44),
                       onTap: onAllServices,
                     ),
                   ],
@@ -553,9 +553,6 @@ class _ServiceSheet extends StatelessWidget {
     );
   }
 
-  Color _tileBg(BuildContext context) =>
-      isDark(context) ? context.palette.bg : const Color(0xFFF3F5F9);
-
   Widget _tile(
     BuildContext context, {
     required String label,
@@ -564,39 +561,37 @@ class _ServiceSheet extends StatelessWidget {
   }) {
     final p = context.palette;
     return Semantics(
-      button: true,
       label: label,
+      button: true,
+      onTap: onTap,
       excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: serviceChoiceStyle(
+          context,
+          radius: 16,
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-          decoration: BoxDecoration(
-            color: _tileBg(context),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              icon,
-              const SizedBox(height: 4),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: body(
-                    12.5,
-                    weight: FontWeight.w600,
-                    color: p.ink,
-                    height: 1.1,
-                  ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            icon,
+            const SizedBox(height: 4),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: body(
+                  12.5,
+                  weight: FontWeight.w600,
+                  color: p.ink,
+                  height: 1.1,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

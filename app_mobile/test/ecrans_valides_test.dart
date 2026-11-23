@@ -6,6 +6,8 @@ import 'package:nexis_hub/data/models.dart';
 import 'package:nexis_hub/data/money.dart';
 import 'package:nexis_hub/main.dart';
 import 'package:nexis_hub/screens/services_list.dart';
+import 'package:nexis_hub/ui/nx_parts.dart';
+import 'package:nexis_hub/ui/theme.dart';
 
 Future<AppState> _home(WidgetTester tester) async {
   tester.view.physicalSize = const Size(1170, 2532);
@@ -120,6 +122,63 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Demande envoyée'), findsOneWidget);
     expect(find.text('Portail'), findsOneWidget);
+  });
+
+  testWidgets('les services partagent leur palette en clair et en sombre', (
+    tester,
+  ) async {
+    final dispatcher = tester.platformDispatcher;
+    dispatcher.platformBrightnessTestValue = Brightness.light;
+    addTearDown(dispatcher.clearPlatformBrightnessTestValue);
+    await _home(tester);
+    await tester.tap(find.bySemanticsLabel('Demander un service'));
+    await tester.pumpAndSettle();
+
+    OutlinedButton button(String label) =>
+        tester.widget(find.widgetWithText(OutlinedButton, label));
+    Container tile(String label) => tester.widget(
+      find.descendant(
+        of: find.widgetWithText(OutlinedButton, label),
+        matching: find.descendant(
+          of: find.byType(ServiceTile),
+          matching: find.byType(Container),
+        ),
+      ),
+    );
+
+    for (final label in ['Plomberie', 'Électricité', 'Nettoyage']) {
+      expect(
+        (tile(label).decoration! as BoxDecoration).color,
+        const Color(0xFFEDF2FA),
+      );
+      expect(
+        (tile(label).child! as ExcludeSemantics).child,
+        isA<Icon>().having(
+          (icon) => icon.color,
+          'pictogramme',
+          NexisColors.navy,
+        ),
+      );
+    }
+    expect(
+      button('Plomberie').style!.side!.resolve({WidgetState.focused})!.color,
+      NexisColors.brand,
+    );
+
+    dispatcher.platformBrightnessTestValue = Brightness.dark;
+    await tester.pumpAndSettle();
+    expect(
+      (tile('Plomberie').decoration! as BoxDecoration).color,
+      NexisPalette.dark.soft,
+    );
+    expect(
+      (tile('Plomberie').child! as ExcludeSemantics).child,
+      isA<Icon>().having(
+        (icon) => icon.color,
+        'pictogramme sombre',
+        NexisPalette.dark.ink,
+      ),
+    );
   });
 
   testWidgets('le catalogue suit la langue et recherche les noms traduits', (

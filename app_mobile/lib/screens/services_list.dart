@@ -196,60 +196,57 @@ class _AllServicesScreenState extends State<AllServicesScreen> {
         for (final s in items)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Semantics(
-              button: true,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => showComingSoon(
-                  context,
-                  catalogServiceName(s, langOf(context)),
+            child: OutlinedButton(
+              onPressed: () => showComingSoon(
+                context,
+                catalogServiceName(s, langOf(context)),
+              ),
+              style: serviceChoiceStyle(
+                context,
+                radius: 18,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
                 ),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: nxCard(context, radius: 18),
-                  child: Row(
-                    children: [
-                      catalogTile(s),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+              ),
+              child: Row(
+                children: [
+                  catalogTile(s),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           children: [
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    catalogServiceName(s, langOf(context)),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: body(
-                                      15,
-                                      weight: FontWeight.w600,
-                                      color: p.ink,
-                                    ),
-                                  ),
+                            Flexible(
+                              child: Text(
+                                catalogServiceName(s, langOf(context)),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: body(
+                                  15,
+                                  weight: FontWeight.w600,
+                                  color: p.ink,
                                 ),
-                                if (s.isNew) ...[
-                                  const SizedBox(width: 8),
-                                  const NewBadge(),
-                                ],
-                              ],
-                            ),
-                            if (sub(s) != null)
-                              Text(
-                                sub(s)!,
-                                style: body(12.5, color: mutedColor(context)),
                               ),
+                            ),
+                            if (s.isNew) ...[
+                              const SizedBox(width: 8),
+                              const NewBadge(),
+                            ],
                           ],
                         ),
-                      ),
-                      NxIcon('chevron', size: 16, color: faintColor(context)),
-                    ],
+                        if (sub(s) != null)
+                          Text(
+                            sub(s)!,
+                            style: body(12.5, color: mutedColor(context)),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
+                  NxIcon('chevron', size: 16, color: faintColor(context)),
+                ],
               ),
             ),
           ),
