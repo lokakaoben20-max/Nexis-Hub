@@ -104,6 +104,18 @@ def service_label(service: Service, language: str) -> str:
     return {"fr": service.name_fr, "ln": service.name_ln, "en": service.name_en}.get(language, service.name_fr)
 
 
+def service_catalogue_entry(service: Service) -> dict:
+    return {
+        "key": service.key,
+        "names": {language: service_label(service, language) for language in LANGUAGES},
+        "category": service.category,
+        "icon": service.icon_emoji,
+        "module": service.module,
+        "requires_inspection": service.requires_inspection,
+        "visit_fee_usd": str(service.visit_fee_usd),
+    }
+
+
 def communes(db: Session) -> list[str]:
     return [commune.name for commune in db.query(Commune).order_by(Commune.position).all()]
 
@@ -235,7 +247,15 @@ def client_profile(db: Session, account_id: int | None) -> ClientProfile | None:
     return db.get(ClientProfile, account_id) if account_id is not None else None
 
 
-def save_client_profile(db: Session, account_id: int, *, first_name, phone_number=None) -> tuple[ClientProfile, bool]:
+def save_client_profile(
+    db: Session,
+    account_id: int,
+    *,
+    first_name,
+    phone_number=None,
+    last_name: str | None = None,
+    preferred_commune: str | None = None,
+) -> tuple[ClientProfile, bool]:
     """Crée ou met à jour le profil client. Renvoie (profil, créé)."""
     account = _locked_account(db, account_id)
     first_name = _checked_name(first_name)
@@ -246,6 +266,10 @@ def save_client_profile(db: Session, account_id: int, *, first_name, phone_numbe
         profile = ClientProfile(account_id=account_id, created_at=_now())
         db.add(profile)
     profile.first_name = first_name
+    if last_name is not None:
+        profile.last_name = _checked_name(last_name)
+    if preferred_commune is not None:
+        profile.preferred_commune = _checked_communes(db, [preferred_commune])[0]
     if phone_number is not None:
         profile.phone_number = phone_number
     profile.updated_at = _now()

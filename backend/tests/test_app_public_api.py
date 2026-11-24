@@ -427,3 +427,169 @@ def test_the_app_reads_the_texts_and_re_accepts_for_a_role_it_has(client, env, a
 
 def test_the_app_needs_a_session_for_my_terms(client, env):
     assert client.get(f"{API}/me/terms", headers=VERSION).status_code == 401
+
+
+def test_mobile_catalogue_only_lists_client_services(client, env):
+    database, _ = env
+    with database.SessionLocal() as db:
+        profils_de_test.ensure_catalogue(db)
+        db.commit()
+
+    response = client.get(f"{API}/services", headers=VERSION)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "Gombe" in data["communes"]
+    assert "Autre commune" not in data["communes"]
+    services = {service["key"]: service for service in data["services"]}
+    assert "service_autre" not in services
+    assert set(services["service_plomberie"]["names"]) == {"fr", "ln", "en"}
+
+
+@pytest.mark.conditions_reelles
+def test_mobile_client_signup_uses_verified_phone_and_records_terms(client, env):
+    database, _ = env
+    publish_terms(database, "cgu", "v1")
+    tokens = login(client, database, Phone())
+    url = f"{API}/me/client-profile"
+    headers = bearer(tokens)
+    assert client.get(url, headers=VERSION).status_code == 401
+    assert client.get(url, headers=headers).json() == {"profile": None}
+
+    with database.SessionLocal() as db:
+        profils_de_test.ensure_catalogue(db)
+        db.commit()
+
+    payload = {"first_name": "Amina", "last_name": "Ilunga", "preferred_commune": "Gombe"}
+    refused = client.put(url, json=payload, headers=headers)
+    assert refused.json()["detail"]["code"] == "terms_not_accepted"
+    assert client.get(url, headers=headers).json() == {"profile": None}
+
+    payload["accepted_documents"] = [{"document_key": "cgu", "version": "v1"}]
+    assert client.put(url, json={**payload, "preferred_commune": "Inconnue"}, headers=headers).json()["detail"]["code"] == "unknown_commune"
+    assert client.get(url, headers=headers).json() == {"profile": None}
+    expected = {"profile": {key: payload[key] for key in ("first_name", "last_name", "preferred_commune")}}
+    assert client.put(url, json=payload, headers=headers).json() == expected
+    assert client.put(url, json=payload, headers=headers).status_code == 200
+    assert client.get(url, headers=headers).json() == expected
+    with database.SessionLocal() as db:
+        profile = profils_de_test.client_of(db, 601)
+        assert (profile.first_name, profile.phone_number) == ("Amina", PHONE)
+        rows = db.scalars(select(conditions.LegalAcceptance)).all()
+        assert [(row.account_id, row.role, row.surface) for row in rows] == [(profile.account_id, "client", "app")]
+
+
+def test_mobile_quotes_are_visible_only_to_the_mission_client(client, env):
+    from backend.app import crud
+
+    database, _ = env
+    owner = login(client, database, Phone(), telegram_id=601)
+    provider = login(client, database, Phone(), telegram_id=602, number="+243810000002")
+    stranger = login(client, database, Phone(), telegram_id=603, number="+243810000003")
+    with database.SessionLocal() as db:
+        profils_de_test.provider(db, 602, "Kim")
+        mission, _ = crud.create_mission(
+            db, channel="telegram", client_external_id="601", creation_key="app-quotes",
+            service="service_plomberie", commune="Gombe",
+            destination_latitude=-4.307612, destination_longitude=15.312512,
+            destination_landmark="Portail bleu après la poste",
+        )
+        mission_id = mission.mission_id
+    url = f"{API}/missions/{mission_id}/quotes"
+    assert client.get(url, headers=bearer(owner)).json() == {"quotes": []}
+
+    with database.SessionLocal() as db:
+        quote = crud.create_quote(db, mission_id, 602, 45, "USD", 2, "Matériel compris")
+        quote_id = quote.id
+
+    response = client.get(url, headers=bearer(owner))
+    assert response.status_code == 200
+    assert response.json() == {"quotes": [{
+        "id": quote_id, "provider_name": "Kim", "amount": 45, "currency": "USD",
+        "delay_hours": 2, "message": "Matériel compris", "status": "pending",
+    }]}
+    assert client.get(url, headers=VERSION).status_code == 401
+    for tokens in (provider, stranger):
+        response = client.get(url, headers=bearer(tokens))
+        assert response.status_code == 404
+        assert response.json()["detail"] == {"code": "mission_not_found"}
+
+
+@pytest.mark.conditions_reelles
+def test_mobile_mission_retries_delivery_and_receives_a_telegram_quote(client, env, monkeypatch):
+    from datetime import timedelta
+
+    from backend.app import crud
+    from backend.app.models import MissionAlert
+
+    database, _ = env
+    tasks = importlib.reload(importlib.import_module("backend.app.tasks"))
+    tokens = login(client, database, Phone())
+    headers = bearer(tokens)
+    with database.SessionLocal() as db:
+        profils_de_test.provider(db, 602, "Kim")
+    url = f"{API}/missions"
+    payload = {
+        "creation_key": "mobile-123",
+        "service": "service_plomberie",
+        "commune": "Gombe",
+        "description": "Fuite sous l'évier <urgent>",
+        "destination": {"latitude": -4.307612, "longitude": 15.312512, "landmark": "Portail bleu après la poste"},
+    }
+    assert client.post(url, json=payload, headers=VERSION).status_code == 401
+    assert client.post(url, json=payload, headers=headers).json()["detail"]["code"] == "client_not_found"
+    with database.SessionLocal() as db:
+        profils_de_test.client(db, 601)
+    publish_terms(database, "cgu", "v1")
+    publish_terms(database, "conditions_prestataires", "v1")
+    with database.SessionLocal() as db:
+        provider_id = profils_de_test.provider_of(db, 602).account_id
+        conditions.accept(db, provider_id, conditions.PROVIDER, [
+            {"document_key": "cgu", "version": "v1"},
+            {"document_key": "conditions_prestataires", "version": "v1"},
+        ], surface="telegram_bot", language="fr")
+        db.commit()
+    assert client.post(url, json=payload, headers=headers).json()["detail"]["code"] == "terms_not_accepted"
+    assert client.post(f"{API}/me/terms", headers=headers, json={
+        "role": "client", "documents": [{"document_key": "cgu", "version": "v1"}],
+    }).status_code == 200
+    assert client.post(url, json={**payload, "description": "  "}, headers=headers).status_code == 422
+    assert client.post(url, json={**payload, "commune": "Autre commune"}, headers=headers).status_code == 400
+
+    response = client.post(url, json=payload, headers=headers)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["created"] is True
+    mission_id = data["mission"]["mission_id"]
+    assert client.post(url, json=payload, headers=headers).json() == {**data, "created": False}
+    conflict = client.post(url, json={**payload, "description": "Autre demande"}, headers=headers)
+    assert conflict.json()["detail"]["code"] == "creation_key_reused"
+    assert "destination_landmark" not in data["mission"]
+    assert not any("telegram" in key.lower() for key in walk_keys(data))
+
+    with database.SessionLocal() as db:
+        alert = db.scalars(select(MissionAlert)).one()
+        now = alert.delivery_due_at + timedelta(seconds=1)
+
+    messages = []
+
+    def send(telegram_id, text, reply_markup):
+        messages.append((telegram_id, text, reply_markup))
+        return len(messages) > 1
+
+    monkeypatch.setattr(tasks, "send_telegram_message", send)
+    assert tasks.send_pending_mission_alerts(now) == 0
+    assert tasks.send_pending_mission_alerts(now + timedelta(seconds=30)) == 0
+    assert len(messages) == 1
+    assert tasks.send_pending_mission_alerts(now + timedelta(minutes=1)) == 1
+    assert tasks.send_pending_mission_alerts(now + timedelta(minutes=2)) == 0
+    assert len(messages) == 2
+    assert messages[1][0] == 602
+    assert "&lt;urgent&gt;" in messages[1][1]
+    assert messages[1][2]["inline_keyboard"][0][0]["callback_data"] == f"provider_accept_{mission_id}"
+
+    with database.SessionLocal() as db:
+        quote = crud.create_quote(db, mission_id, 602, 45, "USD", 2, "Matériel compris")
+        quote_id = quote.id
+    received = client.get(f"{url}/{mission_id}/quotes", headers=headers)
+    assert [quote["id"] for quote in received.json()["quotes"]] == [quote_id]

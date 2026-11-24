@@ -178,6 +178,7 @@ def create_mission(
     destination_latitude: float | None = None,
     destination_longitude: float | None = None,
     destination_landmark: str | None = None,
+    queue_telegram_alerts: bool = False,
 ) -> tuple[BotMission, bool]:
     """Crée une mission : le backend lui donne son numéro, le client est la
     personne pour qui le canal agit. Mission, médias et prestataires prévenus
@@ -266,21 +267,25 @@ def create_mission(
         destination_landmark=landmark,
         status="pending",
     )
-    db.add(mission)
-    db.flush()
-    for position, (kind, external_id) in enumerate(media):
-        db.add(MissionMedia(mission_id=mission.mission_id, channel=channel, kind=kind, external_id=external_id, position=position))
-    alerted = 0
-    for provider in profils.eligible_providers(db, service, commune, exclude_account_id=client_account_id):
-        if alerted == ALERTS_PER_MISSION:
-            break
-        # Un prestataire est prévenu sur Telegram (seul canal des prestataires
-        # aujourd'hui) : sans identité Telegram, personne ne le préviendrait.
-        if ledger.telegram_id_of(db, provider.account_id) is None:
-            continue
-        db.add(MissionAlert(mission_id=mission.mission_id, provider_account_id=provider.account_id))
-        alerted += 1
     try:
+        db.add(mission)
+        db.flush()
+        for position, (kind, external_id) in enumerate(media):
+            db.add(MissionMedia(mission_id=mission.mission_id, channel=channel, kind=kind, external_id=external_id, position=position))
+        alerted = 0
+        for provider in profils.eligible_providers(db, service, commune, exclude_account_id=client_account_id):
+            if alerted == ALERTS_PER_MISSION:
+                break
+            # Un prestataire est prévenu sur Telegram (seul canal des prestataires
+            # aujourd'hui) : sans identité Telegram, personne ne le préviendrait.
+            if ledger.telegram_id_of(db, provider.account_id) is None:
+                continue
+            db.add(MissionAlert(
+                mission_id=mission.mission_id,
+                provider_account_id=provider.account_id,
+                delivery_due_at=mission.created_at if queue_telegram_alerts else None,
+            ))
+            alerted += 1
         db.commit()
     except IntegrityError:
         # La même demande, arrivée au même instant, a été écrite la première :

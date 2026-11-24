@@ -107,6 +107,8 @@ class MissionAlert(Base):
     # « Pas disponible » : posé une seule fois, le refus ne compte qu'une fois
     # par alerte (crud.decline_alert).
     declined_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Envoi initial pour les missions de l'app. Les alertes du bot sont envoyées par le bot.
+    delivery_due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
 class MissionPresence(Base):
@@ -793,6 +795,8 @@ class ClientProfile(Base):
 
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), primary_key=True, autoincrement=False)
     first_name: Mapped[str] = mapped_column(String(255))
+    last_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    preferred_commune: Mapped[str | None] = mapped_column(ForeignKey("communes.name"), nullable=True)
     # Numéro donné par la personne, pour la contacter. Seul le numéro prouvé
     # du compte (`accounts.phone_e164`) sert à l'identifier.
     phone_number: Mapped[str | None] = mapped_column(String(50), nullable=True)

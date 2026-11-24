@@ -1,4 +1,5 @@
 {
+  "alertes-missions-app": "*/1 * * * *",
   "relances-prestataires": "*/10 * * * *",
   "devis-expires": "0 * * * *",
   "liberations-automatiques": "0 * * * *",
