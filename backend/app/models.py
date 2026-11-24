@@ -107,6 +107,8 @@ class MissionAlert(Base):
     # « Pas disponible » : posé une seule fois, le refus ne compte qu'une fois
     # par alerte (crud.decline_alert).
     declined_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Envoi initial pour les missions de l'app. Les alertes du bot sont envoyées par le bot.
+    delivery_due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
 class MissionPresence(Base):

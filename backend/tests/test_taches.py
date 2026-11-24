@@ -28,6 +28,7 @@ def _remplacer(monkeypatch, taches, nom, fonction):
 
 def test_le_calendrier_reprend_les_frequences_de_celery(taches):
     assert {nom: tache.frequence.cron for nom, tache in taches.CALENDRIER.items()} == {
+        "alertes-missions-app": "*/1 * * * *",
         "relances-prestataires": "*/10 * * * *",
         "devis-expires": "0 * * * *",
         "liberations-automatiques": "0 * * * *",
@@ -48,11 +49,11 @@ def test_les_taches_dues_suivent_l_heure_utc(taches):
         return datetime(2026, 11, 7, h, m, 30, tzinfo=timezone.utc)
 
     assert taches.taches_dues(a(6, 0)) == [
-        "relances-prestataires", "devis-expires", "liberations-automatiques", "decisions-litiges",
+        "alertes-missions-app", "relances-prestataires", "devis-expires", "liberations-automatiques", "decisions-litiges",
         "accords-expires", "verification-mobile-money", "rapprochement-quotidien", "alertes-nouvel-appareil",
     ]
-    assert taches.taches_dues(a(6, 2)) == ["verification-mobile-money", "alertes-nouvel-appareil"]
-    assert taches.taches_dues(a(6, 3)) == ["alertes-nouvel-appareil"]
+    assert taches.taches_dues(a(6, 2)) == ["alertes-missions-app", "verification-mobile-money", "alertes-nouvel-appareil"]
+    assert taches.taches_dues(a(6, 3)) == ["alertes-missions-app", "alertes-nouvel-appareil"]
     assert "purge-nonces" in taches.taches_dues(a(6, 30))
     assert "litiges-en-retard" in taches.taches_dues(a(6, 15))
     assert "decisions-litiges" in taches.taches_dues(a(6, 10))
@@ -162,9 +163,9 @@ def test_le_planificateur_lance_chaque_tache_due_une_fois_par_minute_et_survit_a
     taches.planificateur(arret=arret, horloge=horloge)
 
     assert lancees == [
-        "relances-prestataires", "devis-expires", "liberations-automatiques", "decisions-litiges",
+        "alertes-missions-app", "relances-prestataires", "devis-expires", "liberations-automatiques", "decisions-litiges",
         "accords-expires", "verification-mobile-money", "alertes-nouvel-appareil",
-        "verification-mobile-money", "alertes-nouvel-appareil",
+        "alertes-missions-app", "verification-mobile-money", "alertes-nouvel-appareil",
     ]
 
 

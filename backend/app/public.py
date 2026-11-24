@@ -23,16 +23,17 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
+from sqlalchemy import select
 
 from backend.app import app_auth, app_sessions, conditions, crud, ledger, profils
 from backend.app.app_auth import AuthError
 from backend.app.database import SessionLocal
-from backend.app.models import BotMission, NexisAccount
+from backend.app.models import BotMission, BotQuote, NexisAccount
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +163,22 @@ class VerifyPayload(BaseModel):
     label: str | None = Field(default=None, max_length=100)
 
 
+class MissionDestinationPayload(BaseModel):
+    latitude: float
+    longitude: float
+    landmark: str = Field(max_length=crud.MAX_LANDMARK_LENGTH * 2)
+
+
+class MissionCreatePayload(BaseModel):
+    creation_key: str = Field(min_length=1, max_length=64)
+    service: str = Field(min_length=1, max_length=255)
+    commune: str = Field(min_length=1, max_length=255)
+    currency: str = "USD"
+    description: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)]
+    urgent: bool = False
+    destination: MissionDestinationPayload
+
+
 class RefreshPayload(BaseModel):
     refresh_token: str = Field(max_length=256)
     signature: str = Field(max_length=256)
@@ -260,6 +277,28 @@ def me(authorization: str | None = Header(default=None)) -> dict[str, Any]:
         }
 
 
+@router.get("/services")
+def list_services() -> dict[str, Any]:
+    """Catalogue des demandes client. Les prix indicatifs viennent du serveur."""
+    with SessionLocal() as db:
+        return {
+            "services": [
+                profils.service_catalogue_entry(service)
+                for service in profils.active_services(db)
+                if service.key not in profils.CLIENT_EXCLUDED_SERVICES
+            ],
+            "communes": profils.communes(db),
+        }
+
+
+@router.get("/me/client-profile")
+def get_my_client_profile(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    with SessionLocal() as db:
+        principal = _session(db, authorization)
+        profile = profils.client_profile(db, principal.account_id)
+        return {"profile": {"first_name": profile.first_name} if profile is not None else None}
+
+
 @router.get("/me/devices")
 def my_devices(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     with SessionLocal() as db:
@@ -335,6 +374,38 @@ def my_missions(
     return {"missions": missions}
 
 
+@router.post("/missions")
+def create_my_mission(
+    payload: MissionCreatePayload, authorization: str | None = Header(default=None)
+) -> dict[str, Any]:
+    with SessionLocal() as db:
+        principal = _session(db, authorization)
+        if profils.client_profile(db, principal.account_id) is None:
+            raise HTTPException(status_code=409, detail={"code": "client_not_found"})
+        try:
+            conditions.require(db, principal.account_id, conditions.CLIENT)
+            mission, created = crud.create_mission(
+                db,
+                channel=ledger.APP,
+                client_external_id=principal.identity_id,
+                creation_key=payload.creation_key,
+                service=payload.service,
+                commune=payload.commune,
+                currency=payload.currency,
+                description=payload.description,
+                urgent=payload.urgent,
+                destination_latitude=payload.destination.latitude,
+                destination_longitude=payload.destination.longitude,
+                destination_landmark=payload.destination.landmark,
+                queue_telegram_alerts=True,
+            )
+        except conditions.ConditionsError as error:
+            raise _terms_error(error) from error
+        except crud.MissionRefused as error:
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+        return {"created": created, "mission": _mission(mission)}
+
+
 @router.get("/missions/{mission_id}")
 def get_mission(mission_id: int, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     """Mêmes droits de lecture que le bot. Pour quelqu'un d'autre, la mission
@@ -353,10 +424,32 @@ def get_mission(mission_id: int, authorization: str | None = Header(default=None
     return _public(view)
 
 
-# --- Conditions d'utilisation (backend/app/conditions.py) -----------------------
-# Mêmes règles que les bots. L'inscription dans l'app (à venir) portera la
-# case cochée comme `PUT /api/me/client-profile` (conditions.accept_for_signup,
-# surface `app`) ; ici : lire les textes, voir ce qui manque, recocher.
+@router.get("/missions/{mission_id}/quotes")
+def list_mission_quotes(mission_id: int, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    """Seul le client de la mission peut comparer les devis reçus."""
+    with SessionLocal() as db:
+        principal = _session(db, authorization)
+        mission = db.get(BotMission, mission_id)
+        if mission is None or mission.client_account_id != principal.account_id:
+            raise HTTPException(status_code=404, detail={"code": "mission_not_found"})
+        rows = db.scalars(select(BotQuote).where(BotQuote.mission_id == mission_id).order_by(BotQuote.id)).all()
+        quotes = []
+        for quote in rows:
+            account_id = quote.provider_account_id or ledger.account_id_for(db, ledger.TELEGRAM, quote.provider_telegram_id)
+            provider = profils.provider_profile(db, account_id)
+            quotes.append({
+                "id": quote.id,
+                "provider_name": provider.full_name if provider is not None else None,
+                "amount": quote.amount,
+                "currency": quote.currency,
+                "delay_hours": quote.delay_hours,
+                "message": quote.message,
+                "status": quote.status,
+            })
+        return {"quotes": quotes}
+
+
+# --- Profil client et conditions d'utilisation ---------------------------------
 
 
 class TermsDocument(BaseModel):
@@ -371,6 +464,43 @@ class TermsAcceptance(BaseModel):
 
 def _terms_error(error: conditions.ConditionsError) -> HTTPException:
     return HTTPException(status_code=error.http_status, detail=error.detail())
+
+
+class ClientProfilePayload(BaseModel):
+    first_name: str = Field(min_length=1, max_length=profils.MAX_NAME_LENGTH)
+    accepted_documents: list[TermsDocument] | None = Field(default=None, min_length=1, max_length=2)
+
+
+@router.put("/me/client-profile")
+def save_my_client_profile(payload: ClientProfilePayload, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    with SessionLocal() as db:
+        principal = _session(db, authorization)
+        account = db.get(NexisAccount, principal.account_id)
+        if account is None or account.phone_verified_at is None or not account.phone_e164:
+            raise HTTPException(status_code=409, detail={"code": "phone_not_verified"})
+        terms = None
+        if payload.accepted_documents is not None:
+            terms = {
+                "surface": "app",
+                "documents": [document.model_dump() for document in payload.accepted_documents],
+            }
+        try:
+            profile, _ = profils.save_client_profile(
+                db, principal.account_id, first_name=payload.first_name, phone_number=account.phone_e164
+            )
+            conditions.accept_for_signup(
+                db, principal.account_id, conditions.CLIENT, terms,
+                channel=ledger.APP, language=profils.language_of(db, principal.account_id),
+            )
+            first_name = profile.first_name
+            db.commit()
+        except profils.ProfileRefused as error:
+            db.rollback()
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+        except conditions.ConditionsError as error:
+            db.rollback()
+            raise _terms_error(error) from error
+        return {"profile": {"first_name": first_name}}
 
 
 def _terms_text(version) -> dict[str, Any]:

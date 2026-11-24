@@ -1977,18 +1977,7 @@ def list_services():
     with SessionLocal() as db:
         return {
             "status": "ok",
-            "services": [
-                {
-                    "key": service.key,
-                    "names": {language: profils.service_label(service, language) for language in profils.LANGUAGES},
-                    "category": service.category,
-                    "icon": service.icon_emoji,
-                    "module": service.module,
-                    "requires_inspection": service.requires_inspection,
-                    "visit_fee_usd": str(service.visit_fee_usd),
-                }
-                for service in profils.active_services(db)
-            ],
+            "services": [profils.service_catalogue_entry(service) for service in profils.active_services(db)],
             "communes": profils.communes(db),
             # Règles du choix des services d'un prestataire, pour que les
             # canaux n'affichent que ce que le backend acceptera.

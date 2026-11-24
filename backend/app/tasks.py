@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from backend.app import admins, app_sessions, crud, idempotency, ledger, mobile_money, profils, reconciliation
 from backend.app.database import SessionLocal
-from backend.app.models import BotMission, Device, DisputeSettlementOffer, NexisAccount, PaymentIntent, Payout
+from backend.app.models import BotMission, Device, DisputeSettlementOffer, MissionAlert, NexisAccount, PaymentIntent, Payout, Service
 from backend.app.notify import send_telegram_message
 from backend.app.presence import provider_arrival_keyboard
 from messages import get_message
@@ -366,6 +366,65 @@ def _percentage_text(offer: DisputeSettlementOffer) -> str:
     if offer.provider_percentage is None:
         return ""
     return f"{offer.provider_percentage.normalize():f}"
+
+
+def send_pending_mission_alerts(now: datetime | None = None) -> int:
+    """Envoie les nouvelles missions de l'app avec les actions du bot.
+
+    Une ligne est traitée sous verrou, puis validée individuellement. Un échec
+    de Telegram remet l'alerte en file pendant le délai annoncé au prestataire.
+    """
+    now = now or datetime.utcnow()
+    sent = 0
+    with SessionLocal() as db:
+        due = (
+            db.query(MissionAlert)
+            .filter(MissionAlert.delivery_due_at <= now)
+            .order_by(MissionAlert.delivery_due_at, MissionAlert.id)
+        )
+        alert_ids = [alert_id for (alert_id,) in due.with_entities(MissionAlert.id).limit(20)]
+        for alert_id in alert_ids:
+            alert = due.filter(MissionAlert.id == alert_id).with_for_update(skip_locked=True).one_or_none()
+            if alert is None:
+                db.rollback()
+                continue
+            mission = db.get(BotMission, alert.mission_id)
+            telegram_id = ledger.telegram_id_of(db, alert.provider_account_id)
+            expires_at = alert.alerted_at + timedelta(minutes=20)
+            alert.delivery_due_at = None
+            if (
+                alert.declined_at is None and mission is not None and mission.status in crud.QUOTABLE_STATUSES
+                and telegram_id is not None and now < expires_at
+            ):
+                if _send_mission_alert(db, mission, alert.provider_account_id, telegram_id):
+                    sent += 1
+                else:
+                    alert.delivery_due_at = min(now + timedelta(minutes=1), expires_at)
+            db.commit()
+    return sent
+
+
+def _send_mission_alert(db, mission: BotMission, provider_id: int, telegram_id: int) -> bool:
+    language = profils.language_of(db, provider_id)
+    service = db.get(Service, mission.service)
+    service_name = profils.service_label(service, language) if service is not None else mission.service
+    yes, no = {"fr": ("Oui", "Non"), "ln": ("Iyo", "Te"), "en": ("Yes", "No")}.get(language, ("Oui", "Non"))
+    text = get_message(
+        "new_mission_alert",
+        language,
+        mission_id=mission.mission_id,
+        service=html.escape(service_name),
+        commune=html.escape(mission.commune),
+        urgent=yes if mission.urgent else no,
+    )
+    description = mission.description[:1600]
+    if len(description) < len(mission.description):
+        description += "…"
+    keyboard = {"inline_keyboard": [[
+        {"text": get_message("button_offer_accept", language), "callback_data": f"provider_accept_{mission.mission_id}"},
+        {"text": get_message("button_offer_decline", language), "callback_data": f"provider_skip_{mission.mission_id}"},
+    ]]}
+    return send_telegram_message(telegram_id, f"{text}\n\n{html.escape(description)}", reply_markup=keyboard)
 
 
 def send_provider_reminders() -> int:

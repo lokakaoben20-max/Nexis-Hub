@@ -90,6 +90,7 @@ class Tache:
 # Mêmes fréquences que l'ancien `celery_app.beat_schedule`, plus l'alerte
 # « Nouvel appareil » (boîte d'envoi, chaque minute).
 CALENDRIER: dict[str, Tache] = {
+    "alertes-missions-app": Tache(tasks.send_pending_mission_alerts, Frequence(toutes_les_minutes=1)),
     "relances-prestataires": Tache(tasks.send_provider_reminders, Frequence(toutes_les_minutes=10)),
     "devis-expires": Tache(tasks.check_expired_quotes, Frequence(minute=0)),
     "liberations-automatiques": Tache(tasks.release_auto_confirmed_missions, Frequence(minute=0)),

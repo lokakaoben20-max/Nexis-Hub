@@ -104,6 +104,18 @@ def service_label(service: Service, language: str) -> str:
     return {"fr": service.name_fr, "ln": service.name_ln, "en": service.name_en}.get(language, service.name_fr)
 
 
+def service_catalogue_entry(service: Service) -> dict:
+    return {
+        "key": service.key,
+        "names": {language: service_label(service, language) for language in LANGUAGES},
+        "category": service.category,
+        "icon": service.icon_emoji,
+        "module": service.module,
+        "requires_inspection": service.requires_inspection,
+        "visit_fee_usd": str(service.visit_fee_usd),
+    }
+
+
 def communes(db: Session) -> list[str]:
     return [commune.name for commune in db.query(Commune).order_by(Commune.position).all()]
 
