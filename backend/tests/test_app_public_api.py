@@ -440,6 +440,7 @@ def test_mobile_catalogue_only_lists_client_services(client, env):
     assert response.status_code == 200
     data = response.json()
     assert "Gombe" in data["communes"]
+    assert "Autre commune" not in data["communes"]
     services = {service["key"]: service for service in data["services"]}
     assert "service_autre" not in services
     assert set(services["service_plomberie"]["names"]) == {"fr", "ln", "en"}
@@ -455,15 +456,22 @@ def test_mobile_client_signup_uses_verified_phone_and_records_terms(client, env)
     assert client.get(url, headers=VERSION).status_code == 401
     assert client.get(url, headers=headers).json() == {"profile": None}
 
-    payload = {"first_name": "Amina"}
+    with database.SessionLocal() as db:
+        profils_de_test.ensure_catalogue(db)
+        db.commit()
+
+    payload = {"first_name": "Amina", "last_name": "Ilunga", "preferred_commune": "Gombe"}
     refused = client.put(url, json=payload, headers=headers)
     assert refused.json()["detail"]["code"] == "terms_not_accepted"
     assert client.get(url, headers=headers).json() == {"profile": None}
 
     payload["accepted_documents"] = [{"document_key": "cgu", "version": "v1"}]
-    assert client.put(url, json=payload, headers=headers).json() == {"profile": {"first_name": "Amina"}}
+    assert client.put(url, json={**payload, "preferred_commune": "Inconnue"}, headers=headers).json()["detail"]["code"] == "unknown_commune"
+    assert client.get(url, headers=headers).json() == {"profile": None}
+    expected = {"profile": {key: payload[key] for key in ("first_name", "last_name", "preferred_commune")}}
+    assert client.put(url, json=payload, headers=headers).json() == expected
     assert client.put(url, json=payload, headers=headers).status_code == 200
-    assert client.get(url, headers=headers).json() == {"profile": {"first_name": "Amina"}}
+    assert client.get(url, headers=headers).json() == expected
     with database.SessionLocal() as db:
         profile = profils_de_test.client_of(db, 601)
         assert (profile.first_name, profile.phone_number) == ("Amina", PHONE)
@@ -546,6 +554,7 @@ def test_mobile_mission_retries_delivery_and_receives_a_telegram_quote(client, e
         "role": "client", "documents": [{"document_key": "cgu", "version": "v1"}],
     }).status_code == 200
     assert client.post(url, json={**payload, "description": "  "}, headers=headers).status_code == 422
+    assert client.post(url, json={**payload, "commune": "Autre commune"}, headers=headers).status_code == 400
 
     response = client.post(url, json=payload, headers=headers)
     assert response.status_code == 200, response.text

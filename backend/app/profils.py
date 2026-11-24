@@ -247,7 +247,15 @@ def client_profile(db: Session, account_id: int | None) -> ClientProfile | None:
     return db.get(ClientProfile, account_id) if account_id is not None else None
 
 
-def save_client_profile(db: Session, account_id: int, *, first_name, phone_number=None) -> tuple[ClientProfile, bool]:
+def save_client_profile(
+    db: Session,
+    account_id: int,
+    *,
+    first_name,
+    phone_number=None,
+    last_name: str | None = None,
+    preferred_commune: str | None = None,
+) -> tuple[ClientProfile, bool]:
     """Crée ou met à jour le profil client. Renvoie (profil, créé)."""
     account = _locked_account(db, account_id)
     first_name = _checked_name(first_name)
@@ -258,6 +266,10 @@ def save_client_profile(db: Session, account_id: int, *, first_name, phone_numbe
         profile = ClientProfile(account_id=account_id, created_at=_now())
         db.add(profile)
     profile.first_name = first_name
+    if last_name is not None:
+        profile.last_name = _checked_name(last_name)
+    if preferred_commune is not None:
+        profile.preferred_commune = _checked_communes(db, [preferred_commune])[0]
     if phone_number is not None:
         profile.phone_number = phone_number
     profile.updated_at = _now()

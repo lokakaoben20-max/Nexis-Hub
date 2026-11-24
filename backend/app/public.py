@@ -33,7 +33,7 @@ from sqlalchemy import select
 from backend.app import app_auth, app_sessions, conditions, crud, ledger, profils
 from backend.app.app_auth import AuthError
 from backend.app.database import SessionLocal
-from backend.app.models import BotMission, BotQuote, NexisAccount
+from backend.app.models import BotMission, BotQuote, ClientProfile, NexisAccount
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,7 @@ PREFIX = "/api/app/v1"
 MIN_VERSION_ENV = "NEXIS_APP_MIN_VERSION"
 BOT_USERNAME_ENV = "NEXIS_BOT_USERNAME"
 DEFAULT_MIN_VERSION = "1.0.0"
+_LEGACY_COMMUNE = "Autre commune"
 _VERSION = re.compile(r"[0-9]{1,4}(\.[0-9]{1,4}){0,2}")
 _MISSION_FIELDS = (
     "mission_id",
@@ -287,8 +288,18 @@ def list_services() -> dict[str, Any]:
                 for service in profils.active_services(db)
                 if service.key not in profils.CLIENT_EXCLUDED_SERVICES
             ],
-            "communes": profils.communes(db),
+            "communes": sorted(name for name in profils.communes(db) if name != _LEGACY_COMMUNE),
         }
+
+
+def _client_profile(profile: ClientProfile | None) -> dict[str, Any]:
+    if profile is None:
+        return {"profile": None}
+    return {"profile": {
+        "first_name": profile.first_name,
+        "last_name": profile.last_name,
+        "preferred_commune": profile.preferred_commune,
+    }}
 
 
 @router.get("/me/client-profile")
@@ -296,7 +307,7 @@ def get_my_client_profile(authorization: str | None = Header(default=None)) -> d
     with SessionLocal() as db:
         principal = _session(db, authorization)
         profile = profils.client_profile(db, principal.account_id)
-        return {"profile": {"first_name": profile.first_name} if profile is not None else None}
+        return _client_profile(profile)
 
 
 @router.get("/me/devices")
@@ -380,6 +391,8 @@ def create_my_mission(
 ) -> dict[str, Any]:
     with SessionLocal() as db:
         principal = _session(db, authorization)
+        if payload.commune == _LEGACY_COMMUNE:
+            raise HTTPException(status_code=400, detail={"code": "unknown_commune"})
         if profils.client_profile(db, principal.account_id) is None:
             raise HTTPException(status_code=409, detail={"code": "client_not_found"})
         try:
@@ -468,6 +481,8 @@ def _terms_error(error: conditions.ConditionsError) -> HTTPException:
 
 class ClientProfilePayload(BaseModel):
     first_name: str = Field(min_length=1, max_length=profils.MAX_NAME_LENGTH)
+    last_name: str = Field(min_length=1, max_length=profils.MAX_NAME_LENGTH)
+    preferred_commune: str = Field(min_length=1, max_length=64)
     accepted_documents: list[TermsDocument] | None = Field(default=None, min_length=1, max_length=2)
 
 
@@ -478,6 +493,8 @@ def save_my_client_profile(payload: ClientProfilePayload, authorization: str | N
         account = db.get(NexisAccount, principal.account_id)
         if account is None or account.phone_verified_at is None or not account.phone_e164:
             raise HTTPException(status_code=409, detail={"code": "phone_not_verified"})
+        if payload.preferred_commune == _LEGACY_COMMUNE:
+            raise HTTPException(status_code=400, detail={"code": "unknown_commune"})
         terms = None
         if payload.accepted_documents is not None:
             terms = {
@@ -486,13 +503,18 @@ def save_my_client_profile(payload: ClientProfilePayload, authorization: str | N
             }
         try:
             profile, _ = profils.save_client_profile(
-                db, principal.account_id, first_name=payload.first_name, phone_number=account.phone_e164
+                db,
+                principal.account_id,
+                first_name=payload.first_name,
+                last_name=payload.last_name,
+                preferred_commune=payload.preferred_commune,
+                phone_number=account.phone_e164,
             )
             conditions.accept_for_signup(
                 db, principal.account_id, conditions.CLIENT, terms,
                 channel=ledger.APP, language=profils.language_of(db, principal.account_id),
             )
-            first_name = profile.first_name
+            result = _client_profile(profile)
             db.commit()
         except profils.ProfileRefused as error:
             db.rollback()
@@ -500,7 +522,7 @@ def save_my_client_profile(payload: ClientProfilePayload, authorization: str | N
         except conditions.ConditionsError as error:
             db.rollback()
             raise _terms_error(error) from error
-        return {"profile": {"first_name": first_name}}
+        return result
 
 
 def _terms_text(version) -> dict[str, Any]:
