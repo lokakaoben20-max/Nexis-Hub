@@ -45,17 +45,11 @@ struct WelcomeView: View {
                         .padding(.top, 12)
                         .padding(.horizontal, 24)
                     VStack(spacing: 12) {
-                        Button { path.append(.phone(login: false)) } label: {
-                            WideLabel(text: app.t("start"))
-                                .foregroundStyle(Nexis.brand)
-                        }
-                        .whiteProminentButton()
+                        Button(app.t("start")) { path.append(.phone(login: false)) }
+                            .buttonStyle(OnBlueButtonStyle(kind: .filled))
 
-                        Button { path.append(.phone(login: true)) } label: {
-                            WideLabel(text: app.t("haveAccount"))
-                                .foregroundStyle(.white)
-                        }
-                        .nxSecondaryButton()
+                        Button(app.t("haveAccount")) { path.append(.phone(login: true)) }
+                            .buttonStyle(OnBlueButtonStyle(kind: .outlined))
                     }
                     .padding(.horizontal, 24)
                     .padding(.top, 32)
@@ -84,14 +78,27 @@ struct WelcomeView: View {
     }
 }
 
-private extension View {
-    @ViewBuilder
-    func whiteProminentButton() -> some View {
-        if #available(iOS 26.0, *) {
-            self.buttonStyle(.glassProminent).tint(.white).controlSize(.large)
-        } else {
-            self.buttonStyle(.borderedProminent).tint(.white).controlSize(.large)
-        }
+/// Boutons posés sur le bleu de la bienvenue. Des couleurs pleines plutôt que
+/// du verre : sur ce bleu vif, le verre prenait une teinte cyan et rendait le
+/// texte blanc de « J'ai déjà un compte » difficile à lire.
+private struct OnBlueButtonStyle: ButtonStyle {
+    enum Kind { case filled, outlined }
+    let kind: Kind
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body(17, .semibold, relativeTo: .headline))
+            .foregroundStyle(kind == .filled ? Nexis.brand : Color.white)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity, minHeight: 54)
+            .background(Capsule().fill(kind == .filled ? Color.white : Color.white.opacity(0.12)))
+            .overlay(Capsule().strokeBorder(Color.white.opacity(kind == .filled ? 0 : 0.6), lineWidth: 1))
+            .shadow(color: Nexis.navy.opacity(kind == .filled ? 0.18 : 0), radius: 12, y: 6)
+            .contentShape(Capsule())
+            .opacity(configuration.isPressed ? 0.8 : 1)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
 }
 
