@@ -71,6 +71,19 @@ Choix de Ben du 2026-11-25 (planche « Nexis Hub — connexion et accueil ») :
   Flutter) ; en attendant, le bouton montre seulement les pictogrammes,
   annoncés par VoiceOver / TalkBack avec le libellé du bouton.
 
+- **Bouton « + » (Android)** : « Demander un service » est un « + » compact.
+  Il s'ouvre 3,5 s pour se présenter quand la personne a déjà des missions
+  (5 s après l'arrivée, puis toutes les 90 s, au plus 4 fois par ouverture
+  de l'app) et quand elle tape trois fois dans le vide en moins de 4 s
+  (`ConfusedTapDetector`). Sans mission, la carte de l'accueil porte déjà
+  le bouton. Sur iOS 26 et plus, l'action reste dans l'accessoire en verre
+  au-dessus des onglets.
+- **Accueil** : cloche des notifications (point rouge si une notification
+  n'est pas lue) et rond du profil (initiales) en haut à droite ; le rond
+  mène à l'onglet Profil. `notifications()` dans le dépôt de données ; la
+  démonstration n'en a aucune, l'écran montre alors « Rien ici pour
+  l'instant ».
+
 ## État
 
 Interface seulement, avec les données fictives de l'aperçu Flutter

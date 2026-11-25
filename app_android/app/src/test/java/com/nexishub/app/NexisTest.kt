@@ -88,6 +88,11 @@ class DemoRepositoryTest {
     }
 
     @Test
+    fun demoHasNoNotificationsYet() = runBlocking {
+        assertTrue(DemoRepository().notifications().isEmpty())
+    }
+
+    @Test
     fun sendCodeAcceptsValidNumberOnOfferedChannel() = runBlocking {
         DemoRepository().sendCode("+243812345678", com.nexishub.app.data.CodeChannel.WHATSAPP)
     }
@@ -109,6 +114,25 @@ class PictogrammesTest {
         for (service in com.nexishub.app.data.Service.entries) {
             assertTrue("$service sans pictogramme", com.nexishub.app.ui.Pictogrammes.icons(service).isNotEmpty())
         }
+    }
+
+    @Test
+    fun threeQuickTapsInTheVoidOpenTheRequestButton() {
+        val detector = com.nexishub.app.screens.ConfusedTapDetector()
+        assertFalse(detector.onTap(0))
+        assertFalse(detector.onTap(1_000))
+        assertTrue(detector.onTap(2_000))
+        // La série repart de zéro après avoir ouvert le bouton.
+        assertFalse(detector.onTap(2_500))
+    }
+
+    @Test
+    fun slowTapsInTheVoidAreNotConfusion() {
+        val detector = com.nexishub.app.screens.ConfusedTapDetector()
+        assertFalse(detector.onTap(0))
+        assertFalse(detector.onTap(3_000))
+        assertFalse(detector.onTap(6_000))
+        assertFalse(detector.onTap(9_500))
     }
 
     @Test

@@ -64,6 +64,16 @@ data class Wallet(
 
 enum class MovementKind { PAYMENT, REFUND, RELEASE, DEPOSIT, WITHDRAWAL }
 
+/** Une notification de l'app : devis reçu, prestataire en route, argent
+ * libéré… Le serveur les enverra ; l'aperçu n'en a aucune. */
+data class AppNotification(
+    val id: String,
+    val title: String,
+    val message: String,
+    val at: Instant,
+    val read: Boolean,
+)
+
 data class Movement(
     val kind: MovementKind,
     val label: String,

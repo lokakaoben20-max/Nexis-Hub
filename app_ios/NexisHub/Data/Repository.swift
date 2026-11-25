@@ -25,6 +25,8 @@ protocol NexisRepository: AnyObject {
     func wallet() async throws -> Wallet
     func missions() async throws -> [Mission]
     func movements() async throws -> [Movement]
+    /// Les notifications de la personne, les plus récentes d'abord.
+    func notifications() async throws -> [AppNotification]
     /// Le catalogue des services, dans l'ordre voulu par le serveur.
     func serviceCatalog() async throws -> [CatalogService]
     /// Crée une mission en attente de devis pour un service du catalogue.
@@ -136,6 +138,10 @@ final class DemoRepository: NexisRepository {
     func missions() async throws -> [Mission] {
         (requested[activePhone] ?? []) + (isSample ? sampleMissions : [])
     }
+
+    /// Démonstration : aucune notification. La liste se remplira quand
+    /// l'app sera branchée au serveur.
+    func notifications() async throws -> [AppNotification] { [] }
 
     func movements() async throws -> [Movement] {
         guard isSample else { return [] }

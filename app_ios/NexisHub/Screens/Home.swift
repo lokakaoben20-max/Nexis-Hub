@@ -13,6 +13,8 @@ struct HomeView: View {
     @State private var missions: [Mission] = []
     @State private var showDone = false
     @State private var comingSoon: SheetTitle?
+    @State private var notifications: [AppNotification] = []
+    @State private var showingNotifications = false
 
     /// Missions montrées ici ; le reste est dans l'onglet Missions.
     private let shown = 2
@@ -35,14 +37,35 @@ struct HomeView: View {
             .background(Nexis.bg)
             .navigationTitle(greeting)
             .toolbar {
-                if !ShellView.hasAccessory {
-                    ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if !ShellView.hasAccessory {
                         Button(action: onPickService) {
                             Image(systemName: "plus")
                         }
                         .accessibilityLabel(app.t("requestService"))
                     }
+                    // La cloche : un point rouge quand une notification n'a pas été lue.
+                    Button { showingNotifications = true } label: {
+                        Image(systemName: "bell")
+                            .overlay(alignment: .topTrailing) {
+                                if notifications.contains(where: { !$0.read }) {
+                                    Circle().fill(Nexis.danger).frame(width: 9, height: 9).offset(x: 3, y: -2)
+                                }
+                            }
+                    }
+                    .accessibilityLabel(app.t("notifications"))
+                    // Le rond du profil (initiales tant qu'il n'y a pas de photo).
+                    if let profile {
+                        Button { onTab(.profile) } label: {
+                            InitialsAvatar(initials: profile.initials, size: 32)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(app.t("navProfile"))
+                    }
                 }
+            }
+            .navigationDestination(isPresented: $showingNotifications) {
+                NotificationsView(items: notifications)
             }
             .sheet(item: $comingSoon) { item in ComingSoonView(title: item.id) }
             .task(id: app.revision) { await load() }
@@ -60,6 +83,7 @@ struct HomeView: View {
         profile = try? await repo.profile()
         wallet = (try? await repo.wallet()) ?? .empty
         missions = (try? await repo.missions()) ?? []
+        notifications = (try? await repo.notifications()) ?? []
     }
 
     private var quickActions: some View {
@@ -250,5 +274,49 @@ struct WalletCard: View {
     private func shown(_ money: Money?) -> String {
         if app.amountsHidden { return "••••" }
         return app.money(money ?? Money(0, app.walletCurrency))
+    }
+}
+
+/// Les notifications : la liste, ou un écran vide tant qu'il n'y en a pas.
+struct NotificationsView: View {
+    @Environment(AppModel.self) private var app
+    let items: [AppNotification]
+
+    var body: some View {
+        Group {
+            if items.isEmpty {
+                ContentUnavailableView {
+                    Label(app.t("notifications"), systemImage: "bell")
+                } description: {
+                    Text(app.t("noMissions"))
+                }
+            } else {
+                List {
+                    ForEach(items) { (item: AppNotification) in
+                        NotificationRow(item: item)
+                            .listRowBackground(item.read ? Nexis.surface : Nexis.soft)
+                    }
+                }
+                .scrollContentBackground(.hidden)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Nexis.bg)
+        .navigationTitle(app.t("notifications"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct NotificationRow: View {
+    @Environment(AppModel.self) private var app
+    let item: AppNotification
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(item.title).font(.body(15, .semibold, relativeTo: .headline))
+            Text(item.message).font(.body(14, relativeTo: .subheadline)).foregroundStyle(Nexis.muted)
+            Text(app.day(item.when)).font(.body(12, relativeTo: .caption1)).foregroundStyle(Nexis.muted)
+        }
+        .padding(.vertical, 4)
     }
 }

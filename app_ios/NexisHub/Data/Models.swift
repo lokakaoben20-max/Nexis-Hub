@@ -84,6 +84,16 @@ enum MovementKind: Hashable {
     case payment, refund, release, deposit, withdrawal
 }
 
+/// Une notification de l'app : devis reçu, prestataire en route, argent
+/// libéré… Le serveur les enverra ; l'aperçu n'en a aucune.
+struct AppNotification: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let message: String
+    let when: Date
+    let read: Bool
+}
+
 struct Movement: Identifiable, Hashable {
     let id = UUID()
     let kind: MovementKind

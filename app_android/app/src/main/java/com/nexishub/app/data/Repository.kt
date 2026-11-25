@@ -33,6 +33,9 @@ interface NexisRepository {
     suspend fun missions(): List<Mission>
     suspend fun movements(): List<Movement>
 
+    /** Les notifications de la personne, les plus récentes d'abord. */
+    suspend fun notifications(): List<AppNotification>
+
     /** Le catalogue des services, dans l'ordre voulu par le serveur. */
     suspend fun serviceCatalog(): List<CatalogService>
 
@@ -130,6 +133,10 @@ class DemoRepository(private val now: Instant = Instant.now()) : NexisRepository
 
     override suspend fun missions(): List<Mission> =
         requested[activePhone].orEmpty() + if (isSample) sampleMissions else emptyList()
+
+    /** Démonstration : aucune notification. La liste se remplira quand
+     * l'app sera branchée au serveur. */
+    override suspend fun notifications(): List<AppNotification> = emptyList()
 
     override suspend fun movements(): List<Movement> = if (!isSample) emptyList() else listOf(
         Movement(MovementKind.PAYMENT, "Plomberie · Gombe", Money(-500, Currency.USD), ago(hours = 1), PaymentState.SECURED),

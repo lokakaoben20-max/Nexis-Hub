@@ -81,6 +81,11 @@ final class DemoRepositoryTests: XCTestCase {
         XCTAssertEqual(first?.catalogService?.id, "jardinage")
     }
 
+    func testDemoHasNoNotificationsYet() async throws {
+        let notifications = try await DemoRepository().notifications()
+        XCTAssertTrue(notifications.isEmpty)
+    }
+
     func testSendCodeAcceptsValidNumberOnOfferedChannel() async throws {
         let repo = DemoRepository()
         try await repo.sendCode(phone: "+243812345678", channel: .whatsapp)

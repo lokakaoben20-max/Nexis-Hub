@@ -51,6 +51,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -213,7 +215,16 @@ private fun ServiceCell(item: CatalogService, tour: Int, delayMs: Long, onClick:
     ) {
         Box {
             ServiceTile(item, 52.dp, tour, delayMs)
-            if (item.isNew) Box(Modifier.align(Alignment.TopEnd).padding(start = 30.dp)) { NewBadge() }
+            // La pastille déborde sur le coin du carré sans prendre de place :
+            // le carré reste centré dans la case, comme les autres.
+            if (item.isNew) {
+                Box(
+                    Modifier.align(Alignment.TopEnd).layout { measurable, constraints ->
+                        val badge = measurable.measure(constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity))
+                        layout(0, 0) { badge.place(-badge.width + 26.dp.roundToPx(), -8.dp.roundToPx()) }
+                    },
+                ) { NewBadge() }
+            }
         }
         Text(item.label(app.language), style = body(13, FontWeight.SemiBold, p.ink), textAlign = TextAlign.Center, maxLines = 2)
     }
