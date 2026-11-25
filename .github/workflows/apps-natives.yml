@@ -89,6 +89,20 @@ jobs:
           name: nexis-hub-ios-simulateur
           path: app_ios/livrable/NexisHub-simulateur.zip
           if-no-files-found: error
+      - name: App pour iPhone (.ipa non signée, à signer avec Sideloadly ou TestFlight)
+        run: |
+          set -o pipefail
+          xcodebuild build -project NexisHub.xcodeproj -scheme NexisHub -configuration Release \
+            -sdk iphoneos -destination "generic/platform=iOS" -derivedDataPath build-device \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" | tail -20
+          rm -rf Payload && mkdir Payload
+          cp -R build-device/Build/Products/Release-iphoneos/NexisHub.app Payload/
+          ditto -c -k --sequesterRsrc --keepParent Payload livrable/NexisHub-non-signee.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nexis-hub-ios-ipa
+          path: app_ios/livrable/NexisHub-non-signee.ipa
+          if-no-files-found: error
       - name: Captures d'écran
         run: |
           mkdir -p captures
