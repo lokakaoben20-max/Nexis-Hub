@@ -101,6 +101,15 @@ jobs:
           shoot home dark fr
           shoot home light ln
           shoot welcome light en
+      - name: Captures dans le journal
+        if: always()
+        run: |
+          # Copie lisible depuis le journal quand les artefacts ne sont pas accessibles.
+          for f in captures/*.png; do
+            [ -e "$f" ] || continue
+            sips -s format jpeg -s formatOptions 70 -Z 1100 "$f" --out "${f%.png}.jpg" > /dev/null
+            echo "@@CAPTURE $(basename "${f%.png}").jpg"; base64 -i "${f%.png}.jpg" | tr -d '\n'; echo; echo "@@FIN"
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -146,6 +155,16 @@ jobs:
           disable-animations: true
           working-directory: app_android
           script: bash ../.github/scripts/captures-android.sh
+      - name: Captures dans le journal
+        if: always()
+        run: |
+          # Copie lisible depuis le journal quand les artefacts ne sont pas accessibles.
+          pip install --quiet pillow
+          for f in captures/*.png; do
+            [ -e "$f" ] || continue
+            python3 -c "import sys; from PIL import Image; im=Image.open(sys.argv[1]).convert('RGB'); im.thumbnail((1100,1100)); im.save(sys.argv[2], quality=70)" "$f" "${f%.png}.jpg"
+            echo "@@CAPTURE $(basename "${f%.png}").jpg"; base64 -w0 "${f%.png}.jpg"; echo; echo "@@FIN"
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -12,6 +12,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -72,6 +73,7 @@ val LocalPalette = staticCompositionLocalOf { NexisPalette.Light }
 
 /** Unbounded et Inter sont des polices variables : chaque graisse pose la
  * valeur de son axe « wght », comme l'app Flutter (fontVariations). */
+@OptIn(ExperimentalTextApi::class)
 private fun variable(res: Int, vararg weights: Int): FontFamily = FontFamily(
     weights.map { w ->
         Font(res, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
