@@ -42,8 +42,14 @@ les garder synchronisées.
 Choix de Ben du 2026-11-25 (planche « Nexis Hub — connexion et accueil ») :
 
 - **Logo écrit** : « NEXIS » en Unbounded 700, dont le E est celui de
-  l'icône de l'app (trois barres biseautées), puis « HUB » en Unbounded 300
-  sur la même ligne. L'icône de l'app ne change pas. Le logo est vectorisé
+  l'icône de l'app (trois barres biseautées), puis « HUB » en Unbounded 300,
+  collé : **NexisHub s'écrit en un mot** (choix de Ben du 2026-11-25,
+  version A ; c'est le passage du gras au léger qui sépare les deux
+  parties). Le nom sous l'icône est aussi « NexisHub ». Les textes de l'app
+  viennent des `.arb` Flutter et écrivent encore « Nexis Hub » : à changer
+  avec l'app Flutter et le bot, pour que tout reste d'accord. Les libellés
+  lus par VoiceOver / TalkBack gardent « Nexis Hub » pour être prononcés
+  correctement. L'icône de l'app ne change pas. Le logo est vectorisé
   depuis la police de l'app par `outils/logo_nexis.py` (demande `fonttools`
   et `uharfbuzz`), qui écrit `docs/marque/` (SVG blanc et bleu),
   `LogoBlanc.imageset` (iOS) et `drawable/logo_blanc.xml` (Android).

@@ -2,7 +2,9 @@
 
 « NEXIS » en Unbounded 700, dont le E est celui de l'icône de l'app (trois barres
 biseautées, mêmes proportions : barres de 104, espaces de 108, biseau de 62 sur
-528), puis « HUB » en Unbounded 300 sur la même ligne. Les lettres sont
+528), puis « HUB » en Unbounded 300, collé : NexisHub s'écrit en un mot (choix de
+Ben du 2026-11-25, version A). C'est le passage du gras au léger qui sépare les
+deux parties. Les lettres sont
 vectorisées depuis la police de l'app : le logo ne dépend d'aucune police au
 moment de l'affichage.
 
@@ -33,7 +35,7 @@ BLEU = "#0A63F0"
 
 CAPITALE = 750  # hauteur des capitales d'Unbounded (OS/2 sCapHeight), pour 1000 unités
 MARGE_E = 50  # 0,05 em de chaque côté du E, comme sur la maquette
-ESPACE_HUB = 280  # 0,28 em entre NEXIS et HUB
+ESPACE_HUB = 40  # NexisHub en un mot : à peine plus que l'approche normale entre deux lettres
 
 
 def _police(graisse: int) -> hb.Font:

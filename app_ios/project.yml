@@ -35,7 +35,7 @@ targets:
     info:
       path: NexisHub/Info.plist
       properties:
-        CFBundleDisplayName: Nexis Hub
+        CFBundleDisplayName: NexisHub
         CFBundleDevelopmentRegion: fr
         CFBundleLocalizations: [fr, ln, en]
         LSRequiresIPhoneOS: true
