@@ -159,7 +159,7 @@ jobs:
         if: always()
         run: |
           # Copie lisible depuis le journal quand les artefacts ne sont pas accessibles.
-          pip install --quiet pillow
+          python3 -m pip install --quiet --user --break-system-packages pillow
           for f in captures/*.png; do
             [ -e "$f" ] || continue
             python3 -c "import sys; from PIL import Image; im=Image.open(sys.argv[1]).convert('RGB'); im.thumbnail((1100,1100)); im.save(sys.argv[2], quality=70)" "$f" "${f%.png}.jpg"
