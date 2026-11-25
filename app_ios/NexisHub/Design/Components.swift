@@ -141,6 +141,8 @@ struct NewBadge: View {
     var body: some View {
         Text(app.t("newBadge"))
             .font(.body(10, .bold, relativeTo: .caption2))
+            .lineLimit(1)
+            .fixedSize()
             .foregroundStyle(.white)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
