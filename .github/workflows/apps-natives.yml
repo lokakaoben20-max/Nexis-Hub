@@ -11,13 +11,7 @@ on:
       - "app_android/**"
       - "app_mobile/lib/l10n/*.arb"
       - "outils/textes_apps_natives.py"
-      - ".github/workflows/apps-natives.yml"
-  pull_request:
-    paths:
-      - "app_ios/**"
-      - "app_android/**"
-      - "app_mobile/lib/l10n/*.arb"
-      - "outils/textes_apps_natives.py"
+      - "outils/pictogrammes_apps_natives.py"
       - ".github/workflows/apps-natives.yml"
   workflow_dispatch:
 
