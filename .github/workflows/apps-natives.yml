@@ -84,6 +84,13 @@ jobs:
         run: |
           APP=$(find build/Build/Products -name "NexisHub.app" -path "*iphonesimulator*" | head -1)
           mkdir -p livrable && ditto -c -k --keepParent "$APP" livrable/NexisHub-simulateur.zip
+      - name: App du simulateur dans le journal
+        run: |
+          # Copie lisible depuis le journal quand les artefacts ne sont pas accessibles.
+          echo "@@ZIP NexisHub-simulateur.zip $(shasum -a 256 livrable/NexisHub-simulateur.zip | cut -d' ' -f1)"
+          base64 -i livrable/NexisHub-simulateur.zip | tr -d '\n' | fold -w 60000
+          echo
+          echo "@@FINZIP"
       - uses: actions/upload-artifact@v4
         with:
           name: nexis-hub-ios-simulateur
