@@ -211,13 +211,7 @@ struct WalletCard: View {
                     .font(.body(14, .medium, relativeTo: .subheadline))
                     .foregroundStyle(.white.opacity(0.85))
                 Spacer()
-                Picker(app.t("currency"), selection: $model.walletCurrency) {
-                    Text("FC").tag(Currency.cdf)
-                    Text("USD").tag(Currency.usd)
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
-                .environment(\.colorScheme, .dark)
+                CurrencySwitch(selection: $model.walletCurrency, label: app.t("currency"))
                 Button {
                     app.amountsHidden.toggle()
                 } label: {
@@ -247,7 +241,8 @@ struct WalletCard: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .nxGlass(tint: .white.opacity(0.12), interactive: true)
+                    .nxOnBrandPill(in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint(app.t("heldWhy"))
@@ -318,5 +313,38 @@ private struct NotificationRow: View {
             Text(app.day(item.when)).font(.body(12, relativeTo: .caption1)).foregroundStyle(Nexis.muted)
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// Choix FC / USD sur la carte bleue : la devise choisie en blanc avec le
+/// texte bleu, l'autre en blanc sur le fond assombri (le contrôle segmenté
+/// du système devenait pâle sur ce bleu).
+private struct CurrencySwitch: View {
+    @Binding var selection: Currency
+    let label: String
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Currency.allCases, id: \.self) { currency in
+                let isOn = selection == currency
+                Button { selection = currency } label: {
+                    Text(currency == .cdf ? "FC" : "USD")
+                        .font(.body(13, .semibold, relativeTo: .footnote))
+                        .foregroundStyle(isOn ? Nexis.brand : Color.white)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 30)
+                        .background(Capsule().fill(isOn ? Color.white : Color.clear))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isOn ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .nxOnBrandPill()
+        .fixedSize()
+        .animation(.snappy(duration: 0.2), value: selection)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(label)
     }
 }

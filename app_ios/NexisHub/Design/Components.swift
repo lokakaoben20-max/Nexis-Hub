@@ -17,6 +17,15 @@ extension View {
         }
     }
 
+    /// Pastille posée sur le bleu Nexis (langue, argent bloqué, devise) : fond
+    /// assombri et liseré clair. Le verre clair d'iOS 26 rendait le texte blanc
+    /// pâle et peu lisible sur ce bleu vif.
+    func nxOnBrandPill(in shape: some Shape = Capsule()) -> some View {
+        self
+            .background(shape.fill(Nexis.navy.opacity(0.24)))
+            .overlay(shape.stroke(Color.white.opacity(0.28), lineWidth: 1))
+    }
+
     /// Bouton principal de l'écran : verre teinté du bleu Nexis.
     @ViewBuilder
     func nxProminentButton() -> some View {

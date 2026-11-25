@@ -179,7 +179,7 @@ struct LanguageMenu: View {
                 .foregroundStyle(onBrand ? Color.white : Nexis.ink)
                 .padding(.horizontal, onBrand ? 12 : 0)
                 .frame(minHeight: 36)
-                .nxGlass(tint: onBrand ? .white.opacity(0.12) : nil, interactive: true)
+                .nxOnBrandPill()
         }
         .accessibilityLabel(app.t("language"))
     }
