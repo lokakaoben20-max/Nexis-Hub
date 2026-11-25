@@ -92,3 +92,17 @@ class DemoRepositoryTest {
         DemoRepository().requestService("jardinage", "Limete", "court")
     }
 }
+
+class PictogrammesTest {
+    @Test
+    fun everyServiceHasAMainPictogram() {
+        for (service in com.nexishub.app.data.Service.entries) {
+            assertTrue("$service sans pictogramme", com.nexishub.app.ui.Pictogrammes.icons(service).isNotEmpty())
+        }
+    }
+
+    @Test
+    fun otherServiceStaysStill() {
+        assertEquals(1, com.nexishub.app.ui.Pictogrammes.icons(com.nexishub.app.data.Service.AUTRE).size)
+    }
+}

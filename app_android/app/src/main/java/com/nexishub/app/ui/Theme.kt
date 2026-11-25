@@ -54,17 +54,19 @@ data class NexisPalette(
     val softInk: Color,
     /** Bleu lisible sur le fond du thème. */
     val accent: Color,
+    /** Bord des carrés de pictogrammes. */
+    val tileLine: Color,
 ) {
     companion object {
         val Light = NexisPalette(
             bg = Color(0xFFF6F8FB), surface = Color.White, ink = Nexis.navy,
             muted = Color(0xFF5B667A), line = Color(0xFFE3E8F0), soft = Color(0xFFE8F0FE),
-            softInk = Nexis.brand, accent = Nexis.brand,
+            softInk = Nexis.brand, accent = Nexis.brand, tileLine = Color(0xFFDCE4F2),
         )
         val Dark = NexisPalette(
             bg = Color(0xFF0B1424), surface = Color(0xFF121E33), ink = Color(0xFFEAF0FA),
             muted = Color(0xFF9AA7BD), line = Color(0xFF22314B), soft = Color(0xFF1A2B4D),
-            softInk = Color(0xFF8DB4FF), accent = Color(0xFF5B8CFF),
+            softInk = Color(0xFF8DB4FF), accent = Color(0xFF5B8CFF), tileLine = Color(0xFF22314B),
         )
     }
 }
@@ -82,7 +84,6 @@ private fun variable(res: Int, vararg weights: Int): FontFamily = FontFamily(
 
 val Unbounded = variable(R.font.unbounded, 400, 500, 600, 700)
 val Inter = variable(R.font.inter, 400, 500, 600, 700)
-val NexisServices = FontFamily(Font(R.font.nexis_services))
 
 /** Raccourcis de la charte : `title` en Unbounded, `body` en Inter. */
 fun title(size: Int, weight: FontWeight = FontWeight.SemiBold, color: Color = Color.Unspecified) =

@@ -16,6 +16,13 @@ struct ServicePickerView: View {
     @State private var query = ""
     @State private var path: [PickerStep] = []
 
+    /// Le premier tour des pictogrammes ne se joue qu'une fois par appareil.
+    @AppStorage("nexis.tourPictogrammesVu") private var tourSeen = false
+    /// Compteur de tours par service (un changement lance un tour) et
+    /// décalage de départ de chaque carré.
+    @State private var tours: [String: Int] = [:]
+    @State private var delays: [String: Double] = [:]
+
     private let columns = [GridItem(.adaptive(minimum: 96), spacing: 12)]
 
     var body: some View {
@@ -31,7 +38,8 @@ struct ServicePickerView: View {
                     LazyVGrid(columns: columns, spacing: 12) {
                         ForEach(filtered) { item in
                             NavigationLink(value: PickerStep.request(item.id)) {
-                                ServiceCell(item: item)
+                                ServiceCell(item: item, tour: tours[item.id] ?? 0,
+                                            delay: delays[item.id] ?? 0)
                             }
                             .buttonStyle(.plain)
                         }
@@ -63,9 +71,36 @@ struct ServicePickerView: View {
                     DescribeNeedView(onDone: { dismiss() })
                 }
             }
-            .task { catalog = (try? await app.repository.serviceCatalog()) ?? [] }
+            .task {
+                catalog = (try? await app.repository.serviceCatalog()) ?? []
+                await playTours()
+            }
         }
         .presentationDetents([.large])
+    }
+
+    /// La première fois, chaque carré fait un tour de ses objets, l'un après
+    /// l'autre, puis se fixe sur son icône principale. Ensuite, tant que la
+    /// feuille reste ouverte sans recherche, un seul carré refait de temps en
+    /// temps un tour discret. « Réduire les animations » coupe tout (ServiceTile).
+    private func playTours() async {
+        let animated = catalog.filter {
+            Pictogrammes.icons(forCatalogId: $0.id, service: $0.service).count > 1
+        }
+        guard !animated.isEmpty else { return }
+        if !tourSeen {
+            tourSeen = true
+            for (position, item) in animated.enumerated() {
+                delays[item.id] = 1.0 + Double(position) * 0.4
+                tours[item.id, default: 0] += 1
+            }
+        }
+        while !Task.isCancelled {
+            do { try await Task.sleep(for: .seconds(25)) } catch { return }
+            guard query.isEmpty, path.isEmpty, let item = animated.randomElement() else { continue }
+            delays[item.id] = 0
+            tours[item.id, default: 0] += 1
+        }
     }
 
     /// La recherche accepte le nom affiché et le nom d'origine du catalogue.
@@ -105,10 +140,12 @@ struct ServicePickerView: View {
 private struct ServiceCell: View {
     @Environment(AppModel.self) private var app
     let item: CatalogService
+    var tour: Int = 0
+    var delay: Double = 0
 
     var body: some View {
         VStack(spacing: 10) {
-            ServiceTile(item, size: 52)
+            ServiceTile(item, size: 52, tour: tour, delay: delay)
                 .overlay(alignment: .topTrailing) {
                     if item.isNew { NewBadge().offset(x: 14, y: -8) }
                 }

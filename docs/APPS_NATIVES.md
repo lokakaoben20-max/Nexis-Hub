@@ -14,8 +14,28 @@ l'aperçu) avec les composants de chaque plateforme :
 Identité commune (AGENTS.md) : bleu vif `#0A63F0`, marine `#021937`,
 icône bleu uni et monogramme blanc, **Unbounded** pour les titres et les
 montants, **Inter** pour tout le texte (graisses posées sur l'axe `wght`
-des polices variables, comme Flutter), pictogrammes de services de la
-police `NexisServices` sur carré de couleur (série B).
+des polices variables, comme Flutter).
+
+## Pictogrammes de services
+
+Phosphor Icons en duotone, bleu Nexis, sur carré blanc bordé (choix de Ben
+du 2026-11-25), plus la tondeuse de Tabler Icons pour la coiffure. Les deux
+bibliothèques sont sous licence MIT. Pour chaque service, une icône
+principale et trois objets : à la première ouverture de « Quel service ? »
+sur l'appareil, chaque carré fait un tour de ses objets puis se fixe ; ensuite
+un seul carré refait de temps en temps un tour discret. Rien ne bouge avec
+« Réduire les animations » (iOS) ou « Supprimer les animations » (Android),
+ni dans la liste des missions. « Autre service » reste fixe.
+
+La liste vit dans `outils/pictogrammes_apps_natives.py`, qui écrit
+`app_ios/NexisHub/Resources/Pictogrammes.xcassets` et
+`app_android/app/src/main/res/drawable/` :
+
+    npm install @phosphor-icons/core @tabler/icons
+    python outils/pictogrammes_apps_natives.py node_modules
+
+Les mêmes listes sont dans `Pictogrammes.swift` et `Pictogrammes.kt` :
+les garder synchronisées.
 
 ## État
 

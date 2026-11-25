@@ -21,9 +21,6 @@ enum class Service(private val fr: String, private val ln: String, private val e
         "en" -> en
         else -> fr
     }
-
-    /** Caractère de la police NexisServices (U+E000 à U+E008). */
-    val glyph: String get() = Char(0xE000 + ordinal).toString()
 }
 
 /** États d'une mission vus par le client (mêmes valeurs que le serveur). */

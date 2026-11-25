@@ -174,7 +174,7 @@ private fun VerifiedStrip(modifier: Modifier = Modifier) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                ServiceTile(Color(service.color), service, size = 40.dp)
+                ServiceTile(service, size = 40.dp)
                 Text(service.label(app.language), style = body(12, FontWeight.SemiBold, Color.White), maxLines = 1)
                 Icon(Icons.Rounded.Verified, contentDescription = null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(16.dp))
             }

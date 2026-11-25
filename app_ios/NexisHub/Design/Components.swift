@@ -61,81 +61,76 @@ struct WideLabel: View {
     }
 }
 
-// MARK: - Services (série B validée)
+// MARK: - Services (Phosphor Duotone, bleu Nexis)
 
-/// Pastille de service : pictogramme blanc sur carré arrondi de la couleur
-/// du service, avec l'ombre colorée des maquettes validées.
+/// Pastille de service : pictogramme Phosphor bleu sur carré blanc bordé
+/// (direction B choisie par Ben). Quand `tour` change, le carré montre un à
+/// un les autres objets de son service, puis revient à l'icône principale.
 struct ServiceTile: View {
-    let color: Color
-    var service: Service? = nil
-    /// Pictogramme système pour un service publié par le serveur que l'app
-    /// ne connaît pas encore.
-    var fallbackSymbol: String = "sparkles"
+    /// Icône principale d'abord, puis les objets du tour.
+    let icons: [String]
     var size: CGFloat = 46
+    /// Change pour lancer un tour ; 0 = jamais.
+    var tour: Int = 0
+    /// Attente avant le premier changement (décalage d'un carré à l'autre).
+    var delay: Double = 0
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var index = 0
+
+    /// Durée d'affichage de chaque objet pendant le tour.
+    static let step: Duration = .milliseconds(3500)
 
     var body: some View {
         RoundedRectangle(cornerRadius: size * 0.32, style: .continuous)
-            .fill(color)
+            .fill(Nexis.surface)
+            .overlay(RoundedRectangle(cornerRadius: size * 0.32, style: .continuous)
+                .strokeBorder(Nexis.tileLine, lineWidth: 1))
             .frame(width: size, height: size)
-            .shadow(color: color.opacity(0.45), radius: size * 0.15, y: size * 0.12)
             .overlay {
-                if let service {
-                    Text(service.glyph)
-                        .font(.services(size * 0.565))
-                        .foregroundStyle(.white)
-                } else {
-                    Image(systemName: fallbackSymbol)
-                        .font(.system(size: size * 0.42, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
+                Image(icons[index])
+                    .resizable()
+                    .renderingMode(.template)
+                    .scaledToFit()
+                    .frame(width: size * 0.5, height: size * 0.5)
+                    .foregroundStyle(Nexis.accent)
+                    .id(index)
+                    .transition(.blurReplace)
             }
+            .animation(.smooth(duration: 0.84), value: index)
             .accessibilityHidden(true)
+            .task(id: tour) {
+                guard tour > 0, icons.count > 1, !reduceMotion else { return }
+                do {
+                    try await Task.sleep(for: .seconds(delay))
+                    for next in icons.indices.dropFirst() {
+                        index = next
+                        try await Task.sleep(for: Self.step)
+                    }
+                } catch {
+                    // Feuille fermée pendant le tour : on revient à l'icône principale.
+                }
+                index = 0
+            }
     }
 }
 
 extension ServiceTile {
-    init(_ item: CatalogService, size: CGFloat = 46) {
-        self.init(color: Color(hex: item.color), service: item.service,
-                  fallbackSymbol: ServiceTile.symbol(for: item.id), size: size)
+    init(_ item: CatalogService, size: CGFloat = 46, tour: Int = 0, delay: Double = 0) {
+        self.init(icons: Pictogrammes.icons(forCatalogId: item.id, service: item.service),
+                  size: size, tour: tour, delay: delay)
     }
 
     init(_ mission: Mission, size: CGFloat = 46) {
         if let item = mission.catalogService {
             self.init(item, size: size)
         } else {
-            self.init(color: mission.service.color, service: mission.service, size: size)
+            self.init(icons: Pictogrammes.icons(for: mission.service), size: size)
         }
     }
 
-    static func symbol(for id: String) -> String {
-        switch id {
-        case "peinture": return "paintbrush.fill"
-        case "demenagement": return "shippingbox.fill"
-        default: return "sparkles"
-        }
-    }
-}
-
-extension Service {
-    /// Caractère de la police NexisServices (U+E000 à U+E008).
-    var glyph: String {
-        let index = Service.allCases.firstIndex(of: self)!
-        return String(UnicodeScalar(0xE000 + UInt32(index))!)
-    }
-
-    /// Couleur de chaque service (mêmes valeurs que l'app Flutter).
-    var color: Color {
-        switch self {
-        case .plomberie: return Color(hex: 0x0350E6)
-        case .electricite: return Color(hex: 0xC98200)
-        case .climatisation: return Color(hex: 0x0A84D6)
-        case .informatique: return Color(hex: 0x021937)
-        case .graphisme: return Color(hex: 0x494C95)
-        case .coiffure: return Color(hex: 0xC2416B)
-        case .nettoyage: return Color(hex: 0x1E8A4C)
-        case .jardinage: return Color(hex: 0x4F8A10)
-        case .autre: return Color(hex: 0x5B667A)
-        }
+    init(_ service: Service, size: CGFloat = 46) {
+        self.init(icons: Pictogrammes.icons(for: service), size: size)
     }
 }
 

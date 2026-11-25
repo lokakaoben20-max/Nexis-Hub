@@ -1,5 +1,6 @@
 package com.nexishub.app.screens
 
+import android.content.Context
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -43,12 +44,14 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -57,13 +60,18 @@ import com.nexishub.app.LocalApp
 import com.nexishub.app.data.CatalogService
 import com.nexishub.app.ui.LocalPalette
 import com.nexishub.app.ui.NewBadge
+import com.nexishub.app.ui.Pictogrammes
 import com.nexishub.app.ui.Nexis
 import com.nexishub.app.ui.PrimaryButton
 import com.nexishub.app.ui.ServiceTile
 import com.nexishub.app.ui.body
 import com.nexishub.app.ui.nexisCard
 import com.nexishub.app.ui.title
+import androidx.core.content.edit
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+private const val TOUR_SEEN_KEY = "tourPictogrammesVu"
 
 private sealed interface PickerStep {
     data object Grid : PickerStep
@@ -113,9 +121,37 @@ private fun SheetHeader(heading: String, onBack: (() -> Unit)?, onClose: (() -> 
 private fun ServiceGrid(onClose: () -> Unit, onPick: (CatalogService) -> Unit, onDescribe: () -> Unit) {
     val app = LocalApp.current
     val p = LocalPalette.current
+    val context = LocalContext.current
     var catalog by remember { mutableStateOf(emptyList<CatalogService>()) }
     var query by remember { mutableStateOf("") }
+    // Compteur de tours par service (un changement lance un tour) et décalage
+    // de départ de chaque carré.
+    val tours = remember { mutableStateMapOf<String, Int>() }
+    val delays = remember { mutableStateMapOf<String, Long>() }
     LaunchedEffect(Unit) { catalog = app.repository.serviceCatalog() }
+    // La première fois (une seule fois par appareil), chaque carré fait un tour
+    // de ses objets, l'un après l'autre, puis se fixe. Ensuite, tant que la
+    // feuille reste ouverte sans recherche, un seul carré refait de temps en
+    // temps un tour discret. « Supprimer les animations » coupe tout (ServiceTile).
+    LaunchedEffect(catalog) {
+        val animated = catalog.filter { Pictogrammes.icons(it).size > 1 }
+        if (animated.isEmpty()) return@LaunchedEffect
+        val prefs = context.getSharedPreferences("nexis", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean(TOUR_SEEN_KEY, false)) {
+            prefs.edit { putBoolean(TOUR_SEEN_KEY, true) }
+            animated.forEachIndexed { position, item ->
+                delays[item.id] = 1_000L + position * 400L
+                tours[item.id] = (tours[item.id] ?: 0) + 1
+            }
+        }
+        while (true) {
+            delay(25_000)
+            if (query.isNotBlank()) continue
+            val item = animated.random()
+            delays[item.id] = 0L
+            tours[item.id] = (tours[item.id] ?: 0) + 1
+        }
+    }
     val needle = query.trim()
     // La recherche accepte le nom affiché et le nom d'origine du catalogue.
     val filtered = if (needle.isEmpty()) catalog else catalog.filter {
@@ -142,7 +178,9 @@ private fun ServiceGrid(onClose: () -> Unit, onPick: (CatalogService) -> Unit, o
                     if (filtered.isEmpty()) Text(app.t("noServiceMatches"), style = body(15, color = p.muted))
                 }
             }
-            items(filtered, key = { it.id }) { item -> ServiceCell(item) { onPick(item) } }
+            items(filtered, key = { it.id }) { item ->
+                ServiceCell(item, tours[item.id] ?: 0, delays[item.id] ?: 0L) { onPick(item) }
+            }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Row(
                     Modifier.fillMaxWidth().nexisCard(p).clickable(role = Role.Button, onClick = onDescribe).padding(14.dp),
@@ -163,7 +201,7 @@ private fun ServiceGrid(onClose: () -> Unit, onPick: (CatalogService) -> Unit, o
 }
 
 @Composable
-private fun ServiceCell(item: CatalogService, onClick: () -> Unit) {
+private fun ServiceCell(item: CatalogService, tour: Int, delayMs: Long, onClick: () -> Unit) {
     val app = LocalApp.current
     val p = LocalPalette.current
     val shape = RoundedCornerShape(20.dp)
@@ -174,7 +212,7 @@ private fun ServiceCell(item: CatalogService, onClick: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Box {
-            ServiceTile(item, 52.dp)
+            ServiceTile(item, 52.dp, tour, delayMs)
             if (item.isNew) Box(Modifier.align(Alignment.TopEnd).padding(start = 30.dp)) { NewBadge() }
         }
         Text(item.label(app.language), style = body(13, FontWeight.SemiBold, p.ink), textAlign = TextAlign.Center, maxLines = 2)

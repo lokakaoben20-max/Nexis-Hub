@@ -96,7 +96,7 @@ private struct VerifiedStrip: View {
         HStack(spacing: 10) {
             ForEach([Service.plomberie, .electricite, .nettoyage], id: \.self) { service in
                 VStack(spacing: 8) {
-                    ServiceTile(color: service.color, service: service, size: 40)
+                    ServiceTile(service, size: 40)
                     Text(service.name(app.language))
                         .font(.body(12, .semibold, relativeTo: .caption1))
                         .foregroundStyle(.white)

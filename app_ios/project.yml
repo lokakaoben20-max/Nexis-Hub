@@ -43,7 +43,6 @@ targets:
         UIAppFonts:
           - Inter.ttf
           - Unbounded.ttf
-          - NexisServices.ttf
         UILaunchScreen:
           UIColorName: LaunchBackground
           UIImageName: LaunchMonogramme

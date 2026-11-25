@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import NexisHub
 
@@ -86,5 +87,25 @@ final class DemoRepositoryTests: XCTestCase {
             try await repo.requestService(serviceId: "jardinage", commune: "Limete", description: "court")
             XCTFail("une demande trop courte doit être refusée")
         } catch {}
+    }
+}
+
+final class PictogrammesTests: XCTestCase {
+    func testEveryServiceHasItsPictogramsInTheAppBundle() {
+        let bundle = Bundle(for: NexisHub.AppModel.self)
+        for service in Service.allCases {
+            let icons = Pictogrammes.icons(for: service)
+            XCTAssertFalse(icons.isEmpty, "\(service) sans pictogramme")
+            for name in icons {
+                XCTAssertNotNil(UIImage(named: name, in: bundle, with: nil), "\(name) absent du catalogue")
+            }
+        }
+        for name in Pictogrammes.byService.values.flatMap({ $0 }) {
+            XCTAssertNotNil(UIImage(named: name, in: bundle, with: nil), "\(name) absent du catalogue")
+        }
+    }
+
+    func testOtherServiceStaysStill() {
+        XCTAssertEqual(Pictogrammes.icons(for: .autre).count, 1)
     }
 }

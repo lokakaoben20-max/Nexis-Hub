@@ -35,6 +35,8 @@ enum Nexis {
     /// Bleu lisible sur le fond du thème (le bleu Nexis est trop sombre
     /// sur le fond nuit).
     static let accent = Color(light: 0x0A63F0, dark: 0x5B8CFF)
+    /// Bord des carrés de pictogrammes.
+    static let tileLine = Color(light: 0xDCE4F2, dark: 0x22314B)
 }
 
 extension Color {
@@ -101,10 +103,5 @@ extension Font {
     static func body(_ size: CGFloat, _ weight: Font.Weight = .regular,
                      relativeTo style: UIFont.TextStyle = .body) -> Font {
         Font(NexisFont.ui("Inter", size, weight, relativeTo: style))
-    }
-
-    /// Pictogrammes des services (police NexisServices de l'app Flutter).
-    static func services(_ size: CGFloat) -> Font {
-        .custom("NexisServices-Regular", fixedSize: size)
     }
 }
