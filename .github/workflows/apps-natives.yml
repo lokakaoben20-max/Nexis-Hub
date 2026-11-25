@@ -44,6 +44,10 @@ jobs:
 
   ios:
     name: iOS
+    # Les minutes macOS comptent 10 fois dans le quota GitHub Actions :
+    # l'iOS ne se compile qu'à la demande (onglet Actions › Apps natives ›
+    # Run workflow), jamais à chaque push.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-26
     timeout-minutes: 45
     defaults:
