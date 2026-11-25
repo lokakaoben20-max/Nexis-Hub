@@ -134,6 +134,49 @@ extension ServiceTile {
     }
 }
 
+/// Attente Nexis : les pictogrammes des services se relaient au lieu d'un
+/// rond qui tourne (choix de Ben du 2026-11-25). Avec « Réduire les
+/// animations », la première icône reste fixe.
+struct PictoLoader: View {
+    var size: CGFloat = 24
+    var color: Color = .white
+    /// Ce que VoiceOver annonce pendant l'attente.
+    let label: String
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var index = 0
+
+    /// Les icônes principales des services, dans l'ordre du catalogue.
+    static let icons = ["ph_wrench", "ph_lightning", "ph_snowflake", "ph_laptop", "ph_pen_nib",
+                        "ph_scissors", "ph_broom", "ph_plant", "ph_paint_roller", "ph_truck"]
+    static let step: Duration = .milliseconds(700)
+
+    var body: some View {
+        ZStack {
+            Image(Self.icons[index])
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
+                .foregroundStyle(color)
+                .id(index)
+                .transition(.blurReplace)
+        }
+        .frame(width: size, height: size)
+        .animation(.smooth(duration: 0.35), value: index)
+        .accessibilityElement()
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(.updatesFrequently)
+        .task {
+            guard !reduceMotion else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.step)
+                if Task.isCancelled { break }
+                index = (index + 1) % Self.icons.count
+            }
+        }
+    }
+}
+
 /// « Nouveau » : petite pastille rouge de la maquette.
 struct NewBadge: View {
     @Environment(AppModel.self) private var app

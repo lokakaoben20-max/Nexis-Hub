@@ -1,6 +1,24 @@
 package com.nexishub.app.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import com.nexishub.app.ui.NexisPalette
+import com.nexishub.app.ui.Pictogrammes
+import com.nexishub.app.ui.rememberReduceMotion
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,7 +52,6 @@ import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Sms
-import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -59,6 +76,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -81,7 +99,6 @@ import com.nexishub.app.LocalApp
 import com.nexishub.app.R
 import com.nexishub.app.data.CodeChannel
 import com.nexishub.app.data.DrcPhone
-import com.nexishub.app.data.Service
 import com.nexishub.app.ui.LocalPalette
 import com.nexishub.app.ui.Nexis
 import com.nexishub.app.ui.PrimaryButton
@@ -90,6 +107,8 @@ import com.nexishub.app.ui.body
 import com.nexishub.app.ui.nexisCard
 import com.nexishub.app.ui.title
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 /** Étapes du parcours d'entrée. */
 sealed interface EntryStep {
@@ -125,58 +144,105 @@ fun EntryFlow(start: Capture?) {
 private fun WelcomeScreen(onStart: () -> Unit, onLogin: () -> Unit) {
     val app = LocalApp.current
     Box(Modifier.fillMaxSize().background(Nexis.heroGradient)) {
-        Column(
-            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp).padding(bottom = 12.dp),
-        ) {
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(bottom = 12.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Image(
+                    painterResource(R.drawable.logo_blanc), contentDescription = "Nexis Hub",
+                    modifier = Modifier.height(17.dp).semantics { heading() },
+                )
+                Spacer(Modifier.weight(1f))
                 LanguageMenu(onBrand = true)
             }
-            Spacer(Modifier.weight(1f))
-            Image(
-                painterResource(R.drawable.logo_blanc), contentDescription = "Nexis Hub",
-                modifier = Modifier.height(44.dp),
-            )
-            Text(app.t("slogan"), style = title(30, color = Color.White), modifier = Modifier.padding(top = 28.dp))
-            Text(app.t("welcomeIntro"), style = body(17, color = Color.White.copy(alpha = 0.88f)), modifier = Modifier.padding(top = 12.dp))
-            VerifiedStrip(Modifier.padding(top = 28.dp))
-            Spacer(Modifier.weight(1f))
-            androidx.compose.material3.Button(
-                onClick = onStart,
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = CircleShape,
-                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Nexis.brand),
-            ) { Text(app.t("start"), style = body(16, FontWeight.SemiBold)) }
-            Spacer(Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = onLogin,
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = CircleShape,
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)),
-                colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-            ) { Text(app.t("haveAccount"), style = body(16, FontWeight.SemiBold)) }
+            Constellation(Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp))
+            Column(Modifier.padding(horizontal = 24.dp)) {
+                Text(app.t("slogan"), style = title(28, color = Color.White))
+                Text(app.t("welcomeIntro"), style = body(16, color = Color.White.copy(alpha = 0.9f)), modifier = Modifier.padding(top = 12.dp))
+                Spacer(Modifier.height(32.dp))
+                androidx.compose.material3.Button(
+                    onClick = onStart,
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = CircleShape,
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Nexis.brand),
+                ) { Text(app.t("start"), style = body(16, FontWeight.SemiBold)) }
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onLogin,
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = CircleShape,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)),
+                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                        containerColor = Color.White.copy(alpha = 0.14f), contentColor = Color.White,
+                    ),
+                ) { Text(app.t("haveAccount"), style = body(16, FontWeight.SemiBold)) }
+            }
         }
     }
 }
 
+/** Un carré de la Constellation, aux mesures de la maquette (écran de 390 de large). */
+private data class Spot(val service: String, val x: Float, val y: Float, val size: Float, val angle: Float, val periodMs: Int)
+
+private val SPOTS = listOf(
+    Spot("plomberie", 30f, 30f, 74f, -6f, 7_000),
+    Spot("climatisation", 150f, 6f, 58f, 4f, 6_200),
+    Spot("coiffure", 262f, 42f, 82f, 7f, 7_800),
+    Spot("electricite", 84f, 146f, 60f, 5f, 6_600),
+    Spot("nettoyage", 186f, 120f, 86f, -4f, 7_400),
+    Spot("demenagement", 296f, 172f, 58f, -7f, 6_000),
+    Spot("informatique", 24f, 240f, 56f, 3f, 7_200),
+    Spot("peinture", 122f, 248f, 66f, -3f, 6_800),
+)
+private const val DESIGN_WIDTH = 390f
+private const val DESIGN_HEIGHT = 320f
+
+/** Bienvenue « Constellation » (maquette A1 choisie par Ben le 2026-11-25) :
+ * des carrés de services blancs, penchés, qui flottent lentement. À
+ * l'ouverture de l'app, chacun fait une fois le tour de ses objets (même
+ * rythme que « Quel service ? »), puis revient à son icône. Avec
+ * « Supprimer les animations », rien ne bouge. */
 @Composable
-private fun VerifiedStrip(modifier: Modifier = Modifier) {
-    val app = LocalApp.current
-    Row(
-        modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = app.t("verifiedProvider") },
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        for (service in listOf(Service.PLOMBERIE, Service.ELECTRICITE, Service.NETTOYAGE)) {
-            Column(
-                Modifier.weight(1f)
-                    .background(Color.White.copy(alpha = 0.14f), RoundedCornerShape(20.dp))
-                    .border(0.5.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(20.dp))
-                    .padding(vertical = 14.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                ServiceTile(service, size = 40.dp)
-                Text(service.label(app.language), style = body(12, FontWeight.SemiBold, Color.White), maxLines = 1)
-                Icon(Icons.Rounded.Verified, contentDescription = null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(16.dp))
+private fun Constellation(modifier: Modifier = Modifier) {
+    val reduceMotion = rememberReduceMotion()
+    // Un seul tour par ouverture de l'app, pas à chaque retour en arrière.
+    var tour by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { if (tour == 0) tour = 1 }
+    val floating = rememberInfiniteTransition(label = "flottement")
+    // Carrés blancs et icônes bleues, même en mode sombre : ils sont posés sur le bleu.
+    CompositionLocalProvider(LocalPalette provides NexisPalette.Light) {
+        BoxWithConstraints(modifier.clearAndSetSemantics { }) {
+            val k = minOf(maxWidth.value / DESIGN_WIDTH, maxHeight.value / DESIGN_HEIGHT)
+            val left = (maxWidth.value - DESIGN_WIDTH * k) / 2
+            val top = (maxHeight.value - DESIGN_HEIGHT * k) / 2
+            SPOTS.forEachIndexed { i, spot ->
+                val lift by floating.animateFloat(
+                    initialValue = 0f,
+                    targetValue = if (reduceMotion) 0f else -9f,
+                    animationSpec = infiniteRepeatable(
+                        tween(spot.periodMs / 2, easing = FastOutSlowInEasing),
+                        RepeatMode.Reverse,
+                        initialStartOffset = StartOffset(i * 600),
+                    ),
+                    label = "flottement $i",
+                )
+                Box(
+                    Modifier
+                        .offset(x = (left + spot.x * k).dp, y = (top + spot.y * k).dp)
+                        .graphicsLayer {
+                            translationY = lift * k * density
+                            rotationZ = spot.angle
+                        }
+                        .shadow((14 * k).dp, RoundedCornerShape((spot.size * k * 0.32f).dp), ambientColor = Nexis.navy, spotColor = Nexis.navy),
+                ) {
+                    ServiceTile(
+                        Pictogrammes.byService[spot.service] ?: Pictogrammes.fallback,
+                        size = (spot.size * k).dp,
+                        tour = tour,
+                        delayMs = 1_000L + i * 400L,
+                    )
+                }
             }
         }
     }
@@ -254,6 +320,9 @@ private fun PhoneScreen(login: Boolean, onBack: () -> Unit, onSent: (String, Cod
     val channels = app.repository.codeChannels
     var phone by rememberSaveable { mutableStateOf("") }
     var channel by remember { mutableStateOf(channels.firstOrNull()) }
+    var sending by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val parsed = DrcPhone.parse(phone)
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -262,7 +331,32 @@ private fun PhoneScreen(login: Boolean, onBack: () -> Unit, onSent: (String, Cod
         heading = if (login) app.t("signInTitle") else app.t("yourNumber"),
         onBack = onBack,
         bottom = {
-            PrimaryButton(app.t("receiveCode"), onClick = { channel?.let { onSent(parsed.e164, it) } }, enabled = parsed.isValid && channel != null)
+            PrimaryButton(
+                app.t("receiveCode"),
+                enabled = parsed.isValid && channel != null,
+                loading = sending,
+                onClick = {
+                    val chosen = channel
+                    if (chosen != null && parsed.isValid && !sending) {
+                        val number = parsed.e164
+                        sending = true
+                        failed = false
+                        // Le serveur envoie le code ; on n'avance qu'une fois l'envoi confirmé.
+                        scope.launch {
+                            try {
+                                app.repository.sendCode(number, chosen)
+                                onSent(number, chosen)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                failed = true
+                            } finally {
+                                sending = false
+                            }
+                        }
+                    }
+                },
+            )
         },
     ) {
         Text(app.t("yourNumberIntro"), style = body(15, color = p.muted))
@@ -270,6 +364,7 @@ private fun PhoneScreen(login: Boolean, onBack: () -> Unit, onSent: (String, Cod
             value = parsed.formatted,
             onValueChange = { phone = DrcPhone.parse(it).digits },
             modifier = Modifier.fillMaxWidth().focusRequester(focus),
+            enabled = !sending,
             label = { Text(app.t("phone")) },
             prefix = { Text("🇨🇩 +243  ", style = body(17, FontWeight.SemiBold, p.ink)) },
             placeholder = { Text("81 234 5678") },
@@ -280,6 +375,7 @@ private fun PhoneScreen(login: Boolean, onBack: () -> Unit, onSent: (String, Cod
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             shape = RoundedCornerShape(16.dp),
         )
+        if (failed) Text(app.t("actionFailed"), style = body(14, color = Nexis.danger))
         Text(app.t("receiveCodeBy"), style = body(13, FontWeight.SemiBold, p.muted))
         Column(Modifier.nexisCard(p)) {
             if (channels.isEmpty()) {
@@ -293,7 +389,7 @@ private fun PhoneScreen(login: Boolean, onBack: () -> Unit, onSent: (String, Cod
                 }
                 Row(
                     Modifier.fillMaxWidth()
-                        .selectable(selected = channel == item, role = Role.RadioButton, onClick = { channel = item })
+                        .selectable(selected = channel == item, enabled = !sending, role = Role.RadioButton, onClick = { channel = item })
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(14.dp),

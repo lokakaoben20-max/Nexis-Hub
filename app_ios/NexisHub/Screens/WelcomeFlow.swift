@@ -18,23 +18,32 @@ struct WelcomeView: View {
             ZStack {
                 Nexis.heroGradient.ignoresSafeArea()
                 VStack(alignment: .leading, spacing: 0) {
-                    Spacer(minLength: 24)
-                    Image("LogoBlanc")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(height: 44)
-                        .accessibilityLabel("Nexis Hub")
+                    HStack {
+                        Image("LogoBlanc")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(height: 17)
+                            .accessibilityLabel("Nexis Hub")
+                            .accessibilityAddTraits(.isHeader)
+                        Spacer()
+                        LanguageMenu(onBrand: true)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
+                    Constellation()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.vertical, 12)
                     Text(app.t("slogan"))
-                        .font(.title(30, .semibold, relativeTo: .largeTitle))
+                        .font(.title(28, .semibold, relativeTo: .largeTitle))
                         .foregroundStyle(.white)
-                        .padding(.top, 28)
                         .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 24)
                     Text(app.t("welcomeIntro"))
-                        .font(.body(17, relativeTo: .body))
-                        .foregroundStyle(.white.opacity(0.88))
+                        .font(.body(16, relativeTo: .body))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 12)
-                    VerifiedStrip().padding(.top, 28)
-                    Spacer(minLength: 24)
+                        .padding(.horizontal, 24)
                     VStack(spacing: 12) {
                         Button { path.append(.phone(login: false)) } label: {
                             WideLabel(text: app.t("start"))
@@ -48,14 +57,12 @@ struct WelcomeView: View {
                         }
                         .nxSecondaryButton()
                     }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 32)
+                    .padding(.bottom, 12)
                 }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 12)
             }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { LanguageMenu(onBrand: true) }
-            }
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbar(.hidden, for: .navigationBar)
             .onAppear {
                 switch app.capture {
                 case "phone": path = [.phone(login: false)]
@@ -88,32 +95,61 @@ private extension View {
     }
 }
 
-/// Les trois promesses de la maquette de bienvenue, en verre sur le bleu.
-private struct VerifiedStrip: View {
-    @Environment(AppModel.self) private var app
+/// Bienvenue « Constellation » (maquette A1 choisie par Ben le 2026-11-25) :
+/// des carrés de services blancs, penchés, qui flottent lentement. À chaque
+/// ouverture de l'app, chacun fait une fois le tour de ses objets (même rythme que
+/// « Quel service ? »), puis revient à son icône. Avec « Réduire les
+/// animations », rien ne bouge.
+private struct Constellation: View {
+    private struct Spot {
+        let service: String
+        let x, y, size, angle: CGFloat
+        /// Durée d'un aller-retour du flottement, en secondes.
+        let period: Double
+    }
+
+    /// Positions de la maquette, pour un écran de 390 points de large.
+    private static let spots: [Spot] = [
+        Spot(service: "plomberie", x: 30, y: 30, size: 74, angle: -6, period: 7.0),
+        Spot(service: "climatisation", x: 150, y: 6, size: 58, angle: 4, period: 6.2),
+        Spot(service: "coiffure", x: 262, y: 42, size: 82, angle: 7, period: 7.8),
+        Spot(service: "electricite", x: 84, y: 146, size: 60, angle: 5, period: 6.6),
+        Spot(service: "nettoyage", x: 186, y: 120, size: 86, angle: -4, period: 7.4),
+        Spot(service: "demenagement", x: 296, y: 172, size: 58, angle: -7, period: 6.0),
+        Spot(service: "informatique", x: 24, y: 240, size: 56, angle: 3, period: 7.2),
+        Spot(service: "peinture", x: 122, y: 248, size: 66, angle: -3, period: 6.8),
+    ]
+    private static let design = CGSize(width: 390, height: 320)
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var tour = 0
+    @State private var floating = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            ForEach([Service.plomberie, .electricite, .nettoyage], id: \.self) { service in
-                VStack(spacing: 8) {
-                    ServiceTile(service, size: 40)
-                    Text(service.name(app.language))
-                        .font(.body(12, .semibold, relativeTo: .caption1))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    Label(app.t("verifiedProvider"), systemImage: "checkmark.seal.fill")
-                        .labelStyle(.iconOnly)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.9))
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .nxGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        GeometryReader { geo in
+            let k = min(geo.size.width / Self.design.width, geo.size.height / Self.design.height)
+            let left = (geo.size.width - Self.design.width * k) / 2
+            let top = (geo.size.height - Self.design.height * k) / 2
+            ForEach(Self.spots.indices, id: \.self) { i in
+                let spot = Self.spots[i]
+                ServiceTile(icons: Pictogrammes.byService[spot.service] ?? Pictogrammes.fallback,
+                            size: spot.size * k, tour: tour, delay: 1 + Double(i) * 0.4)
+                    .shadow(color: Nexis.navy.opacity(0.22), radius: 14 * k, y: 10 * k)
+                    .rotationEffect(.degrees(spot.angle))
+                    .offset(y: floating ? -9 * k : 0)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: spot.period / 2)
+                        .repeatForever(autoreverses: true).delay(Double(i) * 0.6), value: floating)
+                    .position(x: left + (spot.x + spot.size / 2) * k, y: top + (spot.y + spot.size / 2) * k)
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(app.t("verifiedProvider"))
+        // Carrés blancs et icônes bleues, même en mode sombre : ils sont posés sur le bleu.
+        .environment(\.colorScheme, .light)
+        .accessibilityHidden(true)
+        .onAppear {
+            // Un seul tour par ouverture de l'app, pas à chaque retour en arrière.
+            if tour == 0 { tour = 1 }
+            if !reduceMotion { floating = true }
+        }
     }
 }
 
@@ -134,6 +170,9 @@ struct LanguageMenu: View {
             Label(app.language.uppercased(), systemImage: "globe")
                 .font(.body(14, .semibold, relativeTo: .subheadline))
                 .foregroundStyle(onBrand ? Color.white : Nexis.ink)
+                .padding(.horizontal, onBrand ? 12 : 0)
+                .frame(minHeight: 36)
+                .nxGlass(tint: onBrand ? .white.opacity(0.12) : nil, interactive: true)
         }
         .accessibilityLabel(app.t("language"))
     }
@@ -147,6 +186,8 @@ struct PhoneView: View {
     @Binding var path: [EntryStep]
     @State private var phone = DrcPhone(digits: "")
     @State private var channel: CodeChannel?
+    @State private var sending = false
+    @State private var failed = false
     @FocusState private var focused: Bool
 
     private var channels: [CodeChannel] { app.repository.codeChannels }
@@ -207,19 +248,26 @@ struct PhoneView: View {
             if channels.isEmpty {
                 Text(app.t("noCodeChannel")).font(.body(14)).foregroundStyle(Nexis.muted)
             }
+            if failed {
+                Text(app.t("actionFailed")).font(.body(14)).foregroundStyle(Nexis.danger)
+            }
         }
+        .disabled(sending)
         .scrollContentBackground(.hidden)
         .background(Nexis.bg)
         .navigationTitle(login ? app.t("signInTitle") : app.t("yourNumber"))
         .safeAreaInset(edge: .bottom) {
-            Button {
-                guard let selectedChannel else { return }
-                path.append(.code(phone: phone.e164, channel: selectedChannel, login: login))
-            } label: {
-                WideLabel(text: app.t("receiveCode"))
+            Button(action: sendCode) {
+                if sending {
+                    PictoLoader(size: 24, label: app.t("receiveCode"))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 1)
+                } else {
+                    WideLabel(text: app.t("receiveCode"))
+                }
             }
             .nxProminentButton()
-            .disabled(!phone.isValid || selectedChannel == nil)
+            .disabled(!phone.isValid || selectedChannel == nil || sending)
             .padding(.horizontal, 20)
             .padding(.bottom, 8)
         }
@@ -227,6 +275,24 @@ struct PhoneView: View {
     }
 
     private var selectedChannel: CodeChannel? { channel ?? channels.first }
+
+    /// Le serveur envoie le code ; on n'avance qu'une fois l'envoi confirmé.
+    private func sendCode() {
+        guard let selectedChannel, phone.isValid, !sending else { return }
+        let number = phone.e164
+        sending = true
+        failed = false
+        focused = false
+        Task {
+            do {
+                try await app.repository.sendCode(phone: number, channel: selectedChannel)
+                path.append(.code(phone: number, channel: selectedChannel, login: login))
+            } catch {
+                failed = true
+            }
+            sending = false
+        }
+    }
 
     private func channelName(_ channel: CodeChannel) -> String {
         switch channel {

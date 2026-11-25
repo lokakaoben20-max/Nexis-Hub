@@ -87,6 +87,16 @@ class DemoRepositoryTest {
         assertEquals("jardinage", first.catalogService?.id)
     }
 
+    @Test
+    fun sendCodeAcceptsValidNumberOnOfferedChannel() = runBlocking {
+        DemoRepository().sendCode("+243812345678", com.nexishub.app.data.CodeChannel.WHATSAPP)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun sendCodeRejectsIncompleteNumber() = runBlocking {
+        DemoRepository().sendCode("+24381234", com.nexishub.app.data.CodeChannel.SMS)
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun serviceRequestRejectsShortDescription() = runBlocking {
         DemoRepository().requestService("jardinage", "Limete", "court")
@@ -99,6 +109,11 @@ class PictogrammesTest {
         for (service in com.nexishub.app.data.Service.entries) {
             assertTrue("$service sans pictogramme", com.nexishub.app.ui.Pictogrammes.icons(service).isNotEmpty())
         }
+    }
+
+    @Test
+    fun loaderShowsTenDistinctServiceIcons() {
+        assertEquals(10, com.nexishub.app.ui.LOADER_ICONS.distinct().size)
     }
 
     @Test

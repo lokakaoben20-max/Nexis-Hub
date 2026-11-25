@@ -37,6 +37,34 @@ La liste vit dans `outils/pictogrammes_apps_natives.py`, qui écrit
 Les mêmes listes sont dans `Pictogrammes.swift` et `Pictogrammes.kt` :
 les garder synchronisées.
 
+## Logo écrit, bienvenue et attente
+
+Choix de Ben du 2026-11-25 (planche « Nexis Hub — connexion et accueil ») :
+
+- **Logo écrit** : « NEXIS » en Unbounded 700, dont le E est celui de
+  l'icône de l'app (trois barres biseautées), puis « HUB » en Unbounded 300
+  sur la même ligne. L'icône de l'app ne change pas. Le logo est vectorisé
+  depuis la police de l'app par `outils/logo_nexis.py` (demande `fonttools`
+  et `uharfbuzz`), qui écrit `docs/marque/` (SVG blanc et bleu),
+  `LogoBlanc.imageset` (iOS) et `drawable/logo_blanc.xml` (Android).
+- **Bienvenue « Constellation »** : huit carrés de services blancs, penchés,
+  qui flottent lentement sur le bleu. À l'ouverture de l'app, chacun fait une
+  fois le tour de ses objets (même rythme que « Quel service ? »). Les
+  positions de la maquette (écran de 390 de large) sont mises à l'échelle de
+  l'écran. Rien ne bouge avec Réduire / Supprimer les animations.
+- **Attente** : au lieu d'un rond qui tourne, les icônes principales des
+  dix services se relaient (0,7 s chacune, fondu flou) : `PictoLoader`
+  (iOS et Android). À l'ouverture de l'app (en blanc sur le bleu) et dans les
+  boutons qui attendent le serveur (Recevoir le code, envoi des demandes).
+  Avec Réduire les animations, une seule icône reste fixe.
+- **Recevoir le code** appelle `sendCode` : l'écran n'avance qu'une fois
+  l'envoi confirmé et affiche « Cela n'a pas fonctionné… » sinon. En
+  démonstration, l'envoi prend 1,5 s pour que l'attente se voie.
+- À faire : le texte « Envoi du code… » demandé par Ben pendant l'attente
+  n'existe pas encore dans les traductions (source : les `.arb` de l'app
+  Flutter) ; en attendant, le bouton montre seulement les pictogrammes,
+  annoncés par VoiceOver / TalkBack avec le libellé du bouton.
+
 ## État
 
 Interface seulement, avec les données fictives de l'aperçu Flutter

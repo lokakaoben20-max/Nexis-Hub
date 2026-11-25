@@ -45,7 +45,6 @@ targets:
           - Unbounded.ttf
         UILaunchScreen:
           UIColorName: LaunchBackground
-          UIImageName: LaunchMonogramme
           UIImageRespectsSafeAreaInsets: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

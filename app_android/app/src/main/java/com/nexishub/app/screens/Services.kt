@@ -258,7 +258,7 @@ private fun RequestForm(item: CatalogService, onBack: () -> Unit, onDone: () -> 
             if (failed) Text(app.t("requestNotSent"), style = body(14, color = Nexis.danger))
         }
         Box(Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp)) {
-            PrimaryButton(app.t("sendRequest"), enabled = valid && !sending, onClick = {
+            PrimaryButton(app.t("sendRequest"), enabled = valid, loading = sending, onClick = {
                 val chosen = commune ?: return@PrimaryButton
                 sending = true
                 failed = false
@@ -316,7 +316,7 @@ private fun DescribeForm(onBack: () -> Unit, onDone: () -> Unit) {
             if (failed) Text(app.t("requestNotSent"), style = body(14, color = Nexis.danger))
         }
         Box(Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp)) {
-            PrimaryButton(app.t("sendRequest"), enabled = valid && !sending, onClick = {
+            PrimaryButton(app.t("sendRequest"), enabled = valid, loading = sending, onClick = {
                 sending = true
                 scope.launch {
                     runCatching { app.repository.sendFreeRequest(heading, text) }

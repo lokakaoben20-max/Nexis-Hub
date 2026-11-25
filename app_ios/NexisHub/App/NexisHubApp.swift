@@ -58,23 +58,19 @@ struct RootView: View {
         .animation(reduceMotion ? nil : .smooth(duration: 0.35), value: app.signedIn)
         .task {
             if app.capture != nil { launched = true; return }
-            try? await Task.sleep(for: .milliseconds(reduceMotion ? 300 : 900))
+            try? await Task.sleep(for: .milliseconds(reduceMotion ? 300 : 1400))
             withAnimation(reduceMotion ? nil : .smooth(duration: 0.45)) { launched = true }
         }
     }
 }
 
-/// Prolonge l'écran de lancement du système (bleu Nexis, monogramme blanc)
-/// le temps d'un court fondu.
+/// Prolonge l'écran de lancement du système (bleu Nexis uni) : les
+/// pictogrammes des services se relaient, en blanc sur le bleu.
 struct LaunchView: View {
     var body: some View {
         ZStack {
-            Nexis.brand.ignoresSafeArea()
-            Image("Monogramme")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 120, height: 120)
-                .accessibilityLabel("Nexis Hub")
+            Nexis.heroGradient.ignoresSafeArea()
+            PictoLoader(size: 84, color: .white, label: "Nexis Hub")
         }
     }
 }

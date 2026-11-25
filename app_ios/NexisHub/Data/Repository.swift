@@ -13,6 +13,8 @@ protocol NexisRepository: AnyObject {
     var communes: [String] { get }
     var signupTermsVersion: Date { get }
 
+    /// Demande au serveur d'envoyer le code de connexion par ce canal.
+    func sendCode(phone: String, channel: CodeChannel) async throws
     /// Démonstration : ouvre le compte du numéro s'il existe.
     func openAccount(phone: String) -> Bool
     /// Crée le profil seulement si les conditions en vigueur sont acceptées.
@@ -47,6 +49,14 @@ final class DemoRepository: NexisRepository {
     init(now: Date = .now) { self.now = now }
 
     let codeChannels: [CodeChannel] = [.whatsapp, .telegram, .sms]
+
+    /// Démonstration : aucun message ne part. L'envoi réel prend un moment ;
+    /// ce délai le reproduit pour que l'attente (pictogrammes qui se relaient)
+    /// se voie et se teste dans l'aperçu.
+    func sendCode(phone: String, channel: CodeChannel) async throws {
+        guard DrcPhone.parse(phone).isValid, codeChannels.contains(channel) else { throw InvalidRequest() }
+        try await Task.sleep(for: .milliseconds(1500))
+    }
 
     let communes = [
         "Bandalungwa", "Barumbu", "Bumbu", "Gombe", "Kalamu", "Kasa-Vubu",

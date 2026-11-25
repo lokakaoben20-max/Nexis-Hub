@@ -16,6 +16,9 @@ interface NexisRepository {
     val communes: List<String>
     val signupTermsVersion: LocalDate
 
+    /** Demande au serveur d'envoyer le code de connexion par ce canal. */
+    suspend fun sendCode(phone: String, channel: CodeChannel)
+
     /** Démonstration : ouvre le compte du numéro s'il existe. */
     fun openAccount(phone: String): Boolean
 
@@ -53,6 +56,14 @@ class DemoRepository(private val now: Instant = Instant.now()) : NexisRepository
     private var nextRequestId = 1000
 
     override val codeChannels = listOf(CodeChannel.WHATSAPP, CodeChannel.TELEGRAM, CodeChannel.SMS)
+
+    /** Démonstration : aucun message ne part. L'envoi réel prend un moment ;
+     * ce délai le reproduit pour que l'attente (pictogrammes qui se relaient)
+     * se voie et se teste dans l'aperçu. */
+    override suspend fun sendCode(phone: String, channel: CodeChannel) {
+        require(DrcPhone.parse(phone).isValid && channel in codeChannels) { "Invalid code request" }
+        kotlinx.coroutines.delay(1_500)
+    }
 
     override val communes = listOf(
         "Bandalungwa", "Barumbu", "Bumbu", "Gombe", "Kalamu", "Kasa-Vubu",

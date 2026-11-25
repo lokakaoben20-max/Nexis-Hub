@@ -81,6 +81,19 @@ final class DemoRepositoryTests: XCTestCase {
         XCTAssertEqual(first?.catalogService?.id, "jardinage")
     }
 
+    func testSendCodeAcceptsValidNumberOnOfferedChannel() async throws {
+        let repo = DemoRepository()
+        try await repo.sendCode(phone: "+243812345678", channel: .whatsapp)
+    }
+
+    func testSendCodeRejectsIncompleteNumber() async {
+        let repo = DemoRepository()
+        do {
+            try await repo.sendCode(phone: "+24381234", channel: .sms)
+            XCTFail("un numéro incomplet ne doit pas recevoir de code")
+        } catch {}
+    }
+
     func testServiceRequestRejectsShortDescription() async {
         let repo = DemoRepository()
         do {
@@ -103,6 +116,14 @@ final class PictogrammesTests: XCTestCase {
         for name in Pictogrammes.byService.values.flatMap({ $0 }) {
             XCTAssertNotNil(UIImage(named: name, in: bundle, with: nil), "\(name) absent du catalogue")
         }
+    }
+
+    func testLoaderAndLogoAreInTheAppBundle() {
+        let bundle = Bundle(for: NexisHub.AppModel.self)
+        for name in PictoLoader.icons {
+            XCTAssertNotNil(UIImage(named: name, in: bundle, with: nil), "\(name) absent du catalogue")
+        }
+        XCTAssertNotNil(UIImage(named: "LogoBlanc", in: bundle, with: nil), "logo écrit absent")
     }
 
     func testOtherServiceStaysStill() {

@@ -4,7 +4,22 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
@@ -13,7 +28,11 @@ import com.nexishub.app.data.DemoRepository
 import com.nexishub.app.data.Texts
 import com.nexishub.app.screens.EntryFlow
 import com.nexishub.app.screens.Shell
+import com.nexishub.app.ui.Nexis
 import com.nexishub.app.ui.NexisTheme
+import com.nexishub.app.ui.PictoLoader
+import com.nexishub.app.ui.rememberReduceMotion
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,8 +58,31 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun NexisRoot(app: AppModel, capture: Capture?) {
     val start = remember { capture }
-    Crossfade(targetState = app.signedIn, label = "session") { signedIn ->
-        if (signedIn) Shell(start) else EntryFlow(start)
+    val reduceMotion = rememberReduceMotion()
+    // Le lancement ne revient pas quand la langue ou la session change.
+    var launched by rememberSaveable { mutableStateOf(capture != null) }
+    LaunchedEffect(Unit) {
+        if (!launched) {
+            delay(if (reduceMotion) 300L else 1_400L)
+            launched = true
+        }
+    }
+    Box(Modifier.fillMaxSize()) {
+        Crossfade(targetState = app.signedIn, label = "session") { signedIn ->
+            if (signedIn) Shell(start) else EntryFlow(start)
+        }
+        AnimatedVisibility(visible = !launched, enter = fadeIn(), exit = fadeOut(tween(450))) {
+            LaunchScreen()
+        }
+    }
+}
+
+/** Prolonge l'écran de démarrage d'Android : les pictogrammes des services
+ * se relaient, en blanc sur le bleu Nexis. */
+@Composable
+private fun LaunchScreen() {
+    Box(Modifier.fillMaxSize().background(Nexis.heroGradient), contentAlignment = Alignment.Center) {
+        PictoLoader(label = "Nexis Hub", size = 84.dp)
     }
 }
 

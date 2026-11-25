@@ -225,8 +225,13 @@ struct RequestServiceView: View {
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
             Button(action: send) {
-                if sending { ProgressView().frame(maxWidth: .infinity) }
-                else { WideLabel(text: app.t("sendRequest")) }
+                if sending {
+                    PictoLoader(size: 24, label: app.t("sendRequest"))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 1)
+                } else {
+                    WideLabel(text: app.t("sendRequest"))
+                }
             }
             .nxProminentButton()
             .disabled(!valid || sending)
@@ -306,7 +311,15 @@ struct DescribeNeedView: View {
         .navigationTitle(app.t("describeNeed"))
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
-            Button(action: send) { WideLabel(text: app.t("sendRequest")) }
+            Button(action: send) {
+                if sending {
+                    PictoLoader(size: 24, label: app.t("sendRequest"))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 1)
+                } else {
+                    WideLabel(text: app.t("sendRequest"))
+                }
+            }
                 .nxProminentButton()
                 .disabled(!valid || sending)
                 .padding(.horizontal, 20)

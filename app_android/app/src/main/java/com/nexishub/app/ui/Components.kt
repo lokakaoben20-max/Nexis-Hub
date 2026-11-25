@@ -42,6 +42,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -49,12 +53,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nexishub.app.AppModel
 import com.nexishub.app.LocalApp
+import com.nexishub.app.R
 import com.nexishub.app.data.CatalogService
 import com.nexishub.app.data.Mission
 import com.nexishub.app.data.MissionStatus
 import com.nexishub.app.data.PaymentState
 import com.nexishub.app.data.Service
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -128,6 +134,47 @@ fun rememberReduceMotion(): Boolean {
     }
 }
 
+/** Attente Nexis : les pictogrammes des services se relaient au lieu d'un
+ * rond qui tourne (choix de Ben du 2026-11-25). Avec « Supprimer les
+ * animations », la première icône reste fixe. */
+@Composable
+fun PictoLoader(label: String, size: Dp = 24.dp, color: Color = Color.White) {
+    val reduceMotion = rememberReduceMotion()
+    var index by remember { mutableIntStateOf(0) }
+    LaunchedEffect(reduceMotion) {
+        if (reduceMotion) return@LaunchedEffect
+        while (isActive) {
+            delay(LOADER_STEP_MS)
+            index = (index + 1) % LOADER_ICONS.size
+        }
+    }
+    Box(
+        Modifier.size(size).clearAndSetSemantics {
+            contentDescription = label
+            liveRegion = LiveRegionMode.Polite
+        },
+        contentAlignment = Alignment.Center,
+    ) {
+        AnimatedContent(
+            targetState = index,
+            transitionSpec = {
+                (fadeIn(tween(350)) + scaleIn(tween(350), initialScale = 0.55f)) togetherWith
+                    (fadeOut(tween(350)) + scaleOut(tween(350), targetScale = 1.25f))
+            },
+            label = "chargement",
+        ) { shown ->
+            Icon(painterResource(LOADER_ICONS[shown]), contentDescription = null, tint = color, modifier = Modifier.size(size))
+        }
+    }
+}
+
+/** Les icônes principales des services, dans l'ordre du catalogue. */
+val LOADER_ICONS = listOf(
+    R.drawable.ph_wrench, R.drawable.ph_lightning, R.drawable.ph_snowflake, R.drawable.ph_laptop, R.drawable.ph_pen_nib,
+    R.drawable.ph_scissors, R.drawable.ph_broom, R.drawable.ph_plant, R.drawable.ph_paint_roller, R.drawable.ph_truck,
+)
+const val LOADER_STEP_MS = 700L
+
 /** « Nouveau » : petite pastille rouge de la maquette. */
 @Composable
 fun NewBadge() {
@@ -141,14 +188,33 @@ fun NewBadge() {
 
 /** Bouton principal de l'écran, pleine largeur. */
 @Composable
-fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, icon: ImageVector? = null) {
+fun PrimaryButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    icon: ImageVector? = null,
+    loading: Boolean = false,
+) {
     Button(
         onClick = onClick,
-        enabled = enabled,
+        enabled = enabled && !loading,
         modifier = modifier.fillMaxWidth().height(56.dp),
         shape = CircleShape,
-        colors = ButtonDefaults.buttonColors(containerColor = Nexis.brand, contentColor = Color.White),
+        colors = if (loading) {
+            // Pendant l'attente, le bouton garde son bleu : seuls les pictogrammes bougent.
+            ButtonDefaults.buttonColors(
+                containerColor = Nexis.brand, contentColor = Color.White,
+                disabledContainerColor = Nexis.brand, disabledContentColor = Color.White,
+            )
+        } else {
+            ButtonDefaults.buttonColors(containerColor = Nexis.brand, contentColor = Color.White)
+        },
     ) {
+        if (loading) {
+            PictoLoader(label = text, size = 24.dp)
+            return@Button
+        }
         if (icon != null) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
