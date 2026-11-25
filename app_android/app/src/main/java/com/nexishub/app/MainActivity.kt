@@ -44,6 +44,7 @@ class MainActivity : ComponentActivity() {
         // ouvre directement l'écran demandé avec les données fictives.
         val capture = if (BuildConfig.DEBUG) Capture.from(intent.getStringExtra("capture")) else null
         val app = AppModel(DemoRepository(), texts, intent.getStringExtra("language") ?: AppModel.defaultLanguage())
+        app.capture = capture?.name?.lowercase()
         if (capture?.signedIn == true) app.signIn()
         setContent {
             NexisTheme {
@@ -87,7 +88,13 @@ private fun LaunchScreen() {
 }
 
 /** Écrans que la CI photographie (voir .github/workflows/apps-natives.yml). */
-enum class Capture(val signedIn: Boolean, val tab: Int? = null, val entry: String? = null, val picker: Boolean = false) {
+enum class Capture(
+    val signedIn: Boolean,
+    val tab: Int? = null,
+    val entry: String? = null,
+    val picker: Boolean = false,
+    val provider: Boolean = false,
+) {
     WELCOME(false, entry = "welcome"),
     PHONE(false, entry = "phone"),
     SIGNUP(false, entry = "signup"),
@@ -95,7 +102,20 @@ enum class Capture(val signedIn: Boolean, val tab: Int? = null, val entry: Strin
     MISSIONS(true, tab = 1),
     WALLET(true, tab = 2),
     PROFILE(true, tab = 3),
-    SERVICES(true, tab = 0, picker = true);
+    SERVICES(true, tab = 0, picker = true),
+
+    // Écrans de mission (voir MissionRoute.forCapture).
+    TRACKING(true, tab = 1),
+    QUOTES(true, tab = 1),
+    PAY(true, tab = 1),
+    PENDING(true, tab = 1),
+    CONFIRM(true, tab = 1),
+    REPORT(true, tab = 1),
+    DISPUTE(true, tab = 1),
+    DECISION(true, tab = 1),
+    PROVIDER(true, tab = 0, provider = true),
+    REQUEST(true, tab = 0, provider = true),
+    JOB(true, tab = 0, provider = true);
 
     companion object {
         fun from(value: String?): Capture? = entries.firstOrNull { it.name.equals(value, ignoreCase = true) }

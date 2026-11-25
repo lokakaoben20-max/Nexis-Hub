@@ -91,9 +91,28 @@ Interface seulement, avec les données fictives de l'aperçu Flutter
 lancement, bienvenue, numéro, code, inscription (CGU obligatoires),
 accueil (portefeuille, actions rapides, prestations), missions,
 portefeuille (mouvements), profil (langue), « Quel service ? »,
-demande de service, « Décrire mon besoin ». Les écrans pas encore
-portés (suivi de mission, devis, paiement, litige, espace prestataire)
-affichent « Bientôt dans l'app ».
+demande de service, « Décrire mon besoin », et depuis le 2026-11-26 tous
+les écrans de mission repris de Flutter :
+
+- client : comparer les devis, payer (choix de l'opérateur), attente de
+  l'opérateur, suivi (plan dessiné et étapes), confirmer, signaler un
+  problème, litige en cours et décision ;
+- prestataire (compte prestataire, interrupteur Client / Prestataire dans
+  le profil et sur l'accueil prestataire) : accueil « En service », missions,
+  envoyer un devis (prix en FC ou USD, créneaux proposés ou « Autre »),
+  déroulé d'une mission (départ, arrivée confirmée par le client ou par
+  son code de présence, cinq essais au plus, fin).
+
+Une mission ouvre l'écran qui suit son état réel, comme Flutter
+(`openMission`). Les écrans ne gardent que des numéros et relisent le
+dépôt. Les montants viennent tous du dépôt ; l'app ne calcule pas
+d'argent (le prix tapé est seulement lu, `PriceInput`, et le serveur le
+revérifie). Dans un écran de mission, la barre d'onglets et l'accessoire
+« Demander un service » se rangent (iOS 26.1 et plus).
+
+Restent « Bientôt dans l'app » : appeler et écrire (prestataire, client,
+NexisHub), photos, ajouter un numéro Mobile Money, « Je n'ai rien reçu »,
+« Nous nous sommes arrangés », dépôt et retrait, réglages du profil.
 
 ## Textes
 

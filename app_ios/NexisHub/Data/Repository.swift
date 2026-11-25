@@ -33,6 +33,46 @@ protocol NexisRepository: AnyObject {
     func requestService(serviceId: String, commune: String, description: String) async throws
     /// « Décrire mon besoin » : une demande libre transmise à l'équipe.
     func sendFreeRequest(title: String, text: String) async throws
+
+    // --- Client : devis, paiement, suivi, litige ---
+
+    func mission(_ id: Int) async throws -> Mission
+    /// Les devis reçus pour une mission, le mieux noté en premier.
+    func quotes(missionId: Int) async throws -> [Quote]
+    func payAccounts() async throws -> [PayAccount]
+    /// Demande le paiement du devis choisi à l'opérateur. Le montant est celui
+    /// du devis enregistré sur le serveur, jamais un calcul de l'app.
+    func pay(missionId: Int, quoteId: Int, mobileOperator: MobileOperator) async throws -> Mission
+    /// Le client confirme que le travail est fait : le serveur verse l'argent
+    /// sécurisé au prestataire.
+    func confirmDone(missionId: Int) async throws -> Mission
+    /// Le litige de la mission, s'il y en a un.
+    func dispute(missionId: Int) async throws -> Dispute?
+    /// Le client signale un problème : le serveur ouvre le litige et bloque
+    /// l'argent sécurisé jusqu'à la décision. Refusé si la mission n'a pas
+    /// d'argent sécurisé.
+    func reportProblem(missionId: Int, reason: DisputeReason, text: String) async throws -> Dispute
+
+    // --- Espace prestataire ---
+
+    func providerHome() async throws -> ProviderHome
+    /// « En service » : reçoit ou non les nouvelles demandes.
+    func setInService(_ value: Bool) async throws
+    func providerRequest(missionId: Int) async throws -> ProviderRequest
+    /// Envoie un devis. Le serveur refuse un prix nul ou négatif, ou une
+    /// mission qui n'est plus ouverte.
+    func sendQuote(missionId: Int, price: Money, slot: Date) async throws
+    func providerJob(missionId: Int) async throws -> ProviderJob
+    func setSharing(missionId: Int, _ value: Bool) async throws -> ProviderJob
+    /// « Je suis parti ».
+    func leaveForJob(missionId: Int) async throws -> ProviderJob
+    /// « Je suis arrivé » : prévient le client, ne confirme rien seul.
+    func signalArrival(missionId: Int) async throws -> ProviderJob
+    /// Le code de présence du client, tapé par le prestataire. Cinq essais au
+    /// plus ; ensuite seul l'appui du client confirme.
+    func enterPresenceCode(missionId: Int, code: String) async throws -> PresenceResult
+    /// « J'ai terminé » : le client a 48 h pour confirmer ou signaler.
+    func finishJob(missionId: Int) async throws -> ProviderJob
 }
 
 struct InvalidRequest: Error {}
@@ -110,29 +150,86 @@ final class DemoRepository: NexisRepository {
         now.addingTimeInterval(-(minutes * 60 + hours * 3600 + days * 86_400))
     }
 
+    private func quote(_ id: Int, _ name: String, _ initials: String, _ color: UInt32,
+                       _ rating: Double, _ reviews: Int, _ price: Money, _ slot: Date) -> Quote {
+        Quote(id: id, providerName: name, initials: initials, avatarColor: color,
+              rating: rating, reviews: reviews, price: price, slot: slot)
+    }
+
     private lazy var sampleMissions: [Mission] = [
         Mission(id: 51, service: .plomberie, commune: "Gombe", status: .inProgress,
                 payment: .secured, amount: Money(500, .usd), providerName: "Jean M.",
-                when: ago(hours: 1)),
+                when: ago(hours: 1),
+                chosen: quote(511, "Jean M.", "JM", 0x1E7A5C, 4.8, 92, Money(500, .usd),
+                              now.addingTimeInterval(40 * 60)),
+                distanceKm: 2.4,
+                steps: [.paid: ago(minutes: 30), .onTheWay: ago(minutes: 19)]),
         Mission(id: 52, service: .nettoyage, commune: "Limete", status: .quoted,
-                payment: .none, quotesCount: 3, when: ago(hours: 3), detail: "3 pièces"),
+                payment: .none, quotesCount: 3, when: ago(hours: 3), detail: "3 pièces",
+                wanted: "Samedi matin"),
         Mission(id: 49, service: .coiffure, commune: "Limete", status: .awaitingConfirmation,
                 payment: .secured, amount: Money(15_000, .cdf), providerName: "Nadia K.",
-                when: ago(hours: 5)),
+                when: ago(hours: 5),
+                chosen: quote(491, "Nadia K.", "NK", 0xC2416B, 4.9, 57, Money(15_000, .cdf),
+                              ago(hours: 3)),
+                steps: [.paid: ago(hours: 5), .onTheWay: ago(hours: 3.5), .onSite: ago(hours: 3),
+                        .workDone: ago(minutes: 20)]),
         Mission(id: 47, service: .climatisation, commune: "Bandal", status: .disputed,
                 payment: .blocked, amount: Money(6_000, .usd), providerName: "Rodrigue T.",
                 when: ago(days: 1)),
+        Mission(id: 44, service: .jardinage, commune: "Ngaliema", status: .disputed,
+                payment: .blocked, amount: Money(30_000, .cdf), providerName: "Patrick B.",
+                when: ago(days: 4)),
         Mission(id: 53, service: .electricite, commune: "Ngaliema", status: .pending,
                 payment: .none, when: ago(minutes: 30)),
         Mission(id: 41, service: .plomberie, commune: "Gombe", status: .completed,
                 payment: .released, amount: Money(4_500, .usd), providerName: "Jean M.",
-                when: ago(days: 2), rated: true),
+                when: ago(days: 2), rated: true, providerRating: 4.8, providerReviews: 92),
         Mission(id: 38, service: .nettoyage, commune: "Limete", status: .completed,
                 payment: .released, amount: Money(25_000, .cdf), providerName: "Prisca K.",
-                when: ago(days: 6), rated: true),
+                when: ago(days: 6), rated: true, providerRating: 4.9, providerReviews: 212),
         Mission(id: 33, service: .electricite, commune: "Limete", status: .completed,
                 payment: .released, amount: Money(18_000, .cdf), providerName: "Alain L.",
-                when: ago(days: 12)),
+                when: ago(days: 12), providerRating: 4.6, providerReviews: 58),
+    ]
+
+    private lazy var sampleMovements: [Movement] = [
+        Movement(kind: .payment, label: "Plomberie · Gombe", amount: Money(-500, .usd),
+                 when: ago(hours: 1), state: .secured),
+        Movement(kind: .refund, label: "Visite annulée", amount: Money(10_000, .cdf),
+                 when: ago(days: 1), state: .refunded),
+        Movement(kind: .release, label: "Plomberie · Gombe", amount: Money(-4_500, .usd),
+                 when: ago(days: 2), state: .released),
+        Movement(kind: .release, label: "Nettoyage · Limete", amount: Money(-25_000, .cdf),
+                 when: ago(days: 6), state: .released),
+    ]
+
+    private lazy var disputes: [Int: Dispute] = [
+        47: Dispute(missionId: 47, reason: .badWork, text: "Le climatiseur coule encore dans la chambre.",
+                    photos: 2, openedAt: ago(hours: 20),
+                    providerReply: "Je peux repasser demain matin.", providerRepliedAt: ago(hours: 17)),
+        44: Dispute(missionId: 44, reason: .notFinished, text: "La haie du fond n'a pas été taillée.",
+                    photos: 1, openedAt: ago(days: 3), outcome: .refund, decidedAt: ago(hours: 2),
+                    clientAmount: Money(30_000, .cdf), providerAmount: Money(0, .cdf),
+                    contestUntil: ago(hours: 2).addingTimeInterval(3 * 86_400)),
+    ]
+
+    /// Le prochain jour de la semaine (1 = dimanche … 7 = samedi) à cette heure.
+    private func next(weekday: Int, hour: Int) -> Date {
+        let calendar = Calendar(identifier: .gregorian)
+        let today = calendar.component(.weekday, from: now)
+        var days = (weekday - today + 7) % 7
+        if days == 0 { days = 7 }
+        let day = calendar.date(byAdding: .day, value: days, to: now)!
+        return calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day)!
+    }
+
+    private lazy var quotesByMission: [Int: [Quote]] = [
+        52: [
+            quote(521, "Prisca K.", "PK", 0x494C95, 4.9, 128, Money(25_000, .cdf), next(weekday: 7, hour: 9)),
+            quote(522, "Joël M.", "JM", 0x1E7A5C, 4.7, 64, Money(22_000, .cdf), next(weekday: 7, hour: 10)),
+            quote(523, "Aline L.", "AL", 0xC98200, 4.6, 31, Money(28_000, .cdf), next(weekday: 7, hour: 8)),
+        ],
     ]
 
     func missions() async throws -> [Mission] {
@@ -144,17 +241,7 @@ final class DemoRepository: NexisRepository {
     func notifications() async throws -> [AppNotification] { [] }
 
     func movements() async throws -> [Movement] {
-        guard isSample else { return [] }
-        return [
-            Movement(kind: .payment, label: "Plomberie · Gombe", amount: Money(-500, .usd),
-                     when: ago(hours: 1), state: .secured),
-            Movement(kind: .refund, label: "Visite annulée", amount: Money(10_000, .cdf),
-                     when: ago(days: 1), state: .refunded),
-            Movement(kind: .release, label: "Plomberie · Gombe", amount: Money(-4_500, .usd),
-                     when: ago(days: 2), state: .released),
-            Movement(kind: .release, label: "Nettoyage · Limete", amount: Money(-25_000, .cdf),
-                     when: ago(days: 6), state: .released),
-        ]
+        isSample ? sampleMovements : []
     }
 
     /// Fictif : « Peinture » et « Déménagement » montrent seulement comment
@@ -201,4 +288,196 @@ final class DemoRepository: NexisRepository {
 
     /// Aperçu : la demande n'est envoyée nulle part.
     func sendFreeRequest(title: String, text: String) async throws {}
+
+    // MARK: Client : devis, paiement, suivi, litige
+
+    func mission(_ id: Int) async throws -> Mission {
+        guard let found = try await missions().first(where: { $0.id == id }) else {
+            throw NexisRefusal(code: "mission_not_found")
+        }
+        return found
+    }
+
+    func quotes(missionId: Int) async throws -> [Quote] {
+        (quotesByMission[missionId] ?? []).sorted { $0.rating > $1.rating }
+    }
+
+    func payAccounts() async throws -> [PayAccount] {
+        [
+            PayAccount(mobileOperator: .mpesa, maskedNumber: "+243 81 •• •• 412"),
+            PayAccount(mobileOperator: .orange, maskedNumber: "+243 89 •• •• 207"),
+            PayAccount(mobileOperator: .airtel, maskedNumber: nil),
+        ]
+    }
+
+    private func replace(_ mission: Mission) {
+        guard let index = sampleMissions.firstIndex(where: { $0.id == mission.id }) else { return }
+        sampleMissions[index] = mission
+    }
+
+    func pay(missionId: Int, quoteId: Int, mobileOperator: MobileOperator) async throws -> Mission {
+        var mission = try await mission(missionId)
+        guard mission.status == .quoted,
+              let quote = quotesByMission[missionId]?.first(where: { $0.id == quoteId }),
+              try await payAccounts().contains(where: { $0.mobileOperator == mobileOperator && $0.maskedNumber != nil })
+        else { throw NexisRefusal(code: "payment_refused") }
+        // Démonstration : l'opérateur accepte après quelques secondes.
+        try await Task.sleep(for: .seconds(3))
+        mission.status = .confirmed
+        mission.payment = .secured
+        mission.amount = quote.price
+        mission.providerName = quote.providerName
+        mission.chosen = quote
+        mission.steps = [.paid: .now]
+        replace(mission)
+        sampleMovements.insert(
+            Movement(kind: .payment, label: "\(mission.service.name("fr")) · \(mission.commune)",
+                     amount: Money(-quote.price.minorUnits, quote.price.currency),
+                     when: .now, state: .secured), at: 0)
+        return mission
+    }
+
+    func confirmDone(missionId: Int) async throws -> Mission {
+        var mission = try await mission(missionId)
+        guard mission.status == .awaitingConfirmation, mission.payment == .secured else {
+            throw NexisRefusal(code: "mission_not_awaiting_confirmation")
+        }
+        mission.status = .completed
+        mission.payment = .released
+        mission.steps[.confirmed] = .now
+        replace(mission)
+        return mission
+    }
+
+    func dispute(missionId: Int) async throws -> Dispute? { disputes[missionId] }
+
+    func reportProblem(missionId: Int, reason: DisputeReason, text: String) async throws -> Dispute {
+        var mission = try await mission(missionId)
+        let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard [.confirmed, .inProgress, .awaitingConfirmation].contains(mission.status),
+              mission.payment == .secured, !words.isEmpty, words.count <= 500 else {
+            throw NexisRefusal(code: "dispute_not_allowed")
+        }
+        let dispute = Dispute(missionId: missionId, reason: reason, text: words,
+                              photos: 0, openedAt: .now)
+        disputes[missionId] = dispute
+        mission.status = .disputed
+        mission.payment = .blocked
+        replace(mission)
+        return dispute
+    }
+
+    // MARK: Espace prestataire (fictif)
+
+    private var inService = true
+
+    /// Code de présence de la cliente dans l'aperçu. Sur le vrai serveur, il
+    /// n'est donné qu'au client et n'est jamais enregistré.
+    static let demoPresenceCode = "2580"
+
+    private lazy var requests: [ProviderRequest] = [
+        ProviderRequest(missionId: 71, service: .nettoyage, commune: "Limete",
+                        summary: "Samedi matin · 3 pièces",
+                        description: "Appartement de 3 pièces, cuisine et salle de bain comprises. Produits à apporter.",
+                        wanted: "Samedi matin", photos: 3, receivedAt: ago(minutes: 3),
+                        slotChoices: [next(weekday: 7, hour: 8), next(weekday: 7, hour: 9),
+                                      next(weekday: 7, hour: 10)]),
+        ProviderRequest(missionId: 72, service: .jardinage, commune: "Ngaliema",
+                        summary: "Dimanche · petit jardin",
+                        description: "Petit jardin devant la maison : tondre et tailler la haie.",
+                        wanted: "Dimanche", photos: 1, receivedAt: ago(minutes: 12),
+                        slotChoices: [next(weekday: 1, hour: 9), next(weekday: 1, hour: 14)]),
+    ]
+
+    private lazy var jobs: [ProviderJob] = [
+        ProviderJob(missionId: 61, service: .nettoyage, commune: "Limete", clientName: "Esther M.",
+                    clientInitials: "EM", clientColor: 0xC2416B,
+                    place: "Limete, 7e rue · près de l'école", amount: Money(25_000, .cdf),
+                    steps: [.clientPaid: ago(minutes: 40), .leftHome: ago(minutes: 12)],
+                    sharing: true),
+    ]
+
+    func providerHome() async throws -> ProviderHome {
+        let securedFrancs = jobs
+            .filter { $0.steps[.finished] == nil && $0.amount.currency == .cdf }
+            .reduce(0) { $0 + $1.amount.minorUnits }
+        return ProviderHome(inService: inService, communes: ["Limete", "Gombe"],
+                            available: Money(120_000, .cdf), secured: Money(securedFrancs, .cdf),
+                            requests: requests, jobs: jobs)
+    }
+
+    func setInService(_ value: Bool) async throws { inService = value }
+
+    func providerRequest(missionId: Int) async throws -> ProviderRequest {
+        guard let request = requests.first(where: { $0.missionId == missionId }) else {
+            throw NexisRefusal(code: "mission_not_open")
+        }
+        return request
+    }
+
+    func sendQuote(missionId: Int, price: Money, slot: Date) async throws {
+        guard let index = requests.firstIndex(where: { $0.missionId == missionId }) else {
+            throw NexisRefusal(code: "mission_not_open")
+        }
+        guard !requests[index].quoted else { throw NexisRefusal(code: "quote_already_sent") }
+        guard price.minorUnits > 0 else { throw NexisRefusal(code: "price_must_be_positive") }
+        guard slot > .now else { throw NexisRefusal(code: "slot_in_the_past") }
+        requests[index].quoted = true
+    }
+
+    func providerJob(missionId: Int) async throws -> ProviderJob {
+        guard let job = jobs.first(where: { $0.missionId == missionId }) else {
+            throw NexisRefusal(code: "mission_not_found")
+        }
+        return job
+    }
+
+    @discardableResult
+    private func save(_ job: ProviderJob) -> ProviderJob {
+        if let index = jobs.firstIndex(where: { $0.missionId == job.missionId }) { jobs[index] = job }
+        return job
+    }
+
+    func setSharing(missionId: Int, _ value: Bool) async throws -> ProviderJob {
+        var job = try await providerJob(missionId: missionId)
+        job.sharing = value
+        return save(job)
+    }
+
+    func leaveForJob(missionId: Int) async throws -> ProviderJob {
+        var job = try await providerJob(missionId: missionId)
+        guard job.steps[.leftHome] == nil else { return job }
+        job.steps[.leftHome] = .now
+        return save(job)
+    }
+
+    func signalArrival(missionId: Int) async throws -> ProviderJob {
+        var job = try await providerJob(missionId: missionId)
+        guard job.steps[.leftHome] != nil else { throw NexisRefusal(code: "not_on_the_way") }
+        job.arrivalSignaled = true
+        return save(job)
+    }
+
+    func enterPresenceCode(missionId: Int, code: String) async throws -> PresenceResult {
+        var job = try await providerJob(missionId: missionId)
+        if job.steps[.arrived] != nil { return .confirmed }
+        guard job.arrivalSignaled else { throw NexisRefusal(code: "arrival_not_signaled") }
+        guard job.codeAttemptsLeft > 0 else { return .locked }
+        guard code.trimmingCharacters(in: .whitespaces) == Self.demoPresenceCode else {
+            job.codeAttemptsLeft -= 1
+            save(job)
+            return job.codeAttemptsLeft == 0 ? .locked : .wrongCode
+        }
+        job.steps[.arrived] = .now
+        save(job)
+        return .confirmed
+    }
+
+    func finishJob(missionId: Int) async throws -> ProviderJob {
+        var job = try await providerJob(missionId: missionId)
+        guard job.steps[.arrived] != nil else { throw NexisRefusal(code: "arrival_not_confirmed") }
+        guard job.steps[.finished] == nil else { return job }
+        job.steps[.finished] = .now
+        return save(job)
+    }
 }

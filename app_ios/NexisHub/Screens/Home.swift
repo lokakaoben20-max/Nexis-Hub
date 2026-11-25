@@ -15,12 +15,13 @@ struct HomeView: View {
     @State private var comingSoon: SheetTitle?
     @State private var notifications: [AppNotification] = []
     @State private var showingNotifications = false
+    @State private var flow = MissionFlow()
 
     /// Missions montrées ici ; le reste est dans l'onglet Missions.
     private let shown = 2
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $flow.path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     WalletCard(wallet: wallet)
@@ -68,8 +69,10 @@ struct HomeView: View {
                 NotificationsView(items: notifications)
             }
             .sheet(item: $comingSoon) { item in ComingSoonView(title: item.id) }
+            .missionDestinations()
             .task(id: app.revision) { await load() }
         }
+        .missionFlow(flow, tab: .home)
     }
 
     private var greeting: String {
@@ -144,7 +147,7 @@ struct HomeView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(list.prefix(shown)) { mission in
-                        Button { comingSoon = SheetTitle(app.t("followMission")) } label: {
+                        Button { flow.open(mission, app: app) } label: {
                             MissionRow(mission: mission)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 10)

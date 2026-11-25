@@ -51,6 +51,24 @@ struct Mission: Identifiable, Hashable {
     var when: Date? = nil
     var rated: Bool = false
     var detail: String? = nil
+    /// Le moment souhaité par le client, tel qu'il l'a écrit (« Samedi matin »).
+    var wanted: String? = nil
+    /// Le devis choisi et payé (prestataire, prix, créneau).
+    var chosen: Quote? = nil
+    /// Distance du prestataire en route, seulement s'il partage sa position.
+    var distanceKm: Double? = nil
+    /// Heure de chaque étape franchie du suivi.
+    var steps: [TrackStep: Date] = [:]
+    /// Note et nombre d'avis du prestataire, tels que le serveur les donne.
+    var providerRating: Double? = nil
+    var providerReviews: Int? = nil
+
+    var rating: Double? { chosen?.rating ?? providerRating }
+    var reviews: Int? { chosen?.reviews ?? providerReviews }
+    /// Prénom du prestataire, pour « Vous confirmez, Jean reçoit l'argent ».
+    var providerFirstName: String {
+        chosen?.firstName ?? providerName.map { String($0.split(separator: " ").first ?? "") } ?? ""
+    }
 
     var isActive: Bool {
         switch status {

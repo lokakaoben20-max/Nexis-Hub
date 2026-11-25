@@ -14,10 +14,20 @@ final class AppModel {
     var signedIn = false
     var walletCurrency: Currency = .cdf
     var amountsHidden = false
+    /// Espace prestataire ouvert (seulement pour un compte prestataire).
+    var providerSpace = false
+    /// Onglet demandé par un écran (« Voir mon portefeuille ») ; le cadre
+    /// l'ouvre puis l'efface.
+    var requestedTab: AppTab?
+    /// Onglets dont un écran de mission est ouvert : l'accessoire « Demander
+    /// un service » s'y range, comme la barre d'onglets.
+    var openFlowTabs: Set<AppTab> = []
 
     /// Écran ouvert d'emblée pour les captures de la CI (versions de
     /// débogage seulement) : welcome, phone, signup, home, missions,
-    /// wallet, profile, services.
+    /// wallet, profile, services, et les écrans de mission (tracking,
+    /// quotes, pay, pending, confirm, report, dispute, decision, provider,
+    /// request, job).
     var capture: String?
 
     /// Change quand des données changent : les écrans relisent alors le dépôt.
@@ -52,5 +62,8 @@ final class AppModel {
         signedIn = false
         amountsHidden = false
         walletCurrency = .cdf
+        providerSpace = false
+        requestedTab = nil
+        openFlowTabs = []
     }
 }

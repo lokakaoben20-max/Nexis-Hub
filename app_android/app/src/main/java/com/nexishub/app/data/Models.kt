@@ -42,7 +42,24 @@ data class Mission(
     val at: Instant? = null,
     val rated: Boolean = false,
     val detail: String? = null,
+    /** Le moment souhaité par le client, tel qu'il l'a écrit (« Samedi matin »). */
+    val wanted: String? = null,
+    /** Le devis choisi et payé (prestataire, prix, créneau). */
+    val chosen: Quote? = null,
+    /** Distance du prestataire en route, seulement s'il partage sa position. */
+    val distanceKm: Double? = null,
+    /** Heure de chaque étape franchie du suivi. */
+    val steps: Map<TrackStep, Instant> = emptyMap(),
+    /** Note et nombre d'avis du prestataire, tels que le serveur les donne. */
+    val providerRating: Double? = null,
+    val providerReviews: Int? = null,
 ) {
+    val rating: Double? get() = chosen?.rating ?: providerRating
+    val reviews: Int? get() = chosen?.reviews ?: providerReviews
+
+    /** Prénom du prestataire, pour « Vous confirmez, Jean reçoit l'argent ». */
+    val providerFirstName: String get() = chosen?.firstName ?: providerName?.split(" ")?.first().orEmpty()
+
     val isActive: Boolean
         get() = status !in setOf(MissionStatus.COMPLETED, MissionStatus.CANCELLED)
 

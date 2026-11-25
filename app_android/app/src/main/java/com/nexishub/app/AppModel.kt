@@ -25,6 +25,16 @@ class AppModel(
     var walletCurrency by mutableStateOf(Currency.CDF)
     var amountsHidden by mutableStateOf(false)
 
+    /** Espace prestataire ouvert (seulement pour un compte prestataire). */
+    var providerSpace by mutableStateOf(false)
+
+    /** Onglet demandé par un écran (« Voir mon portefeuille ») ; le cadre
+     * l'ouvre puis l'efface. */
+    var requestedTab by mutableStateOf<Int?>(null)
+
+    /** Écran ouvert d'emblée pour les captures de la CI (version de débogage). */
+    var capture: String? = null
+
     /** Change quand des données changent : les écrans relisent alors le dépôt. */
     var revision by mutableIntStateOf(0)
         private set
@@ -51,6 +61,8 @@ class AppModel(
         signedIn = false
         amountsHidden = false
         walletCurrency = Currency.CDF
+        providerSpace = false
+        requestedTab = null
     }
 
     companion object {

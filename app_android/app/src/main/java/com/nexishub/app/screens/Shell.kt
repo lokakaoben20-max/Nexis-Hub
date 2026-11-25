@@ -127,7 +127,26 @@ fun Shell(start: Capture?) {
     var tab by rememberSaveable { mutableIntStateOf(start?.tab ?: 0) }
     var picking by remember { mutableStateOf(start?.picker == true) }
     var comingSoon by remember { mutableStateOf<String?>(null) }
-    val showFab = tab <= 1
+    val flow = remember { MissionFlow() }
+    // Captures de la CI : l'espace et l'écran de mission demandés.
+    LaunchedEffect(Unit) {
+        if (start?.provider == true) app.providerSpace = true
+        MissionRoute.forCapture(app.capture)?.let { flow.path.addAll(it) }
+    }
+    // Changer d'espace ramène à son accueil.
+    var shownSpace by remember { mutableStateOf(app.providerSpace) }
+    if (shownSpace != app.providerSpace) {
+        shownSpace = app.providerSpace
+        tab = 0
+    }
+    LaunchedEffect(app.requestedTab) {
+        app.requestedTab?.let {
+            tab = it
+            app.requestedTab = null
+        }
+    }
+    // Côté prestataire, rien à demander : pas de bouton « + ».
+    val showFab = tab <= 1 && !app.providerSpace
     // « Demander un service » reste un « + » compact. Il s'ouvre quelques
     // secondes pour se présenter : de temps en temps quand la personne a déjà
     // des missions (sinon la carte de l'accueil porte déjà ce bouton), et dès
@@ -161,55 +180,59 @@ fun Shell(start: Capture?) {
         Triple(app.t("navWallet"), Icons.Rounded.AccountBalanceWallet, Icons.Outlined.AccountBalanceWallet),
         Triple(app.t("navProfile"), Icons.Rounded.AccountCircle, Icons.Outlined.AccountCircle),
     )
-    Scaffold(
-        containerColor = p.bg,
-        bottomBar = {
-            NavigationBar(containerColor = p.surface) {
-                items.forEachIndexed { index, (label, selected, idle) ->
-                    NavigationBarItem(
-                        selected = tab == index,
-                        onClick = { tab = index },
-                        icon = { Icon(if (tab == index) selected else idle, contentDescription = null) },
-                        label = { Text(label, style = body(12, if (tab == index) FontWeight.SemiBold else FontWeight.Medium), maxLines = 1) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = p.accent, selectedTextColor = p.accent,
-                            indicatorColor = p.soft, unselectedIconColor = p.muted, unselectedTextColor = p.muted,
-                        ),
+    MissionFlowHost(flow) {
+        Scaffold(
+            containerColor = p.bg,
+            bottomBar = {
+                NavigationBar(containerColor = p.surface) {
+                    items.forEachIndexed { index, (label, selected, idle) ->
+                        NavigationBarItem(
+                            selected = tab == index,
+                            onClick = { tab = index },
+                            icon = { Icon(if (tab == index) selected else idle, contentDescription = null) },
+                            label = { Text(label, style = body(12, if (tab == index) FontWeight.SemiBold else FontWeight.Medium), maxLines = 1) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = p.accent, selectedTextColor = p.accent,
+                                indicatorColor = p.soft, unselectedIconColor = p.muted, unselectedTextColor = p.muted,
+                            ),
+                        )
+                    }
+                }
+            },
+            floatingActionButton = {
+                if (showFab) {
+                    ExtendedFloatingActionButton(
+                        onClick = { picking = true },
+                        expanded = fabOpen,
+                        icon = { Icon(Icons.Rounded.Add, contentDescription = if (fabOpen) null else app.t("requestService")) },
+                        text = { Text(app.t("requestService"), style = body(15, FontWeight.SemiBold)) },
+                        containerColor = Nexis.brand,
+                        contentColor = Color.White,
+                        shape = RoundedCornerShape(20.dp),
                     )
                 }
-            }
-        },
-        floatingActionButton = {
-            if (showFab) {
-                ExtendedFloatingActionButton(
-                    onClick = { picking = true },
-                    expanded = fabOpen,
-                    icon = { Icon(Icons.Rounded.Add, contentDescription = if (fabOpen) null else app.t("requestService")) },
-                    text = { Text(app.t("requestService"), style = body(15, FontWeight.SemiBold)) },
-                    containerColor = Nexis.brand,
-                    contentColor = Color.White,
-                    shape = RoundedCornerShape(20.dp),
-                )
-            }
-        },
-    ) { padding ->
-        Box(
-            Modifier.padding(bottom = padding.calculateBottomPadding())
-                // Seules les touches qui ne tombent sur aucun bouton arrivent ici.
-                .pointerInput(showFab) {
-                    detectTapGestures {
-                        if (showFab && confusedTaps.onTap(SystemClock.uptimeMillis())) openFabFor(FAB_CONFUSED_SHOWN_MS)
-                    }
-                },
-        ) {
-            when (tab) {
-                0 -> HomeTab(
-                    onPick = { picking = true }, onTab = { tab = it }, onComingSoon = { comingSoon = it },
-                    onMissions = { hasMissions = it },
-                )
-                1 -> MissionsTab(onComingSoon = { comingSoon = it }, onMissions = { hasMissions = it })
-                2 -> WalletTab()
-                else -> ProfileTab(onComingSoon = { comingSoon = it })
+            },
+        ) { padding ->
+            Box(
+                Modifier.padding(bottom = padding.calculateBottomPadding())
+                    // Seules les touches qui ne tombent sur aucun bouton arrivent ici.
+                    .pointerInput(showFab) {
+                        detectTapGestures {
+                            if (showFab && confusedTaps.onTap(SystemClock.uptimeMillis())) openFabFor(FAB_CONFUSED_SHOWN_MS)
+                        }
+                    },
+            ) {
+                when {
+                    tab == 0 && app.providerSpace -> ProviderHomeTab(onTab = { tab = it })
+                    tab == 0 -> HomeTab(
+                        onPick = { picking = true }, onTab = { tab = it }, onComingSoon = { comingSoon = it },
+                        onMissions = { hasMissions = it },
+                    )
+                    tab == 1 && app.providerSpace -> ProviderMissionsTab()
+                    tab == 1 -> MissionsTab(onMissions = { hasMissions = it })
+                    tab == 2 -> WalletTab()
+                    else -> ProfileTab(onComingSoon = { comingSoon = it })
+                }
             }
         }
     }
@@ -274,6 +297,7 @@ fun TabScaffold(heading: String, actions: @Composable () -> Unit = {}, content: 
 @Composable
 private fun HomeTab(onPick: () -> Unit, onTab: (Int) -> Unit, onComingSoon: (String) -> Unit, onMissions: (Boolean) -> Unit) {
     val app = LocalApp.current
+    val flow = LocalFlow.current
     val p = LocalPalette.current
     var profile by remember { mutableStateOf<Profile?>(null) }
     var wallet by remember { mutableStateOf(Wallet.EMPTY) }
@@ -346,7 +370,7 @@ private fun HomeTab(onPick: () -> Unit, onTab: (Int) -> Unit, onComingSoon: (Str
                         if (list.isEmpty()) {
                             Text(app.t("noMissions"), style = body(15, color = p.muted), modifier = Modifier.padding(vertical = 12.dp))
                         } else {
-                            MissionList(list.take(shown), p) { onComingSoon(app.t("followMission")) }
+                            MissionList(list.take(shown), p) { flow.open(it, app) }
                             if (list.size > shown) {
                                 TextButton(onClick = { onTab(1) }, modifier = Modifier.fillMaxWidth()) {
                                     Text(app.t("seeMissions", "count" to list.size.toString()), style = body(15, FontWeight.SemiBold))
@@ -515,8 +539,9 @@ private fun NotificationsSheet(items: List<AppNotification>, onDismiss: () -> Un
 }
 
 @Composable
-private fun MissionsTab(onComingSoon: (String) -> Unit, onMissions: (Boolean) -> Unit) {
+private fun MissionsTab(onMissions: (Boolean) -> Unit) {
     val app = LocalApp.current
+    val flow = LocalFlow.current
     val p = LocalPalette.current
     var missions by remember { mutableStateOf(emptyList<Mission>()) }
     var showDone by rememberSaveable { mutableStateOf(false) }
@@ -533,7 +558,7 @@ private fun MissionsTab(onComingSoon: (String) -> Unit, onMissions: (Boolean) ->
             item { OngoingDoneSwitch(showDone) { showDone = it } }
             item {
                 if (list.isEmpty()) Text(app.t("noMissions"), style = body(15, color = p.muted))
-                else MissionList(list, p) { onComingSoon(app.t("followMission")) }
+                else MissionList(list, p) { flow.open(it, app) }
             }
         }
     }
@@ -628,13 +653,14 @@ private fun ProfileTab(onComingSoon: (String) -> Unit) {
                             Text("${me.firstName} ${me.lastName}", style = title(19, color = p.ink))
                             Text("+243 ${DrcPhone.parse(me.phone).formatted} · ${me.commune}", style = body(14, color = p.muted))
                             Text(
-                                app.t("clientBadge"), style = body(12, FontWeight.SemiBold, p.softInk),
+                                app.t(if (app.providerSpace) "spaceProvider" else "clientBadge"), style = body(12, FontWeight.SemiBold, p.softInk),
                                 modifier = Modifier.background(p.soft, CircleShape).padding(horizontal = 10.dp, vertical = 3.dp),
                             )
                         }
                     }
                 }
             }
+            if (profile?.isProvider == true) item { SpaceSwitch() }
             item {
                 SettingsGroup(p, listOf(
                     app.t("myInfo") to app.t("myInfoSub"),
@@ -643,7 +669,9 @@ private fun ProfileTab(onComingSoon: (String) -> Unit) {
                     app.t("helpDisputes") to app.t("helpDisputesSub"),
                 ), onComingSoon)
             }
-            item { SettingsGroup(p, listOf(app.t("becomeProvider") to app.t("becomeProviderSub")), onComingSoon) }
+            if (profile?.isProvider == false) {
+                item { SettingsGroup(p, listOf(app.t("becomeProvider") to app.t("becomeProviderSub")), onComingSoon) }
+            }
             item { SettingsGroup(p, listOf(app.t("legalTerms") to null, app.t("legalPrivacy") to null), onComingSoon) }
             item {
                 TextButton(onClick = { app.signOut() }, modifier = Modifier.fillMaxWidth()) {

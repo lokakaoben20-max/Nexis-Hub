@@ -126,6 +126,10 @@ jobs:
           for screen in welcome phone signup home missions wallet profile services; do
             shoot "$screen" light fr
           done
+          for screen in tracking quotes pay pending confirm report dispute decision provider request job; do
+            shoot "$screen" light fr
+          done
+          shoot tracking dark fr
           shoot home dark fr
           shoot home light ln
           shoot welcome light en

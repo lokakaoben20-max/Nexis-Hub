@@ -145,3 +145,140 @@ class PictogrammesTest {
         assertEquals(1, com.nexishub.app.ui.Pictogrammes.icons(com.nexishub.app.data.Service.AUTRE).size)
     }
 }
+
+class FlowsTest {
+    private fun refusal(block: suspend () -> Unit): String? = runBlocking {
+        try { block(); null } catch (e: com.nexishub.app.data.NexisRefusal) { e.code }
+    }
+
+    @Test
+    fun quotesComeBestRatedFirst() = runBlocking {
+        val quotes = DemoRepository().quotes(52)
+        assertEquals(listOf("Prisca K.", "Joël M.", "Aline L."), quotes.map { it.providerName })
+    }
+
+    @Test
+    fun payingSecuresTheQuotedAmount() = runBlocking {
+        val repo = DemoRepository()
+        val paid = repo.pay(52, 522, com.nexishub.app.data.MobileOperator.MPESA)
+        assertEquals(MissionStatus.CONFIRMED, paid.status)
+        assertEquals(com.nexishub.app.data.PaymentState.SECURED, paid.payment)
+        assertEquals(Money(22_000, Currency.CDF), paid.amount)
+        assertEquals("Joël", paid.providerFirstName)
+        assertEquals(MissionStatus.CONFIRMED, repo.mission(52).status)
+    }
+
+    @Test
+    fun cannotPayWithoutARegisteredNumber() {
+        val repo = DemoRepository()
+        assertEquals("payment_refused", refusal { repo.pay(52, 521, com.nexishub.app.data.MobileOperator.AIRTEL) })
+    }
+
+    @Test
+    fun confirmingReleasesTheMoney() = runBlocking {
+        val repo = DemoRepository()
+        val done = repo.confirmDone(49)
+        assertEquals(MissionStatus.COMPLETED, done.status)
+        assertEquals(com.nexishub.app.data.PaymentState.RELEASED, done.payment)
+        assertEquals("mission_not_awaiting_confirmation", refusal { repo.confirmDone(51) })
+    }
+
+    @Test
+    fun reportingBlocksSecuredMoneyOnly() = runBlocking {
+        val repo = DemoRepository()
+        val reason = com.nexishub.app.data.DisputeReason.NO_SHOW
+        assertEquals("dispute_not_allowed", refusal { repo.reportProblem(52, reason, "Personne n'est venu.") })
+        assertEquals("dispute_not_allowed", refusal { repo.reportProblem(51, reason, "   ") })
+        repo.reportProblem(51, reason, "Personne n'est venu.")
+        assertEquals(com.nexishub.app.data.PaymentState.BLOCKED, repo.mission(51).payment)
+        assertTrue(repo.dispute(51) != null)
+    }
+
+    @Test
+    fun decidedDisputeShowsServerAmounts() = runBlocking {
+        val dispute = DemoRepository().dispute(44)!!
+        assertTrue(dispute.decided)
+        assertEquals(Money(30_000, Currency.CDF), dispute.clientAmount)
+    }
+
+    @Test
+    fun quoteMustBePositiveAndSentOnce() = runBlocking {
+        val repo = DemoRepository()
+        val slot = repo.providerRequest(71).slotChoices.first()
+        assertEquals("price_must_be_positive", refusal { repo.sendQuote(71, Money(0, Currency.CDF), slot) })
+        repo.sendQuote(71, Money(25_000, Currency.CDF), slot)
+        assertTrue(repo.providerRequest(71).quoted)
+        assertEquals("quote_already_sent", refusal { repo.sendQuote(71, Money(25_000, Currency.CDF), slot) })
+    }
+
+    @Test
+    fun presenceCodeLocksAfterFiveWrongTries() = runBlocking {
+        val repo = DemoRepository()
+        assertEquals("arrival_not_signaled", refusal { repo.enterPresenceCode(61, "0000") })
+        repo.signalArrival(61)
+        repeat(4) { assertEquals(com.nexishub.app.data.PresenceResult.WRONG_CODE, repo.enterPresenceCode(61, "0000")) }
+        assertEquals(com.nexishub.app.data.PresenceResult.LOCKED, repo.enterPresenceCode(61, "0000"))
+        assertEquals(com.nexishub.app.data.PresenceResult.LOCKED, repo.enterPresenceCode(61, repo.demoPresenceCode))
+    }
+
+    @Test
+    fun rightCodeConfirmsArrivalThenJobCanFinish() = runBlocking {
+        val repo = DemoRepository()
+        assertEquals("arrival_not_confirmed", refusal { repo.finishJob(61) })
+        repo.signalArrival(61)
+        assertEquals(com.nexishub.app.data.PresenceResult.CONFIRMED, repo.enterPresenceCode(61, " 2580 "))
+        val job = repo.finishJob(61)
+        assertTrue(com.nexishub.app.data.ProviderStep.FINISHED in job.steps)
+        assertEquals(Money(0, Currency.CDF), repo.providerHome().secured)
+    }
+}
+
+class PriceInputTest {
+    private val parse = com.nexishub.app.screens.PriceInput::parse
+    private val typed = com.nexishub.app.screens.PriceInput::typed
+
+    @Test
+    fun francsAreWholeAndPositive() {
+        assertEquals(Money(25_000, Currency.CDF), parse("25 000", Currency.CDF))
+        assertEquals(null, parse("0", Currency.CDF))
+        assertEquals(null, parse("12,5", Currency.CDF))
+        assertEquals(null, parse("", Currency.CDF))
+    }
+
+    @Test
+    fun dollarsKeepAtMostTwoDecimals() {
+        assertEquals(Money(1_250, Currency.USD), parse("12,5", Currency.USD))
+        assertEquals(Money(4_500, Currency.USD), parse("45", Currency.USD))
+        assertEquals(Money(5, Currency.USD), parse("0.05", Currency.USD))
+        assertEquals(null, parse("1.234", Currency.USD))
+        assertEquals(null, parse("0,00", Currency.USD))
+        assertEquals(null, parse("1.2.3", Currency.USD))
+    }
+
+    @Test
+    fun francsAreGroupedWhileTyping() {
+        assertEquals("25 000", typed("25000", Currency.CDF))
+        assertEquals("1 234 567", typed("1 2345 67", Currency.CDF))
+        assertEquals("12,5", typed("12a,5", Currency.USD))
+    }
+}
+
+class DatesTest {
+    private val zone = java.time.ZoneId.of("Africa/Kinshasa")
+    private fun at(hour: Int, minute: Int) =
+        java.time.LocalDate.of(2026, 11, 28).atTime(hour, minute).atZone(zone).toInstant()
+
+    @Test
+    fun clockReadsLikeKinshasa() {
+        assertEquals("9 h", com.nexishub.app.ui.clockText(at(9, 0), "fr", zone))
+        assertEquals("20 h 41", com.nexishub.app.ui.clockText(at(20, 41), "fr", zone))
+        assertEquals("8:41 pm", com.nexishub.app.ui.clockText(at(20, 41), "en", zone))
+    }
+
+    @Test
+    fun daysLeftCountsWholeDays() {
+        val now = java.time.Instant.parse("2026-11-25T10:00:00Z")
+        assertEquals(3, com.nexishub.app.ui.daysLeft(now.plusSeconds(70 * 3600L), now))
+        assertEquals(0, com.nexishub.app.ui.daysLeft(now.minusSeconds(60), now))
+    }
+}

@@ -16,10 +16,14 @@ struct ShellView: View {
     var body: some View {
         TabView(selection: $tab) {
             Tab(app.t("navHome"), systemImage: "house", value: AppTab.home) {
-                HomeView(onPickService: { picking = true }, onTab: { tab = $0 })
+                if app.providerSpace {
+                    ProviderHomeView(onTab: { tab = $0 })
+                } else {
+                    HomeView(onPickService: { picking = true }, onTab: { tab = $0 })
+                }
             }
             Tab(app.t("navMissions"), systemImage: "list.bullet.clipboard", value: AppTab.missions) {
-                MissionsView()
+                if app.providerSpace { ProviderMissionsView() } else { MissionsView() }
             }
             Tab(app.t("navWallet"), systemImage: "wallet.bifold", value: AppTab.wallet) {
                 WalletView()
@@ -28,15 +32,25 @@ struct ShellView: View {
                 ProfileView()
             }
         }
-        .modifier(RequestServiceAccessory(open: $picking))
+        .modifier(RequestServiceAccessory(open: $picking, tab: tab))
         .onAppear {
             switch app.capture {
             case "missions": tab = .missions
             case "wallet": tab = .wallet
             case "profile": tab = .profile
             case "services": picking = true
+            case let capture? where MissionRoute.providerCaptures.contains(capture):
+                app.providerSpace = true
+            case let capture? where MissionRoute.forCapture(capture) != nil: tab = .missions
             default: break
             }
+        }
+        // Changer d'espace ramène à son accueil.
+        .onChange(of: app.providerSpace) { tab = .home }
+        .onChange(of: app.requestedTab) { _, requested in
+            guard let requested else { return }
+            tab = requested
+            app.requestedTab = nil
         }
         .sheet(isPresented: $picking) {
             ServicePickerView(onRequested: {
@@ -56,21 +70,36 @@ struct ShellView: View {
 private struct RequestServiceAccessory: ViewModifier {
     @Environment(AppModel.self) private var app
     @Binding var open: Bool
+    let tab: AppTab
+
+    /// Côté prestataire, rien à demander ; dans un écran de mission (paiement,
+    /// suivi…), l'accessoire se range avec la barre d'onglets.
+    private var shown: Bool { !app.providerSpace && !app.openFlowTabs.contains(tab) }
 
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.1, *) {
             content
                 .tabBarMinimizeBehavior(.onScrollDown)
-                .tabViewBottomAccessory {
-                    Button { open = true } label: {
-                        Label(app.t("requestService"), systemImage: "plus")
-                            .font(.body(15, .semibold, relativeTo: .subheadline))
-                            .foregroundStyle(Nexis.accent)
-                            .frame(maxWidth: .infinity)
-                    }
-                }
+                .tabViewBottomAccessory(isEnabled: shown) { button }
+        } else if #available(iOS 26.0, *) {
+            if app.providerSpace {
+                content.tabBarMinimizeBehavior(.onScrollDown)
+            } else {
+                content
+                    .tabBarMinimizeBehavior(.onScrollDown)
+                    .tabViewBottomAccessory { button }
+            }
         } else {
             content
+        }
+    }
+
+    private var button: some View {
+        Button { open = true } label: {
+            Label(app.t("requestService"), systemImage: "plus")
+                .font(.body(15, .semibold, relativeTo: .subheadline))
+                .foregroundStyle(Nexis.accent)
+                .frame(maxWidth: .infinity)
         }
     }
 }

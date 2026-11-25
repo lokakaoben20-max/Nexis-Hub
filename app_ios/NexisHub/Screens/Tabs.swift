@@ -6,11 +6,11 @@ struct MissionsView: View {
     @Environment(AppModel.self) private var app
     @State private var missions: [Mission] = []
     @State private var showDone = false
-    @State private var comingSoon: SheetTitle?
+    @State private var flow = MissionFlow()
 
     var body: some View {
         let list = showDone ? missions.filter { $0.status == .completed } : missions.filter(\.isActive)
-        NavigationStack {
+        NavigationStack(path: $flow.path) {
             List {
                 Section {
                     Picker(app.t("myMissions"), selection: $showDone) {
@@ -27,7 +27,7 @@ struct MissionsView: View {
                             .font(.body(15)).foregroundStyle(Nexis.muted)
                     }
                     ForEach(list) { mission in
-                        Button { comingSoon = SheetTitle(app.t("followMission")) } label: {
+                        Button { flow.open(mission, app: app) } label: {
                             MissionRow(mission: mission)
                         }
                         .buttonStyle(.plain)
@@ -37,8 +37,15 @@ struct MissionsView: View {
             .scrollContentBackground(.hidden)
             .background(Nexis.bg)
             .navigationTitle(app.t("myMissions"))
-            .sheet(item: $comingSoon) { item in ComingSoonView(title: item.id) }
+            .missionDestinations()
             .task(id: app.revision) { missions = (try? await app.repository.missions()) ?? [] }
+        }
+        .missionFlow(flow, tab: .missions)
+        .onAppear {
+            if let routes = MissionRoute.forCapture(app.capture), flow.path.isEmpty,
+               !MissionRoute.providerCaptures.contains(app.capture ?? "") {
+                flow.path = routes
+            }
         }
     }
 }
@@ -148,7 +155,7 @@ struct ProfileView: View {
                                     .font(.title(19)).foregroundStyle(Nexis.ink)
                                 Text("+243 \(DrcPhone.parse(profile.phone).formatted) · \(profile.commune)")
                                     .font(.body(14)).foregroundStyle(Nexis.muted)
-                                Text(app.t("clientBadge"))
+                                Text(app.t(app.providerSpace ? "spaceProvider" : "clientBadge"))
                                     .font(.body(12, .semibold, relativeTo: .caption1))
                                     .foregroundStyle(Nexis.softInk)
                                     .padding(.horizontal, 10).padding(.vertical, 3)
@@ -156,6 +163,13 @@ struct ProfileView: View {
                             }
                         }
                         .padding(.vertical, 6)
+                    }
+                    if profile.isProvider {
+                        Section {
+                            SpaceSwitch()
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(EdgeInsets())
+                        }
                     }
                 }
                 Section {
@@ -173,8 +187,10 @@ struct ProfileView: View {
                     row("iphone", app.t("myDevices"), app.plural("devicesCount", count: 1))
                     row("questionmark.bubble", app.t("helpDisputes"), app.t("helpDisputesSub"))
                 }
-                Section {
-                    row("briefcase", app.t("becomeProvider"), app.t("becomeProviderSub"))
+                if profile?.isProvider == false {
+                    Section {
+                        row("briefcase", app.t("becomeProvider"), app.t("becomeProviderSub"))
+                    }
                 }
                 Section {
                     row("doc.text", app.t("legalTerms"), nil)
