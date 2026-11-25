@@ -80,6 +80,15 @@ jobs:
           xcodebuild test -project NexisHub.xcodeproj -scheme NexisHub \
             -destination "id=$UDID" -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO | tail -80
+      - name: App pour le simulateur iOS
+        run: |
+          APP=$(find build/Build/Products -name "NexisHub.app" -path "*iphonesimulator*" | head -1)
+          mkdir -p livrable && ditto -c -k --keepParent "$APP" livrable/NexisHub-simulateur.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nexis-hub-ios-simulateur
+          path: app_ios/livrable/NexisHub-simulateur.zip
+          if-no-files-found: error
       - name: Captures d'écran
         run: |
           mkdir -p captures
@@ -133,6 +142,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Compiler et tester
         run: ./gradlew --no-daemon testDebugUnitTest assembleDebug lintDebug
+      - name: APK à installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexis-hub-android-apk
+          path: app_android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
         with:
