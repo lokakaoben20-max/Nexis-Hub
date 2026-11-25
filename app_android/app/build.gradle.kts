@@ -12,11 +12,32 @@ android {
         applicationId = "com.nexishub.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        // Numéro de version : celui de la compilation (CI), pour que chaque
+        // nouvelle version s'installe par-dessus la précédente.
+        versionCode = System.getenv("NEXIS_VERSION_CODE")?.toIntOrNull() ?: 1
+        versionName = "1.0.0 ($versionCode)"
+    }
+
+    // Clé de signature fixe de Nexis Hub, fournie par la CI (secrets GitHub).
+    // Sans elle (poste de développement), Android Studio signe avec sa clé de
+    // débogage locale.
+    val keystorePath = System.getenv("NEXIS_KEYSTORE_PATH")
+    signingConfigs {
+        if (keystorePath != null) {
+            create("nexis") {
+                storeFile = file(keystorePath)
+                storeType = "pkcs12"
+                storePassword = System.getenv("NEXIS_KEYSTORE_PASSWORD")
+                keyAlias = "nexis"
+                keyPassword = System.getenv("NEXIS_KEYSTORE_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            if (keystorePath != null) signingConfig = signingConfigs.getByName("nexis")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
