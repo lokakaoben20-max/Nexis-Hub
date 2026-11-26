@@ -365,6 +365,7 @@ final class AccountTests: XCTestCase {
 }
 
 @MainActor
+@MainActor
 final class PortfolioTests: XCTestCase {
     private func work(_ service: String, photos: Int = 1, note: String = "") -> WorkProof {
         WorkProof(serviceId: service, photos: Array(repeating: Data([1]), count: photos), note: note)
