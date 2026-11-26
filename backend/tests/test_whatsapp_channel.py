@@ -33,6 +33,8 @@ WHATSAPP_ROUTES = {
     ("GET", "/api/legal/documents/{document_key}/{version}"),
     ("GET", "/api/me/terms"),
     ("POST", "/api/me/terms"),
+    # Créer une mission pas à pas (étape 5), parité : test_whatsapp_missions.py.
+    ("POST", "/api/bot/missions"),
 }
 
 # Actions de prestataire : jamais depuis WhatsApp, refus explicite.

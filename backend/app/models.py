@@ -25,12 +25,20 @@ class BotMission(Base):
             " OR (destination_latitude IS NOT NULL AND destination_longitude IS NOT NULL AND destination_landmark IS NOT NULL)",
             name="ck_bot_missions_destination_complete",
         ),
+        # Le client d'une mission est toujours connu : son compte Nexis (tout
+        # canal), ou au moins son Telegram pour les missions d'avant les comptes.
+        CheckConstraint(
+            "telegram_id IS NOT NULL OR client_account_id IS NOT NULL",
+            name="ck_bot_missions_client_known",
+        ),
     )
 
     # Numéro attribué par le backend, seule mémoire des missions : aucun canal
     # ne choisit le numéro d'une mission.
     mission_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    # Telegram du client, pour un client Telegram seulement : un client
+    # WhatsApp n'en a pas. Le client est `client_account_id`.
+    telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     provider_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     service: Mapped[str] = mapped_column(String(255))
     commune: Mapped[str] = mapped_column(String(255))

@@ -163,7 +163,16 @@ class MissionRefused(ValueError):
         self.http_status = http_status
 
 
-def create_mission(
+def create_mission(db: Session, **request) -> tuple[BotMission, bool]:
+    """`add_mission`, puis validation. Pour qui n'a pas d'autre écriture à
+    valider avec la mission (bot Telegram sans clé d'idempotence, tests)."""
+    mission, created = add_mission(db, **request)
+    db.commit()
+    db.refresh(mission)
+    return mission, created
+
+
+def add_mission(
     db: Session,
     *,
     channel: str,
@@ -193,7 +202,14 @@ def create_mission(
 
     Idempotent : la même `creation_key` pour le même client renvoie la mission
     déjà créée (second élément `False`), ou un refus si la demande diffère.
-    Le client n'est jamais prévenu de sa propre mission comme prestataire."""
+    Le client n'est jamais prévenu de sa propre mission comme prestataire.
+
+    Le client est un compte Nexis, quel que soit son canal (Telegram ou
+    WhatsApp) : `telegram_id` n'est rempli que pour un client Telegram.
+
+    N'écrit rien de définitif : l'appelant valide (avec la clé d'idempotence
+    du message WhatsApp, par exemple). La même demande arrivée au même
+    instant n'écrit qu'une mission (contrainte unique, point de sauvegarde)."""
     media = list(media or [])
     if not creation_key or len(creation_key) > 64:
         raise MissionRefused("invalid_creation_key", 400)
@@ -246,55 +262,49 @@ def create_mission(
     if existing is not None:
         return existing, False
 
-    client_telegram_id = ledger.telegram_id_of(db, client_account_id)
-    if client_telegram_id is None:
-        # `bot_missions.telegram_id` reste obligatoire tant que seul Telegram
-        # crée des missions (étape 1 de docs/ARCHITECTURE_WHATSAPP.md).
-        raise MissionRefused("channel_identity_missing", 400)
-
-    mission = BotMission(
-        telegram_id=client_telegram_id,
-        client_account_id=client_account_id,
-        creation_key=creation_key,
-        service=service,
-        commune=commune,
-        currency=currency,
-        description=description,
-        urgent=bool(urgent),
-        destination_latitude=latitude,
-        destination_longitude=longitude,
-        destination_landmark=landmark,
-        status="pending",
-    )
-    db.add(mission)
-    db.flush()
-    for position, (kind, external_id) in enumerate(media):
-        db.add(MissionMedia(mission_id=mission.mission_id, channel=channel, kind=kind, external_id=external_id, position=position))
-    alerted: list[int] = []
-    for provider in profils.eligible_providers(db, service, commune, exclude_account_id=client_account_id):
-        if len(alerted) == ALERTS_PER_MISSION:
-            break
-        # Un prestataire est prévenu sur Telegram (seul canal des prestataires
-        # aujourd'hui) : sans identité Telegram, personne ne le préviendrait.
-        if ledger.telegram_id_of(db, provider.account_id) is None:
-            continue
-        db.add(MissionAlert(mission_id=mission.mission_id, provider_account_id=provider.account_id))
-        alerted.append(provider.account_id)
     try:
-        db.flush()
-        # Les prestataires prévenus reçoivent la demande : notifications
-        # écrites avec la mission, jamais perdues, jamais envoyées deux fois.
-        evenements.mission_created(db, mission, alerted)
-        db.commit()
+        with db.begin_nested():
+            mission = BotMission(
+                telegram_id=ledger.telegram_id_of(db, client_account_id) if channel == ledger.TELEGRAM else None,
+                client_account_id=client_account_id,
+                creation_key=creation_key,
+                service=service,
+                commune=commune,
+                currency=currency,
+                description=description,
+                urgent=bool(urgent),
+                destination_latitude=latitude,
+                destination_longitude=longitude,
+                destination_landmark=landmark,
+                status="pending",
+            )
+            db.add(mission)
+            db.flush()
+            for position, (kind, external_id) in enumerate(media):
+                db.add(MissionMedia(mission_id=mission.mission_id, channel=channel, kind=kind, external_id=external_id, position=position))
+            alerted: list[int] = []
+            for provider in profils.eligible_providers(db, service, commune, exclude_account_id=client_account_id):
+                if len(alerted) == ALERTS_PER_MISSION:
+                    break
+                # Un prestataire est prévenu sur Telegram (seul canal des
+                # prestataires aujourd'hui) : sans identité Telegram, personne
+                # ne le préviendrait.
+                if ledger.telegram_id_of(db, provider.account_id) is None:
+                    continue
+                db.add(MissionAlert(mission_id=mission.mission_id, provider_account_id=provider.account_id))
+                alerted.append(provider.account_id)
+            db.flush()
+            # Les prestataires prévenus reçoivent la demande : notifications
+            # écrites avec la mission, jamais perdues, jamais envoyées deux fois.
+            evenements.mission_created(db, mission, alerted)
+            db.flush()
     except IntegrityError:
         # La même demande, arrivée au même instant, a été écrite la première :
         # c'est elle qui fait foi (même réponse qu'un rejeu).
-        db.rollback()
         existing = already_created()
         if existing is None:
             raise
         return existing, False
-    db.refresh(mission)
     return mission, True
 
 

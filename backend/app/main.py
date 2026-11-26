@@ -935,10 +935,23 @@ def app_device_not_me(device_id: int, actor: Actor = Depends(current_actor)):
 
 @router.post("/api/bot/missions")
 @needs_terms(conditions.CLIENT)
-def create_bot_mission(payload: MissionCreatePayload, actor: Actor = Depends(current_actor)):
-    with SessionLocal() as db:
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+@idempotent
+def create_bot_mission(
+    payload: MissionCreatePayload,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    """Crée la mission du client qui écrit (Telegram ou WhatsApp). Deux
+    protections contre les doublons : `creation_key` (la même demande
+    renvoyée, même par un autre message) et, pour WhatsApp, la clé
+    d'idempotence du message (le même message rejoué rend la même réponse)."""
+
+    def action(db) -> dict:
         try:
-            mission, created = crud.create_mission(
+            mission, created = crud.add_mission(
                 db,
                 channel=actor.channel,
                 client_external_id=actor.external_id,
@@ -954,9 +967,16 @@ def create_bot_mission(payload: MissionCreatePayload, actor: Actor = Depends(cur
                 destination_landmark=payload.destination.landmark,
             )
         except crud.MissionRefused as refusal:
-            db.rollback()
             raise HTTPException(status_code=refusal.http_status, detail={"code": refusal.code}) from refusal
-        return {"status": "ok", "created": created, **_mission_view(db, mission, "client")}
+        db.flush()
+        view = _mission_view(db, mission, "client")
+        if actor.channel != ledger.TELEGRAM:
+            # Un client hors Telegram n'a rien à faire des identifiants
+            # Telegram des prestataires : il n'en reçoit que le nombre.
+            view.pop("alerted_provider_telegram_ids")
+        return jsonable_encoder({"status": "ok", "created": created, **view})
+
+    return _run_idempotent(request, response, actor, idempotency_key, payload.model_dump(mode="json"), action)
 
 
 def _mission_view(db, mission: BotMission, role: str) -> dict:
@@ -977,9 +997,9 @@ def _mission_view(db, mission: BotMission, role: str) -> dict:
         "viewer_role": role,
     }
     if role in ("client", "admin"):
-        view["alerted_provider_telegram_ids"] = [
-            ledger.telegram_id_of(db, account_id) for account_id in crud.alerted_provider_account_ids(db, mission.mission_id)
-        ]
+        alerted = crud.alerted_provider_account_ids(db, mission.mission_id)
+        view["alerted_provider_count"] = len(alerted)
+        view["alerted_provider_telegram_ids"] = [ledger.telegram_id_of(db, account_id) for account_id in alerted]
     return view
 
 

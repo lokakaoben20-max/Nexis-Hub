@@ -114,7 +114,7 @@ def test_a_new_client_signs_up_in_their_language_and_gets_the_menu(bench):
             done = await bench.tap("terms:accept")
             assert [message.kind for message in done] == ["text", "list"]
             assert done[0].text == get_message("wa_registered", "ln", name="Mado Kabila")
-            assert [choice for choice, _ in done[1].choices] == ["menu:language", "menu:provider", "menu:help"]
+            assert [choice for choice, _ in done[1].choices] == ["menu:new_request", "menu:language", "menu:provider", "menu:help"]
             # Réponses adressées au numéro donné par Meta.
             assert {message.to for message in bench.fake.sent} == {DEFAULT_PHONE}
             # Accusés de lecture envoyés pour chaque message traité.

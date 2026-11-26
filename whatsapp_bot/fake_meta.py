@@ -64,7 +64,7 @@ class Sent:
     @property
     def kind(self) -> str:
         if self.body.get("type") == "interactive":
-            return self.body["interactive"]["type"]  # button | list
+            return self.body["interactive"]["type"]  # button | list | location_request_message
         return self.body.get("type", "")
 
     @property
@@ -249,6 +249,8 @@ def _invalid(body: dict) -> str | None:
             if len(row.get("description") or "") > meta.MAX_ROW_DESCRIPTION:
                 return "row.description"
         return None
+    if interactive.get("type") == "location_request_message":
+        return None if action.get("name") == "send_location" else "action.name"
     return "interactive.type"
 
 

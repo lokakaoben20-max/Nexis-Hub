@@ -1,7 +1,8 @@
 """Tout ce qui parle le format de Meta : lecture des webhooks, envoi.
 
 Le reste du service ne voit que `Incoming` (un message reçu, déjà trié) et
-les messages sortants (`Text`, `Buttons`, `Menu`, `Template`), envoyés par
+les messages sortants (`Text`, `Buttons`, `Menu`, `LocationRequest`,
+`Template`), envoyés par
 un `Messenger`. Changer de fournisseur ne toucherait que ce fichier.
 
 Identité : depuis 2026, Meta identifie chaque personne par un identifiant
@@ -219,6 +220,25 @@ class Menu:
 
 
 @dataclass(frozen=True)
+class LocationRequest:
+    """Message avec le bouton « Envoyer la position » de WhatsApp : la
+    réponse est un message de type `location`."""
+
+    body: str
+
+    def payload(self) -> dict:
+        _check(0 < len(self.body) <= MAX_INTERACTIVE_BODY, "texte de demande de position vide ou trop long")
+        return {
+            "type": "interactive",
+            "interactive": {
+                "type": "location_request_message",
+                "body": {"text": self.body},
+                "action": {"name": "send_location"},
+            },
+        }
+
+
+@dataclass(frozen=True)
 class Template:
     """Modèle validé par Meta (hors fenêtre de 24 h). Utilisé à l'étape 8."""
 
@@ -236,7 +256,7 @@ class Template:
         return {"type": "template", "template": template}
 
 
-Outgoing = Text | Buttons | Menu | Template
+Outgoing = Text | Buttons | Menu | LocationRequest | Template
 
 
 # --- Envoi ---------------------------------------------------------------------------

@@ -141,6 +141,12 @@ class Bench:
     async def tap(self, choice: str, **who) -> list:
         return await self._exchange(self.fake.choice_message(choice, list_row=choice.startswith("menu:"), **who))
 
+    async def locate(self, latitude: float, longitude: float, **who) -> list:
+        return await self._exchange(self.fake.location_message(latitude, longitude, **who))
+
+    async def send_media(self, kind: str = "image", **who) -> list:
+        return await self._exchange(self.fake.media_message(kind, **who))
+
     async def _exchange(self, payload: dict) -> list:
         before = len(self.fake.sent)
         response = await self.post(payload)
@@ -152,6 +158,37 @@ class Bench:
         await self.tap(f"lang:{language}", **who)
         await self.say(name, **who)
         return await self.tap("terms:accept", **who)
+
+
+def verified_provider(main, telegram_id: int = 7, service: str = "service_nettoyage", commune: str = "Gombe", version: str = "2026-11-20") -> int:
+    """Prestataire Telegram inscrit (case des conditions cochée), vérifié par
+    l'équipe et disponible : le backend le prévient des missions de son
+    service dans sa commune. Rend son compte."""
+    from fastapi.testclient import TestClient
+
+    from backend.app import profils
+
+    headers = {"X-API-Key": TELEGRAM_KEY, "X-Actor-Channel": "telegram", "X-Actor-Id": str(telegram_id)}
+    payload = {
+        "full_name": f"Prestataire {telegram_id}",
+        "phone_number": "+243800000007",
+        "services": [service],
+        "communes": [commune],
+        "terms": {
+            "surface": "telegram_bot",
+            "documents": [{"document_key": key, "version": version} for key in ("cgu", "conditions_prestataires")],
+        },
+    }
+    with TestClient(main.app) as api:
+        response = api.put("/api/me/provider-profile", json=payload, headers=headers)
+        assert response.status_code == 200, response.json()
+        account_id = response.json()["account_id"]
+        with main.database.SessionLocal() as db:
+            profils.verify_provider(db, account_id)
+            db.commit()
+        status = api.patch("/api/me/provider-profile/status", json={"status": "available"}, headers=headers)
+        assert status.status_code == 200, status.json()
+    return account_id
 
 
 class _Transport(httpx.AsyncBaseTransport):
