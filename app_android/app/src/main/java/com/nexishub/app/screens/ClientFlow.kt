@@ -151,8 +151,9 @@ import java.time.Instant
 
 // Navigation
 
-/** Les écrans qu'on ouvre depuis une mission. Ils ne portent que des
- * numéros : chaque écran relit le dépôt, jamais une copie gardée. */
+/** Les écrans qu'on ouvre depuis une mission ou depuis le profil. Ils ne
+ * portent que des numéros : chaque écran relit le dépôt, jamais une copie
+ * gardée. */
 sealed interface MissionRoute {
     data class Quotes(val missionId: Int) : MissionRoute
     data class Pay(val missionId: Int, val quoteId: Int) : MissionRoute
@@ -163,6 +164,14 @@ sealed interface MissionRoute {
     data class DisputeCase(val missionId: Int) : MissionRoute
     data class SendQuote(val missionId: Int) : MissionRoute
     data class Job(val missionId: Int) : MissionRoute
+
+    // Écrans ouverts depuis le profil.
+    data object ProfileInfo : MissionRoute
+    data object Devices : MissionRoute
+    data object NotificationSettings : MissionRoute
+    data object Help : MissionRoute
+    data object Legal : MissionRoute
+    data object BecomeProvider : MissionRoute
 
     companion object {
         /** Écrans ouverts d'emblée pour les captures de la CI. */
@@ -177,6 +186,12 @@ sealed interface MissionRoute {
             "decision" -> listOf(DisputeCase(44))
             "request" -> listOf(SendQuote(71))
             "job" -> listOf(Job(61))
+            "info" -> listOf(ProfileInfo)
+            "devices" -> listOf(Devices)
+            "alerts" -> listOf(NotificationSettings)
+            "help" -> listOf(Help)
+            "legal" -> listOf(Legal)
+            "become", "become-identity" -> listOf(BecomeProvider)
             else -> null
         }
     }
@@ -312,6 +327,12 @@ private fun MissionScreen(route: MissionRoute) {
         is MissionRoute.DisputeCase -> DisputeScreen(route.missionId)
         is MissionRoute.SendQuote -> SendQuoteScreen(route.missionId)
         is MissionRoute.Job -> ProviderJobScreen(route.missionId)
+        MissionRoute.ProfileInfo -> ProfileInfoScreen()
+        MissionRoute.Devices -> DevicesScreen()
+        MissionRoute.NotificationSettings -> NotificationSettingsScreen()
+        MissionRoute.Help -> HelpScreen()
+        MissionRoute.Legal -> LegalScreen()
+        MissionRoute.BecomeProvider -> BecomeProviderScreen()
     }
 }
 

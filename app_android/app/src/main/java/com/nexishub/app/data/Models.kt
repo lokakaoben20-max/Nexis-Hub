@@ -104,10 +104,14 @@ data class Profile(
     val lastName: String,
     val phone: String,
     val commune: String,
-    val isProvider: Boolean,
+    /** Profil prestataire : nul pour un client seulement. */
+    val providerStatus: ProviderStatus? = null,
     val termsVersion: LocalDate?,
 ) {
     val initials: String get() = (firstName.take(1) + lastName.take(1)).uppercase()
+
+    /** Prestataire vérifié : il ouvre l'espace prestataire. */
+    val isProvider: Boolean get() = providerStatus == ProviderStatus.VERIFIED
 }
 
 /** Un service du catalogue tel que le serveur le publie. L'app ne décide

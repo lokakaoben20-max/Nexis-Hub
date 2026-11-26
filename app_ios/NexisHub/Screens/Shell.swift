@@ -39,6 +39,7 @@ struct ShellView: View {
             case "wallet": tab = .wallet
             case "profile": tab = .profile
             case "services": picking = true
+            case let capture? where MissionRoute.profileCaptures.contains(capture): tab = .profile
             case let capture? where MissionRoute.providerCaptures.contains(capture):
                 app.providerSpace = true
             case let capture? where MissionRoute.forCapture(capture) != nil: tab = .missions

@@ -13,7 +13,7 @@
   "yourNumberIntro": "Nous vous envoyons un code pour vérifier que c’est bien vous.",
   "receiveCodeBy": "Recevoir le code par",
   "whatsappSub": "Le code arrive en quelques secondes",
-  "telegramSub": "Avec le bot Nexis Hub",
+  "telegramSub": "Avec le bot NexisHub",
   "receiveCode": "Recevoir le code",
   "codeSentTo": "Envoyé sur {channel} au {phone}.",
   "@codeSentTo": {
@@ -100,7 +100,7 @@
   "compareQuotes": "Comparer les devis",
   "viewQuotes": "Voir les devis",
   "follow": "Suivre",
-  "paySecured": "Sécurisé par Nexis Hub",
+  "paySecured": "Sécurisé par NexisHub",
   "payReleased": "Versé au prestataire",
   "payRefunded": "Remboursé",
   "payBlocked": "Bloqué (litige)",
@@ -148,7 +148,7 @@
     }
   },
   "myInfo": "Mes informations",
-  "myInfoSub": "Nom, photo, commune",
+  "myInfoSub": "Nom, commune",
   "devicesCount": "{count, plural, =1{1 appareil connecté} other{{count} appareils connectés}}",
   "helpDisputes": "Aide et litiges",
   "helpDisputesSub": "Un souci sur une mission",
@@ -163,18 +163,18 @@
   },
   "bestRated": "Le mieux noté",
   "chooseProvider": "Choisir {name}",
-  "securedUntilDone": "Votre argent reste sécurisé par Nexis Hub jusqu'à ce que vous confirmiez que c'est fait.",
+  "securedUntilDone": "Votre argent reste sécurisé par NexisHub jusqu'à ce que vous confirmiez que c'est fait.",
   "payTitle": "Payer",
   "payWith": "Payer avec",
   "addNumber": "Ajouter un numéro",
-  "paySecuredNote": "Sécurisé par Nexis Hub : {name} reçoit l'argent quand vous confirmez que c'est fait.",
+  "paySecuredNote": "Sécurisé par NexisHub : {name} reçoit l'argent quand vous confirmez que c'est fait.",
   "payAmount": "Payer {amount}",
   "pendingTitle": "Validez sur votre téléphone",
   "pendingText": "{operator} vous envoie une demande de {amount}. Tapez votre code secret Mobile Money pour l'accepter.",
   "pendingSent": "Demande envoyée à {operator}",
   "pendingWaiting": "En attente de confirmation",
   "pendingWithin": "Vous avez 5 minutes",
-  "pendingSecured": "Argent sécurisé par Nexis Hub",
+  "pendingSecured": "Argent sécurisé par NexisHub",
   "pendingNotify": "Nous prévenons {name} tout de suite",
   "nothingReceived": "Je n'ai rien reçu",
   "paymentTitle": "Paiement",
@@ -189,9 +189,9 @@
   "stepConfirm": "Vous confirmez, {name} reçoit l'argent",
   "confirmAction": "Confirmer",
   "confirmQuestion": "{name} a terminé.\nC'est bien fait ?",
-  "confirmText": "Quand vous confirmez, Nexis Hub verse l'argent sécurisé à {name}.",
+  "confirmText": "Quand vous confirmez, NexisHub verse l'argent sécurisé à {name}.",
   "paidTo": "Versé à {name}",
-  "amountFixed": "Montant fixé par Nexis Hub au paiement",
+  "amountFixed": "Montant fixé par NexisHub au paiement",
   "report48h": "Un souci ? Vous avez 48 h pour le signaler. L'argent reste alors bloqué le temps que nous regardions avec vous deux.",
   "yesDone": "Oui, c'est fait",
   "reportProblem": "Signaler un problème",
@@ -324,7 +324,7 @@
       }
     }
   },
-  "nexisLooking": "Nexis Hub regarde",
+  "nexisLooking": "NexisHub regarde",
   "nexisLookingSub": "Réponse sous 48 h · nous pouvons vous appeler",
   "decisionStep": "Décision et argent",
   "decisionStepSub": "Versé, remboursé ou partagé",
@@ -336,11 +336,11 @@
       }
     }
   },
-  "writeNexis": "Écrire à Nexis Hub",
+  "writeNexis": "Écrire à NexisHub",
   "weSettled": "Nous nous sommes arrangés",
   "disputeOver": "Litige terminé",
   "outcomeRefundTitle": "Nous vous remboursons",
-  "outcomeRefundText": "Après avoir regardé le dossier et parlé avec {name}, Nexis Hub a décidé de vous rembourser. L'argent arrive dans votre portefeuille dans 3 jours si personne ne conteste.",
+  "outcomeRefundText": "Après avoir regardé le dossier et parlé avec {name}, NexisHub a décidé de vous rembourser. L'argent arrive dans votre portefeuille dans 3 jours si personne ne conteste.",
   "@outcomeRefundText": {
     "placeholders": {
       "name": {
@@ -356,7 +356,7 @@
       }
     }
   },
-  "outcomeReleaseText": "Après avoir regardé le dossier avec vous deux, Nexis Hub a décidé que l'argent revient à {name}. Il part dans 3 jours si personne ne conteste.",
+  "outcomeReleaseText": "Après avoir regardé le dossier avec vous deux, NexisHub a décidé que l'argent revient à {name}. Il part dans 3 jours si personne ne conteste.",
   "@outcomeReleaseText": {
     "placeholders": {
       "name": {
@@ -365,7 +365,7 @@
     }
   },
   "outcomeSplitTitle": "L'argent est partagé",
-  "outcomeSplitText": "Après avoir regardé le dossier avec vous deux, Nexis Hub a décidé de partager l'argent entre vous et {name}. Votre part arrive dans votre portefeuille dans 3 jours si personne ne conteste.",
+  "outcomeSplitText": "Après avoir regardé le dossier avec vous deux, NexisHub a décidé de partager l'argent entre vous et {name}. Votre part arrive dans votre portefeuille dans 3 jours si personne ne conteste.",
   "@outcomeSplitText": {
     "placeholders": {
       "name": {
@@ -672,7 +672,7 @@
   "serviceRequestSaved": "Demande de test enregistrée",
   "serviceRequestSavedText": "Retrouvez-la dans vos missions, sous « En attente de devis ».",
   "describeNeed": "Décrire mon besoin",
-  "describeLead": "Dites-nous ce dont vous avez besoin avec vos mots. L'équipe Nexis Hub regarde votre demande et cherche le bon professionnel.",
+  "describeLead": "Dites-nous ce dont vous avez besoin avec vos mots. L'équipe NexisHub regarde votre demande et cherche le bon professionnel.",
   "describeTypeLabel": "Quel type de service ?",
   "describeTypeHint": "Par exemple : réparation de portail",
   "describeTextLabel": "Décrivez votre besoin",
@@ -687,7 +687,7 @@
   "backHome": "Retour à l'accueil",
   "requestNotSent": "La demande n'est pas partie. Réessayez dans un instant.",
   "notifications": "Notifications",
-  "notificationsSub": "WhatsApp et dans l'app",
+  "notificationsSub": "Dans l'app",
   "termsVersion": "Version du {date}",
   "@termsVersion": {
     "placeholders": {
@@ -696,7 +696,7 @@
       }
     }
   },
-  "securedByNexis": "Sécurisé par Nexis Hub",
+  "securedByNexis": "Sécurisé par NexisHub",
   "signupTitle": "Faisons connaissance",
   "signupFirstName": "Prénom",
   "signupLastName": "Nom",
@@ -705,5 +705,137 @@
   "signupAcceptTerms": "J’ai lu et j’accepte les CGU",
   "signupCreateProfile": "Créer mon profil",
   "signupFailed": "Le profil n’a pas pu être créé. Vérifiez les informations et réessayez.",
-  "signupDemoTerms": "Document de démonstration. Cet écran sert à tester la lecture et l’acceptation des conditions. Les profils créés, les missions et les paiements de cet aperçu sont fictifs. Les informations de cette inscription sont effacées au rechargement de l’app."
+  "signupDemoTerms": "Document de démonstration. Cet écran sert à tester la lecture et l’acceptation des conditions. Les profils créés, les missions et les paiements de cet aperçu sont fictifs. Les informations de cette inscription sont effacées au rechargement de l’app.",
+  "nextStep": "Continuer",
+  "infoSave": "Enregistrer",
+  "infoSaved": "Vos informations sont enregistrées.",
+  "infoFailed": "Les informations n'ont pas pu être enregistrées. Vérifiez-les et réessayez.",
+  "infoPhoneVerified": "Numéro vérifié",
+  "infoPhoneLocked": "Votre numéro sert à vous connecter. Pour le changer, écrivez à NexisHub.",
+  "devicesThis": "Ce téléphone",
+  "devicesOthers": "Autres téléphones",
+  "devicesAdded": "Ajouté le {date}",
+  "@devicesAdded": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "devicesLastSeen": "Dernière activité : {when}",
+  "@devicesLastSeen": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      }
+    }
+  },
+  "devicesMoneyIn": "{count, plural, =1{Sortie d'argent possible dans 1 heure} other{Sortie d'argent possible dans {count} heures}}",
+  "@devicesMoneyIn": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "devicesMoneyHint": "Par sécurité, un téléphone ajouté à votre compte attend 72 heures avant de pouvoir faire sortir de l'argent de votre portefeuille.",
+  "devicesNotMe": "Vous ne reconnaissez pas un téléphone ? Déconnectez-le tout de suite.",
+  "devicesSignOut": "Déconnecter ce téléphone",
+  "devicesSignOutTitle": "Déconnecter {name} ?",
+  "@devicesSignOutTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "devicesSignOutText": "Il ne pourra plus rien faire sur votre compte. Pour revenir, il faudra se reconnecter avec un code.",
+  "devicesSignedOut": "{name} est déconnecté.",
+  "@devicesSignedOut": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "notifAllowed": "Notifications autorisées",
+  "notifAllowedSub": "NexisHub peut vous prévenir sur ce téléphone.",
+  "notifOff": "Notifications coupées",
+  "notifOffSub": "Vous ne serez pas prévenu des devis, de l'arrivée du prestataire ni des paiements.",
+  "notifAllow": "Autoriser les notifications",
+  "notifOpenSettings": "Ouvrir les réglages",
+  "notifWhatTitle": "Ce que NexisHub vous envoie",
+  "notifQuotes": "Devis reçus et réponses",
+  "notifMission": "Départ, arrivée et fin de mission",
+  "notifMoney": "Paiements, argent versé et remboursements",
+  "notifDisputes": "Litiges et décisions",
+  "notifSecurity": "Nouveau téléphone sur votre compte",
+  "notifAlwaysHint": "Ces messages ne se coupent pas un par un : ils concernent votre argent et votre compte.",
+  "helpMyDisputes": "Mes litiges",
+  "helpNoDispute": "Aucun litige en cours.",
+  "helpQuestions": "Questions fréquentes",
+  "faqPaidQ": "Quand le prestataire reçoit-il l'argent ?",
+  "faqPaidA": "Votre argent est sécurisé par NexisHub dès le paiement. Il est versé au prestataire quand vous confirmez que c'est fait, ou 48 heures après la fin de la mission si vous n'avez rien signalé.",
+  "faqReportQ": "Que se passe-t-il si je signale un problème ?",
+  "faqReportA": "L'argent est bloqué : personne ne peut y toucher. NexisHub regarde le dossier avec vous deux, puis décide : vous rembourser, payer le prestataire ou partager.",
+  "faqContestQ": "Puis-je contester une décision ?",
+  "faqContestA": "Oui, une fois, dans les 3 jours qui suivent la décision. Une autre personne de NexisHub revoit alors le dossier.",
+  "faqSettleQ": "Et si nous trouvons un arrangement ?",
+  "faqSettleA": "Tant que NexisHub n'a pas décidé, vous pouvez proposer un arrangement au prestataire : il repasse, vous le payez, vous êtes remboursé ou vous partagez. Il a 48 heures pour répondre.",
+  "faqDeviceQ": "Pourquoi mon nouveau téléphone ne peut-il pas retirer d'argent ?",
+  "legalCgu": "Conditions générales d'utilisation",
+  "legalProviderTerms": "Conditions des prestataires",
+  "legalAcceptedOn": "Acceptées le {date}",
+  "@legalAcceptedOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "legalToAccept": "À accepter",
+  "legalRead": "Lire",
+  "becomeIntro": "Proposez vos services avec le même compte et le même portefeuille. L'équipe NexisHub vérifie chaque prestataire avant sa première mission.",
+  "becomeStep": "Étape {step} sur {total}",
+  "@becomeStep": {
+    "placeholders": {
+      "step": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "becomeServices": "Quels services proposez-vous ?",
+  "becomeServicesHint": "Choisissez-en au moins un.",
+  "becomeCommunes": "Où travaillez-vous ?",
+  "becomeCommunesHint": "Les communes où vous acceptez de vous déplacer.",
+  "becomeIdentity": "Vérifions votre identité",
+  "becomeIdentityHint": "Vos photos servent seulement à la vérification par l'équipe NexisHub. Elles ne sont montrées à aucun client.",
+  "becomeIdDocument": "Pièce d'identité",
+  "becomeIdDocumentSub": "Carte d'électeur, passeport ou permis de conduire",
+  "becomeSelfie": "Photo de vous",
+  "becomeSelfieSub": "Votre visage, bien éclairé",
+  "becomeTakePhoto": "Prendre la photo",
+  "becomeChoosePhoto": "Choisir une photo",
+  "becomeRetake": "Changer",
+  "becomeAcceptTerms": "J'ai lu et j'accepte les conditions des prestataires",
+  "becomeSend": "Envoyer ma demande",
+  "becomeSentTitle": "Demande envoyée",
+  "becomeSentText": "L'équipe NexisHub vérifie vos informations. Vous serez prévenu dès que votre profil de prestataire est validé.",
+  "becomeFailed": "La demande n'a pas pu être envoyée. Vérifiez chaque étape et réessayez.",
+  "becomeDemoNote": "Aperçu : les photos restent sur ce téléphone et ne sont envoyées nulle part.",
+  "providerPending": "Prestataire · en vérification",
+  "providerPendingHint": "Votre profil de prestataire est en cours de vérification par l'équipe NexisHub.",
+  "faqDeviceA": "Par sécurité, un téléphone ajouté à votre compte attend 72 heures avant de pouvoir faire sortir de l'argent de votre portefeuille.",
+  "becomeReadTerms": "Lire les conditions",
+  "numberVerified": "{phone} vérifié",
+  "@numberVerified": {
+    "placeholders": {
+      "phone": {
+        "type": "String"
+      }
+    }
+  }
 }

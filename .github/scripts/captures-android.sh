@@ -15,10 +15,10 @@ shoot() { # nom, apparence (yes = sombre), langue
   adb exec-out screencap -p > "captures/android-$1-$([ "$2" = yes ] && echo dark || echo light)-$3.png"
 }
 
-for screen in welcome phone signup home missions wallet profile services; do
+for screen in welcome phone code signup home missions wallet profile services; do
   shoot "$screen" no fr
 done
-for screen in tracking quotes pay pending confirm report dispute decision provider request job; do
+for screen in tracking quotes pay pending confirm report dispute decision provider request job info devices alerts help legal become become-identity; do
   shoot "$screen" no fr
 done
 shoot tracking yes fr

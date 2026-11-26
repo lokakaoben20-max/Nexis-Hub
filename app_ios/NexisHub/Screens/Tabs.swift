@@ -141,10 +141,11 @@ private struct MovementRow: View {
 struct ProfileView: View {
     @Environment(AppModel.self) private var app
     @State private var profile: Profile?
-    @State private var comingSoon: SheetTitle?
+    @State private var devicesCount = 1
+    @State private var flow = MissionFlow()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $flow.path) {
             List {
                 if let profile {
                     Section {
@@ -155,7 +156,8 @@ struct ProfileView: View {
                                     .font(.title(19)).foregroundStyle(Nexis.ink)
                                 Text("+243 \(DrcPhone.parse(profile.phone).formatted) · \(profile.commune)")
                                     .font(.body(14)).foregroundStyle(Nexis.muted)
-                                Text(app.t(app.providerSpace ? "spaceProvider" : "clientBadge"))
+                                Text(app.t(profile.providerStatus == .pending ? "providerPending"
+                                           : app.providerSpace ? "spaceProvider" : "clientBadge"))
                                     .font(.body(12, .semibold, relativeTo: .caption1))
                                     .foregroundStyle(Nexis.softInk)
                                     .padding(.horizontal, 10).padding(.vertical, 3)
@@ -163,6 +165,13 @@ struct ProfileView: View {
                             }
                         }
                         .padding(.vertical, 6)
+                    }
+                    if profile.providerStatus == .pending {
+                        Section {
+                            InfoNote(text: app.t("providerPendingHint"), systemImage: "hourglass")
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(EdgeInsets())
+                        }
                     }
                     if profile.isProvider {
                         Section {
@@ -173,7 +182,7 @@ struct ProfileView: View {
                     }
                 }
                 Section {
-                    row("person.text.rectangle", app.t("myInfo"), app.t("myInfoSub"))
+                    row("person.text.rectangle", app.t("myInfo"), app.t("myInfoSub"), .profileInfo)
                     Picker(selection: Binding(get: { app.language }, set: { app.language = $0 })) {
                         Text("Français").tag("fr")
                         Text("Lingála").tag("ln")
@@ -183,45 +192,69 @@ struct ProfileView: View {
                             Image(systemName: "globe")
                         }
                     }
-                    row("bell.badge", app.t("notifications"), app.t("notificationsSub"))
-                    row("iphone", app.t("myDevices"), app.plural("devicesCount", count: 1))
-                    row("questionmark.bubble", app.t("helpDisputes"), app.t("helpDisputesSub"))
+                    row("bell.badge", app.t("notifications"), app.t("notificationsSub"), .notificationSettings)
+                    row("iphone", app.t("myDevices"), app.plural("devicesCount", count: devicesCount), .devices)
+                    row("questionmark.bubble", app.t("helpDisputes"), app.t("helpDisputesSub"), .help)
                 }
-                if profile?.isProvider == false {
+                if let profile, profile.providerStatus == nil {
                     Section {
-                        row("briefcase", app.t("becomeProvider"), app.t("becomeProviderSub"))
+                        row("briefcase", app.t("becomeProvider"), app.t("becomeProviderSub"), .becomeProvider)
                     }
                 }
                 Section {
-                    row("doc.text", app.t("legalTerms"), nil)
-                    row("hand.raised", app.t("legalPrivacy"), nil)
+                    row("doc.text", app.t("legalTerms"), nil, .legal)
+                    Button { flow.comingSoon = SheetTitle(app.t("legalPrivacy")) } label: {
+                        rowLabel("hand.raised", app.t("legalPrivacy"), nil)
+                    }
                 }
                 Section {
                     Button(role: .destructive) { app.signOut() } label: {
                         Text(app.t("signOut")).font(.body(16, .semibold))
+                            .frame(maxWidth: .infinity)
                     }
                 }
             }
             .scrollContentBackground(.hidden)
             .background(Nexis.bg)
             .navigationTitle(app.t("navProfile"))
-            .sheet(item: $comingSoon) { item in ComingSoonView(title: item.id) }
-            .task(id: app.revision) { profile = try? await app.repository.profile() }
+            .missionDestinations()
+            .task(id: app.revision) {
+                profile = try? await app.repository.profile()
+                devicesCount = (try? await app.repository.devices())?.count ?? 1
+            }
+        }
+        .missionFlow(flow, tab: .profile)
+        .onAppear {
+            if let capture = app.capture, MissionRoute.profileCaptures.contains(capture), flow.path.isEmpty,
+               let routes = MissionRoute.forCapture(capture) {
+                flow.path = routes
+            }
         }
     }
 
-    private func row(_ symbol: String, _ title: String, _ subtitle: String?) -> some View {
-        Button { comingSoon = SheetTitle(title) } label: {
-            Label {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.body(16)).foregroundStyle(Nexis.ink)
-                    if let subtitle {
-                        Text(subtitle).font(.body(13, relativeTo: .footnote)).foregroundStyle(Nexis.muted)
-                    }
-                }
-            } icon: {
-                Image(systemName: symbol).foregroundStyle(Nexis.accent)
+    private func row(_ symbol: String, _ title: String, _ subtitle: String?, _ route: MissionRoute) -> some View {
+        Button { flow.push(route) } label: {
+            HStack {
+                rowLabel(symbol, title, subtitle)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color(light: 0xC4CAD4, dark: 0x4A5A75))
             }
+            .contentShape(Rectangle())
+        }
+    }
+
+    private func rowLabel(_ symbol: String, _ title: String, _ subtitle: String?) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.body(16)).foregroundStyle(Nexis.ink)
+                if let subtitle {
+                    Text(subtitle).font(.body(13, relativeTo: .footnote)).foregroundStyle(Nexis.muted)
+                }
+            }
+        } icon: {
+            Image(systemName: symbol).foregroundStyle(Nexis.accent)
         }
     }
 }

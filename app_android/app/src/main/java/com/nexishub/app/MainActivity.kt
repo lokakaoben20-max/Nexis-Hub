@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
         // ouvre directement l'écran demandé avec les données fictives.
         val capture = if (BuildConfig.DEBUG) Capture.from(intent.getStringExtra("capture")) else null
         val app = AppModel(DemoRepository(), texts, intent.getStringExtra("language") ?: AppModel.defaultLanguage())
-        app.capture = capture?.name?.lowercase()
+        app.capture = capture?.code
         if (capture?.signedIn == true) app.signIn()
         setContent {
             NexisTheme {
@@ -97,6 +97,7 @@ enum class Capture(
 ) {
     WELCOME(false, entry = "welcome"),
     PHONE(false, entry = "phone"),
+    CODE(false, entry = "code"),
     SIGNUP(false, entry = "signup"),
     HOME(true, tab = 0),
     MISSIONS(true, tab = 1),
@@ -115,9 +116,21 @@ enum class Capture(
     DECISION(true, tab = 1),
     PROVIDER(true, tab = 0, provider = true),
     REQUEST(true, tab = 0, provider = true),
-    JOB(true, tab = 0, provider = true);
+    JOB(true, tab = 0, provider = true),
+
+    // Écrans du profil.
+    INFO(true, tab = 3),
+    DEVICES(true, tab = 3),
+    ALERTS(true, tab = 3),
+    HELP(true, tab = 3),
+    LEGAL(true, tab = 3),
+    BECOME(true, tab = 3),
+    BECOME_IDENTITY(true, tab = 3);
+
+    /** Le nom passé par le script de captures (« become-identity »). */
+    val code: String get() = name.lowercase().replace('_', '-')
 
     companion object {
-        fun from(value: String?): Capture? = entries.firstOrNull { it.name.equals(value, ignoreCase = true) }
+        fun from(value: String?): Capture? = entries.firstOrNull { it.code == value?.lowercase() }
     }
 }

@@ -18,6 +18,9 @@ interface NexisRepository {
     val communes: List<String>
     val signupTermsVersion: LocalDate
 
+    /** Version en vigueur des conditions des prestataires. */
+    val providerTermsVersion: LocalDate
+
     /** Demande au serveur d'envoyer le code de connexion par ce canal. */
     suspend fun sendCode(phone: String, channel: CodeChannel)
 
@@ -46,6 +49,31 @@ interface NexisRepository {
 
     /** « Décrire mon besoin » : une demande libre transmise à l'équipe. */
     suspend fun sendFreeRequest(title: String, text: String)
+
+    // --- Profil et compte ---
+
+    /** Prénom, nom et commune. Le numéro ne change pas ici : il sert à se
+     * connecter. */
+    suspend fun updateProfile(firstName: String, lastName: String, commune: String): Profile
+
+    /** Les téléphones reliés au compte, celui-ci d'abord. */
+    suspend fun devices(): List<AppDevice>
+
+    /** Coupe un autre téléphone, pour toujours : il devra se reconnecter par
+     * code. Ce téléphone-ci se déconnecte par « Se déconnecter ». */
+    suspend fun signOutDevice(id: Int)
+
+    /** Les documents en vigueur pour les rôles de la personne. */
+    suspend fun legalDocuments(): List<LegalDocument>
+    suspend fun legalText(key: LegalDocumentKey): LegalText
+
+    /** Demande à devenir prestataire. Le profil reste en vérification jusqu'à
+     * la décision de l'équipe NexisHub. Les photos ne servent qu'à cette
+     * vérification. */
+    suspend fun applyAsProvider(
+        services: List<String>, communes: List<String>, idDocument: ByteArray, selfie: ByteArray,
+        acceptedTermsVersion: LocalDate?,
+    )
 
     // --- Client : devis, paiement, suivi, litige ---
 
@@ -146,13 +174,20 @@ class DemoRepository(private val now: Instant = Instant.now()) : NexisRepository
         if (phone == SAMPLE_PHONE || phone in registered || first.isEmpty() || last.isEmpty() ||
             commune !in communes || acceptedTermsVersion != signupTermsVersion
         ) return false
-        registered[phone] = Profile(first, last, phone, commune, isProvider = false, termsVersion = acceptedTermsVersion)
+        registered[phone] = Profile(first, last, phone, commune, termsVersion = acceptedTermsVersion)
         activePhone = phone
         return true
     }
 
-    override suspend fun profile(): Profile = registered[activePhone]
-        ?: Profile("Grâce", "Nsimba", SAMPLE_PHONE, "Limete", isProvider = true, termsVersion = signupTermsVersion)
+    private var sampleProfile = Profile(
+        "Grâce", "Nsimba", SAMPLE_PHONE, "Limete", providerStatus = ProviderStatus.VERIFIED, termsVersion = signupTermsVersion,
+    )
+
+    override suspend fun profile(): Profile = registered[activePhone] ?: sampleProfile
+
+    private fun store(profile: Profile) {
+        if (isSample) sampleProfile = profile else registered[activePhone] = profile
+    }
 
     override suspend fun wallet(): Wallet = if (!isSample) Wallet.EMPTY else Wallet(
         available = mapOf(Currency.CDF to Money(45_000, Currency.CDF), Currency.USD to Money(1_250, Currency.USD)),
@@ -278,6 +313,74 @@ class DemoRepository(private val now: Instant = Instant.now()) : NexisRepository
 
     /** Aperçu : la demande n'est envoyée nulle part. */
     override suspend fun sendFreeRequest(title: String, text: String) = Unit
+
+    // --- Profil et compte ---
+
+    override val providerTermsVersion: LocalDate = LocalDate.of(2026, 11, 20)
+
+    override suspend fun updateProfile(firstName: String, lastName: String, commune: String): Profile {
+        val first = firstName.trim()
+        val last = lastName.trim()
+        if (first.isEmpty() || first.length > 60 || last.isEmpty() || last.length > 60 || commune !in communes) {
+            throw NexisRefusal("profile_invalid")
+        }
+        val updated = profile().copy(firstName = first, lastName = last, commune = commune)
+        store(updated)
+        return updated
+    }
+
+    private val sampleDevices: MutableList<AppDevice> by lazy {
+        mutableListOf(
+            AppDevice(1, "Samsung Galaxy A14", DevicePlatform.ANDROID, ago(days = 58), now, ago(days = 58), isCurrent = true),
+            AppDevice(
+                2, "iPhone 11", DevicePlatform.IOS, ago(hours = 20), ago(hours = 3),
+                ago(hours = 20).plus(Duration.ofHours(72)), isCurrent = false,
+            ),
+        )
+    }
+
+    override suspend fun devices(): List<AppDevice> =
+        if (isSample) sampleDevices.toList()
+        else listOf(AppDevice(1, "Android", DevicePlatform.ANDROID, now, now, now, isCurrent = true))
+
+    override suspend fun signOutDevice(id: Int) {
+        val device = devices().firstOrNull { it.id == id } ?: throw NexisRefusal("device_not_found")
+        if (device.isCurrent) throw NexisRefusal("use_sign_out")
+        sampleDevices.removeAll { it.id == id }
+    }
+
+    private var providerTermsAcceptedAt: LocalDate? = null
+
+    override suspend fun legalDocuments(): List<LegalDocument> {
+        val me = profile()
+        return buildList {
+            add(LegalDocument(LegalDocumentKey.CGU, signupTermsVersion, me.termsVersion?.let { signupTermsVersion }))
+            if (me.providerStatus != null) {
+                add(LegalDocument(LegalDocumentKey.PROVIDER_TERMS, providerTermsVersion, providerTermsAcceptedAt ?: providerTermsVersion))
+            }
+        }
+    }
+
+    /** Aperçu : aucune version n'est publiée, donc pas de texte. */
+    override suspend fun legalText(key: LegalDocumentKey): LegalText =
+        LegalText(key, if (key == LegalDocumentKey.CGU) signupTermsVersion else providerTermsVersion, null)
+
+    override suspend fun applyAsProvider(
+        services: List<String>, communes: List<String>, idDocument: ByteArray, selfie: ByteArray,
+        acceptedTermsVersion: LocalDate?,
+    ) {
+        val me = profile()
+        val catalog = serviceCatalog().map { it.id }.toSet()
+        val valid = me.providerStatus == null &&
+            services.isNotEmpty() && services.size <= 50 && catalog.containsAll(services) &&
+            communes.isNotEmpty() && communes.size <= 50 && this.communes.containsAll(communes) &&
+            idDocument.isNotEmpty() && selfie.isNotEmpty() && acceptedTermsVersion == providerTermsVersion
+        if (!valid) throw NexisRefusal("provider_application_invalid")
+        // Aperçu : les photos ne sont gardées nulle part.
+        kotlinx.coroutines.delay(1_000)
+        providerTermsAcceptedAt = LocalDate.now()
+        store(me.copy(providerStatus = ProviderStatus.PENDING))
+    }
 
     // --- Client : devis, paiement, suivi, litige ---
 

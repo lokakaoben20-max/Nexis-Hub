@@ -1,4 +1,4 @@
-# Projet Xcode de l'app iOS Nexis Hub, généré par XcodeGen.
+# Projet Xcode de l'app iOS NexisHub, généré par XcodeGen.
 #   brew install xcodegen
 #   cd app_ios && xcodegen generate && open NexisHub.xcodeproj
 # Le .xcodeproj n'est pas versionné : ce fichier est la seule source.
@@ -48,6 +48,7 @@ targets:
           UIImageRespectsSafeAreaInsets: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        NSCameraUsageDescription: "NexisHub utilise l’appareil photo pour les photos de vérification de votre identité."
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
 

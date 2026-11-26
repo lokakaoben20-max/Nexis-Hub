@@ -36,33 +36,24 @@ struct HomeView: View {
                 .padding(.bottom, 24)
             }
             .background(Nexis.bg)
-            .navigationTitle(greeting)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if !ShellView.hasAccessory {
-                        Button(action: onPickService) {
-                            Image(systemName: "plus")
-                        }
-                        .accessibilityLabel(app.t("requestService"))
+            // « Bonjour, Ben » reste à gauche, même quand on fait défiler
+            // (choix de Ben) : une barre à nous à la place du grand titre.
+            .greetingHeader(greeting) {
+                if !ShellView.hasAccessory {
+                    HeaderIconButton(systemImage: "plus", label: app.t("requestService"), action: onPickService)
+                }
+                // La cloche : un point rouge quand une notification n'a pas été lue.
+                HeaderIconButton(systemImage: "bell", label: app.t("notifications"),
+                                 dot: notifications.contains(where: { !$0.read })) {
+                    showingNotifications = true
+                }
+                // Le rond du profil (initiales tant qu'il n'y a pas de photo).
+                if let profile {
+                    Button { onTab(.profile) } label: {
+                        InitialsAvatar(initials: profile.initials, size: 38)
                     }
-                    // La cloche : un point rouge quand une notification n'a pas été lue.
-                    Button { showingNotifications = true } label: {
-                        Image(systemName: "bell")
-                            .overlay(alignment: .topTrailing) {
-                                if notifications.contains(where: { !$0.read }) {
-                                    Circle().fill(Nexis.danger).frame(width: 9, height: 9).offset(x: 3, y: -2)
-                                }
-                            }
-                    }
-                    .accessibilityLabel(app.t("notifications"))
-                    // Le rond du profil (initiales tant qu'il n'y a pas de photo).
-                    if let profile {
-                        Button { onTab(.profile) } label: {
-                            InitialsAvatar(initials: profile.initials, size: 32)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(app.t("navProfile"))
-                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(app.t("navProfile"))
                 }
             }
             .navigationDestination(isPresented: $showingNotifications) {
@@ -76,7 +67,7 @@ struct HomeView: View {
     }
 
     private var greeting: String {
-        guard let profile else { return "Nexis Hub" }
+        guard let profile else { return "NexisHub" }
         let hour = Calendar.current.component(.hour, from: .now)
         return app.t(hour < 12 ? "helloHome" : "eveningHome", ["name": profile.firstName])
     }
@@ -348,6 +339,68 @@ private struct CurrencySwitch: View {
         .fixedSize()
         .animation(.snappy(duration: 0.2), value: selection)
         .accessibilityElement(children: .contain)
+        .accessibilityLabel(label)
+    }
+}
+
+/// Barre du haut des accueils : la salutation à gauche, toujours à la même
+/// place, et les boutons à droite. Elle remplace le grand titre d'iOS, qui
+/// se centre quand on fait défiler.
+private struct GreetingHeader<Trailing: View>: ViewModifier {
+    let title: String
+    @ViewBuilder var trailing: Trailing
+
+    func body(content: Content) -> some View {
+        content
+            .navigationTitle(title)
+            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                HStack(spacing: 10) {
+                    Text(title)
+                        .font(.title(24, .semibold, relativeTo: .title1))
+                        .foregroundStyle(Nexis.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 8)
+                    trailing
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 6)
+                .padding(.bottom, 10)
+                .background(Nexis.bg.opacity(0.96).ignoresSafeArea(edges: .top))
+            }
+    }
+}
+
+extension View {
+    func greetingHeader(_ title: String, @ViewBuilder trailing: () -> some View = { EmptyView() }) -> some View {
+        modifier(GreetingHeader(title: title, trailing: trailing))
+    }
+}
+
+/// Bouton rond de la barre des accueils (cloche, « + »).
+struct HeaderIconButton: View {
+    let systemImage: String
+    let label: String
+    var dot = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Nexis.ink)
+                .frame(width: 40, height: 40)
+                .background(Nexis.surface, in: Circle())
+                .overlay(Circle().strokeBorder(Nexis.line, lineWidth: 0.5))
+                .overlay(alignment: .topTrailing) {
+                    if dot {
+                        Circle().fill(Nexis.danger).frame(width: 9, height: 9).offset(x: -8, y: 8)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
         .accessibilityLabel(label)
     }
 }

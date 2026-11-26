@@ -50,7 +50,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get whatsappSub => 'The code arrives in seconds';
 
   @override
-  String get telegramSub => 'With the Nexis Hub bot';
+  String get telegramSub => 'With the NexisHub bot';
 
   @override
   String get receiveCode => 'Get the code';
@@ -189,7 +189,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get follow => 'Track';
 
   @override
-  String get paySecured => 'Secured by Nexis Hub';
+  String get paySecured => 'Secured by NexisHub';
 
   @override
   String get payReleased => 'Paid to provider';
@@ -330,7 +330,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get securedUntilDone =>
-      'Your money stays secured by Nexis Hub until you confirm it\'s done.';
+      'Your money stays secured by NexisHub until you confirm it\'s done.';
 
   @override
   String get payTitle => 'Pay';
@@ -343,7 +343,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String paySecuredNote(String name) {
-    return 'Secured by Nexis Hub: $name gets paid when you confirm it\'s done.';
+    return 'Secured by NexisHub: $name gets paid when you confirm it\'s done.';
   }
 
   @override
@@ -371,7 +371,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pendingWithin => 'You have 5 minutes';
 
   @override
-  String get pendingSecured => 'Money secured by Nexis Hub';
+  String get pendingSecured => 'Money secured by NexisHub';
 
   @override
   String pendingNotify(String name) {
@@ -425,7 +425,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String confirmText(String name) {
-    return 'When you confirm, Nexis Hub pays the secured money to $name.';
+    return 'When you confirm, NexisHub pays the secured money to $name.';
   }
 
   @override
@@ -434,7 +434,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get amountFixed => 'Amount set by Nexis Hub at payment';
+  String get amountFixed => 'Amount set by NexisHub at payment';
 
   @override
   String get report48h =>
@@ -516,7 +516,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get nexisLooking => 'Nexis Hub is looking into it';
+  String get nexisLooking => 'NexisHub is looking into it';
 
   @override
   String get nexisLookingSub => 'Answer within 48 h · we may call you';
@@ -533,7 +533,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get writeNexis => 'Write to Nexis Hub';
+  String get writeNexis => 'Write to NexisHub';
 
   @override
   String get weSettled => 'We sorted it out';
@@ -546,7 +546,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String outcomeRefundText(String name) {
-    return 'After reviewing the case and talking with $name, Nexis Hub decided to refund you. The money reaches your wallet in 3 days unless someone contests.';
+    return 'After reviewing the case and talking with $name, NexisHub decided to refund you. The money reaches your wallet in 3 days unless someone contests.';
   }
 
   @override
@@ -556,7 +556,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String outcomeReleaseText(String name) {
-    return 'After reviewing the case with you both, Nexis Hub decided the money goes to $name. It\'s paid out in 3 days unless someone contests.';
+    return 'After reviewing the case with you both, NexisHub decided the money goes to $name. It\'s paid out in 3 days unless someone contests.';
   }
 
   @override
@@ -564,7 +564,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String outcomeSplitText(String name) {
-    return 'After reviewing the case with you both, Nexis Hub decided to split the money between you and $name. Your share reaches your wallet in 3 days unless someone contests.';
+    return 'After reviewing the case with you both, NexisHub decided to split the money between you and $name. Your share reaches your wallet in 3 days unless someone contests.';
   }
 
   @override
@@ -933,7 +933,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get describeLead =>
-      'Tell us what you need in your own words. The Nexis Hub team looks at your request and finds the right professional.';
+      'Tell us what you need in your own words. The NexisHub team looks at your request and finds the right professional.';
 
   @override
   String get describeTypeLabel => 'What kind of service?';
@@ -989,7 +989,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get securedByNexis => 'Secured by Nexis Hub';
+  String get securedByNexis => 'Secured by NexisHub';
 
   @override
   String get signupTitle => 'Let’s get to know you';

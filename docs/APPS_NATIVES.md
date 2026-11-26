@@ -110,9 +110,38 @@ d'argent (le prix tapé est seulement lu, `PriceInput`, et le serveur le
 revérifie). Dans un écran de mission, la barre d'onglets et l'accessoire
 « Demander un service » se rangent (iOS 26.1 et plus).
 
-Restent « Bientôt dans l'app » : appeler et écrire (prestataire, client,
-NexisHub), photos, ajouter un numéro Mobile Money, « Je n'ai rien reçu »,
-« Nous nous sommes arrangés », dépôt et retrait, réglages du profil.
+Écrans du profil (2026-11-26) : mes informations (prénom, nom, commune ;
+le numéro, vérifié, ne change pas ici), mes téléphones (ce téléphone, les
+autres avec leur délai de 72 h avant une sortie d'argent, et « Déconnecter
+ce téléphone », définitif), notifications (l'autorisation réelle du
+téléphone et ce que NexisHub envoie), aide et litiges (mes litiges, questions
+fréquentes tirées des règles de `CONCEPTION_ARGENT.md`), conditions
+d'utilisation (versions en vigueur, date d'acceptation, lecture du texte
+publié) et devenir prestataire (services, communes, pièce d'identité et
+photo, conditions des prestataires ; le profil reste « en vérification »
+jusqu'à la décision de l'équipe). Les photos de vérification restent en
+mémoire, réduites ; dans l'aperçu elles ne partent nulle part.
+
+Restent « Bientôt dans l'app » : la messagerie dans l'app (choix de Ben :
+pas de numéro affiché ; elle servira à « Appeler », « Écrire » et « Écrire à
+NexisHub »), photos d'une mission, ajouter un numéro Mobile Money, « Je n'ai
+rien reçu », « Nous nous sommes arrangés », dépôt, retrait, mouvements et
+politique de confidentialité (pas encore de document côté serveur).
+
+### Textes
+
+Le nom s'écrit **NexisHub** dans les textes (`.arb` de `app_mobile`, choix
+de Ben du 2026-11-26). Les libellés lus par VoiceOver et TalkBack gardent
+« Nexis Hub » pour être bien prononcés. Le bot Telegram et la Mini App
+écrivent encore « Nexis Hub » : étape à part.
+
+Les textes des écrans du profil ont été ajoutés aux `.arb` (puis copiés par
+`outils/textes_apps_natives.py`). **Lingala à faire relire** par une
+personne de Kinshasa : `nextStep`, et les clés qui commencent par `info`,
+`devices`, `notif`, `help`, `faq`, `legal` (sauf `legalTerms`,
+`legalPrivacy`), `become` et `providerPending`. Les fichiers
+`app_localizations*.dart` ne contiennent pas encore ces clés : Flutter les
+régénère à la compilation (`generate: true`).
 
 ## Textes
 

@@ -60,6 +60,7 @@ struct WelcomeView: View {
             .onAppear {
                 switch app.capture {
                 case "phone": path = [.phone(login: false)]
+                case "code": path = [.phone(login: false), .code(phone: "+243991112222", channel: .whatsapp, login: false)]
                 case "signup": path = [.phone(login: false), .signup(phone: "+243991112222")]
                 default: break
                 }
@@ -185,7 +186,60 @@ struct LanguageMenu: View {
     }
 }
 
-// MARK: - Numéro
+// MARK: - Parties communes (maquettes A2 à A4)
+
+/// Titre et phrase d'introduction des écrans d'entrée, dans le contenu
+/// (la barre ne garde que le retour et la langue).
+private struct EntryHeading: View {
+    let title: String
+    var text: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.title(28, .semibold, relativeTo: .largeTitle))
+                .foregroundStyle(Nexis.ink)
+                .accessibilityAddTraits(.isHeader)
+            if let text {
+                Text(text).font(.body(15)).foregroundStyle(Nexis.muted).lineSpacing(3)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private extension View {
+    /// Barre des écrans d'entrée : retour à gauche, langue à droite.
+    func entryChrome(_ title: String) -> some View {
+        self.background(Nexis.bg)
+            .navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
+                ToolbarItem(placement: .topBarTrailing) { LanguageMenu() }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// Carte blanche aux coins de 20, comme dans les maquettes.
+private struct EntryCard<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(spacing: 0) { content }
+            .background(Nexis.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+}
+
+private struct EntryLabel: View {
+    let text: String
+
+    var body: some View {
+        Text(text).font(.body(13, .semibold, relativeTo: .footnote)).foregroundStyle(Nexis.muted)
+    }
+}
+
+// MARK: - Numéro (A2)
 
 struct PhoneView: View {
     @Environment(AppModel.self) private var app
@@ -200,78 +254,86 @@ struct PhoneView: View {
     private var channels: [CodeChannel] { app.repository.codeChannels }
 
     var body: some View {
-        Form {
-            Section {
-                Text(app.t("yourNumberIntro"))
-                    .font(.body(15))
-                    .foregroundStyle(Nexis.muted)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 8, trailing: 4))
-            }
-            Section {
-                HStack(spacing: 10) {
-                    Text("🇨🇩 +243")
-                        .font(.body(17, .semibold))
-                        .foregroundStyle(Nexis.ink)
-                    Divider()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                EntryHeading(title: login ? app.t("signInTitle") : app.t("yourNumber"), text: app.t("yourNumberIntro"))
+                EntryLabel(text: app.t("phone")).padding(.top, 24)
+                HStack(spacing: 12) {
+                    Text("🇨🇩").font(.system(size: 22)).accessibilityHidden(true)
+                    Text("+243").font(.body(17, .semibold)).foregroundStyle(Nexis.ink)
+                    Rectangle().fill(Nexis.line).frame(width: 1, height: 26)
                     TextField("81 234 5678", text: Binding(
                         get: { phone.formatted },
                         set: { phone = DrcPhone.parse($0) }))
-                        .font(.body(17, .medium))
+                        .font(.body(19, .medium))
                         .keyboardType(.phonePad)
                         .textContentType(.telephoneNumber)
                         .focused($focused)
                         .accessibilityLabel(app.t("phone"))
                 }
-            } footer: {
+                .padding(.horizontal, 16)
+                .frame(height: 60)
+                .background(Nexis.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(focused ? Nexis.brand : Nexis.line, lineWidth: focused ? 2 : 1))
+                .background(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(Nexis.brand.opacity(focused ? 0.12 : 0)).padding(-4))
+                .contentShape(Rectangle())
+                .onTapGesture { focused = true }
+                .padding(.top, 8)
+                .animation(.snappy(duration: 0.2), value: focused)
                 if !phone.prefixKnown {
                     Text(app.t("numberNotCongolese"))
-                        .font(.body(13)).foregroundStyle(Nexis.danger)
+                        .font(.body(13)).foregroundStyle(Nexis.danger).padding(.top, 8)
                 }
-            }
-            Section {
-                ForEach(channels, id: \.self) { item in
-                    Button { channel = item } label: {
-                        HStack(spacing: 14) {
-                            ChannelIcon(channel: item)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(channelName(item))
-                                    .font(.body(16, .semibold)).foregroundStyle(Nexis.ink)
-                                Text(channelSub(item))
-                                    .font(.body(13)).foregroundStyle(Nexis.muted)
+                EntryLabel(text: app.t("receiveCodeBy")).padding(.top, 26)
+                EntryCard {
+                    ForEach(Array(channels.enumerated()), id: \.element) { index, item in
+                        Button { channel = item } label: {
+                            HStack(spacing: 14) {
+                                ChannelIcon(channel: item)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(channelName(item))
+                                        .font(.body(16, .semibold)).foregroundStyle(Nexis.ink)
+                                    Text(channelSub(item))
+                                        .font(.body(13, relativeTo: .footnote)).foregroundStyle(Nexis.muted)
+                                }
+                                Spacer(minLength: 8)
+                                if selectedChannel == item {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 24)).foregroundStyle(Nexis.brand)
+                                } else {
+                                    Circle().strokeBorder(Color(light: 0xC9D0DB, dark: 0x3A4A66), lineWidth: 2)
+                                        .frame(width: 22, height: 22).padding(1)
+                                }
                             }
-                            Spacer()
-                            if selectedChannel == item {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.title3).foregroundStyle(Nexis.accent)
-                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(selectedChannel == item ? .isSelected : [])
+                        if index < channels.count - 1 { Divider().padding(.leading, 66) }
                     }
-                    .accessibilityAddTraits(selectedChannel == item ? .isSelected : [])
                 }
-            } header: {
-                Text(app.t("receiveCodeBy")).font(.body(13, .semibold))
+                .padding(.top, 8)
+                if channels.isEmpty {
+                    Text(app.t("noCodeChannel")).font(.body(14)).foregroundStyle(Nexis.muted).padding(.top, 8)
+                }
+                if failed {
+                    Text(app.t("actionFailed")).font(.body(14)).foregroundStyle(Nexis.danger).padding(.top, 12)
+                }
             }
-            if channels.isEmpty {
-                Text(app.t("noCodeChannel")).font(.body(14)).foregroundStyle(Nexis.muted)
-            }
-            if failed {
-                Text(app.t("actionFailed")).font(.body(14)).foregroundStyle(Nexis.danger)
-            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
+        .scrollDismissesKeyboard(.interactively)
         .disabled(sending)
-        .scrollContentBackground(.hidden)
-        .background(Nexis.bg)
-        .navigationTitle(login ? app.t("signInTitle") : app.t("yourNumber"))
+        .entryChrome(login ? app.t("signInTitle") : app.t("yourNumber"))
         .safeAreaInset(edge: .bottom) {
             Button(action: sendCode) {
-                if sending {
-                    PictoLoader(size: 24, label: app.t("receiveCode"))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 1)
-                } else {
-                    WideLabel(text: app.t("receiveCode"))
-                }
+                BusyLabel(text: app.t("receiveCode"), busy: sending)
             }
             .nxProminentButton()
             .disabled(!phone.isValid || selectedChannel == nil || sending)
@@ -301,19 +363,23 @@ struct PhoneView: View {
         }
     }
 
-    private func channelName(_ channel: CodeChannel) -> String {
-        switch channel {
-        case .whatsapp: return "WhatsApp"
-        case .telegram: return "Telegram"
-        case .sms: return "SMS"
-        }
-    }
+    private func channelName(_ channel: CodeChannel) -> String { channel.displayName }
 
     private func channelSub(_ channel: CodeChannel) -> String {
         switch channel {
         case .whatsapp: return app.t("whatsappSub")
         case .telegram: return app.t("telegramSub")
         case .sms: return app.t("smsSub")
+        }
+    }
+}
+
+extension CodeChannel {
+    var displayName: String {
+        switch self {
+        case .whatsapp: return "WhatsApp"
+        case .telegram: return "Telegram"
+        case .sms: return "SMS"
         }
     }
 }
@@ -338,49 +404,102 @@ private struct ChannelIcon: View {
     }
 }
 
-// MARK: - Code
+// MARK: - Code (A3)
 
 struct CodeView: View {
     @Environment(AppModel.self) private var app
     let phone: String
-    let channel: CodeChannel
     let login: Bool
     @Binding var path: [EntryStep]
+    @State private var channel: CodeChannel
     @State private var code = ""
     @State private var noAccount = false
+    @State private var secondsLeft = CodeView.resendDelay
+    @State private var resending = false
+    @State private var notice: String?
     @FocusState private var focused: Bool
 
     private static let length = 6
+    /// Délai avant de pouvoir redemander un code : 60 s (choix de Ben).
+    static let resendDelay = 60
+
+    init(phone: String, channel: CodeChannel, login: Bool, path: Binding<[EntryStep]>) {
+        self.phone = phone
+        self.login = login
+        _path = path
+        _channel = State(initialValue: channel)
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(sentText)
-                .font(.body(15)).foregroundStyle(Nexis.muted)
-            CodeBoxes(code: code, length: Self.length)
-                .overlay {
-                    TextField("", text: $code)
-                        .keyboardType(.numberPad)
-                        .textContentType(.oneTimeCode)
-                        .focused($focused)
-                        .foregroundStyle(.clear)
-                        .tint(.clear)
-                        .accessibilityLabel(app.t("enterCode"))
-                        .onChange(of: code) { _, value in
-                            let digits = String(value.filter(\.isNumber).prefix(Self.length))
-                            if digits != value { code = digits }
-                            if digits.count == Self.length { verified() }
-                        }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                EntryHeading(title: app.t("enterCode"), text: sentText)
+                CodeBoxes(code: code, length: Self.length)
+                    .overlay {
+                        TextField("", text: $code)
+                            .keyboardType(.numberPad)
+                            .textContentType(.oneTimeCode)
+                            .focused($focused)
+                            .foregroundStyle(.clear)
+                            .tint(.clear)
+                            .accessibilityLabel(app.t("enterCode"))
+                            .onChange(of: code) { _, value in
+                                let digits = String(value.filter(\.isNumber).prefix(Self.length))
+                                if digits != value { code = digits }
+                                if digits.count == Self.length { verified() }
+                            }
+                    }
+                    .onTapGesture { focused = true }
+                VStack(alignment: .leading, spacing: 10) {
+                    hint("clock", app.t("codeHint"))
+                    hint("checkmark.shield", app.t("neverAskCode"))
                 }
-                .onTapGesture { focused = true }
-            Label(app.t("codeHint"), systemImage: "clock")
-                .font(.body(13)).foregroundStyle(Nexis.muted)
-            Label(app.t("neverAskCode"), systemImage: "lock.shield")
-                .font(.body(13)).foregroundStyle(Nexis.muted)
-            Spacer()
+                HStack {
+                    Button(action: resend) {
+                        Text(secondsLeft == 0 ? app.t("resendNow")
+                             : app.t("resendIn", ["time": String(format: "%d:%02d", secondsLeft / 60, secondsLeft % 60)]))
+                            .font(.body(14, secondsLeft == 0 ? .semibold : .regular))
+                            .foregroundStyle(secondsLeft == 0 ? Nexis.accent : Nexis.muted)
+                            .monospacedDigit()
+                    }
+                    .disabled(secondsLeft > 0 || resending)
+                    Spacer()
+                    Button(app.t("changeLoginNumber")) { path.removeLast() }
+                        .font(.body(14, .semibold))
+                        .tint(Nexis.accent)
+                }
+                ForEach(app.repository.codeChannels.filter { $0 != channel }, id: \.self) { other in
+                    Button(app.t("receiveInstead", ["channel": other.displayName])) { switchTo(other) }
+                        .font(.body(14, .semibold))
+                        .tint(Nexis.accent)
+                        .disabled(resending)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
-        .padding(20)
-        .background(Nexis.bg)
-        .navigationTitle(app.t("enterCode"))
+        .entryChrome(app.t("enterCode"))
+        .overlay(alignment: .bottom) {
+            if let notice {
+                Toast(text: notice).padding(.bottom, 20).transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy, value: notice)
+        .task(id: notice) {
+            guard let shown = notice else { return }
+            AccessibilityNotification.Announcement(shown).post()
+            try? await Task.sleep(for: .seconds(2.5))
+            if notice == shown { notice = nil }
+        }
+        .task(id: channel) {
+            // Le compte à rebours repart à chaque nouvel envoi.
+            while secondsLeft > 0 {
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+                secondsLeft -= 1
+            }
+        }
         .onAppear { focused = true }
         .alert(app.t("noAccountTitle"), isPresented: $noAccount) {
             Button(app.t("signupCreateProfile")) { path.append(.signup(phone: phone)) }
@@ -392,12 +511,60 @@ struct CodeView: View {
         }
     }
 
+    private func hint(_ symbol: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: symbol).font(.system(size: 14)).foregroundStyle(Nexis.muted).padding(.top, 1)
+            Text(text).font(.body(13, relativeTo: .footnote)).foregroundStyle(Nexis.muted)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
     private var sentText: String {
         let shown = DrcPhone.parse(phone)
         let number = "+243 \(shown.formatted)"
         if channel == .sms { return app.t("codeSentBySms", ["phone": number]) }
-        return app.t("codeSentTo", ["channel": channel == .whatsapp ? "WhatsApp" : "Telegram",
-                                    "phone": number])
+        return app.t("codeSentTo", ["channel": channel.displayName, "phone": number])
+    }
+
+    /// Redemande un code par le même canal, une fois le délai passé.
+    private func resend() {
+        guard secondsLeft == 0 else { return }
+        send(by: channel, notice: app.t("codeResentToast", ["channel": channel.displayName]))
+    }
+
+    private func switchTo(_ other: CodeChannel) {
+        send(by: other, notice: app.t("codeSentToast", ["channel": other.displayName]))
+    }
+
+    private func send(by target: CodeChannel, notice text: String) {
+        resending = true
+        Task {
+            do {
+                try await app.repository.sendCode(phone: phone, channel: target)
+                code = ""
+                secondsLeft = Self.resendDelay
+                if target == channel {
+                    // Même canal : relancer le compte à rebours à la main.
+                    channel = target
+                    restartCountdown()
+                } else {
+                    channel = target
+                }
+                notice = text
+            } catch {
+                notice = app.t("actionFailed")
+            }
+            resending = false
+        }
+    }
+
+    private func restartCountdown() {
+        Task {
+            while secondsLeft > 0 {
+                try? await Task.sleep(for: .seconds(1))
+                secondsLeft -= 1
+            }
+        }
     }
 
     /// Démonstration : tout code à 6 chiffres est accepté.
@@ -436,7 +603,7 @@ private struct CodeBoxes: View {
     }
 }
 
-// MARK: - Inscription
+// MARK: - Inscription (A4)
 
 struct SignupView: View {
     @Environment(AppModel.self) private var app
@@ -455,48 +622,85 @@ struct SignupView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                Text(app.t("signupDemoNotice"))
-                    .font(.body(14)).foregroundStyle(Nexis.muted)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 8, trailing: 4))
-            }
-            Section {
-                TextField(app.t("signupFirstName"), text: $firstName)
-                    .textContentType(.givenName)
-                    .textInputAutocapitalization(.words)
-                TextField(app.t("signupLastName"), text: $lastName)
-                    .textContentType(.familyName)
-                    .textInputAutocapitalization(.words)
-                Picker(app.t("commune"), selection: $commune) {
-                    Text("—").tag(String?.none)
-                    ForEach(app.repository.communes, id: \.self) { item in
-                        Text(item).tag(String?.some(item))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                EntryHeading(title: app.t("signupTitle"))
+                Label(app.t("numberVerified", ["phone": "+243 \(DrcPhone.parse(phone).formatted)"]),
+                      systemImage: "checkmark.circle.fill")
+                    .font(.body(13, .semibold, relativeTo: .footnote))
+                    .foregroundStyle(Nexis.ok)
+                    .padding(.horizontal, 11).padding(.vertical, 6)
+                    .background(Color(light: 0xE6F4EC, dark: 0x12301F), in: Capsule())
+                    .padding(.top, 12)
+                EntryCard {
+                    fieldRow(app.t("signupFirstName")) {
+                        TextField(app.t("signupFirstName"), text: $firstName)
+                            .textContentType(.givenName)
+                            .textInputAutocapitalization(.words)
                     }
+                    Divider().padding(.leading, 16)
+                    fieldRow(app.t("signupLastName")) {
+                        TextField(app.t("signupLastName"), text: $lastName)
+                            .textContentType(.familyName)
+                            .textInputAutocapitalization(.words)
+                    }
+                    Divider().padding(.leading, 16)
+                    NavigationLink {
+                        CommunePicker(selection: $commune)
+                    } label: {
+                        fieldRow(app.t("commune")) {
+                            Text(commune ?? "—")
+                                .foregroundStyle(commune == nil ? Nexis.muted : Nexis.ink)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Nexis.muted)
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
-                .pickerStyle(.navigationLink)
-            }
-            .font(.body(16))
-            Section {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(app.t("legalTerms")).font(.title(15)).foregroundStyle(Nexis.ink)
-                    Text(app.t("termsVersion", ["date": termsDate]))
-                        .font(.body(13)).foregroundStyle(Nexis.muted)
+                .padding(.top, 22)
+                EntryCard {
+                    HStack(spacing: 12) {
+                        Image(systemName: "doc.text")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(Nexis.brand)
+                            .frame(width: 38, height: 38)
+                            .background(Nexis.soft, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(app.t("legalTerms")).font(.body(15, .semibold)).foregroundStyle(Nexis.ink)
+                            Text(app.t("termsVersion", ["date": termsDate]))
+                                .font(.body(13, relativeTo: .footnote)).foregroundStyle(Nexis.muted)
+                        }
+                        Spacer(minLength: 8)
+                        Button(app.t("signupReadTerms")) { readingTerms = true }
+                            .font(.body(14, .semibold))
+                            .tint(Nexis.accent)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    Divider().padding(.leading, 16)
+                    Toggle(app.t("signupAcceptTerms"), isOn: $accepted)
+                        .font(.body(15))
+                        .tint(Nexis.brand)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 54)
                 }
-                Button(app.t("signupReadTerms")) { readingTerms = true }
-                    .font(.body(16, .semibold))
-                Toggle(app.t("signupAcceptTerms"), isOn: $accepted)
-                    .font(.body(16))
-                    .tint(Nexis.brand)
+                .padding(.top, 16)
+                if failed {
+                    Text(app.t("signupFailed")).font(.body(14)).foregroundStyle(Nexis.danger).padding(.top, 12)
+                }
+                Text(app.t("signupDemoNotice"))
+                    .font(.body(13, relativeTo: .footnote)).foregroundStyle(Nexis.muted)
+                    .padding(.top, 16)
             }
-            if failed {
-                Text(app.t("signupFailed")).font(.body(14)).foregroundStyle(Nexis.danger)
-            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
         }
-        .scrollContentBackground(.hidden)
-        .background(Nexis.bg)
-        .navigationTitle(app.t("signupTitle"))
+        .scrollDismissesKeyboard(.interactively)
+        .entryChrome(app.t("signupTitle"))
         .onChange(of: [firstName, lastName]) { failed = false }
         .safeAreaInset(edge: .bottom) {
             Button(action: submit) { WideLabel(text: app.t("signupCreateProfile")) }
@@ -526,6 +730,22 @@ struct SignupView: View {
         }
     }
 
+    /// Ligne « Prénom · Grâce » : le libellé à gauche, la valeur à côté.
+    private func fieldRow(_ label: String, @ViewBuilder value: () -> some View) -> some View {
+        HStack(spacing: 12) {
+            Text(label)
+                .font(.body(14)).foregroundStyle(Nexis.muted)
+                .frame(width: 84, alignment: .leading)
+                .accessibilityHidden(true)
+            HStack { value() }
+                .font(.body(16, .medium))
+                .foregroundStyle(Nexis.ink)
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 54)
+        .contentShape(Rectangle())
+    }
+
     private var termsDate: String {
         app.repository.signupTermsVersion.formatted(
             .dateTime.day().month(.twoDigits).year().locale(app.locale))
@@ -538,5 +758,34 @@ struct SignupView: View {
             phone: phone, firstName: firstName, lastName: lastName, commune: commune,
             acceptedTermsVersion: accepted ? repo.signupTermsVersion : nil)
         if created { app.signIn() } else { failed = true }
+    }
+}
+
+/// La liste des communes, avec une coche sur celle choisie.
+private struct CommunePicker: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    @Binding var selection: String?
+
+    var body: some View {
+        List(app.repository.communes, id: \.self) { item in
+            Button {
+                selection = item
+                dismiss()
+            } label: {
+                HStack {
+                    Text(item).font(.body(16)).foregroundStyle(Nexis.ink)
+                    Spacer()
+                    if selection == item {
+                        Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(Nexis.accent)
+                    }
+                }
+            }
+            .accessibilityAddTraits(selection == item ? .isSelected : [])
+        }
+        .scrollContentBackground(.hidden)
+        .background(Nexis.bg)
+        .navigationTitle(app.t("commune"))
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

@@ -109,7 +109,7 @@ struct ProviderHomeView: View {
                 if let home { content(home) } else { FlowLoading(label: app.t("spaceProvider")) }
             }
             .background(Nexis.bg)
-            .navigationTitle(greeting)
+            .greetingHeader(greeting)
             .missionDestinations()
         }
         .missionFlow(flow, tab: .home)

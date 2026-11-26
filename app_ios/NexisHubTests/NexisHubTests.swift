@@ -277,3 +277,58 @@ final class DatesTests: XCTestCase {
         XCTAssertEqual(daysLeft(until: now.addingTimeInterval(-60), now: now), 0)
     }
 }
+
+@MainActor
+final class AccountTests: XCTestCase {
+    private func refusal(_ block: () async throws -> Void) async -> String? {
+        do { try await block(); return nil } catch let refusal as NexisRefusal { return refusal.code } catch { return "\(error)" }
+    }
+
+    func testProfileUpdateKeepsPhoneAndChecksCommune() async throws {
+        let repo = DemoRepository()
+        let before = try await repo.profile()
+        let updated = try await repo.updateProfile(firstName: " Grâce ", lastName: "Mbuyi", commune: "Gombe")
+        XCTAssertEqual(updated.firstName, "Grâce")
+        XCTAssertEqual(updated.commune, "Gombe")
+        XCTAssertEqual(updated.phone, before.phone)
+        let bad = await refusal { _ = try await repo.updateProfile(firstName: "Grâce", lastName: "Mbuyi", commune: "Paris") }
+        XCTAssertEqual(bad, "profile_invalid")
+    }
+
+    func testOnlyOtherPhonesCanBeSignedOut() async throws {
+        let repo = DemoRepository()
+        let devices = try await repo.devices()
+        let current = try XCTUnwrap(devices.first(where: \.isCurrent))
+        let other = try XCTUnwrap(devices.first(where: { !$0.isCurrent }))
+        XCTAssertGreaterThan(other.moneyHoursLeft(), 0)
+        let own = await refusal { try await repo.signOutDevice(id: current.id) }
+        XCTAssertEqual(own, "use_sign_out")
+        try await repo.signOutDevice(id: other.id)
+        let after = try await repo.devices()
+        XCTAssertEqual(after.map(\.id), [current.id])
+    }
+
+    func testProviderApplicationNeedsEveryStep() async throws {
+        let repo = DemoRepository()
+        XCTAssertTrue(repo.registerClient(phone: "+243810000001", firstName: "Esther", lastName: "M",
+                                          commune: "Limete", acceptedTermsVersion: repo.signupTermsVersion))
+        let photo = Data([1, 2, 3])
+        let noTerms = await refusal {
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], idDocument: photo,
+                                           selfie: photo, acceptedTermsVersion: nil)
+        }
+        XCTAssertEqual(noTerms, "provider_application_invalid")
+        let noPhoto = await refusal {
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], idDocument: Data(),
+                                           selfie: photo, acceptedTermsVersion: repo.providerTermsVersion)
+        }
+        XCTAssertEqual(noPhoto, "provider_application_invalid")
+        try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], idDocument: photo,
+                                       selfie: photo, acceptedTermsVersion: repo.providerTermsVersion)
+        let profile = try await repo.profile()
+        XCTAssertEqual(profile.providerStatus, .pending)
+        XCTAssertFalse(profile.isProvider)
+        let documents = try await repo.legalDocuments()
+        XCTAssertEqual(documents.map(\.key), [.cgu, .providerTerms])
+    }
+}

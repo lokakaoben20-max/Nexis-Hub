@@ -282,3 +282,59 @@ class DatesTest {
         assertEquals(0, com.nexishub.app.ui.daysLeft(now.minusSeconds(60), now))
     }
 }
+
+class AccountTest {
+    private fun refusal(block: suspend () -> Unit): String? = runBlocking {
+        try { block(); null } catch (e: com.nexishub.app.data.NexisRefusal) { e.code }
+    }
+
+    @Test
+    fun profileUpdateKeepsPhoneAndChecksCommune() = runBlocking {
+        val repo = DemoRepository()
+        val before = repo.profile()
+        val updated = repo.updateProfile(" Grâce ", "Mbuyi", "Gombe")
+        assertEquals("Grâce", updated.firstName)
+        assertEquals("Gombe", updated.commune)
+        assertEquals(before.phone, updated.phone)
+        assertEquals("profile_invalid", refusal { repo.updateProfile("Grâce", "Mbuyi", "Paris") })
+    }
+
+    @Test
+    fun onlyOtherPhonesCanBeSignedOut() = runBlocking {
+        val repo = DemoRepository()
+        val devices = repo.devices()
+        val current = devices.first { it.isCurrent }
+        val other = devices.first { !it.isCurrent }
+        assertTrue(other.moneyHoursLeft() > 0)
+        assertEquals("use_sign_out", refusal { repo.signOutDevice(current.id) })
+        repo.signOutDevice(other.id)
+        assertEquals(listOf(current.id), repo.devices().map { it.id })
+    }
+
+    @Test
+    fun providerApplicationNeedsEveryStep() = runBlocking {
+        val repo = DemoRepository()
+        assertTrue(repo.registerClient("+243810000001", "Esther", "M", "Limete", repo.signupTermsVersion))
+        val photo = byteArrayOf(1, 2, 3)
+        assertEquals("provider_application_invalid", refusal {
+            repo.applyAsProvider(listOf("nettoyage"), listOf("Limete"), photo, photo, null)
+        })
+        assertEquals("provider_application_invalid", refusal {
+            repo.applyAsProvider(listOf("nettoyage"), listOf("Limete"), ByteArray(0), photo, repo.providerTermsVersion)
+        })
+        repo.applyAsProvider(listOf("nettoyage"), listOf("Limete"), photo, photo, repo.providerTermsVersion)
+        val profile = repo.profile()
+        assertEquals(com.nexishub.app.data.ProviderStatus.PENDING, profile.providerStatus)
+        assertTrue(!profile.isProvider)
+        assertEquals(
+            listOf(com.nexishub.app.data.LegalDocumentKey.CGU, com.nexishub.app.data.LegalDocumentKey.PROVIDER_TERMS),
+            repo.legalDocuments().map { it.key },
+        )
+    }
+
+    @Test
+    fun captureCodesMatchTheScript() {
+        assertEquals(com.nexishub.app.Capture.BECOME_IDENTITY, com.nexishub.app.Capture.from("become-identity"))
+        assertEquals(com.nexishub.app.Capture.TRACKING, com.nexishub.app.Capture.from("tracking"))
+    }
+}

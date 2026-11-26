@@ -13,7 +13,7 @@ struct NexisHubApp: App {
             let model = AppModel(repository: DemoRepository(),
                                  language: defaults.string(forKey: "language"))
             model.capture = capture
-            if !["welcome", "phone", "signup"].contains(capture) { model.signIn() }
+            if !["welcome", "phone", "code", "signup"].contains(capture) { model.signIn() }
             _app = State(initialValue: model)
         }
         #endif

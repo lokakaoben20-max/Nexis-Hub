@@ -12,6 +12,8 @@ protocol NexisRepository: AnyObject {
     var codeChannels: [CodeChannel] { get }
     var communes: [String] { get }
     var signupTermsVersion: Date { get }
+    /// Version en vigueur des conditions des prestataires.
+    var providerTermsVersion: Date { get }
 
     /// Demande au serveur d'envoyer le code de connexion par ce canal.
     func sendCode(phone: String, channel: CodeChannel) async throws
@@ -33,6 +35,25 @@ protocol NexisRepository: AnyObject {
     func requestService(serviceId: String, commune: String, description: String) async throws
     /// « Décrire mon besoin » : une demande libre transmise à l'équipe.
     func sendFreeRequest(title: String, text: String) async throws
+
+    // --- Profil et compte ---
+
+    /// Prénom, nom et commune. Le numéro ne change pas ici : il sert à se
+    /// connecter.
+    func updateProfile(firstName: String, lastName: String, commune: String) async throws -> Profile
+    /// Les téléphones reliés au compte, celui-ci d'abord.
+    func devices() async throws -> [AppDevice]
+    /// Coupe un autre téléphone, pour toujours : il devra se reconnecter par
+    /// code. Ce téléphone-ci se déconnecte par « Se déconnecter ».
+    func signOutDevice(id: Int) async throws
+    /// Les documents en vigueur pour les rôles de la personne.
+    func legalDocuments() async throws -> [LegalDocument]
+    func legalText(_ key: LegalDocumentKey) async throws -> LegalText
+    /// Demande à devenir prestataire. Le profil reste en vérification jusqu'à
+    /// la décision de l'équipe NexisHub. Les photos ne servent qu'à cette
+    /// vérification.
+    func applyAsProvider(services: [String], communes: [String], idDocument: Data, selfie: Data,
+                         acceptedTermsVersion: Date?) async throws
 
     // --- Client : devis, paiement, suivi, litige ---
 
@@ -127,16 +148,21 @@ final class DemoRepository: NexisRepository {
               !first.isEmpty, !last.isEmpty, communes.contains(commune),
               acceptedTermsVersion == signupTermsVersion else { return false }
         registered[phone] = Profile(firstName: first, lastName: last, phone: phone,
-                                    commune: commune, isProvider: false,
-                                    termsVersion: acceptedTermsVersion)
+                                    commune: commune, termsVersion: acceptedTermsVersion)
         activePhone = phone
         return true
     }
 
+    private lazy var sampleProfile = Profile(
+        firstName: "Grâce", lastName: "Nsimba", phone: Self.samplePhone,
+        commune: "Limete", providerStatus: .verified, termsVersion: signupTermsVersion)
+
     func profile() async throws -> Profile {
-        registered[activePhone] ?? Profile(
-            firstName: "Grâce", lastName: "Nsimba", phone: Self.samplePhone,
-            commune: "Limete", isProvider: true, termsVersion: signupTermsVersion)
+        registered[activePhone] ?? sampleProfile
+    }
+
+    private func store(_ profile: Profile) {
+        if isSample { sampleProfile = profile } else { registered[activePhone] = profile }
     }
 
     func wallet() async throws -> Wallet {
@@ -288,6 +314,83 @@ final class DemoRepository: NexisRepository {
 
     /// Aperçu : la demande n'est envoyée nulle part.
     func sendFreeRequest(title: String, text: String) async throws {}
+
+    // MARK: Profil et compte
+
+    let providerTermsVersion = DateComponents(
+        calendar: Calendar(identifier: .gregorian), year: 2026, month: 11, day: 20
+    ).date!
+
+    func updateProfile(firstName: String, lastName: String, commune: String) async throws -> Profile {
+        let first = firstName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let last = lastName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !first.isEmpty, first.count <= 60, !last.isEmpty, last.count <= 60,
+              communes.contains(commune) else { throw NexisRefusal(code: "profile_invalid") }
+        let current = try await profile()
+        let updated = Profile(firstName: first, lastName: last, phone: current.phone, commune: commune,
+                              providerStatus: current.providerStatus, termsVersion: current.termsVersion)
+        store(updated)
+        return updated
+    }
+
+    private lazy var sampleDevices: [AppDevice] = [
+        AppDevice(id: 1, label: "iPhone 12", platform: .ios, addedAt: ago(days: 58), lastSeenAt: now,
+                  moneyUnlockedAt: ago(days: 58), isCurrent: true),
+        AppDevice(id: 2, label: "Tecno Spark 10", platform: .android, addedAt: ago(hours: 20),
+                  lastSeenAt: ago(hours: 3), moneyUnlockedAt: ago(hours: 20).addingTimeInterval(72 * 3600),
+                  isCurrent: false),
+    ]
+
+    func devices() async throws -> [AppDevice] {
+        guard isSample else {
+            return [AppDevice(id: 1, label: "iPhone", platform: .ios, addedAt: now, lastSeenAt: now,
+                              moneyUnlockedAt: now, isCurrent: true)]
+        }
+        return sampleDevices
+    }
+
+    func signOutDevice(id: Int) async throws {
+        guard let device = try await devices().first(where: { $0.id == id }) else {
+            throw NexisRefusal(code: "device_not_found")
+        }
+        guard !device.isCurrent else { throw NexisRefusal(code: "use_sign_out") }
+        sampleDevices.removeAll { $0.id == id }
+    }
+
+    func legalDocuments() async throws -> [LegalDocument] {
+        let profile = try await profile()
+        var documents = [LegalDocument(key: .cgu, version: signupTermsVersion,
+                                       acceptedAt: profile.termsVersion.map { _ in signupTermsVersion })]
+        if profile.providerStatus != nil {
+            documents.append(LegalDocument(key: .providerTerms, version: providerTermsVersion,
+                                           acceptedAt: providerTermsAcceptedAt ?? providerTermsVersion))
+        }
+        return documents
+    }
+
+    private var providerTermsAcceptedAt: Date?
+
+    /// Aperçu : aucune version n'est publiée, donc pas de texte.
+    func legalText(_ key: LegalDocumentKey) async throws -> LegalText {
+        LegalText(key: key, version: key == .cgu ? signupTermsVersion : providerTermsVersion, text: nil)
+    }
+
+    func applyAsProvider(services: [String], communes chosen: [String], idDocument: Data, selfie: Data,
+                         acceptedTermsVersion: Date?) async throws {
+        let current = try await profile()
+        let catalog = Set(try await serviceCatalog().map(\.id))
+        guard current.providerStatus == nil,
+              !services.isEmpty, services.count <= 50, Set(services).isSubset(of: catalog),
+              !chosen.isEmpty, chosen.count <= 50, Set(chosen).isSubset(of: Set(communes)),
+              !idDocument.isEmpty, !selfie.isEmpty,
+              acceptedTermsVersion == providerTermsVersion
+        else { throw NexisRefusal(code: "provider_application_invalid") }
+        // Aperçu : les photos ne sont gardées nulle part.
+        try await Task.sleep(for: .seconds(1))
+        providerTermsAcceptedAt = .now
+        store(Profile(firstName: current.firstName, lastName: current.lastName, phone: current.phone,
+                      commune: current.commune, providerStatus: .pending, termsVersion: current.termsVersion))
+    }
 
     // MARK: Client : devis, paiement, suivi, litige
 

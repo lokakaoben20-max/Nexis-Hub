@@ -126,8 +126,12 @@ struct Profile: Hashable {
     let lastName: String
     let phone: String
     let commune: String
-    let isProvider: Bool
+    /// Profil prestataire : `nil` pour un client seulement.
+    var providerStatus: ProviderStatus? = nil
     let termsVersion: Date?
+
+    /// Prestataire vérifié : il ouvre l'espace prestataire.
+    var isProvider: Bool { providerStatus == .verified }
 
     var initials: String {
         (String(firstName.prefix(1)) + String(lastName.prefix(1))).uppercased()

@@ -6,8 +6,9 @@ import SwiftUI
 
 // MARK: - Navigation
 
-/// Les écrans qu'on ouvre depuis une mission. Ils ne portent que des
-/// numéros : chaque écran relit le dépôt, jamais une copie gardée.
+/// Les écrans qu'on ouvre depuis une mission ou depuis le profil. Ils ne
+/// portent que des numéros : chaque écran relit le dépôt, jamais une copie
+/// gardée.
 enum MissionRoute: Hashable {
     case quotes(Int)
     case pay(mission: Int, quote: Int)
@@ -18,6 +19,13 @@ enum MissionRoute: Hashable {
     case dispute(Int)
     case sendQuote(Int)
     case job(Int)
+    // Écrans ouverts depuis le profil.
+    case profileInfo
+    case devices
+    case notificationSettings
+    case help
+    case legal
+    case becomeProvider
 
     /// Écrans ouverts d'emblée pour les captures de la CI.
     static func forCapture(_ capture: String?) -> [MissionRoute]? {
@@ -32,12 +40,21 @@ enum MissionRoute: Hashable {
         case "decision": return [.dispute(44)]
         case "request": return [.sendQuote(71)]
         case "job": return [.job(61)]
+        case "info": return [.profileInfo]
+        case "devices": return [.devices]
+        case "alerts": return [.notificationSettings]
+        case "help": return [.help]
+        case "legal": return [.legal]
+        case "become", "become-identity": return [.becomeProvider]
         default: return nil
         }
     }
 
     /// Captures qui se font dans l'espace prestataire.
     static let providerCaptures: Set<String> = ["provider", "request", "job"]
+
+    /// Captures qui se font depuis l'onglet Profil.
+    static let profileCaptures: Set<String> = ["info", "devices", "alerts", "help", "legal", "become", "become-identity"]
 }
 
 /// La pile d'écrans d'un onglet, et ce qu'elle montre par-dessus
@@ -137,6 +154,12 @@ private struct MissionScreen: View {
         case .dispute(let id): DisputeView(missionId: id)
         case .sendQuote(let id): SendQuoteView(missionId: id)
         case .job(let id): ProviderJobView(missionId: id)
+        case .profileInfo: ProfileInfoView()
+        case .devices: DevicesView()
+        case .notificationSettings: NotificationSettingsView()
+        case .help: HelpView()
+        case .legal: LegalView()
+        case .becomeProvider: BecomeProviderView()
         }
     }
 }

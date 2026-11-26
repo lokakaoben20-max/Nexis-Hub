@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.HourglassTop
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.ListAlt
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.AccountCircle
@@ -28,6 +30,7 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import com.nexishub.app.data.ProviderStatus
 import com.nexishub.app.data.AppNotification
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.AccountCircle
@@ -103,6 +106,7 @@ import com.nexishub.app.data.MovementKind
 import com.nexishub.app.data.PaymentState
 import com.nexishub.app.data.Profile
 import com.nexishub.app.data.Wallet
+import com.nexishub.app.ui.InfoNote
 import com.nexishub.app.ui.ComingSoonContent
 import com.nexishub.app.ui.InitialsAvatar
 import com.nexishub.app.ui.LocalPalette
@@ -314,7 +318,7 @@ private fun HomeTab(onPick: () -> Unit, onTab: (Int) -> Unit, onComingSoon: (Str
     }
     val greeting = profile?.let {
         app.t(if (LocalTime.now().hour < 12) "helloHome" else "eveningHome", "name" to it.firstName)
-    } ?: "Nexis Hub"
+    } ?: "NexisHub"
     val list = if (showDone) missions.filter { it.status == MissionStatus.COMPLETED } else missions.filter { it.isActive }
     val shown = 2
 
@@ -636,9 +640,14 @@ private fun MovementRow(movement: Movement, app: AppModel, p: NexisPalette) {
 @Composable
 private fun ProfileTab(onComingSoon: (String) -> Unit) {
     val app = LocalApp.current
+    val flow = LocalFlow.current
     val p = LocalPalette.current
     var profile by remember { mutableStateOf<Profile?>(null) }
-    LaunchedEffect(app.revision) { profile = app.repository.profile() }
+    var devicesCount by remember { mutableStateOf(1) }
+    LaunchedEffect(app.revision) {
+        profile = app.repository.profile()
+        devicesCount = attempt { app.repository.devices() }?.size ?: 1
+    }
     TabScaffold(app.t("navProfile"), actions = { LanguageMenu() }) { padding ->
         LazyColumn(
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = padding.calculateTopPadding(), bottom = 24.dp),
@@ -653,26 +662,45 @@ private fun ProfileTab(onComingSoon: (String) -> Unit) {
                             Text("${me.firstName} ${me.lastName}", style = title(19, color = p.ink))
                             Text("+243 ${DrcPhone.parse(me.phone).formatted} · ${me.commune}", style = body(14, color = p.muted))
                             Text(
-                                app.t(if (app.providerSpace) "spaceProvider" else "clientBadge"), style = body(12, FontWeight.SemiBold, p.softInk),
+                                app.t(
+                                    when {
+                                        me.providerStatus == ProviderStatus.PENDING -> "providerPending"
+                                        app.providerSpace -> "spaceProvider"
+                                        else -> "clientBadge"
+                                    },
+                                ),
+                                style = body(12, FontWeight.SemiBold, p.softInk),
                                 modifier = Modifier.background(p.soft, CircleShape).padding(horizontal = 10.dp, vertical = 3.dp),
                             )
                         }
                     }
                 }
             }
+            if (profile?.providerStatus == ProviderStatus.PENDING) {
+                item { InfoNote(app.t("providerPendingHint"), icon = Icons.Rounded.HourglassTop) }
+            }
             if (profile?.isProvider == true) item { SpaceSwitch() }
             item {
                 SettingsGroup(p, listOf(
-                    app.t("myInfo") to app.t("myInfoSub"),
-                    app.t("notifications") to app.t("notificationsSub"),
-                    app.t("myDevices") to app.plural("devicesCount", 1),
-                    app.t("helpDisputes") to app.t("helpDisputesSub"),
-                ), onComingSoon)
+                    SettingsRow(app.t("myInfo"), app.t("myInfoSub")) { flow.push(MissionRoute.ProfileInfo) },
+                    SettingsRow(app.t("notifications"), app.t("notificationsSub")) { flow.push(MissionRoute.NotificationSettings) },
+                    SettingsRow(app.t("myDevices"), app.plural("devicesCount", devicesCount)) { flow.push(MissionRoute.Devices) },
+                    SettingsRow(app.t("helpDisputes"), app.t("helpDisputesSub")) { flow.push(MissionRoute.Help) },
+                ))
             }
-            if (profile?.isProvider == false) {
-                item { SettingsGroup(p, listOf(app.t("becomeProvider") to app.t("becomeProviderSub")), onComingSoon) }
+            if (profile != null && profile?.providerStatus == null) {
+                item {
+                    SettingsGroup(p, listOf(
+                        SettingsRow(app.t("becomeProvider"), app.t("becomeProviderSub")) { flow.push(MissionRoute.BecomeProvider) },
+                    ))
+                }
             }
-            item { SettingsGroup(p, listOf(app.t("legalTerms") to null, app.t("legalPrivacy") to null), onComingSoon) }
+            item {
+                SettingsGroup(p, listOf(
+                    SettingsRow(app.t("legalTerms"), null) { flow.push(MissionRoute.Legal) },
+                    SettingsRow(app.t("legalPrivacy"), null) { onComingSoon(app.t("legalPrivacy")) },
+                ))
+            }
             item {
                 TextButton(onClick = { app.signOut() }, modifier = Modifier.fillMaxWidth()) {
                     Text(app.t("signOut"), style = body(16, FontWeight.SemiBold, Nexis.danger))
@@ -682,19 +710,20 @@ private fun ProfileTab(onComingSoon: (String) -> Unit) {
     }
 }
 
+private class SettingsRow(val heading: String, val sub: String?, val onOpen: () -> Unit)
+
 @Composable
-private fun SettingsGroup(p: NexisPalette, rows: List<Pair<String, String?>>, onOpen: (String) -> Unit) {
+private fun SettingsGroup(p: NexisPalette, rows: List<SettingsRow>) {
     Column(Modifier.fillMaxWidth().nexisCard(p)) {
-        rows.forEachIndexed { index, (heading, sub) ->
+        rows.forEachIndexed { index, row ->
             ListItem(
-                headlineContent = { Text(heading, style = body(16, color = p.ink)) },
-                supportingContent = if (sub != null) {
-                    { Text(sub, style = body(13, color = p.muted)) }
-                } else {
-                    null
+                headlineContent = { Text(row.heading, style = body(16, color = p.ink)) },
+                supportingContent = row.sub?.let { sub -> { Text(sub, style = body(13, color = p.muted)) } },
+                trailingContent = {
+                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = p.muted)
                 },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                modifier = Modifier.clickable { onOpen(heading) },
+                modifier = Modifier.clickable(role = Role.Button, onClick = row.onOpen),
             )
             if (index < rows.lastIndex) HorizontalDivider(Modifier.padding(start = 16.dp), color = p.line)
         }
