@@ -17,6 +17,8 @@ struct CardShot {
     /// Empreintes de l'image (à l'endroit, puis tournée d'un demi-tour).
     let hashes: [UInt64]
     let faceFound: Bool
+    /// Page de passeport : la zone de lecture automatique a été vue.
+    var machineZone = false
 }
 
 /// La vidéo du visage, prête à être envoyée.
@@ -142,8 +144,20 @@ enum CardImages {
         return (card.extent.height > card.extent.width ? card.oriented(.right) : card, false)
     }
 
+    /// Lit les lignes de texte de la page, sur le téléphone, pour y chercher la
+    /// zone de lecture automatique d'un passeport. Le texte n'est pas gardé.
+    static func hasMachineZone(_ image: CIImage) -> Bool {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false
+        let placed = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
+        try? VNImageRequestHandler(ciImage: placed, orientation: .up).perform([request])
+        let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+        return MachineZone.found(in: lines)
+    }
+
     /// Réduit à 1 600 points au plus grand côté et encode en JPEG.
-    static func finish(_ image: CIImage, faceFound: Bool) -> CardShot? {
+    static func finish(_ image: CIImage, faceFound: Bool, machineZone: Bool = false) -> CardShot? {
         let origin = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
         let longest = max(origin.extent.width, origin.extent.height)
         var scaled = origin
@@ -157,7 +171,7 @@ enum CardImages {
         guard let cg = context.createCGImage(scaled, from: scaled.extent.integral) else { return nil }
         let image = UIImage(cgImage: cg)
         guard let jpeg = image.jpegData(compressionQuality: 0.8) else { return nil }
-        return CardShot(jpeg: jpeg, image: image, hashes: hashes(cg), faceFound: faceFound)
+        return CardShot(jpeg: jpeg, image: image, hashes: hashes(cg), faceFound: faceFound, machineZone: machineZone)
     }
 
     static func rectangleRequest(minimumSize: Float = 0.3) -> VNDetectRectanglesRequest {
@@ -192,6 +206,7 @@ final class CardEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
     private let photoOutput = AVCapturePhotoOutput()
     private var tracker = StableCardTracker()
     private var armed = false
+    private var readsMachineZone = false
     private var busy = false
     private var lastQuad: CardQuad?
     private var frameCount = 0
@@ -232,9 +247,10 @@ final class CardEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
     }
 
     /// Autorise (ou non) la prochaine photo automatique.
-    func arm(_ value: Bool) {
+    func arm(_ value: Bool, machineZone: Bool = false) {
         queue.async { [self] in
             armed = value
+            readsMachineZone = machineZone
             busy = false
             tracker.reset()
         }
@@ -273,7 +289,8 @@ final class CardEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
         try? VNImageRequestHandler(ciImage: image, orientation: .up).perform([request])
         guard let quad = request.results?.first.map({ CardQuad($0) }) ?? lastQuad else { return nil }
         let card = CardImages.upright(CardImages.straighten(image, quad))
-        return CardImages.finish(card.image, faceFound: card.faceFound)
+        let machineZone = readsMachineZone && CardImages.hasMachineZone(card.image)
+        return CardImages.finish(card.image, faceFound: card.faceFound, machineZone: machineZone)
     }
 }
 

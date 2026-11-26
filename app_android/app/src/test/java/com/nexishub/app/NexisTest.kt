@@ -11,7 +11,9 @@ import com.nexishub.app.data.HeadPose
 import com.nexishub.app.data.HeadPosition
 import com.nexishub.app.data.HeadTurn
 import com.nexishub.app.data.IdentityCapture
+import com.nexishub.app.data.IdentityDocument
 import com.nexishub.app.data.ImageHash
+import com.nexishub.app.data.MachineZone
 import com.nexishub.app.data.MissionStatus
 import com.nexishub.app.data.Money
 import com.nexishub.app.data.SelfieScript
@@ -325,16 +327,23 @@ class AccountTest {
     fun providerApplicationNeedsEveryStep() = runBlocking {
         val repo = DemoRepository()
         assertTrue(repo.registerClient("+243810000001", "Esther", "M", "Limete", repo.signupTermsVersion))
-        val identity = IdentityCapture(byteArrayOf(1), byteArrayOf(2), byteArrayOf(3), 7, listOf(HeadTurn.RIGHT, HeadTurn.LEFT))
+        val identity = IdentityCapture(
+            IdentityDocument.VOTER_CARD, byteArrayOf(1), byteArrayOf(2), byteArrayOf(3), 7, listOf(HeadTurn.RIGHT, HeadTurn.LEFT),
+        )
         fun send(sent: IdentityCapture, terms: java.time.LocalDate?) = refusal {
             repo.applyAsProvider(listOf("nettoyage"), listOf("Limete"), sent, terms)
         }
         assertEquals("provider_application_invalid", send(identity, null))
-        val noVerso = IdentityCapture(identity.recto, ByteArray(0), identity.video, 7, identity.headTurns)
+        val noVerso = IdentityCapture(identity.document, identity.recto, ByteArray(0), identity.video, 7, identity.headTurns)
         assertEquals("provider_application_invalid", send(noVerso, repo.providerTermsVersion))
-        val noVideo = IdentityCapture(identity.recto, identity.verso, ByteArray(0), 7, identity.headTurns)
+        val noVideo = IdentityCapture(identity.document, identity.recto, identity.verso, ByteArray(0), 7, identity.headTurns)
         assertEquals("provider_application_invalid", send(noVideo, repo.providerTermsVersion))
-        val oneTurn = IdentityCapture(identity.recto, identity.verso, identity.video, 7, listOf(HeadTurn.LEFT, HeadTurn.LEFT))
+        val oneTurn = IdentityCapture(identity.document, identity.recto, identity.verso, identity.video, 7, listOf(HeadTurn.LEFT, HeadTurn.LEFT))
+        // Passeport : une seule page, jamais de verso.
+        val passportWithVerso = IdentityCapture(IdentityDocument.PASSPORT, identity.recto, identity.verso, identity.video, 7, identity.headTurns)
+        assertEquals("provider_application_invalid", send(passportWithVerso, repo.providerTermsVersion))
+        assertTrue(IdentityCapture(IdentityDocument.PASSPORT, identity.recto, null, identity.video, 7, identity.headTurns).isComplete)
+        assertFalse(IdentityCapture(IdentityDocument.DRIVING_LICENCE, identity.recto, null, identity.video, 7, identity.headTurns).isComplete)
         assertEquals("provider_application_invalid", send(oneTurn, repo.providerTermsVersion))
         assertEquals(null, send(identity, repo.providerTermsVersion))
         val profile = repo.profile()
@@ -353,6 +362,8 @@ class AccountTest {
         assertEquals(com.nexishub.app.Capture.BECOME_VERSO, com.nexishub.app.Capture.from("become-verso"))
         assertEquals(com.nexishub.app.Capture.BECOME_SELFIE, com.nexishub.app.Capture.from("become-selfie"))
         assertEquals(com.nexishub.app.Capture.BECOME_REVIEW, com.nexishub.app.Capture.from("become-review"))
+        assertEquals(com.nexishub.app.Capture.BECOME_PASSPORT, com.nexishub.app.Capture.from("become-passport"))
+        assertEquals(com.nexishub.app.Capture.BECOME_WRONG_PAGE, com.nexishub.app.Capture.from("become-wrong-page"))
         assertEquals(com.nexishub.app.Capture.TRACKING, com.nexishub.app.Capture.from("tracking"))
     }
 }
@@ -377,6 +388,30 @@ class IdentityGuideTest {
         val medium = recto xor 0xFFFFL
         assertEquals(CardVerdict.STILL_RECTO, CardCheck.verdict(CardSide.VERSO, true, listOf(medium), recto))
         assertEquals(CardVerdict.ACCEPTED, CardCheck.verdict(CardSide.VERSO, false, listOf(medium), recto))
+    }
+
+    @Test
+    fun passportNeedsFaceAndMachineZone() {
+        assertEquals(listOf(CardSide.PASSPORT_PAGE), IdentityDocument.PASSPORT.sides)
+        assertEquals(listOf(CardSide.RECTO, CardSide.VERSO), IdentityDocument.DRIVING_LICENCE.sides)
+        assertEquals(CardVerdict.ACCEPTED, CardCheck.verdict(CardSide.PASSPORT_PAGE, true, emptyList(), null, machineZone = true))
+        assertEquals(CardVerdict.SHOW_PHOTO_PAGE, CardCheck.verdict(CardSide.PASSPORT_PAGE, true, emptyList(), null, machineZone = false))
+        assertEquals(CardVerdict.SHOW_PHOTO_PAGE, CardCheck.verdict(CardSide.PASSPORT_PAGE, false, emptyList(), null, machineZone = true))
+    }
+
+    @Test
+    fun machineZoneIsRecognised() {
+        val zone = listOf(
+            "REPUBLIQUE DEMOCRATIQUE DU CONGO",
+            "P<CODMUKENDI<<GRACE<<<<<<<<<<<<<<<<<<<<<<<<",
+            "OP12345674COD9001014F3001019<<<<<<<<<<<<<<06",
+        )
+        assertTrue(MachineZone.found(zone))
+        // Lu avec des espaces et des minuscules.
+        assertTrue(MachineZone.found(listOf("p<cod mukendi<<grace<<<<<<<<<<<<<<<<<<<<", "OP1234567 4COD9001014F3001019<<<<<<<<<06")))
+        // Une seule ligne, ou une page de visas : pas la page photo.
+        assertFalse(MachineZone.found(listOf("P<CODMUKENDI<<GRACE<<<<<<<<<<<<<<<<<<<<<<<<")))
+        assertFalse(MachineZone.found(listOf("VISAS", "Page 12", "ENTREE ARRIVAL 12/05/2025 KINSHASA NDJILI")))
     }
 
     @Test

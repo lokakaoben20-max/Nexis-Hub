@@ -3,35 +3,55 @@ import SwiftUI
 import UIKit
 
 // Étape « Pièce d'identité » de « Devenir prestataire » : recto puis verso
-// de la pièce, pris par le scanner, et courte vidéo guidée du visage. Jamais
+// de la carte (ou page photo du passeport), pris par le scanner, et courte
+// vidéo guidée du visage. Jamais
 // de galerie. L'analyse sur le téléphone guide la prise ; c'est l'équipe
 // NexisHub qui vérifie la personne.
 
 /// Ce qui a été pris jusqu'ici.
 struct IdentityDraft {
+    /// Choisie par la personne avant la prise.
+    var document: IdentityDocument?
+    /// Recto de la carte, ou page photo du passeport.
     var recto: CardShot?
     var verso: CardShot?
     var video: VideoShot?
 
+    var pieceDone: Bool {
+        guard let document, recto != nil else { return false }
+        return !document.needsVerso || verso != nil
+    }
+
     var capture: IdentityCapture? {
-        guard let recto, let verso, let video else { return nil }
-        let capture = IdentityCapture(recto: recto.jpeg, verso: verso.jpeg, video: video.data,
+        guard let document, let recto, let video, pieceDone else { return nil }
+        let capture = IdentityCapture(document: document, recto: recto.jpeg,
+                                      verso: document.needsVerso ? verso?.jpeg : nil, video: video.data,
                                       videoSeconds: video.seconds, headTurns: video.turns)
         return capture.isComplete ? capture : nil
+    }
+
+    /// Changer de pièce efface les faces déjà prises.
+    mutating func choose(_ document: IdentityDocument) {
+        guard document != self.document else { return }
+        self.document = document
+        recto = nil
+        verso = nil
     }
 }
 
 /// Écrans figés pour les captures de la CI (pas d'appareil photo sur le
 /// simulateur) : `become-identity`, `become-wrong-side`, `become-verso`,
-/// `become-selfie`, `become-review`.
+/// `become-selfie`, `become-review`, `become-passport`, `become-wrong-page`.
 enum IdentityDemo: String {
     case recto = "become-identity"
     case wrongSide = "become-wrong-side"
     case verso = "become-verso"
     case selfie = "become-selfie"
     case review = "become-review"
+    case passport = "become-passport"
+    case wrongPage = "become-wrong-page"
 
-    static let captures: Set<String> = Set([recto, wrongSide, verso, selfie, review].map(\.rawValue))
+    static let captures: Set<String> = Set([recto, wrongSide, verso, selfie, review, passport, wrongPage].map(\.rawValue))
 }
 
 private struct ScanRequest: Identifiable {
@@ -58,7 +78,7 @@ struct IdentityStep: View {
         .fullScreenCover(item: $scanning) { request in
             CardScannerView(sides: request.sides, rectoHashes: request.sides.first == .verso ? draft.recto?.hashes : nil,
                             demo: demo) { shots in
-                if let recto = shots[.recto] { draft.recto = recto }
+                if let recto = shots[.recto] ?? shots[.passportPage] { draft.recto = recto }
                 if let verso = shots[.verso] { draft.verso = verso }
             }
         }
@@ -70,8 +90,15 @@ struct IdentityStep: View {
 
     private func openDemo() {
         switch demo {
-        case .recto?, .wrongSide?: scanning = ScanRequest(sides: [.recto, .verso])
-        case .verso?: scanning = ScanRequest(sides: [.verso])
+        case .recto?, .wrongSide?:
+            draft.choose(.voterCard)
+            scanning = ScanRequest(sides: [.recto, .verso])
+        case .verso?:
+            draft.choose(.voterCard)
+            scanning = ScanRequest(sides: [.verso])
+        case .passport?, .wrongPage?:
+            draft.choose(.passport)
+            scanning = ScanRequest(sides: [.passportPage])
         case .selfie?: filming = true
         case .review?: draft = IdentityDemoImages.draft()
         case nil: break
@@ -81,20 +108,41 @@ struct IdentityStep: View {
     private var cardSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionLine(title: app.t("becomeIdDocument"), subtitle: app.t("becomeIdDocumentSub"),
-                        systemImage: "person.text.rectangle", done: draft.recto != nil && draft.verso != nil)
-            if draft.recto != nil || draft.verso != nil {
-                HStack(alignment: .top, spacing: 10) {
-                    FaceThumb(label: app.t("becomeRecto"), shot: draft.recto) { scanning = ScanRequest(sides: [.recto]) }
-                    FaceThumb(label: app.t("becomeVerso"), shot: draft.verso) { scanning = ScanRequest(sides: [.verso]) }
+                        systemImage: "person.text.rectangle", done: draft.pieceDone)
+            Text(app.t("becomeDocChoose")).font(.body(13.5, .semibold, relativeTo: .subheadline)).foregroundStyle(Nexis.ink)
+            ForEach(IdentityDocument.allCases, id: \.self) { document in
+                ChoiceRow(title: app.t(document.labelKey),
+                          subtitle: app.t(document.needsVerso ? "becomeCardSides" : "becomePassportSub"),
+                          selected: draft.document == document) {
+                    Image(systemName: document.symbol).font(.system(size: 18)).foregroundStyle(Nexis.softInk)
+                        .frame(width: 36, height: 36)
+                        .background(Nexis.soft, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .accessibilityHidden(true)
+                } action: {
+                    draft.choose(document)
                 }
             }
-            if draft.recto == nil || draft.verso == nil {
-                Button {
-                    scanning = ScanRequest(sides: draft.recto == nil ? [.recto, .verso] : [.verso])
-                } label: {
-                    Label(app.t("becomeScanCard"), systemImage: "viewfinder").font(.body(14.5, .semibold))
+            if let document = draft.document {
+                if draft.recto != nil || draft.verso != nil {
+                    HStack(alignment: .top, spacing: 10) {
+                        if document.needsVerso {
+                            FaceThumb(label: app.t("becomeRecto"), shot: draft.recto) { scanning = ScanRequest(sides: [.recto]) }
+                            FaceThumb(label: app.t("becomeVerso"), shot: draft.verso) { scanning = ScanRequest(sides: [.verso]) }
+                        } else {
+                            FaceThumb(label: app.t("becomePhotoPage"), shot: draft.recto, ratio: CardSide.passportPage.ratio) {
+                                scanning = ScanRequest(sides: [.passportPage])
+                            }
+                        }
+                    }
                 }
-                .buttonStyle(OutlineButtonStyle(tint: Nexis.accent))
+                if !draft.pieceDone {
+                    Button {
+                        scanning = ScanRequest(sides: draft.recto == nil ? document.sides : [.verso])
+                    } label: {
+                        Label(app.t("becomeScanCard"), systemImage: "viewfinder").font(.body(14.5, .semibold))
+                    }
+                    .buttonStyle(OutlineButtonStyle(tint: Nexis.accent))
+                }
             }
         }
         .nxCard(padding: 14)
@@ -138,6 +186,30 @@ struct IdentityStep: View {
     }
 }
 
+extension IdentityDocument {
+    var labelKey: String {
+        switch self {
+        case .voterCard: return "docVoterCard"
+        case .drivingLicence: return "docDrivingLicence"
+        case .passport: return "docPassport"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .voterCard: return "person.text.rectangle"
+        case .drivingLicence: return "car"
+        case .passport: return "book.closed"
+        }
+    }
+}
+
+extension CardSide {
+    /// Format de la pièce : carte ID-1 (85,6 × 54 mm) ou page de passeport
+    /// ID-3 (125 × 88 mm).
+    var ratio: CGFloat { self == .passportPage ? 125 / 88 : 1.586 }
+}
+
 private struct SectionLine: View {
     let title: String
     let subtitle: String
@@ -168,13 +240,14 @@ private struct FaceThumb: View {
     @Environment(AppModel.self) private var app
     let label: String
     let shot: CardShot?
+    var ratio: CGFloat = CardSide.recto.ratio
     let retake: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Nexis.soft)
-                .aspectRatio(1.586, contentMode: .fit)
+                .aspectRatio(ratio, contentMode: .fit)
                 .overlay {
                     if let shot {
                         Image(uiImage: shot.image).resizable().scaledToFill()
@@ -241,8 +314,12 @@ final class CardScanner {
         }
         engine.start()
         phase = .searching
-        engine.arm(true)
+        armEngine()
     }
+
+    /// Autorise la prochaine photo ; la page d'un passeport fait aussi lire
+    /// la zone de lecture automatique (sur le téléphone, rien n'est gardé).
+    private func armEngine() { engine.arm(true, machineZone: side == .passportPage) }
 
     func stop() { engine.stop() }
 
@@ -270,7 +347,7 @@ final class CardScanner {
         guard let shot else { resume(after: 0); return }
         let rectoHash = side == .verso ? (shots[.recto]?.hashes.first ?? rectoHashes?.first) : nil
         let verdict = CardCheck.verdict(expected: side, faceFound: shot.faceFound, hashes: shot.hashes,
-                                        rectoHash: rectoHash)
+                                        rectoHash: rectoHash, machineZone: shot.machineZone)
         guard verdict == .accepted else {
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
             phase = .wrong(verdict)
@@ -291,14 +368,14 @@ final class CardScanner {
         ignoreUntil = Date().addingTimeInterval(2.5)
         try? await Task.sleep(for: .seconds(2.2))
         phase = .searching
-        engine.arm(true)
+        armEngine()
     }
 
     private func resume(after seconds: Double) {
         Task {
             try? await Task.sleep(for: .seconds(seconds))
             phase = .searching
-            engine.arm(true)
+            armEngine()
         }
     }
 }
@@ -316,12 +393,13 @@ struct CardScannerView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let guide = Self.guideRect(in: geometry.size)
+            let guide = Self.guideRect(in: geometry.size, ratio: scanner.side.ratio)
             ZStack {
                 Color.black
                 if simulated || demo != nil {
                     // Démonstration « mauvaise face » : la caméra simulée montre le verso.
-                    DemoCardBackdrop(side: demo == .wrongSide ? .verso : scanner.side, guide: guide)
+                    DemoCardBackdrop(side: demo == .wrongSide || demo == .wrongPage ? .verso : scanner.side,
+                                     ratio: scanner.side.ratio, guide: guide)
                 } else if scanner.phase != .denied && scanner.phase != .missing {
                     CameraPreview(session: scanner.engine.session)
                 }
@@ -358,10 +436,10 @@ struct CardScannerView: View {
         .onChange(of: scanner.phase) { _, _ in announce() }
     }
 
-    /// Le cadre de la carte (format ID-1), au tiers haut de l'écran.
-    static func guideRect(in size: CGSize) -> CGRect {
+    /// Le cadre de la pièce (carte ID-1 ou page de passeport), au tiers haut de l'écran.
+    static func guideRect(in size: CGSize, ratio: CGFloat) -> CGRect {
         let width = min(size.width * 0.86, 520)
-        let height = width / 1.586
+        let height = width / ratio
         return CGRect(x: (size.width - width) / 2, y: size.height * 0.42 - height / 2, width: width, height: height)
     }
 
@@ -374,9 +452,29 @@ struct CardScannerView: View {
         }
     }
 
-    private var title: String { app.t(scanner.side == .recto ? "scanRectoTitle" : "scanTurnTitle") }
+    private var title: String {
+        switch scanner.side {
+        case .recto: return app.t("scanRectoTitle")
+        case .verso: return app.t("scanTurnTitle")
+        case .passportPage: return app.t("scanPassportTitle")
+        }
+    }
 
-    private var hint: String { app.t(scanner.side == .recto ? "scanRectoHint" : "scanVersoHint") }
+    private var hint: String {
+        switch scanner.side {
+        case .recto: return app.t("scanRectoHint")
+        case .verso: return app.t("scanVersoHint")
+        case .passportPage: return app.t("scanPassportHint")
+        }
+    }
+
+    private var sideLabel: String {
+        switch scanner.side {
+        case .recto: return app.t("becomeRecto")
+        case .verso: return app.t("becomeVerso")
+        case .passportPage: return app.t("becomePhotoPage")
+        }
+    }
 
     private var status: (text: String, icon: String, tone: Color)? {
         switch scanner.phase {
@@ -387,10 +485,15 @@ struct CardScannerView: View {
         case .holding: return (app.t("scanHold"), "hand.raised.fill", .white)
         case .checking: return (app.t("scanChecking"), "sparkle.magnifyingglass", .white)
         case .wrong(let verdict):
-            return (app.t(verdict == .stillRecto ? "scanWrongRecto" : "scanWrongVerso"),
-                    "exclamationmark.triangle.fill", Color(hex: 0xFF6B5E))
+            let key: String
+            switch verdict {
+            case .stillRecto: key = "scanWrongRecto"
+            case .showPhotoPage: key = "scanWrongPage"
+            default: key = "scanWrongVerso"
+            }
+            return (app.t(key), "exclamationmark.triangle.fill", Color(hex: 0xFF6B5E))
         case .taken:
-            return (app.t(scanner.side == .recto ? "becomeRecto" : "becomeVerso"), "checkmark.circle.fill", Color(hex: 0x34C759))
+            return (sideLabel, "checkmark.circle.fill", Color(hex: 0x34C759))
         }
     }
 
@@ -464,6 +567,8 @@ struct CardScannerView: View {
             case .verso:
                 scanner.record(IdentityDemoImages.shot(.recto), for: .recto)
                 scanner.show(.searching, side: .verso)
+            case .passport: scanner.show(.holding, side: .passportPage)
+            case .wrongPage: scanner.show(.wrong(.showPhotoPage), side: .passportPage)
             default: break
             }
             return
@@ -811,12 +916,13 @@ private struct StepRing: View {
 /// Fond dessiné à la place de la caméra : une carte posée sur une table.
 private struct DemoCardBackdrop: View {
     let side: CardSide
+    let ratio: CGFloat
     let guide: CGRect
 
     var body: some View {
         ZStack {
             LinearGradient(colors: [Color(hex: 0x2A2F38), Color(hex: 0x14171C)], startPoint: .top, endPoint: .bottom)
-            SpecimenCard(side: side)
+            SpecimenCard(side: side, ratio: ratio)
                 .frame(width: guide.width * 0.94, height: guide.height * 0.94)
                 .rotationEffect(.degrees(-2))
                 .shadow(color: .black.opacity(0.5), radius: 18, y: 10)
@@ -827,9 +933,11 @@ private struct DemoCardBackdrop: View {
 }
 
 /// Une pièce d'identité dessinée, sans aucun texte : le recto porte un
-/// visage, le verso des lignes et un code.
+/// visage, le verso des lignes et un code, la page du passeport un visage et
+/// deux lignes de lecture automatique.
 struct SpecimenCard: View {
     let side: CardSide
+    var ratio: CGFloat?
 
     var body: some View {
         GeometryReader { geometry in
@@ -840,15 +948,29 @@ struct SpecimenCard: View {
                                          startPoint: .topLeading, endPoint: .bottomTrailing))
                 Rectangle().fill(Color(hex: 0x0A63F0).opacity(0.85)).frame(height: h * 0.16)
                     .clipShape(UnevenRoundedRectangle(topLeadingRadius: w * 0.045, topTrailingRadius: w * 0.045))
-                if side == .recto {
+                if side != .verso {
                     RoundedRectangle(cornerRadius: w * 0.02)
                         .fill(Color(hex: 0xB9C9DE))
                         .overlay(Image(systemName: "person.fill").resizable().scaledToFit()
                             .foregroundStyle(Color(hex: 0x6F84A3)).padding(w * 0.03).offset(y: w * 0.02))
                         .clipShape(RoundedRectangle(cornerRadius: w * 0.02))
-                        .frame(width: w * 0.26, height: h * 0.56)
-                        .offset(x: w * 0.06, y: h * 0.26)
-                    lines(x: w * 0.38, y: h * 0.28, width: w * 0.54, height: h, count: 5)
+                        .frame(width: w * 0.26, height: h * (side == .passportPage ? 0.46 : 0.56))
+                        .offset(x: w * 0.06, y: h * 0.24)
+                    lines(x: w * 0.38, y: h * 0.26, width: w * 0.54, height: h, count: side == .passportPage ? 4 : 5)
+                    if side == .passportPage {
+                        // Les deux lignes de lecture automatique, dessinées en blocs.
+                        VStack(alignment: .leading, spacing: h * 0.035) {
+                            ForEach(0..<2, id: \.self) { _ in
+                                HStack(spacing: w * 0.006) {
+                                    ForEach(0..<30, id: \.self) { i in
+                                        RoundedRectangle(cornerRadius: 1).fill(Color(hex: 0x24344D).opacity(i % 7 == 3 ? 0.35 : 0.85))
+                                            .frame(width: w * 0.024, height: h * 0.055)
+                                    }
+                                }
+                            }
+                        }
+                        .offset(x: w * 0.05, y: h * 0.76)
+                    }
                 } else {
                     lines(x: w * 0.06, y: h * 0.26, width: w * 0.6, height: h, count: 4)
                     HStack(spacing: w * 0.008) {
@@ -864,7 +986,7 @@ struct SpecimenCard: View {
                 }
             }
         }
-        .aspectRatio(1.586, contentMode: .fit)
+        .aspectRatio(ratio ?? side.ratio, contentMode: .fit)
     }
 
     private func lines(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat, count: Int) -> some View {
@@ -909,12 +1031,13 @@ private struct DemoFace: View {
 @MainActor
 enum IdentityDemoImages {
     static func shot(_ side: CardSide) -> CardShot {
-        let renderer = ImageRenderer(content: SpecimenCard(side: side).frame(width: 428, height: 270))
+        let renderer = ImageRenderer(content: SpecimenCard(side: side).frame(width: 428, height: 428 / side.ratio))
         renderer.scale = 2
         let image = renderer.uiImage ?? UIImage()
         let jpeg = image.jpegData(compressionQuality: 0.8) ?? Data([1])
-        let hashes = image.cgImage.map(CardImages.hashes) ?? [side == .recto ? 1 : 2]
-        return CardShot(jpeg: jpeg, image: image, hashes: hashes, faceFound: side == .recto)
+        let hashes = image.cgImage.map(CardImages.hashes) ?? [side == .verso ? 2 : 1]
+        return CardShot(jpeg: jpeg, image: image, hashes: hashes, faceFound: side != .verso,
+                        machineZone: side == .passportPage)
     }
 
     static func video(turns: [HeadTurn]) -> VideoShot {
@@ -924,6 +1047,6 @@ enum IdentityDemoImages {
     }
 
     static func draft() -> IdentityDraft {
-        IdentityDraft(recto: shot(.recto), verso: shot(.verso), video: video(turns: [.left, .right]))
+        IdentityDraft(document: .voterCard, recto: shot(.recto), verso: shot(.verso), video: video(turns: [.left, .right]))
     }
 }

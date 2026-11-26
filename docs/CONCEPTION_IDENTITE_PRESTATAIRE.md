@@ -12,8 +12,9 @@ et de la version des conditions acceptée :
 
 | Élément | Format | Taille attendue | Taille refusée au-delà |
 | --- | --- | --- | --- |
-| Recto de la pièce | JPEG, 1 600 px au plus grand côté | 150 à 500 Ko | 3 Mo |
-| Verso de la pièce | JPEG, idem | 150 à 500 Ko | 3 Mo |
+| Type de pièce | `voter_card`, `driving_licence` ou `passport` | — | — |
+| Recto de la carte, ou page photo du passeport | JPEG, 1 600 px au plus grand côté | 150 à 500 Ko | 3 Mo |
+| Verso de la carte (**pas pour un passeport**) | JPEG, idem | 150 à 500 Ko | 3 Mo |
 | Vidéo du visage | MP4 (H.264), **sans piste audio**, 720p au plus, 2 Mbit/s | 1 à 5 Mo | 12 Mo |
 | Consignes de la vidéo | `["left","right"]` ou `["right","left"]` (ordre tiré au sort par l'app) | — | — |
 | Durée de la vidéo | secondes (1 à 25) | — | — |
@@ -48,7 +49,8 @@ Contrôles du serveur, chacun testé :
 - **métadonnées retirées** des JPEG (EXIF, position GPS) sans réencoder
   l'image ; même chose pour les métadonnées de lieu du MP4 ;
 - tailles maximales ci-dessus ; au plus 3 demandes par compte et par 24 h ;
-- la demande n'est acceptée que si les trois fichiers appartiennent au compte,
+- verso obligatoire pour une carte, **refusé pour un passeport** ;
+- la demande n'est acceptée que si les fichiers appartiennent au compte,
   ne sont rattachés à aucune autre demande et sont encore là ;
 - **appareil attesté** (App Attest sur iOS, Play Integrity sur Android,
   `devices.attestation = 'verified'`, déjà dans `app_sessions.py`) : seule
@@ -75,7 +77,8 @@ Contrôles du serveur, chacun testé :
 | --- | --- |
 | `id` | numéro du dossier |
 | `account_id` | le compte |
-| `recto_file_id`, `verso_file_id`, `video_file_id` | les fichiers (uniques : un fichier n'appartient qu'à un dossier) |
+| `document_type` | `voter_card`, `driving_licence`, `passport` |
+| `recto_file_id`, `verso_file_id`, `video_file_id` | les fichiers (uniques : un fichier n'appartient qu'à un dossier) ; `verso_file_id` vide pour un passeport, imposé par une contrainte en base |
 | `head_turns`, `video_seconds` | consignes données et durée |
 | `platform`, `app_version`, `device_id`, `device_attestation` | d'où vient l'envoi |
 | `status` | `submitted`, `approved`, `rejected`, `superseded` (un nouveau dossier remplace l'ancien), `withdrawn` |
@@ -150,6 +153,8 @@ blocage légal, relance), migration sur base vide (`alembic upgrade head` puis
 3. Appareil non attesté : refuser l'étape ou l'accepter avec un signal.
 4. Rôle dédié pour lire les pièces.
 5. Durées de conservation, **après l'avis du juriste** (la vidéo d'abord).
-6. Passeport : sans verso, il n'entre pas dans le parcours recto / verso.
-   Le garder (une seule face) ou s'en tenir à la carte d'électeur et au
-   permis, comme les écrans le disent aujourd'hui.
+6. ~~Passeport~~ : tranché par Ben le 2026-11-26, accepté avec la seule page
+   photo (fait dans les apps). D'autres pièces (carte de réfugié, titre de
+   séjour, pièce étrangère) : plus tard. L'app lit la zone de lecture
+   automatique pour reconnaître la page, sans garder le texte ; le serveur
+   ne la lit pas non plus tant que Ben ne l'a pas décidé.

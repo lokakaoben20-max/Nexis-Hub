@@ -131,7 +131,9 @@ enum class Capture(
     BECOME_WRONG_SIDE(true, tab = 3),
     BECOME_VERSO(true, tab = 3),
     BECOME_SELFIE(true, tab = 3),
-    BECOME_REVIEW(true, tab = 3);
+    BECOME_REVIEW(true, tab = 3),
+    BECOME_PASSPORT(true, tab = 3),
+    BECOME_WRONG_PAGE(true, tab = 3);
 
     /** Le nom passé par le script de captures (« become-identity »). */
     val code: String get() = name.lowercase().replace('_', '-')

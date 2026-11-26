@@ -50,8 +50,10 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Badge
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.DocumentScanner
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Sync
@@ -124,6 +126,9 @@ import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetector
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import com.google.mlkit.vision.face.FaceLandmark
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.nexishub.app.LocalApp
 import com.nexishub.app.data.CardCheck
 import com.nexishub.app.data.CardSide
@@ -131,8 +136,11 @@ import com.nexishub.app.data.CardVerdict
 import com.nexishub.app.data.FaceSample
 import com.nexishub.app.data.HeadTurn
 import com.nexishub.app.data.IdentityCapture
+import com.nexishub.app.data.IdentityDocument
 import com.nexishub.app.data.ImageHash
+import com.nexishub.app.data.MachineZone
 import com.nexishub.app.data.SelfieScript
+import com.nexishub.app.ui.ChoiceRow
 import com.nexishub.app.ui.InfoNote
 import com.nexishub.app.ui.LocalPalette
 import com.nexishub.app.ui.Nexis
@@ -159,26 +167,52 @@ import kotlin.math.abs
 import kotlin.math.max
 
 // Étape « Pièce d'identité » de « Devenir prestataire » : recto puis verso
-// de la pièce par le scanner de documents de ML Kit (import depuis la galerie
+// de la carte (ou page photo du passeport) par le scanner de documents de ML Kit (import depuis la galerie
 // désactivé), puis courte vidéo guidée du visage (CameraX, sans micro). Jamais
 // de galerie. ML Kit, sur le téléphone, guide la prise ; c'est l'équipe
 // NexisHub qui vérifie la personne.
 
 /** Une face de la pièce, à l'endroit et réduite. */
-class CardShot(val jpeg: ByteArray, val preview: ImageBitmap, val hashes: List<Long>, val faceFound: Boolean)
+class CardShot(
+    val jpeg: ByteArray,
+    val preview: ImageBitmap,
+    val hashes: List<Long>,
+    val faceFound: Boolean,
+    /** Page de passeport : la zone de lecture automatique a été vue. */
+    val machineZone: Boolean = false,
+)
 
 /** La vidéo du visage, prête à être envoyée. */
 class VideoShot(val data: ByteArray, val thumbnail: ImageBitmap?, val seconds: Int, val turns: List<HeadTurn>)
 
 /** Ce qui a été pris jusqu'ici. */
-data class IdentityDraft(val recto: CardShot? = null, val verso: CardShot? = null, val video: VideoShot? = null) {
+data class IdentityDraft(
+    /** Choisie par la personne avant la prise. */
+    val document: IdentityDocument? = null,
+    /** Recto de la carte, ou page photo du passeport. */
+    val recto: CardShot? = null,
+    val verso: CardShot? = null,
+    val video: VideoShot? = null,
+) {
+    val pieceDone: Boolean
+        get() {
+            val document = document ?: return false
+            return recto != null && (!document.needsVerso || verso != null)
+        }
+
     val capture: IdentityCapture?
         get() {
+            val document = document ?: return null
             val recto = recto ?: return null
-            val verso = verso ?: return null
             val video = video ?: return null
-            return IdentityCapture(recto.jpeg, verso.jpeg, video.data, video.seconds, video.turns).takeIf { it.isComplete }
+            if (!pieceDone) return null
+            val back = if (document.needsVerso) verso?.jpeg else null
+            return IdentityCapture(document, recto.jpeg, back, video.data, video.seconds, video.turns).takeIf { it.isComplete }
         }
+
+    /** Changer de pièce efface les faces déjà prises. */
+    fun choose(document: IdentityDocument): IdentityDraft =
+        if (document == this.document) this else copy(document = document, recto = null, verso = null)
 }
 
 /** Écrans figés pour les captures de la CI (l'émulateur n'a ni le scanner ni
@@ -189,6 +223,8 @@ enum class IdentityDemo(val code: String) {
     VERSO("become-verso"),
     SELFIE("become-selfie"),
     REVIEW("become-review"),
+    PASSPORT("become-passport"),
+    WRONG_PAGE("become-wrong-page"),
     ;
 
     companion object {
@@ -206,26 +242,56 @@ fun IdentityStep(draft: IdentityDraft, onChange: (IdentityDraft) -> Unit) {
     var filming by remember { mutableStateOf(false) }
     LaunchedEffect(demo) {
         when (demo) {
-            IdentityDemo.RECTO, IdentityDemo.WRONG_SIDE -> scanning = listOf(CardSide.RECTO, CardSide.VERSO)
-            IdentityDemo.VERSO -> scanning = listOf(CardSide.VERSO)
+            IdentityDemo.RECTO, IdentityDemo.WRONG_SIDE -> {
+                onChange(draft.choose(IdentityDocument.VOTER_CARD))
+                scanning = listOf(CardSide.RECTO, CardSide.VERSO)
+            }
+            IdentityDemo.VERSO -> {
+                onChange(draft.choose(IdentityDocument.VOTER_CARD))
+                scanning = listOf(CardSide.VERSO)
+            }
+            IdentityDemo.PASSPORT, IdentityDemo.WRONG_PAGE -> {
+                onChange(draft.choose(IdentityDocument.PASSPORT))
+                scanning = listOf(CardSide.PASSPORT_PAGE)
+            }
             IdentityDemo.SELFIE -> filming = true
             IdentityDemo.REVIEW -> onChange(IdentityDemoImages.draft())
             null -> Unit
         }
     }
-    // La pièce : recto et verso.
+    // La pièce : d'abord laquelle, puis recto et verso (ou la page photo du passeport).
     Column(Modifier.fillMaxWidth().nexisCard(p).padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionLine(app.t("becomeIdDocument"), app.t("becomeIdDocumentSub"), Icons.Rounded.Badge, draft.recto != null && draft.verso != null)
-        if (draft.recto != null || draft.verso != null) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                FaceThumb(app.t("becomeRecto"), draft.recto, Modifier.weight(1f)) { scanning = listOf(CardSide.RECTO) }
-                FaceThumb(app.t("becomeVerso"), draft.verso, Modifier.weight(1f)) { scanning = listOf(CardSide.VERSO) }
+        SectionLine(app.t("becomeIdDocument"), app.t("becomeIdDocumentSub"), Icons.Rounded.Badge, draft.pieceDone)
+        Text(app.t("becomeDocChoose"), style = body(13, FontWeight.SemiBold, p.ink))
+        IdentityDocument.entries.forEach { document ->
+            ChoiceRow(
+                app.t(document.labelKey), selected = draft.document == document, onClick = { onChange(draft.choose(document)) },
+                subtitle = app.t(if (document.needsVerso) "becomeCardSides" else "becomePassportSub"),
+            ) {
+                Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(p.soft), contentAlignment = Alignment.Center) {
+                    Icon(document.icon, contentDescription = null, tint = p.softInk, modifier = Modifier.size(20.dp))
+                }
             }
         }
-        if (draft.recto == null || draft.verso == null) {
-            OutlineButton(app.t("becomeScanCard"), {
-                scanning = if (draft.recto == null) listOf(CardSide.RECTO, CardSide.VERSO) else listOf(CardSide.VERSO)
-            }, icon = Icons.Rounded.DocumentScanner)
+        val document = draft.document
+        if (document != null) {
+            if (draft.recto != null || draft.verso != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (document.needsVerso) {
+                        FaceThumb(app.t("becomeRecto"), draft.recto, CardSide.RECTO.ratio, Modifier.weight(1f)) { scanning = listOf(CardSide.RECTO) }
+                        FaceThumb(app.t("becomeVerso"), draft.verso, CardSide.VERSO.ratio, Modifier.weight(1f)) { scanning = listOf(CardSide.VERSO) }
+                    } else {
+                        FaceThumb(app.t("becomePhotoPage"), draft.recto, CardSide.PASSPORT_PAGE.ratio, Modifier.weight(1f)) {
+                            scanning = listOf(CardSide.PASSPORT_PAGE)
+                        }
+                    }
+                }
+            }
+            if (!draft.pieceDone) {
+                OutlineButton(app.t("becomeScanCard"), {
+                    scanning = if (draft.recto == null) document.sides else listOf(CardSide.VERSO)
+                }, icon = Icons.Rounded.DocumentScanner)
+            }
         }
     }
     // La vidéo du visage.
@@ -266,7 +332,12 @@ fun IdentityStep(draft: IdentityDraft, onChange: (IdentityDraft) -> Unit) {
             onClose = { scanning = null },
         ) { shots ->
             scanning = null
-            onChange(draft.copy(recto = shots[CardSide.RECTO] ?: draft.recto, verso = shots[CardSide.VERSO] ?: draft.verso))
+            onChange(
+                draft.copy(
+                    recto = shots[CardSide.RECTO] ?: shots[CardSide.PASSPORT_PAGE] ?: draft.recto,
+                    verso = shots[CardSide.VERSO] ?: draft.verso,
+                ),
+            )
         }
     }
     if (filming) {
@@ -276,6 +347,30 @@ fun IdentityStep(draft: IdentityDraft, onChange: (IdentityDraft) -> Unit) {
         }
     }
 }
+
+private val IdentityDocument.labelKey: String
+    get() = when (this) {
+        IdentityDocument.VOTER_CARD -> "docVoterCard"
+        IdentityDocument.DRIVING_LICENCE -> "docDrivingLicence"
+        IdentityDocument.PASSPORT -> "docPassport"
+    }
+
+private val IdentityDocument.icon: ImageVector
+    get() = when (this) {
+        IdentityDocument.VOTER_CARD -> Icons.Rounded.Badge
+        IdentityDocument.DRIVING_LICENCE -> Icons.Rounded.DirectionsCar
+        IdentityDocument.PASSPORT -> Icons.AutoMirrored.Rounded.MenuBook
+    }
+
+/** Format de la pièce : carte ID-1 (85,6 × 54 mm) ou page de passeport ID-3 (125 × 88 mm). */
+private val CardSide.ratio: Float get() = if (this == CardSide.PASSPORT_PAGE) 125f / 88f else 1.586f
+
+private val CardSide.labelKey: String
+    get() = when (this) {
+        CardSide.RECTO -> "becomeRecto"
+        CardSide.VERSO -> "becomeVerso"
+        CardSide.PASSPORT_PAGE -> "becomePhotoPage"
+    }
 
 @Composable
 private fun SectionLine(heading: String, subtitle: String, icon: ImageVector, done: Boolean) {
@@ -294,13 +389,13 @@ private fun SectionLine(heading: String, subtitle: String, icon: ImageVector, do
 
 /** Aperçu d'une face, avec « Reprendre ». */
 @Composable
-private fun FaceThumb(label: String, shot: CardShot?, modifier: Modifier, onRetake: () -> Unit) {
+private fun FaceThumb(label: String, shot: CardShot?, ratio: Float, modifier: Modifier, onRetake: () -> Unit) {
     val app = LocalApp.current
     val p = LocalPalette.current
     val shape = RoundedCornerShape(12.dp)
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Box(
-            Modifier.fillMaxWidth().aspectRatio(1.586f).clip(shape).background(p.soft).border(0.5.dp, p.line, shape),
+            Modifier.fillMaxWidth().aspectRatio(ratio).clip(shape).background(p.soft).border(0.5.dp, p.line, shape),
             contentAlignment = Alignment.Center,
         ) {
             if (shot != null) {
@@ -382,7 +477,7 @@ private fun jpeg(bitmap: Bitmap): ByteArray = ByteArrayOutputStream().use { out 
 
 /** Lit la page scannée (réduite à 1 600 px), cherche un visage dans les quatre
  * sens, la remet à l'endroit, puis efface le fichier du scanner. */
-private suspend fun readCard(context: Context, uri: Uri): CardShot? {
+private suspend fun readCard(context: Context, uri: Uri, readsMachineZone: Boolean): CardShot? {
     val bitmap = withContext(Dispatchers.IO) {
         try {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -420,7 +515,23 @@ private suspend fun readCard(context: Context, uri: Uri): CardShot? {
     }
     val faceFound = upright != null
     val card = upright ?: if (bitmap.height > bitmap.width) rotated(bitmap, 90) else bitmap
-    return withContext(Dispatchers.Default) { CardShot(jpeg(card), card.asImageBitmap(), cardHashes(card), faceFound) }
+    val machineZone = readsMachineZone && hasMachineZone(card)
+    return withContext(Dispatchers.Default) { CardShot(jpeg(card), card.asImageBitmap(), cardHashes(card), faceFound, machineZone) }
+}
+
+private val pageText: TextRecognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+
+/** Lit les lignes de texte de la page, sur le téléphone, pour y chercher la
+ * zone de lecture automatique d'un passeport. Le texte n'est pas gardé. */
+private suspend fun hasMachineZone(page: Bitmap): Boolean {
+    val text = try {
+        pageText.process(InputImage.fromBitmap(page, 0)).awaitResult()
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (_: Exception) {
+        return false
+    }
+    return MachineZone.found(text.textBlocks.flatMap { block -> block.lines.map { it.text } })
 }
 
 @Composable
@@ -436,7 +547,13 @@ private fun CardScanScreen(
     val scope = rememberCoroutineScope()
     var side by remember { mutableStateOf(if (demo == IdentityDemo.VERSO) CardSide.VERSO else sides.first()) }
     var state by remember {
-        mutableStateOf<ScanState>(if (demo == IdentityDemo.WRONG_SIDE) ScanState.Wrong(CardVerdict.SHOW_RECTO_FIRST) else ScanState.Ready)
+        mutableStateOf<ScanState>(
+            when (demo) {
+                IdentityDemo.WRONG_SIDE -> ScanState.Wrong(CardVerdict.SHOW_RECTO_FIRST)
+                IdentityDemo.WRONG_PAGE -> ScanState.Wrong(CardVerdict.SHOW_PHOTO_PAGE)
+                else -> ScanState.Ready
+            },
+        )
     }
     var shots by remember {
         mutableStateOf<Map<CardSide, CardShot>>(
@@ -482,13 +599,13 @@ private fun CardScanScreen(
         }
         state = ScanState.Checking
         scope.launch {
-            val shot = readCard(context, uri)
+            val shot = readCard(context, uri, readsMachineZone = side == CardSide.PASSPORT_PAGE)
             if (shot == null) {
                 state = ScanState.Ready
                 return@launch
             }
             val recto = if (side == CardSide.VERSO) shots[CardSide.RECTO]?.hashes?.firstOrNull() ?: rectoHash else null
-            when (val verdict = CardCheck.verdict(side, shot.faceFound, shot.hashes, recto)) {
+            when (val verdict = CardCheck.verdict(side, shot.faceFound, shot.hashes, recto, shot.machineZone)) {
                 CardVerdict.ACCEPTED -> accept(shot)
                 else -> state = ScanState.Wrong(verdict)
             }
@@ -523,11 +640,24 @@ private fun CardScanScreen(
             )
         }
         Text(
-            app.t(if (side == CardSide.RECTO) "scanRectoTitle" else "scanTurnTitle"), style = title(22, color = Color.White),
+            app.t(
+                when (side) {
+                    CardSide.RECTO -> "scanRectoTitle"
+                    CardSide.VERSO -> "scanTurnTitle"
+                    CardSide.PASSPORT_PAGE -> "scanPassportTitle"
+                },
+            ),
+            style = title(22, color = Color.White),
             modifier = Modifier.padding(top = 14.dp).semantics { heading() },
         )
         Text(
-            app.t(if (side == CardSide.RECTO) "scanRectoHint" else "scanVersoHint"),
+            app.t(
+                when (side) {
+                    CardSide.RECTO -> "scanRectoHint"
+                    CardSide.VERSO -> "scanVersoHint"
+                    CardSide.PASSPORT_PAGE -> "scanPassportHint"
+                },
+            ),
             style = body(15, color = Color.White.copy(alpha = 0.82f)), modifier = Modifier.padding(top = 6.dp),
         )
         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
@@ -538,7 +668,7 @@ private fun CardScanScreen(
                 else -> Color.White.copy(alpha = 0.9f)
             }
             Box(
-                Modifier.fillMaxWidth(0.94f).aspectRatio(1.586f).border(3.dp, frameColor, RoundedCornerShape(16.dp)).padding(10.dp),
+                Modifier.fillMaxWidth(0.94f).aspectRatio(side.ratio).border(3.dp, frameColor, RoundedCornerShape(16.dp)).padding(10.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 val demoCard = remember(side) { specimenBitmap(side, 720).asImageBitmap() }
@@ -548,8 +678,14 @@ private fun CardScanScreen(
         }
         val message: Pair<String, Color>? = when (val current = state) {
             ScanState.Checking -> app.t("scanChecking") to Color.White
-            is ScanState.Wrong -> app.t(if (current.verdict == CardVerdict.STILL_RECTO) "scanWrongRecto" else "scanWrongVerso") to Color(0xFFFF8A80)
-            ScanState.Taken -> app.t(if (side == CardSide.RECTO) "becomeRecto" else "becomeVerso") to Color(0xFF34C759)
+            is ScanState.Wrong -> app.t(
+                when (current.verdict) {
+                    CardVerdict.STILL_RECTO -> "scanWrongRecto"
+                    CardVerdict.SHOW_PHOTO_PAGE -> "scanWrongPage"
+                    else -> "scanWrongVerso"
+                },
+            ) to Color(0xFFFF8A80)
+            ScanState.Taken -> app.t(side.labelKey) to Color(0xFF34C759)
             ScanState.Unavailable -> app.t("scanUnavailable") to Color(0xFFFF8A80)
             else -> null
         }
@@ -574,7 +710,13 @@ private fun CardScanScreen(
         }
         Spacer(Modifier.height(14.dp))
         PrimaryButton(
-            app.t(if (side == CardSide.RECTO) "scanStartRecto" else "scanStartVerso"),
+            app.t(
+                when (side) {
+                    CardSide.RECTO -> "scanStartRecto"
+                    CardSide.VERSO -> "scanStartVerso"
+                    CardSide.PASSPORT_PAGE -> "scanStartPassport"
+                },
+            ),
             { if (demo == null) openScanner() },
             icon = Icons.Rounded.DocumentScanner,
             enabled = state != ScanState.Taken && state != ScanState.TurnCard,
@@ -968,9 +1110,10 @@ private fun DemoFace(step: SelfieScript.Step, reduceMotion: Boolean) {
 // --- Démonstration (captures de la CI) ---
 
 /** Une pièce d'identité dessinée, sans aucun texte : le recto porte un
- * visage, le verso des lignes et un code. */
+ * visage, le verso des lignes et un code, la page du passeport un visage et
+ * deux lignes de lecture automatique. */
 private fun specimenBitmap(side: CardSide, width: Int): Bitmap {
-    val height = (width / 1.586f).toInt()
+    val height = (width / side.ratio).toInt()
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = android.graphics.Canvas(bitmap)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -992,9 +1135,10 @@ private fun specimenBitmap(side: CardSide, width: Int): Bitmap {
             canvas.drawRoundRect(RectF(x, top, end, top + h * 0.045f), h * 0.03f, h * 0.03f, paint)
         }
     }
-    if (side == CardSide.RECTO) {
+    if (side != CardSide.VERSO) {
+        val passport = side == CardSide.PASSPORT_PAGE
         paint.color = 0xFFB9C9DE.toInt()
-        val photo = RectF(w * 0.06f, h * 0.26f, w * 0.32f, h * 0.82f)
+        val photo = RectF(w * 0.06f, h * 0.24f, w * 0.32f, h * (if (passport) 0.7f else 0.82f))
         canvas.drawRoundRect(photo, w * 0.02f, w * 0.02f, paint)
         paint.color = 0xFF6F84A3.toInt()
         canvas.drawCircle(photo.centerX(), photo.top + photo.height() * 0.38f, photo.width() * 0.22f, paint)
@@ -1003,7 +1147,18 @@ private fun specimenBitmap(side: CardSide, width: Int): Bitmap {
             photo.width() * 0.3f, photo.width() * 0.3f, paint,
         )
         paint.color = 0xFF8FA3BF.toInt()
-        lines(w * 0.38f, h * 0.28f, w * 0.54f, 5)
+        lines(w * 0.38f, h * 0.26f, w * 0.54f, if (passport) 4 else 5)
+        if (passport) {
+            // Les deux lignes de lecture automatique, dessinées en blocs.
+            paint.color = 0xD924344D.toInt()
+            for (row in 0 until 2) {
+                val top = h * (0.77f + row * 0.1f)
+                for (i in 0 until 30) {
+                    val left = w * (0.05f + i * 0.03f)
+                    canvas.drawRoundRect(RectF(left, top, left + w * 0.024f, top + h * 0.055f), 2f, 2f, paint)
+                }
+            }
+        }
     } else {
         lines(w * 0.06f, h * 0.26f, w * 0.6f, 4)
         paint.color = 0xFFC7D3E3.toInt()
@@ -1025,10 +1180,11 @@ private fun specimenBitmap(side: CardSide, width: Int): Bitmap {
 private object IdentityDemoImages {
     fun shot(side: CardSide): CardShot {
         val bitmap = specimenBitmap(side, 856)
-        return CardShot(jpeg(bitmap), bitmap.asImageBitmap(), cardHashes(bitmap), side == CardSide.RECTO)
+        return CardShot(jpeg(bitmap), bitmap.asImageBitmap(), cardHashes(bitmap), side != CardSide.VERSO, side == CardSide.PASSPORT_PAGE)
     }
 
     fun draft(): IdentityDraft = IdentityDraft(
+        document = IdentityDocument.VOTER_CARD,
         recto = shot(CardSide.RECTO),
         verso = shot(CardSide.VERSO),
         video = VideoShot("aperçu".toByteArray(), null, 7, listOf(HeadTurn.LEFT, HeadTurn.RIGHT)),

@@ -11,10 +11,24 @@ import kotlin.math.roundToInt
 // valide ni ne refuse personne : c'est l'équipe NexisHub qui vérifie la
 // personne. Aucune image ne part vers un service d'IA extérieur.
 
-/** Les deux faces de la pièce et la courte vidéo du visage (sans son). */
+/** Les pièces acceptées. Une carte se prend recto et verso ; un passeport,
+ * seulement la page avec la photo. */
+enum class IdentityDocument {
+    VOTER_CARD, DRIVING_LICENCE, PASSPORT;
+
+    val needsVerso: Boolean get() = this != PASSPORT
+
+    /** Les faces à prendre, dans l'ordre. */
+    val sides: List<CardSide> get() = if (needsVerso) listOf(CardSide.RECTO, CardSide.VERSO) else listOf(CardSide.PASSPORT_PAGE)
+}
+
+/** La pièce (une ou deux faces) et la courte vidéo du visage (sans son). */
 class IdentityCapture(
+    val document: IdentityDocument,
+    /** Recto de la carte, ou page photo du passeport. */
     val recto: ByteArray,
-    val verso: ByteArray,
+    /** Verso de la carte ; absent pour un passeport. */
+    val verso: ByteArray?,
     /** Vidéo MP4 (H.264) sans piste audio. */
     val video: ByteArray,
     val videoSeconds: Int,
@@ -23,11 +37,12 @@ class IdentityCapture(
     val headTurns: List<HeadTurn>,
 ) {
     val isComplete: Boolean
-        get() = recto.isNotEmpty() && verso.isNotEmpty() && video.isNotEmpty() && videoSeconds > 0 &&
+        get() = recto.isNotEmpty() && (if (document.needsVerso) verso?.isNotEmpty() == true else verso == null) &&
+            video.isNotEmpty() && videoSeconds > 0 &&
             headTurns.size == 2 && headTurns.toSet() == HeadTurn.entries.toSet()
 }
 
-enum class CardSide { RECTO, VERSO }
+enum class CardSide { RECTO, VERSO, PASSPORT_PAGE }
 
 /** Le sens dans lequel la personne tourne la tête (sa gauche, sa droite). */
 enum class HeadTurn { LEFT, RIGHT }
@@ -42,6 +57,9 @@ enum class CardVerdict {
 
     /** On attendait le verso et c'est encore le recto. */
     STILL_RECTO,
+
+    /** On attendait la page photo du passeport et ce n'est pas elle. */
+    SHOW_PHOTO_PAGE,
 }
 
 object CardCheck {
@@ -53,8 +71,10 @@ object CardCheck {
 
     /** Le recto porte la photo de la personne. Le verso ne doit pas être la
      * même image que le recto (comparée dans les deux sens de lecture). */
-    fun verdict(expected: CardSide, faceFound: Boolean, hashes: List<Long>, rectoHash: Long?): CardVerdict =
+    fun verdict(expected: CardSide, faceFound: Boolean, hashes: List<Long>, rectoHash: Long?, machineZone: Boolean = false): CardVerdict =
         when (expected) {
+            // Passeport : un visage et la zone de lecture automatique.
+            CardSide.PASSPORT_PAGE -> if (faceFound && machineZone) CardVerdict.ACCEPTED else CardVerdict.SHOW_PHOTO_PAGE
             CardSide.RECTO -> if (faceFound) CardVerdict.ACCEPTED else CardVerdict.SHOW_RECTO_FIRST
             CardSide.VERSO -> {
                 val distance = rectoHash?.let { recto -> hashes.minOfOrNull { ImageHash.distance(it, recto) } }
@@ -65,6 +85,24 @@ object CardCheck {
                 }
             }
         }
+}
+
+/** La zone de lecture automatique de la page photo d'un passeport : deux
+ * lignes de 44 signes (lettres, chiffres, « < »), la première commence par
+ * « P ». Le texte lu sert seulement à reconnaître la page ; il n'est ni gardé
+ * ni envoyé. */
+object MachineZone {
+    fun found(lines: List<String>): Boolean {
+        val cleaned = lines.map { line -> line.uppercase().filterNot { it.isWhitespace() }.replace('«', '<') }
+        fun machineLike(line: String): Boolean {
+            if (line.length < 30) return false
+            val allowed = line.count { (it in 'A'..'Z') || (it in '0'..'9') || it == '<' }
+            return allowed.toDouble() / line.length >= 0.9 && '<' in line
+        }
+        val first = cleaned.indexOfFirst { it.startsWith("P") && machineLike(it) && "<<" in it }
+        if (first < 0) return false
+        return cleaned.indices.any { it != first && machineLike(cleaned[it]) }
+    }
 }
 
 /** Empreinte « dHash » d'une image réduite à 9 × 8 niveaux de gris : un bit

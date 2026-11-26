@@ -10,10 +10,24 @@ import Foundation
 // NexisHub qui vérifie la personne. Aucune image ne part vers un service
 // d'IA extérieur.
 
-/// Les deux faces de la pièce et la courte vidéo du visage (sans son).
+/// Les pièces acceptées. Une carte se prend recto et verso ; un passeport,
+/// seulement la page avec la photo.
+enum IdentityDocument: String, CaseIterable {
+    case voterCard, drivingLicence, passport
+
+    var needsVerso: Bool { self != .passport }
+
+    /// Les faces à prendre, dans l'ordre.
+    var sides: [CardSide] { needsVerso ? [.recto, .verso] : [.passportPage] }
+}
+
+/// La pièce (une ou deux faces) et la courte vidéo du visage (sans son).
 struct IdentityCapture: Equatable {
+    var document: IdentityDocument
+    /// Recto de la carte, ou page photo du passeport.
     var recto: Data
-    var verso: Data
+    /// Verso de la carte ; absent pour un passeport.
+    var verso: Data?
     /// Vidéo H.264 sans piste audio.
     var video: Data
     var videoSeconds: Int
@@ -22,12 +36,13 @@ struct IdentityCapture: Equatable {
     var headTurns: [HeadTurn]
 
     var isComplete: Bool {
-        !recto.isEmpty && !verso.isEmpty && !video.isEmpty && videoSeconds > 0
+        !recto.isEmpty && (document.needsVerso ? !(verso ?? Data()).isEmpty : verso == nil)
+            && !video.isEmpty && videoSeconds > 0
             && headTurns.count == 2 && Set(headTurns) == Set(HeadTurn.allCases)
     }
 }
 
-enum CardSide: String, CaseIterable { case recto, verso }
+enum CardSide: String, CaseIterable { case recto, verso, passportPage }
 
 /// Le sens dans lequel la personne tourne la tête (sa gauche, sa droite).
 enum HeadTurn: String, CaseIterable { case left, right }
@@ -40,6 +55,8 @@ enum CardVerdict: Equatable {
     case showRectoFirst
     /// On attendait le verso et c'est encore le recto.
     case stillRecto
+    /// On attendait la page photo du passeport et ce n'est pas elle.
+    case showPhotoPage
 }
 
 enum CardCheck {
@@ -51,9 +68,12 @@ enum CardCheck {
 
     /// Le recto porte la photo de la personne. Le verso ne doit pas être la
     /// même image que le recto (comparée dans les deux sens de lecture).
+    /// Pour un passeport : un visage et la zone de lecture automatique.
     static func verdict(expected: CardSide, faceFound: Bool,
-                        hashes: [UInt64], rectoHash: UInt64?) -> CardVerdict {
+                        hashes: [UInt64], rectoHash: UInt64?, machineZone: Bool = false) -> CardVerdict {
         switch expected {
+        case .passportPage:
+            return faceFound && machineZone ? .accepted : .showPhotoPage
         case .recto:
             return faceFound ? .accepted : .showRectoFirst
         case .verso:
@@ -63,6 +83,27 @@ enum CardCheck {
             if distance <= sameSide || (faceFound && distance <= sameSideWithFace) { return .stillRecto }
             return .accepted
         }
+    }
+}
+
+/// La zone de lecture automatique de la page photo d'un passeport : deux
+/// lignes de 44 signes (lettres, chiffres, « < »), la première commence par
+/// « P ». Le texte lu sert seulement à reconnaître la page ; il n'est ni
+/// gardé ni envoyé.
+enum MachineZone {
+    static func found(in lines: [String]) -> Bool {
+        let cleaned = lines.map { line in
+            line.uppercased().filter { !$0.isWhitespace }.replacingOccurrences(of: "«", with: "<")
+        }
+        func machineLike(_ line: String) -> Bool {
+            guard line.count >= 30 else { return false }
+            let allowed = line.filter { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "<") }.count
+            return Double(allowed) / Double(line.count) >= 0.9 && line.contains("<")
+        }
+        guard let first = cleaned.firstIndex(where: { $0.hasPrefix("P") && machineLike($0) && $0.contains("<<") }) else {
+            return false
+        }
+        return cleaned.indices.contains { $0 != first && machineLike(cleaned[$0]) }
     }
 }
 

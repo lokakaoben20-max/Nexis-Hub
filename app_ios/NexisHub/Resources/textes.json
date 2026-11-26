@@ -99,6 +99,11 @@
   "fr": "J'ai lu et j'accepte les conditions des prestataires",
   "ln": "Natángi mpe nandimi mibeko ya basali"
  },
+ "becomeCardSides": {
+  "en": "Front and back, taken automatically",
+  "fr": "Recto et verso, la photo se prend toute seule",
+  "ln": "Liboso mpe nsima, foto ekozwama yango moko"
+ },
  "becomeCommunes": {
   "en": "Where do you work?",
   "fr": "Où travaillez-vous ?",
@@ -113,6 +118,11 @@
   "en": "Preview: the photos and video stay on this phone and are not sent anywhere.",
   "fr": "Aperçu : les photos et la vidéo restent sur ce téléphone et ne sont envoyées nulle part.",
   "ln": "Aperçu: ba foto mpe video etikalaka na telefone oyo, etindamaka esika moko te."
+ },
+ "becomeDocChoose": {
+  "en": "Which ID do you have?",
+  "fr": "Quelle pièce avez-vous ?",
+  "ln": "Mokanda nini ya identité ozali na yango ?"
  },
  "becomeFailed": {
   "en": "The request could not be sent. Check each step and try again.",
@@ -130,9 +140,9 @@
   "ln": "Carte ya identité"
  },
  "becomeIdDocumentSub": {
-  "en": "Voter card or driving licence, front and back",
-  "fr": "Carte d'électeur ou permis de conduire, recto et verso",
-  "ln": "Carte d'électeur to permis, liboso mpe nsima"
+  "en": "Voter card, driving licence or passport",
+  "fr": "Carte d'électeur, permis de conduire ou passeport",
+  "ln": "Carte d'électeur, permis to passeport"
  },
  "becomeIdentity": {
   "en": "Let's check your identity",
@@ -148,6 +158,16 @@
   "en": "Offer your services with the same account and the same wallet. The NexisHub team checks every provider before their first mission.",
   "fr": "Proposez vos services avec le même compte et le même portefeuille. L'équipe NexisHub vérifie chaque prestataire avant sa première mission.",
   "ln": "Pesá misala na yo na compte moko mpe portefeuille moko. Équipe ya NexisHub etalaka mosali nyonso liboso ya mosala na ye ya liboso."
+ },
+ "becomePassportSub": {
+  "en": "The page with your photo, taken automatically",
+  "fr": "La page avec votre photo, la photo se prend toute seule",
+  "ln": "Lokasa oyo ezali na foto na yo, foto ekozwama yango moko"
+ },
+ "becomePhotoPage": {
+  "en": "Photo page",
+  "fr": "Page photo",
+  "ln": "Lokasa ya foto"
  },
  "becomeProvider": {
   "en": "Become a provider",
@@ -564,6 +584,21 @@
   "en": "{name} is {km} km away",
   "fr": "{name} est à {km} km",
   "ln": "{name} azali na {km} km"
+ },
+ "docDrivingLicence": {
+  "en": "Driving licence",
+  "fr": "Permis de conduire",
+  "ln": "Permis ya kokumba motuka"
+ },
+ "docPassport": {
+  "en": "Passport",
+  "fr": "Passeport",
+  "ln": "Passeport"
+ },
+ "docVoterCard": {
+  "en": "Voter card",
+  "fr": "Carte d'électeur",
+  "ln": "Carte d'électeur"
  },
  "editProfile": {
   "en": "Edit",
@@ -1472,6 +1507,16 @@
   "fr": "Ne bougez plus…",
   "ln": "Kotambola lisusu te…"
  },
+ "scanPassportHint": {
+  "en": "Open the passport at the page with your photo and lay it flat. The two lines at the bottom must be visible. The photo is taken automatically.",
+  "fr": "Ouvrez le passeport à la page avec votre photo et posez-le à plat. Les deux lignes du bas doivent se voir. La photo se prend toute seule.",
+  "ln": "Fungolá passeport na lokasa oyo ezali na foto na yo mpe tiá yango patatalu. Milongo mibale ya nse esengeli komonana. Foto ekozwama yango moko."
+ },
+ "scanPassportTitle": {
+  "en": "Your passport photo page",
+  "fr": "La page photo du passeport",
+  "ln": "Lokasa ya foto ya passeport"
+ },
  "scanRectoHint": {
   "en": "Lay the front, the side with your photo, on a flat dark surface. The photo is taken automatically.",
   "fr": "Posez le recto, le côté avec votre photo, sur une surface plane et sombre. La photo se prend toute seule.",
@@ -1486,6 +1531,11 @@
   "en": "Place the card inside the frame",
   "fr": "Placez la carte dans le cadre",
   "ln": "Tiá carte na kati ya cadre"
+ },
+ "scanStartPassport": {
+  "en": "Scan the photo page",
+  "fr": "Scanner la page photo",
+  "ln": "Kosala scan ya lokasa ya foto"
  },
  "scanStartRecto": {
   "en": "Scan the front",
@@ -1511,6 +1561,11 @@
   "en": "Now show the back. The photo is taken automatically.",
   "fr": "Montrez maintenant le verso. La photo se prend toute seule.",
   "ln": "Sikoyo lakisá nsima ya carte. Foto ekozwama yango moko."
+ },
+ "scanWrongPage": {
+  "en": "That's not the right page. Show the page with your photo and the two lines at the bottom.",
+  "fr": "Ce n'est pas la bonne page. Montrez la page avec votre photo et les deux lignes du bas.",
+  "ln": "Ezali lokasa ya malamu te. Lakisá lokasa oyo ezali na foto na yo mpe milongo mibale ya nse."
  },
  "scanWrongRecto": {
   "en": "That's still the front. Turn the card over.",

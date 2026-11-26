@@ -140,6 +140,16 @@ l'équipe NexisHub qui vérifie la personne (exception notée dans `AGENTS.md`).
   « Retournez la carte » et rouvre le scanner pour le verso. Le scanner passe
   par les services Google Play : un téléphone sans eux (certains Huawei) ne
   peut pas faire cette étape, l'écran le dit.
+- **Choix de la pièce** (ajouté le 2026-11-26 à 11 h 20, demande de Ben) :
+  carte d'électeur, permis de conduire ou passeport, choisi avant la prise.
+  Une carte se prend recto puis verso ; un **passeport, seulement la page
+  avec la photo** (pas de verso). Changer de pièce efface les faces prises.
+  La page du passeport est reconnue à un visage **et** à sa zone de lecture
+  automatique (deux lignes de 44 signes, la première commence par `P`,
+  `MachineZone`, testé), lue sur le téléphone (`VNRecognizeTextRequest` sur
+  iOS, ML Kit Text Recognition sur Android). Le texte lu n'est ni gardé ni
+  envoyé. Sinon : « Ce n'est pas la bonne page… ». Cadre au format de la
+  page (125 × 88 mm) au lieu de la carte.
 - **Recto ou verso** (`CardCheck`, testé des deux côtés) : le recto porte la
   photo de la personne, donc un visage doit être vu sur la carte (Vision ou
   ML Kit, dans les quatre sens). Sinon : « C'est le verso. Montrez d'abord le
@@ -160,12 +170,14 @@ l'équipe NexisHub qui vérifie la personne (exception notée dans `AGENTS.md`).
   H.264 de 2 Mbit/s, 720p au plus.
 - Tout reste en mémoire jusqu'à l'envoi ; les fichiers temporaires (vidéo,
   page scannée) sont effacés dès qu'ils sont lus. Dans l'aperçu, rien ne part.
-- Le dépôt de données reçoit `IdentityCapture` (recto, verso, vidéo, durée,
-  ordre des consignes) à la place de `idDocument` / `selfie`.
+- Le dépôt de données reçoit `IdentityCapture` (type de pièce, recto ou page
+  photo, verso pour une carte seulement, vidéo, durée, ordre des consignes) à
+  la place de `idDocument` / `selfie`.
 - **Sans appareil photo** : le simulateur iOS (et donc Appetize) joue le
   parcours avec des images dessinées, marqué « Simulateur : démonstration sans
   appareil photo ». Captures de la CI : `become-identity` (recto),
-  `become-wrong-side`, `become-verso`, `become-selfie`, `become-review`.
+  `become-wrong-side`, `become-verso`, `become-selfie`, `become-review`,
+  `become-passport`, `become-wrong-page`.
 - Conception côté serveur (fichiers, conservation, suppression) : à valider
   par Ben, la durée de conservation de la vidéo est à voir avec le juriste.
 

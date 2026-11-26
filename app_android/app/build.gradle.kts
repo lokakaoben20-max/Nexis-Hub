@@ -80,6 +80,8 @@ dependencies {
     // de la tête (ML Kit, modèle dans l'app, rien n'est envoyé).
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
     implementation("com.google.mlkit:face-detection:16.1.7")
+    // Page photo du passeport : lecture de la zone de lecture automatique, sur le téléphone.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     val cameraX = "1.4.2"
     implementation("androidx.camera:camera-camera2:$cameraX")
     implementation("androidx.camera:camera-lifecycle:$cameraX")

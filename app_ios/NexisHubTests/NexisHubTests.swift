@@ -312,8 +312,8 @@ final class AccountTests: XCTestCase {
         let repo = DemoRepository()
         XCTAssertTrue(repo.registerClient(phone: "+243810000001", firstName: "Esther", lastName: "M",
                                           commune: "Limete", acceptedTermsVersion: repo.signupTermsVersion))
-        let identity = IdentityCapture(recto: Data([1]), verso: Data([2]), video: Data([3]), videoSeconds: 7,
-                                       headTurns: [.right, .left])
+        let identity = IdentityCapture(document: .voterCard, recto: Data([1]), verso: Data([2]), video: Data([3]),
+                                       videoSeconds: 7, headTurns: [.right, .left])
         let noTerms = await refusal {
             try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: identity,
                                            acceptedTermsVersion: nil)
@@ -333,6 +333,20 @@ final class AccountTests: XCTestCase {
                                            acceptedTermsVersion: repo.providerTermsVersion)
         }
         XCTAssertEqual(missingVideo, "provider_application_invalid")
+        // Passeport : une seule page, jamais de verso.
+        var passportWithVerso = identity
+        passportWithVerso.document = .passport
+        let versoOnPassport = await refusal {
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: passportWithVerso,
+                                           acceptedTermsVersion: repo.providerTermsVersion)
+        }
+        XCTAssertEqual(versoOnPassport, "provider_application_invalid")
+        var passport = passportWithVerso
+        passport.verso = nil
+        XCTAssertTrue(passport.isComplete)
+        var cardWithoutVerso = identity
+        cardWithoutVerso.verso = nil
+        XCTAssertFalse(cardWithoutVerso.isComplete)
         var oneTurn = identity
         oneTurn.headTurns = [.left, .left]
         let missingTurn = await refusal {
@@ -385,6 +399,29 @@ final class IdentityGuideTests: XCTestCase {
         let medium = recto ^ 0xFFFF // 16 bits d'écart
         XCTAssertEqual(CardCheck.verdict(expected: .verso, faceFound: true, hashes: [medium], rectoHash: recto), .stillRecto)
         XCTAssertEqual(CardCheck.verdict(expected: .verso, faceFound: false, hashes: [medium], rectoHash: recto), .accepted)
+    }
+
+    func testPassportNeedsFaceAndMachineZone() {
+        XCTAssertEqual(IdentityDocument.passport.sides, [.passportPage])
+        XCTAssertEqual(IdentityDocument.drivingLicence.sides, [.recto, .verso])
+        XCTAssertEqual(CardCheck.verdict(expected: .passportPage, faceFound: true, hashes: [], rectoHash: nil,
+                                         machineZone: true), .accepted)
+        XCTAssertEqual(CardCheck.verdict(expected: .passportPage, faceFound: true, hashes: [], rectoHash: nil,
+                                         machineZone: false), .showPhotoPage)
+        XCTAssertEqual(CardCheck.verdict(expected: .passportPage, faceFound: false, hashes: [], rectoHash: nil,
+                                         machineZone: true), .showPhotoPage)
+    }
+
+    func testMachineZoneIsRecognised() {
+        let zone = ["REPUBLIQUE DEMOCRATIQUE DU CONGO",
+                    "P<CODMUKENDI<<GRACE<<<<<<<<<<<<<<<<<<<<<<<<",
+                    "OP12345674COD9001014F3001019<<<<<<<<<<<<<<06"]
+        XCTAssertTrue(MachineZone.found(in: zone))
+        // Lu avec des espaces et des minuscules.
+        XCTAssertTrue(MachineZone.found(in: ["p<cod mukendi<<grace<<<<<<<<<<<<<<<<<<<<", "OP1234567 4COD9001014F3001019<<<<<<<<<06"]))
+        // Une seule ligne, ou une page de visas : pas la page photo.
+        XCTAssertFalse(MachineZone.found(in: ["P<CODMUKENDI<<GRACE<<<<<<<<<<<<<<<<<<<<<<<<"]))
+        XCTAssertFalse(MachineZone.found(in: ["VISAS", "Page 12", "ENTREE ARRIVAL 12/05/2025 KINSHASA NDJILI"]))
     }
 
     func testDifferenceHash() {
