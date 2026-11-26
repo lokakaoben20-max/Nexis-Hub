@@ -211,15 +211,18 @@ récupération demandée, annulée, acceptée.
 
 Revue par l'agent `security-reviewer` avant chaque commit côté serveur.
 
-## 11. Décisions attendues de Ben
+## 11. Décisions
 
-1. **Délai de 72 h après un accord donné par un téléphone connecté** : le
-   garder tel quel (proposé), ou le réduire à 24 h quand un ancien téléphone a
-   dit oui.
-2. **Récupération d'un prestataire par vidéo** : d'accord sur le principe,
+Prises par Ben le 2026-11-26 :
+
+- **Délai de 72 h gardé** même quand un ancien téléphone a dit oui.
+- **Récupération d'un client : 7 jours.**
+
+Encore attendues :
+
+1. **Récupération d'un prestataire par vidéo** : d'accord sur le principe,
    sous réserve du juriste ?
-3. **Délai de récupération d'un client** : 7 jours (proposé), ou un autre.
-4. **Envoi des notifications de l'app** (Firebase Cloud Messaging pour
+2. **Envoi des notifications de l'app** (Firebase Cloud Messaging pour
    Android, APNs pour iPhone, compte Apple Developer requis) : nécessaire pour
    que l'ancien téléphone soit prévenu sans ouvrir l'app.
 

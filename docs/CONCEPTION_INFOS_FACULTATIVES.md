@@ -1,7 +1,8 @@
 # Conception : informations facultatives du profil (e-mail et autres)
 
 **Statut : proposition, demandée par Ben le 2026-11-26 (11 h 15). Rien n'est
-codé.** La liste exacte des informations est à choisir par Ben (section 3).
+codé.** Ben a gardé toute la liste de la section 3 (11 h 40). Les diplômes
+seront aussi ceux d'une formation NexisHub, à concevoir à part (section 3).
 Le principe de collecter le moins possible est **à confirmer avec le
 juriste**.
 
@@ -50,7 +51,7 @@ C'est l'information la plus utile, et elle demande le plus de soin.
   Postmark…). Il faut un domaine à NexisHub (enregistrements SPF, DKIM et
   DMARC) pour que les messages n'arrivent pas en indésirables.
 
-## 3. Les autres informations proposées (à choisir par Ben)
+## 3. Les autres informations (toutes gardées par Ben)
 
 | Information | Pour qui | À quoi elle sert | Qui la voit |
 | --- | --- | --- | --- |
@@ -62,6 +63,12 @@ C'est l'information la plus utile, et elle demande le plus de soin.
 | Années d'expérience | Prestataire | Aider le client à choisir | Les clients |
 | Diplômes et certificats (photo) | Prestataire | Obtenir un badge après vérification par l'équipe | NexisHub ; le badge est visible par les clients |
 | Horaires habituels | Prestataire | Ne pas recevoir de demandes hors de ses heures | NexisHub (tri des demandes) |
+
+Les certificats pourront aussi venir d'une **formation NexisHub** que Ben veut
+créer : les prestataires s'y inscrivent, sont formés pendant une durée et
+obtiennent un certificat affiché sur leur profil. Ce certificat est donné par
+NexisHub lui-même, donc il n'a pas besoin d'être vérifié comme un diplôme
+extérieur. Projet à concevoir à part.
 
 Pas proposé, parce que rien ne s'en servirait : date de naissance, genre,
 profession d'un client, adresse du domicile d'un prestataire.
@@ -95,7 +102,8 @@ l'app propose d'ajouter un e-mail pour les reçus.
 
 ## 6. Décisions attendues de Ben
 
-1. Les informations à garder dans la liste de la section 3.
+1. ~~Les informations à garder dans la liste de la section 3.~~ Toutes
+   gardées (2026-11-26).
 2. Le service d'envoi d'e-mails, et le domaine de NexisHub.
 3. Montrer ou non la photo de profil du client au prestataire (proposé : oui,
    seulement pour une mission acceptée).
