@@ -876,7 +876,7 @@
   "becomePassportSub": "La page avec votre photo, la photo se prend toute seule",
   "becomePhotoPage": "Page photo",
   "scanPassportTitle": "La page photo du passeport",
-  "scanPassportHint": "Ouvrez le passeport à la page avec votre photo et posez-le à plat. Les deux lignes du bas doivent se voir. La photo se prend toute seule.",
+  "scanPassportHint": "Ouvrez-le à la page de votre photo, puis tournez-le sur le côté pour que cette page remplisse le cadre. La photo se prend toute seule.",
   "scanWrongPage": "Ce n'est pas la bonne page. Montrez la page avec votre photo et les deux lignes du bas.",
   "scanStartPassport": "Scanner la page photo",
   "becomeSelfie": "Vidéo de vous",

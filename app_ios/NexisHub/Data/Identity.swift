@@ -173,6 +173,49 @@ struct StableCardTracker {
     mutating func reset() { recent.removeAll() }
 }
 
+/// Passeport : la page n'a pas de bords nets (pli, couverture, film
+/// brillant), donc on ne cherche pas son contour. La photo est prise quand un
+/// visage reste immobile dans le cadre : tout de suite si la zone de lecture
+/// automatique est déjà lue, sinon après `patience` analyses. La photo, plus
+/// nette, est ensuite revérifiée (visage et zone de lecture).
+struct PassportTrigger {
+    var patience = 10
+    var tolerance = 0.04
+    private(set) var faces: [CGRect] = []
+
+    /// `face` : visage vu dans le cadre (coordonnées 0…1 du cadre), ou nil.
+    mutating func add(face: CGRect?, machineZone: Bool) -> Bool {
+        guard let face else { faces.removeAll(); return false }
+        if let last = faces.last, Self.distance(last, face) > tolerance { faces.removeAll() }
+        faces.append(face)
+        if machineZone && faces.count >= 2 { return true }
+        return faces.count >= patience
+    }
+
+    var isHolding: Bool { !faces.isEmpty }
+
+    mutating func reset() { faces.removeAll() }
+
+    static func distance(_ a: CGRect, _ b: CGRect) -> Double {
+        Double(max(abs(a.midX - b.midX), abs(a.midY - b.midY), abs(a.width - b.width)))
+    }
+}
+
+/// Le cadre affiché à l'écran, rapporté à l'image de la caméra (0…1, origine
+/// en bas à gauche, comme Vision et Core Image). L'image remplit l'écran
+/// (aspect fill) : c'est l'inverse de `screenPoint`.
+func imageRegion(of guide: CGRect, frame: CGSize, in view: CGSize) -> CGRect? {
+    guard frame.width > 0, frame.height > 0, view.width > 0, view.height > 0 else { return nil }
+    let scale = max(view.width / frame.width, view.height / frame.height)
+    let shown = CGSize(width: frame.width * scale, height: frame.height * scale)
+    let left = (guide.minX + (shown.width - view.width) / 2) / shown.width
+    let right = (guide.maxX + (shown.width - view.width) / 2) / shown.width
+    let top = (guide.minY + (shown.height - view.height) / 2) / shown.height
+    let bottom = (guide.maxY + (shown.height - view.height) / 2) / shown.height
+    let region = CGRect(x: left, y: 1 - bottom, width: right - left, height: bottom - top)
+    return region.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+}
+
 // MARK: - Vidéo guidée du visage
 
 /// Ce que l'analyse voit sur une image de la caméra avant : image droite,

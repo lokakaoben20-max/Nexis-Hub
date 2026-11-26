@@ -466,7 +466,7 @@
   "becomePassportSub": "The page with your photo, taken automatically",
   "becomePhotoPage": "Photo page",
   "scanPassportTitle": "Your passport photo page",
-  "scanPassportHint": "Open the passport at the page with your photo and lay it flat. The two lines at the bottom must be visible. The photo is taken automatically.",
+  "scanPassportHint": "Open it at the page with your photo, then turn it on its side so that this page fills the frame. The photo is taken automatically.",
   "scanWrongPage": "That's not the right page. Show the page with your photo and the two lines at the bottom.",
   "scanStartPassport": "Scan the photo page",
   "becomeSelfie": "Video of you",

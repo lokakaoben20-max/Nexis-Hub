@@ -202,8 +202,19 @@ l'équipe NexisHub qui vérifie la personne (exception notée dans `AGENTS.md`).
   automatique (deux lignes de 44 signes, la première commence par `P`,
   `MachineZone`, testé), lue sur le téléphone (`VNRecognizeTextRequest` sur
   iOS, ML Kit Text Recognition sur Android). Le texte lu n'est ni gardé ni
-  envoyé. Sinon : « Ce n'est pas la bonne page… ». Cadre au format de la
-  page (125 × 88 mm) au lieu de la carte.
+  envoyé. Sinon : « Ce n'est pas la bonne page… ».
+- **Passeport sur iPhone, revu après l'essai de Ben sur son iPhone 12**
+  (2026-11-26, 21 h) : la photo ne se prenait jamais et le cadre était aussi
+  petit que celui d'une carte. La page d'un passeport n'a pas de bords nets
+  (pli, couverture, film brillant), donc son contour n'est plus cherché.
+  Le cadre est la page **tenue sur le côté** (88 × 125), aussi grand que
+  l'écran le permet, avec le contour de la page dessiné en transparence.
+  La photo est prise quand un visage reste immobile dans le cadre
+  (`PassportTrigger`, testé) : tout de suite si la zone de lecture est déjà
+  lue, sinon après environ 2 secondes. La photo en pleine résolution est
+  recadrée sur le cadre (`imageRegion`, testé), mise à l'endroit d'après le
+  visage, puis revérifiée (visage et zone de lecture). Android garde le
+  scanner ML Kit (non essayé par Ben pour le passeport).
 - **Recto ou verso** (`CardCheck`, testé des deux côtés) : le recto porte la
   photo de la personne, donc un visage doit être vu sur la carte (Vision ou
   ML Kit, dans les quatre sens). Sinon : « C'est le verso. Montrez d'abord le

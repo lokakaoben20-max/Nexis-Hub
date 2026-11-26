@@ -208,6 +208,10 @@ extension CardSide {
     /// Format de la pièce : carte ID-1 (85,6 × 54 mm) ou page de passeport
     /// ID-3 (125 × 88 mm).
     var ratio: CGFloat { self == .passportPage ? 125 / 88 : 1.586 }
+    /// Format du cadre à l'écran : la page du passeport est tenue sur le
+    /// côté, pour remplir l'écran (elle est plus grande qu'une carte et sa
+    /// zone de lecture doit être nette).
+    var guideRatio: CGFloat { self == .passportPage ? 88 / 125 : ratio }
 }
 
 private struct SectionLine: View {
@@ -390,10 +394,11 @@ struct CardScannerView: View {
     let onFinish: ([CardSide: CardShot]) -> Void
     @State private var scanner = CardScanner()
     @State private var simulated = false
+    @State private var viewSize: CGSize = .zero
 
     var body: some View {
         GeometryReader { geometry in
-            let guide = Self.guideRect(in: geometry.size, ratio: scanner.side.ratio)
+            let guide = Self.guideRect(in: geometry.size, ratio: scanner.side.guideRatio)
             ZStack {
                 Color.black
                 if simulated || demo != nil {
@@ -402,6 +407,17 @@ struct CardScannerView: View {
                                      ratio: scanner.side.ratio, guide: guide)
                 } else if scanner.phase != .denied && scanner.phase != .missing {
                     CameraPreview(session: scanner.engine.session)
+                }
+                if scanner.side == .passportPage, !simulated, demo == nil,
+                   scanner.phase == .searching || scanner.phase == .holding {
+                    // Contour de la page, tournée comme il faut la tenir.
+                    SpecimenCard(side: .passportPage)
+                        .frame(width: guide.height * 0.9, height: guide.width * 0.9)
+                        .rotationEffect(.degrees(90))
+                        .opacity(0.16)
+                        .position(x: guide.midX, y: guide.midY)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
                 GuideMask(guide: guide)
                     .fill(Color.black.opacity(0.55), style: FillStyle(eoFill: true))
@@ -430,17 +446,35 @@ struct CardScannerView: View {
         .statusBarHidden()
         .task { await start() }
         .onDisappear { scanner.stop() }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+            viewSize = size
+            pushGuide()
+        }
+        .onChange(of: scanner.side) { _, _ in pushGuide() }
         .onChange(of: scanner.finished) { _, finished in
             if finished { onFinish(scanner.shots); dismiss() }
         }
         .onChange(of: scanner.phase) { _, _ in announce() }
     }
 
-    /// Le cadre de la pièce (carte ID-1 ou page de passeport), au tiers haut de l'écran.
+    /// Le cadre de la pièce : carte ID-1 au tiers haut de l'écran ; page de
+    /// passeport tenue sur le côté, aussi grande que l'écran le permet sous
+    /// le titre et au-dessus du message.
     static func guideRect(in size: CGSize, ratio: CGFloat) -> CGRect {
+        if ratio < 1 {
+            let top: CGFloat = 214
+            let width = min(size.width * 0.86, 520, max(size.height - top - 150, 240) * ratio)
+            return CGRect(x: (size.width - width) / 2, y: top, width: width, height: width / ratio)
+        }
         let width = min(size.width * 0.86, 520)
         let height = width / ratio
         return CGRect(x: (size.width - width) / 2, y: size.height * 0.42 - height / 2, width: width, height: height)
+    }
+
+    /// Le moteur cherche le passeport dans le cadre affiché.
+    private func pushGuide() {
+        guard viewSize != .zero else { return }
+        scanner.engine.setGuide(Self.guideRect(in: viewSize, ratio: scanner.side.guideRatio), in: viewSize)
     }
 
     private var guideColor: Color {
@@ -922,9 +956,12 @@ private struct DemoCardBackdrop: View {
     var body: some View {
         ZStack {
             LinearGradient(colors: [Color(hex: 0x2A2F38), Color(hex: 0x14171C)], startPoint: .top, endPoint: .bottom)
+            // La page du passeport est tenue sur le côté, comme à l'écran.
+            let turned = side == .passportPage
             SpecimenCard(side: side, ratio: ratio)
-                .frame(width: guide.width * 0.94, height: guide.height * 0.94)
-                .rotationEffect(.degrees(-2))
+                .frame(width: (turned ? guide.height : guide.width) * 0.94,
+                       height: (turned ? guide.width : guide.height) * 0.94)
+                .rotationEffect(.degrees(turned ? 88 : -2))
                 .shadow(color: .black.opacity(0.5), radius: 18, y: 10)
                 .position(x: guide.midX, y: guide.midY)
         }

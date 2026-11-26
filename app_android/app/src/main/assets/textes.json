@@ -1677,9 +1677,9 @@
   "ln": "Kotambola lisusu te…"
  },
  "scanPassportHint": {
-  "en": "Open the passport at the page with your photo and lay it flat. The two lines at the bottom must be visible. The photo is taken automatically.",
-  "fr": "Ouvrez le passeport à la page avec votre photo et posez-le à plat. Les deux lignes du bas doivent se voir. La photo se prend toute seule.",
-  "ln": "Fungolá passeport na lokasa oyo ezali na foto na yo mpe tiá yango patatalu. Milongo mibale ya nse esengeli komonana. Foto ekozwama yango moko."
+  "en": "Open it at the page with your photo, then turn it on its side so that this page fills the frame. The photo is taken automatically.",
+  "fr": "Ouvrez-le à la page de votre photo, puis tournez-le sur le côté pour que cette page remplisse le cadre. La photo se prend toute seule.",
+  "ln": "Fungolá yango na lokasa ya foto na yo, sima balolá yango na ngámbo mpo lokasa yango etonda na kati ya cadre. Foto ekozwama yango moko."
  },
  "scanPassportTitle": {
   "en": "Your passport photo page",

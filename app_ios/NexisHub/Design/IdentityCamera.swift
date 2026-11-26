@@ -144,6 +144,20 @@ enum CardImages {
         return (card.extent.height > card.extent.width ? card.oriented(.right) : card, false)
     }
 
+    /// Cherche un visage dans les quatre sens (la page d'un passeport est
+    /// tenue sur le côté). Renvoie le sens trouvé et le cadre du visage.
+    static func face(in image: CIImage) -> (orientation: CGImagePropertyOrientation, box: CGRect)? {
+        let placed = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
+        for orientation in [CGImagePropertyOrientation.up, .right, .left, .down] {
+            let request = VNDetectFaceRectanglesRequest()
+            try? VNImageRequestHandler(ciImage: placed, orientation: orientation).perform([request])
+            if let face = request.results?.first, face.boundingBox.width * face.boundingBox.height >= 0.01 {
+                return (orientation, face.boundingBox)
+            }
+        }
+        return nil
+    }
+
     /// Lit les lignes de texte de la page, sur le téléphone, pour y chercher la
     /// zone de lecture automatique d'un passeport. Le texte n'est pas gardé.
     static func hasMachineZone(_ image: CIImage) -> Bool {
@@ -205,8 +219,15 @@ final class CardEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
     private let videoOutput = AVCaptureVideoDataOutput()
     private let photoOutput = AVCapturePhotoOutput()
     private var tracker = StableCardTracker()
+    private var passport = PassportTrigger()
     private var armed = false
     private var readsMachineZone = false
+    /// Le cadre affiché et la taille de l'écran : le passeport est cherché
+    /// dans ce cadre, et la photo y est recadrée.
+    private var guide: CGRect = .zero
+    private var viewSize: CGSize = .zero
+    private var region: CGRect?
+    private var passportFrames = 0
     private var busy = false
     private var lastQuad: CardQuad?
     private var frameCount = 0
@@ -246,13 +267,23 @@ final class CardEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
         }
     }
 
-    /// Autorise (ou non) la prochaine photo automatique.
+    /// Autorise (ou non) la prochaine photo automatique. `machineZone` : page
+    /// de passeport (visage et zone de lecture automatique dans le cadre).
     func arm(_ value: Bool, machineZone: Bool = false) {
         queue.async { [self] in
             armed = value
             readsMachineZone = machineZone
             busy = false
             tracker.reset()
+            passport.reset()
+        }
+    }
+
+    /// Le cadre de la pièce à l'écran (points), et la taille de l'écran.
+    func setGuide(_ guide: CGRect, in view: CGSize) {
+        queue.async { [self] in
+            self.guide = guide
+            viewSize = view
         }
     }
 
@@ -261,6 +292,10 @@ final class CardEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
         frameCount += 1
         guard !busy, frameCount % 2 == 0, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let size = CGSize(width: CVPixelBufferGetWidth(pixels), height: CVPixelBufferGetHeight(pixels))
+        if readsMachineZone {
+            analyzePassport(pixels, size: size)
+            return
+        }
         let request = CardImages.rectangleRequest()
         try? VNImageRequestHandler(cvPixelBuffer: pixels, orientation: .up).perform([request])
         let quad = request.results?.first.map { CardQuad($0) }
@@ -275,6 +310,30 @@ final class CardEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
         onFrame?(quad, size, armed && tracker.isHolding)
     }
 
+    /// Passeport : visage cherché dans le cadre (environ 5 fois par seconde),
+    /// zone de lecture automatique une fois sur deux. Pas de contour cherché.
+    private func analyzePassport(_ pixels: CVPixelBuffer, size: CGSize) {
+        passportFrames += 1
+        guard passportFrames % 3 == 0 else { return }
+        guard let found = imageRegion(of: guide, frame: size, in: viewSize), !found.isNull, found.width > 0.1 else {
+            onFrame?(nil, size, false)
+            return
+        }
+        region = found
+        let crop = CIImage(cvPixelBuffer: pixels).cropped(to: CGRect(
+            x: found.minX * size.width, y: found.minY * size.height,
+            width: found.width * size.width, height: found.height * size.height))
+        let face = CardImages.face(in: crop)
+        let zone = face.map { passportFrames % 6 == 0 && CardImages.hasMachineZone(crop.oriented($0.orientation)) } ?? false
+        if armed, passport.add(face: face?.box, machineZone: zone) {
+            armed = false
+            busy = true
+            photoOutput.capturePhoto(with: AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg]),
+                                     delegate: self)
+        }
+        onFrame?(nil, size, armed && passport.isHolding)
+    }
+
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto,
                      error: Error?) {
         let data = photo.fileDataRepresentation()
@@ -283,6 +342,19 @@ final class CardEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
 
     private func process(_ data: Data?) -> CardShot? {
         guard let data, let image = CIImage(data: data, options: [.applyOrientationProperty: true]) else { return nil }
+        if readsMachineZone, let region {
+            // Passeport : la photo est recadrée sur le cadre, mise à
+            // l'endroit d'après le visage, puis revérifiée en pleine
+            // résolution.
+            let extent = image.extent
+            let page = image.cropped(to: CGRect(
+                x: extent.minX + region.minX * extent.width, y: extent.minY + region.minY * extent.height,
+                width: region.width * extent.width, height: region.height * extent.height))
+            let placed = page.transformed(by: CGAffineTransform(translationX: -page.extent.minX, y: -page.extent.minY))
+            let card = CardImages.upright(placed)
+            return CardImages.finish(card.image, faceFound: card.faceFound,
+                                     machineZone: CardImages.hasMachineZone(card.image))
+        }
         // La carte est cherchée de nouveau sur la photo, plus nette ; sinon
         // le cadre vu juste avant sert.
         let request = CardImages.rectangleRequest(minimumSize: 0.2)

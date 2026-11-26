@@ -621,6 +621,48 @@ final class PortfolioTests: XCTestCase {
 }
 
 final class IdentityGuideTests: XCTestCase {
+    func testPassportTriggerWaitsForAStillFace() {
+        var trigger = PassportTrigger()
+        let face = CGRect(x: 0.4, y: 0.5, width: 0.2, height: 0.25)
+        // Sans visage : rien.
+        XCTAssertFalse(trigger.add(face: nil, machineZone: true))
+        // Visage immobile : photo après `patience` analyses.
+        for _ in 1..<trigger.patience { XCTAssertFalse(trigger.add(face: face, machineZone: false)) }
+        XCTAssertTrue(trigger.add(face: face, machineZone: false))
+        // Zone de lecture déjà lue : dès la deuxième analyse.
+        trigger.reset()
+        XCTAssertFalse(trigger.add(face: face, machineZone: true))
+        XCTAssertTrue(trigger.add(face: face, machineZone: true))
+        // Le passeport bouge : on recommence.
+        trigger.reset()
+        _ = trigger.add(face: face, machineZone: false)
+        XCTAssertFalse(trigger.add(face: face.offsetBy(dx: 0.2, dy: 0), machineZone: true))
+        XCTAssertEqual(trigger.faces.count, 1)
+        // Visage perdu : on recommence aussi.
+        XCTAssertFalse(trigger.add(face: nil, machineZone: false))
+        XCTAssertFalse(trigger.isHolding)
+    }
+
+    func testGuideIsMappedBackToTheCameraImage() {
+        // Image 3:4 (1080 × 1440) qui remplit un écran 390 × 844 : coupée sur les côtés.
+        let frame = CGSize(width: 1080, height: 1440)
+        let view = CGSize(width: 390, height: 844)
+        let whole = imageRegion(of: CGRect(origin: .zero, size: view), frame: frame, in: view)!
+        XCTAssertEqual(whole.minY, 0, accuracy: 0.001)
+        XCTAssertEqual(whole.height, 1, accuracy: 0.001)
+        XCTAssertEqual(whole.midX, 0.5, accuracy: 0.001)
+        XCTAssertLessThan(whole.width, 1)
+        // Le haut de l'écran est le haut de l'image (y de Vision vers le haut).
+        let top = imageRegion(of: CGRect(x: 0, y: 0, width: 390, height: 84.4), frame: frame, in: view)!
+        XCTAssertEqual(top.maxY, 1, accuracy: 0.001)
+        XCTAssertEqual(top.height, 0.1, accuracy: 0.001)
+        // Aller-retour avec screenPoint.
+        let corner = screenPoint(CGPoint(x: whole.minX, y: whole.maxY), frame: frame, in: view)
+        XCTAssertEqual(corner.x, 0, accuracy: 0.01)
+        XCTAssertEqual(corner.y, 0, accuracy: 0.01)
+        XCTAssertNil(imageRegion(of: .zero, frame: .zero, in: view))
+    }
+
     private func quad(_ dx: CGFloat = 0) -> CardQuad {
         CardQuad(topLeft: CGPoint(x: 0.1 + dx, y: 0.7), topRight: CGPoint(x: 0.9 + dx, y: 0.7),
                  bottomRight: CGPoint(x: 0.9 + dx, y: 0.2), bottomLeft: CGPoint(x: 0.1 + dx, y: 0.2))
