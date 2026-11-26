@@ -97,6 +97,16 @@ class Backend:
     async def set_language(self, bsuid: str, key: str, language: str) -> dict:
         return await self._call("PATCH", "/api/me/language", bsuid, body={"language": language}, key=key)
 
+    async def services(self, bsuid: str) -> dict:
+        """Catalogue actif et communes servies, dans l'ordre d'affichage."""
+        return await self._call("GET", "/api/services", bsuid)
+
+    async def create_mission(self, bsuid: str, key: str, request: dict) -> dict:
+        """Mission du client qui écrit. `request["creation_key"]` est la même
+        à chaque essai de la même demande : un double appui ou un message
+        renvoyé ne crée qu'une mission."""
+        return await self._call("POST", "/api/bot/missions", bsuid, body=request, key=key)
+
 
 def _is_refusal(answer) -> bool:
     """Un refus métier peut porter un code 5xx (ex. 503 `terms_unavailable`) :

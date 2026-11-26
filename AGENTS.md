@@ -12,7 +12,7 @@ a été fusionné ici).
 - Les migrations du backend sont gérées par Alembic. Toujours exécuter `python -m alembic upgrade head` avant de lancer le backend.
 - Les tâches planifiées n'utilisent plus Celery : `backend/app/taches.py` porte le calendrier, lancé localement avec `python -m backend.app.taches planificateur`.
 - Les flows Telegram sont extraits dans `telegram_bot/` et chargés dans le même processus que `main.py`.
-- `whatsapp_bot/` (étape 4 du plan WhatsApp) est un processus séparé (`python -m whatsapp_bot`, rôle Docker `whatsapp`) : webhook Meta signé, chaque message traité une fois (Redis + idempotence du backend), inscription client, menu, refus prestataire. Il ne parle au backend que par son API ; parcours mission, devis, paiement et suivi : étapes 5 à 7. Tests : `whatsapp_bot/tests/` avec le faux serveur Meta (`whatsapp_bot/fake_meta.py`).
+- `whatsapp_bot/` (étape 4 du plan WhatsApp) est un processus séparé (`python -m whatsapp_bot`, rôle Docker `whatsapp`) : webhook Meta signé, chaque message traité une fois (Redis + idempotence du backend), inscription client, menu, refus prestataire, création d'une mission pas à pas (`whatsapp_bot/demande.py`, étape 5). Il ne parle au backend que par son API ; devis, paiement et suivi : étapes 6 et 7. Tests : `whatsapp_bot/tests/` avec le faux serveur Meta (`whatsapp_bot/fake_meta.py`).
 
 ### Démarrage local — état du code au 2026-11-20
 
@@ -605,7 +605,7 @@ La référence produit reste [`docs/ARCHITECTURE_WHATSAPP.md`](docs/ARCHITECTURE
 
 - Les comptes Nexis, les profils par compte, les wallets par compte et les rôles admin persistés dans `admin_roles` sont dans le backend PostgreSQL.
 - Le backend résout l'acteur depuis son canal et son identifiant. La clé de service identifie le canal ; les routes WhatsApp sont ouvertes explicitement et les écritures multicanales sont protégées par idempotence.
-- Les routes client WhatsApp sont présentes côté backend, dont `POST /api/whatsapp/client`. Le service `whatsapp_bot/` (étape 4) reçoit le webhook Meta signé et gère inscription, menu et refus prestataire ; mission, devis, paiement et suivi restent à construire (étapes 5 à 7).
+- Les routes client WhatsApp sont présentes côté backend, dont `POST /api/whatsapp/client`. Le service `whatsapp_bot/` (étape 4) reçoit le webhook Meta signé et gère inscription, menu, refus prestataire et création de mission (étape 5) ; devis, paiement et suivi restent à construire (étapes 6 et 7). Une mission d'un client WhatsApp n'a pas de `telegram_id` : le client d'une mission est toujours `client_account_id`.
 - Les tâches périodiques tournent via `python -m backend.app.taches planificateur`; Celery n'est plus utilisé.
 - Notifications : tout message à une autre personne que celle qui agit passe par la table `notifications` (`backend/app/notifications.py`), écrite avec l'événement par `backend/app/evenements.py`. Ne jamais envoyer directement depuis le bot ou le backend : un test l'interdit. Expéditeur Telegram : `backend/app/notify.py` ; expéditeur WhatsApp et statuts Meta : étape 8.
 - Le code ne lit pas `NEXIS_PUBLIC_URL` : `MINI_APP_URL` et `WEBHOOK_URL` restent deux réglages distincts. Le tunnel Cloudflare de test `nexishub.dpdns.org` n'est pas encore exposé comme configuration unique.
