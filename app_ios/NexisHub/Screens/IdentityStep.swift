@@ -549,7 +549,8 @@ struct CardScannerView: View {
             }
             .padding(.top, 54)
             VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(.title(22)).foregroundStyle(.white).accessibilityAddTraits(.isHeader)
+                Text(title).font(.title(22)).foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.75)
+                    .accessibilityAddTraits(.isHeader)
                 Text(hint).font(.body(15)).foregroundStyle(.white.opacity(0.82)).lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
