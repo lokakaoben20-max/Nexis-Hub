@@ -143,7 +143,7 @@ def test_a_whatsapp_client_never_sees_the_telegram_ids_of_providers(api, backend
     register(api)
     body = create_on_whatsapp(api, request_body()).json()
     assert "alerted_provider_telegram_ids" not in body
-    assert body["mission"]["telegram_id"] is None
+    assert "telegram_id" not in body["mission"] and "provider_telegram_id" not in body["mission"]
     assert body["alerted_provider_count"] == 1
     assert str(PROVIDER) not in repr(body)
 
