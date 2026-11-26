@@ -332,3 +332,103 @@ final class AccountTests: XCTestCase {
         XCTAssertEqual(documents.map(\.key), [.cgu, .providerTerms])
     }
 }
+
+final class CodeRulesTests: XCTestCase {
+    func testWeakCodesAreRefused() {
+        for code in ["000000", "111111", "121212", "123456", "654321", "123123", "12345", "12a456", "1234567"] {
+            XCTAssertTrue(CodeRules.isWeak(code), code)
+        }
+        for code in ["482916", "190573", "112233", "250489"] {
+            XCTAssertFalse(CodeRules.isWeak(code), code)
+        }
+    }
+
+    func testLocksAfterOneMinuteAway() {
+        let left = Date(timeIntervalSince1970: 1_000)
+        XCTAssertFalse(CodeRules.shouldLock(leftAt: nil, now: left))
+        XCTAssertFalse(CodeRules.shouldLock(leftAt: left, now: left.addingTimeInterval(59)))
+        XCTAssertTrue(CodeRules.shouldLock(leftAt: left, now: left.addingTimeInterval(60)))
+    }
+
+    func testDigestDependsOnSalt() {
+        let a = CodeRules.digest("482916", salt: Data(repeating: 1, count: 16))
+        let b = CodeRules.digest("482916", salt: Data(repeating: 2, count: 16))
+        XCTAssertNotEqual(a, b)
+        XCTAssertTrue(CodeRules.same(a, CodeRules.digest("482916", salt: Data(repeating: 1, count: 16))))
+    }
+}
+
+@MainActor
+final class AppSecurityTests: XCTestCase {
+    func testCodeIsStoredOnlyAsSaltedDigest() throws {
+        let vault = MemoryCodeVault()
+        let security = AppSecurity(vault: vault)
+        security.setCode("482916")
+        let record = try XCTUnwrap(vault.load())
+        XCTAssertEqual(record.salt.count, 16)
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(record), as: UTF8.self).contains("482916"))
+        XCTAssertEqual(security.check("482916"), .ok)
+    }
+
+    func testFiveWrongCodesBlockEvenAfterRestart() {
+        let vault = MemoryCodeVault()
+        let security = AppSecurity(vault: vault)
+        security.setCode("482916")
+        XCTAssertEqual(security.check("111222"), .wrong(left: 4))
+        XCTAssertEqual(security.check("482916"), .ok)
+        for left in [4, 3, 2, 1] { XCTAssertEqual(security.check("111222"), .wrong(left: left)) }
+        // Une nouvelle ouverture de l'app relit le compteur.
+        let reopened = AppSecurity(vault: vault)
+        XCTAssertEqual(reopened.check("111222"), .blocked)
+        XCTAssertEqual(reopened.check("482916"), .blocked)
+    }
+
+    func testSignOutErasesCodeAndCancelsPendingPayment() async {
+        let app = AppModel(repository: DemoRepository(), security: AppSecurity(vault: MemoryCodeVault()), language: "fr")
+        app.signIn()
+        XCTAssertTrue(app.needsProtection)
+        app.security.setCode("482916")
+        XCTAssertFalse(app.needsProtection)
+        async let confirmed = app.confirmMoneyOut("Payer 25 000 FC à Prisca")
+        for _ in 0..<50 where app.gate == nil { await Task.yield() }
+        XCTAssertNotNil(app.gate)
+        app.signOut()
+        let result = await confirmed
+        XCTAssertFalse(result)
+        XCTAssertFalse(app.security.hasCode)
+        XCTAssertNil(app.gate)
+    }
+
+    func testMoneyOutWaitsForConfirmation() async {
+        let app = AppModel(repository: DemoRepository(), security: AppSecurity(vault: MemoryCodeVault()), language: "fr")
+        app.signIn()
+        app.security.setCode("482916")
+        async let confirmed = app.confirmMoneyOut("Verser l'argent à Nadia")
+        for _ in 0..<50 where app.gate == nil { await Task.yield() }
+        app.finishGate(true)
+        let result = await confirmed
+        XCTAssertTrue(result)
+    }
+
+    func testLockOnlyAfterAMinuteInBackground() {
+        let app = AppModel(repository: DemoRepository(), security: AppSecurity(vault: MemoryCodeVault()), language: "fr")
+        app.signIn()
+        app.security.setCode("482916")
+        let start = Date(timeIntervalSince1970: 5_000)
+        app.left(at: start)
+        XCTAssertTrue(app.covered)
+        app.came(back: start.addingTimeInterval(20))
+        XCTAssertFalse(app.covered)
+        XCTAssertFalse(app.locked)
+        app.left(at: start)
+        app.came(back: start.addingTimeInterval(90))
+        XCTAssertTrue(app.locked)
+    }
+
+    func testNoMoneyOutWithoutCode() async {
+        let app = AppModel(repository: DemoRepository(), security: AppSecurity(vault: MemoryCodeVault()), language: "fr")
+        app.signIn()
+        let result = await app.confirmMoneyOut("Payer")
+        XCTAssertFalse(result)
+    }
+}

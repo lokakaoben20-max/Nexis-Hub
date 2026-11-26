@@ -194,6 +194,7 @@ struct ProfileView: View {
                     }
                     row("bell.badge", app.t("notifications"), app.t("notificationsSub"), .notificationSettings)
                     row("iphone", app.t("myDevices"), app.plural("devicesCount", count: devicesCount), .devices)
+                    row("lock.shield", app.t("securityRow"), app.t("securityRowSub"), .security)
                     row("questionmark.bubble", app.t("helpDisputes"), app.t("helpDisputesSub"), .help)
                 }
                 if let profile, profile.providerStatus == nil {

@@ -837,5 +837,101 @@
         "type": "String"
       }
     }
-  }
+  },
+  "securityRow": "Code et sécurité",
+  "securityRowSub": "Pour ouvrir l'app et payer",
+  "protectTitle": "Protégez votre compte",
+  "protectIntro": "Créez un code NexisHub de 6 chiffres. Il vous sera demandé pour ouvrir l'app et avant chaque sortie d'argent.",
+  "protectAdvice": "N'utilisez pas votre code secret Mobile Money ni votre date de naissance. Ne le donnez à personne, même pas à NexisHub.",
+  "protectConfirmTitle": "Confirmez votre code",
+  "protectConfirmIntro": "Tapez-le une deuxième fois.",
+  "protectMismatch": "Les deux codes ne sont pas pareils. Recommencez.",
+  "protectWeak": "Ce code est trop facile à deviner. Choisissez-en un autre.",
+  "protectBioTitle": "Utiliser {method} ?",
+  "@protectBioTitle": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "protectBioText": "Ouvrez l'app et validez vos paiements sans taper votre code. C'est votre téléphone qui vous reconnaît : NexisHub ne voit jamais votre visage ni votre empreinte.",
+  "protectBioOn": "Activer {method}",
+  "@protectBioOn": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "protectBioLater": "Plus tard",
+  "protectDone": "Votre compte est protégé.",
+  "bioFingerprint": "l'empreinte",
+  "lockPrompt": "Tapez votre code NexisHub",
+  "lockWrong": "{count, plural, =1{Code incorrect. Encore 1 essai.} other{Code incorrect. Encore {count} essais.}}",
+  "@lockWrong": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "lockForgot": "Code oublié ?",
+  "lockForgotText": "Vous allez être déconnecté de ce téléphone. Reconnectez-vous avec votre numéro, puis créez un nouveau code.",
+  "lockForgotAction": "Me déconnecter",
+  "lockBlockedTitle": "Trop d'essais",
+  "lockBlockedText": "Par sécurité, vous êtes déconnecté de ce téléphone. Reconnectez-vous avec un code reçu par SMS, WhatsApp ou Telegram.",
+  "lockUseBio": "Utiliser {method}",
+  "@lockUseBio": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "lockUseCode": "Taper mon code",
+  "lockBioChanged": "{method} a changé sur ce téléphone. Tapez votre code ; vous pourrez le réactiver dans Code et sécurité.",
+  "@lockBioChanged": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "lockDelete": "Effacer",
+  "guardTitle": "Confirmez avec votre code",
+  "guardPay": "Payer {amount} à {name}",
+  "@guardPay": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      },
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "guardRelease": "Verser l'argent à {name}",
+  "@guardRelease": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "securityBioHint": "Pour ouvrir l'app et valider vos paiements. Votre code reste demandé si {method} ne vous reconnaît pas.",
+  "@securityBioHint": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "securityNoBio": "Ce téléphone ne peut pas vous reconnaître par le visage ou l'empreinte : votre code sert à tout.",
+  "securityChangeCode": "Changer mon code",
+  "securityCurrentCode": "Tapez votre code actuel",
+  "securityNewCode": "Nouveau code",
+  "securityCodeChanged": "Votre code est changé.",
+  "securityLockNote": "L'app se verrouille quand elle reste fermée plus d'une minute.",
+  "cancel": "Annuler"
 }

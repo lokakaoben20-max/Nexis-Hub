@@ -122,6 +122,38 @@ photo, conditions des prestataires ; le profil reste « en vérification »
 jusqu'à la décision de l'équipe). Les photos de vérification restent en
 mémoire, réduites ; dans l'aperçu elles ne partent nulle part.
 
+Code NexisHub, Face ID et empreinte (2026-11-26, demandé par Ben) :
+
+- juste après l'inscription, et après chaque connexion sur un téléphone,
+  l'écran « Protégez votre compte » fait créer un code de 6 chiffres (tapé
+  deux fois ; 111111, 123456, 121212 ou 123123 sont refusés), puis propose
+  Face ID ou Touch ID (iOS) ou l'empreinte (Android) ;
+- le code est demandé quand l'app revient après au moins une minute hors de
+  l'écran, et **avant chaque sortie d'argent** : « Payer » et « Oui, c'est
+  bien fait » (l'argent est versé au prestataire). Annuler n'envoie rien ;
+- 5 codes faux de suite : le téléphone est déconnecté du compte, il faut se
+  reconnecter avec un code reçu par SMS, WhatsApp ou Telegram. Le compteur
+  est gardé avec le code, fermer l'app ne le remet pas à zéro. « Code
+  oublié ? » déconnecte de la même façon ;
+- Face ID et l'empreinte : c'est le téléphone qui reconnaît la personne,
+  l'app ne reçoit qu'un oui ou un non, et rien ne sort du téléphone. Si un
+  visage ou une empreinte est ajouté au téléphone après l'activation, Face ID
+  ou l'empreinte est coupé et le code est redemandé (iOS : état de
+  `LAContext.domainState` ; Android : clé du Keystore invalidée par tout
+  ajout d'empreinte, capteurs de classe forte seulement) ;
+- le code n'est jamais gardé : seulement son empreinte salée (iOS :
+  PBKDF2-SHA256 dans le trousseau, lisible seulement sur ce téléphone ;
+  Android : HMAC fait par une clé du Keystore qui ne sort pas du téléphone,
+  fichier exclu des sauvegardes). Il part avec la session à la déconnexion ;
+- quand l'app passe en arrière-plan, un cache bleu cache l'écran (et sur
+  Android 13 et plus, la liste des apps ne montre pas d'image) ;
+- Profil → « Code et sécurité » : Face ID ou l'empreinte, changer de code
+  (l'actuel d'abord).
+
+Reste à faire côté serveur : relier la clé du téléphone (`app_sessions.py`)
+à Face ID ou à l'empreinte, pour que le serveur sache qu'une demande
+d'argent a été validée par la personne.
+
 Restent « Bientôt dans l'app » : la messagerie dans l'app (choix de Ben :
 pas de numéro affiché ; elle servira à « Appeler », « Écrire » et « Écrire à
 NexisHub »), photos d'une mission, ajouter un numéro Mobile Money, « Je n'ai
@@ -139,7 +171,8 @@ Les textes des écrans du profil ont été ajoutés aux `.arb` (puis copiés par
 `outils/textes_apps_natives.py`). **Lingala à faire relire** par une
 personne de Kinshasa : `nextStep`, et les clés qui commencent par `info`,
 `devices`, `notif`, `help`, `faq`, `legal` (sauf `legalTerms`,
-`legalPrivacy`), `become` et `providerPending`. Les fichiers
+`legalPrivacy`), `become` et `providerPending`, puis `cancel`, `bioFingerprint`
+et les clés qui commencent par `protect`, `lock`, `guard` et `security`. Les fichiers
 `app_localizations*.dart` ne contiennent pas encore ces clés : Flutter les
 régénère à la compilation (`generate: true`).
 

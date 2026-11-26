@@ -219,6 +219,11 @@
   "fr": "Le mieux noté",
   "ln": "Oyo balingi mingi"
  },
+ "bioFingerprint": {
+  "en": "fingerprint",
+  "fr": "l'empreinte",
+  "ln": "empreinte"
+ },
  "blockedDaysLeft": {
   "en": {
    "=1": "On hold (dispute) · 1 more day",
@@ -257,6 +262,11 @@
   "en": "Call",
   "fr": "Appeler",
   "ln": "Kobenga"
+ },
+ "cancel": {
+  "en": "Cancel",
+  "fr": "Annuler",
+  "ln": "Kotika"
  },
  "cantFindHint": {
   "en": "Describe your need in your own words, we pass it on to the team.",
@@ -620,6 +630,21 @@
   "fr": "Pour {name}",
   "ln": "Mpo na {name}"
  },
+ "guardPay": {
+  "en": "Pay {amount} to {name}",
+  "fr": "Payer {amount} à {name}",
+  "ln": "Kofuta {amount} na {name}"
+ },
+ "guardRelease": {
+  "en": "Release the money to {name}",
+  "fr": "Verser l'argent à {name}",
+  "ln": "Kopesa {name} mbongo"
+ },
+ "guardTitle": {
+  "en": "Confirm with your code",
+  "fr": "Confirmez avec votre code",
+  "ln": "Ndimisá na code na yo"
+ },
  "haveAccount": {
   "en": "I already have an account",
   "fr": "J'ai déjà un compte",
@@ -804,6 +829,70 @@
   "en": "To accept",
   "fr": "À accepter",
   "ln": "Esengeli kondima"
+ },
+ "lockBioChanged": {
+  "en": "{method} has changed on this phone. Enter your code; you can turn it back on in Code and security.",
+  "fr": "{method} a changé sur ce téléphone. Tapez votre code ; vous pourrez le réactiver dans Code et sécurité.",
+  "ln": "{method} ebongwani na telefone oyo. Kotá code na yo; okoki kofungola yango lisusu na Code mpe libateli."
+ },
+ "lockBlockedText": {
+  "en": "For your safety, you've been signed out on this phone. Sign in again with a code sent by SMS, WhatsApp or Telegram.",
+  "fr": "Par sécurité, vous êtes déconnecté de ce téléphone. Reconnectez-vous avec un code reçu par SMS, WhatsApp ou Telegram.",
+  "ln": "Mpo na libateli, bobimisami na telefone oyo. Kotá lisusu na code oyo okozwa na SMS, WhatsApp to Telegram."
+ },
+ "lockBlockedTitle": {
+  "en": "Too many tries",
+  "fr": "Trop d'essais",
+  "ln": "Komeka mingi"
+ },
+ "lockDelete": {
+  "en": "Delete",
+  "fr": "Effacer",
+  "ln": "Kolongola"
+ },
+ "lockForgot": {
+  "en": "Forgot your code?",
+  "fr": "Code oublié ?",
+  "ln": "Obosani code?"
+ },
+ "lockForgotAction": {
+  "en": "Sign me out",
+  "fr": "Me déconnecter",
+  "ln": "Bimisá ngai"
+ },
+ "lockForgotText": {
+  "en": "You'll be signed out on this phone. Sign in again with your number, then create a new code.",
+  "fr": "Vous allez être déconnecté de ce téléphone. Reconnectez-vous avec votre numéro, puis créez un nouveau code.",
+  "ln": "Bakobimisa yo na telefone oyo. Kotá lisusu na nimero na yo, sima salá code ya sika."
+ },
+ "lockPrompt": {
+  "en": "Enter your NexisHub code",
+  "fr": "Tapez votre code NexisHub",
+  "ln": "Kotá code na yo ya NexisHub"
+ },
+ "lockUseBio": {
+  "en": "Use {method}",
+  "fr": "Utiliser {method}",
+  "ln": "Kosalela {method}"
+ },
+ "lockUseCode": {
+  "en": "Enter my code",
+  "fr": "Taper mon code",
+  "ln": "Kotá code na ngai"
+ },
+ "lockWrong": {
+  "en": {
+   "=1": "Wrong code. 1 try left.",
+   "other": "Wrong code. {count} tries left."
+  },
+  "fr": {
+   "=1": "Code incorrect. Encore 1 essai.",
+   "other": "Code incorrect. Encore {count} essais."
+  },
+  "ln": {
+   "=1": "Code ezali malamu te. Komeka 1 etikali.",
+   "other": "Code ezali malamu te. Komeka {count} etikali."
+  }
  },
  "messageLabel": {
   "en": "Message",
@@ -1262,6 +1351,66 @@
   "fr": "Montant demandé au client",
   "ln": "Mbongo osengi na mosombi"
  },
+ "protectAdvice": {
+  "en": "Don't use your Mobile Money PIN or your date of birth. Never give it to anyone, not even NexisHub.",
+  "fr": "N'utilisez pas votre code secret Mobile Money ni votre date de naissance. Ne le donnez à personne, même pas à NexisHub.",
+  "ln": "Kosalela code secret ya Mobile Money te, to mokolo ya mbotama na yo te. Kopesa yango moto te, ata NexisHub te."
+ },
+ "protectBioLater": {
+  "en": "Later",
+  "fr": "Plus tard",
+  "ln": "Na sima"
+ },
+ "protectBioOn": {
+  "en": "Turn on {method}",
+  "fr": "Activer {method}",
+  "ln": "Kofungola {method}"
+ },
+ "protectBioText": {
+  "en": "Open the app and approve payments without typing your code. Your phone recognises you: NexisHub never sees your face or your fingerprint.",
+  "fr": "Ouvrez l'app et validez vos paiements sans taper votre code. C'est votre téléphone qui vous reconnaît : NexisHub ne voit jamais votre visage ni votre empreinte.",
+  "ln": "Fungolá app mpe ndimá bafuti na yo kozanga kokota code. Telefone na yo nde eyebaka yo: NexisHub emonaka ata mokolo moko te elongi to empreinte na yo."
+ },
+ "protectBioTitle": {
+  "en": "Use {method}?",
+  "fr": "Utiliser {method} ?",
+  "ln": "Kosalela {method}?"
+ },
+ "protectConfirmIntro": {
+  "en": "Type it once more.",
+  "fr": "Tapez-le une deuxième fois.",
+  "ln": "Kotá yango mbala ya mibale."
+ },
+ "protectConfirmTitle": {
+  "en": "Confirm your code",
+  "fr": "Confirmez votre code",
+  "ln": "Ndimisá code na yo"
+ },
+ "protectDone": {
+  "en": "Your account is protected.",
+  "fr": "Votre compte est protégé.",
+  "ln": "Compte na yo ebatelami."
+ },
+ "protectIntro": {
+  "en": "Create a 6-digit NexisHub code. You'll be asked for it to open the app and before any money leaves your account.",
+  "fr": "Créez un code NexisHub de 6 chiffres. Il vous sera demandé pour ouvrir l'app et avant chaque sortie d'argent.",
+  "ln": "Salá code ya NexisHub ya mituya 6. Bakosenga yango mpo na kofungola app mpe liboso mbongo nyonso ebima."
+ },
+ "protectMismatch": {
+  "en": "The two codes don't match. Start again.",
+  "fr": "Les deux codes ne sont pas pareils. Recommencez.",
+  "ln": "Ba code mibale ekokani te. Banda lisusu."
+ },
+ "protectTitle": {
+  "en": "Protect your account",
+  "fr": "Protégez votre compte",
+  "ln": "Batelá compte na yo"
+ },
+ "protectWeak": {
+  "en": "This code is too easy to guess. Choose another one.",
+  "fr": "Ce code est trop facile à deviner. Choisissez-en un autre.",
+  "ln": "Code oyo ezali pete mingi mpo na koyeba. Ponà mosusu."
+ },
  "providerPending": {
   "en": "Provider · being checked",
   "fr": "Prestataire · en vérification",
@@ -1446,6 +1595,51 @@
   "en": "Your money stays secured by NexisHub until you confirm it's done.",
   "fr": "Votre argent reste sécurisé par NexisHub jusqu'à ce que vous confirmiez que c'est fait.",
   "ln": "Mbongo na yo ebatelami na NexisHub kino okondima ete mosala esili."
+ },
+ "securityBioHint": {
+  "en": "To open the app and approve payments. Your code is still asked if {method} doesn't recognise you.",
+  "fr": "Pour ouvrir l'app et valider vos paiements. Votre code reste demandé si {method} ne vous reconnaît pas.",
+  "ln": "Mpo na kofungola app mpe kondima bafuti. Bakosenga code na yo soki {method} eyebi yo te."
+ },
+ "securityChangeCode": {
+  "en": "Change my code",
+  "fr": "Changer mon code",
+  "ln": "Kobongola code na ngai"
+ },
+ "securityCodeChanged": {
+  "en": "Your code is changed.",
+  "fr": "Votre code est changé.",
+  "ln": "Code na yo ebongwani."
+ },
+ "securityCurrentCode": {
+  "en": "Enter your current code",
+  "fr": "Tapez votre code actuel",
+  "ln": "Kotá code na yo ya sikoyo"
+ },
+ "securityLockNote": {
+  "en": "The app locks when it stays closed for more than a minute.",
+  "fr": "L'app se verrouille quand elle reste fermée plus d'une minute.",
+  "ln": "App ekangamaka soki etikali ekangami koleka miniti moko."
+ },
+ "securityNewCode": {
+  "en": "New code",
+  "fr": "Nouveau code",
+  "ln": "Code ya sika"
+ },
+ "securityNoBio": {
+  "en": "This phone can't recognise your face or fingerprint: your code is used for everything.",
+  "fr": "Ce téléphone ne peut pas vous reconnaître par le visage ou l'empreinte : votre code sert à tout.",
+  "ln": "Telefone oyo ekoki koyeba yo na elongi to na empreinte te: code na yo esalaka nyonso."
+ },
+ "securityRow": {
+  "en": "Code and security",
+  "fr": "Code et sécurité",
+  "ln": "Code mpe libateli"
+ },
+ "securityRowSub": {
+  "en": "To open the app and pay",
+  "fr": "Pour ouvrir l'app et payer",
+  "ln": "Mpo na kofungola app mpe kofuta"
  },
  "seeAll": {
   "en": "See all",

@@ -685,6 +685,7 @@ private fun ProfileTab(onComingSoon: (String) -> Unit) {
                     SettingsRow(app.t("myInfo"), app.t("myInfoSub")) { flow.push(MissionRoute.ProfileInfo) },
                     SettingsRow(app.t("notifications"), app.t("notificationsSub")) { flow.push(MissionRoute.NotificationSettings) },
                     SettingsRow(app.t("myDevices"), app.plural("devicesCount", devicesCount)) { flow.push(MissionRoute.Devices) },
+                    SettingsRow(app.t("securityRow"), app.t("securityRowSub")) { flow.push(MissionRoute.Security) },
                     SettingsRow(app.t("helpDisputes"), app.t("helpDisputesSub")) { flow.push(MissionRoute.Help) },
                 ))
             }

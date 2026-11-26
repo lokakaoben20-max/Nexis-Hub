@@ -21,8 +21,12 @@ done
 for screen in tracking quotes pay pending confirm report dispute decision provider request job info devices alerts help legal become become-identity; do
   shoot "$screen" no fr
 done
+for screen in protect protect-bio lock security; do
+  shoot "$screen" no fr
+done
 shoot tracking yes fr
 shoot home yes fr
 shoot home no ln
 shoot welcome no en
+shoot lock yes fr
 ls -la captures
