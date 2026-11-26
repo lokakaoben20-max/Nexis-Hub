@@ -172,6 +172,7 @@ sealed interface MissionRoute {
     data object Help : MissionRoute
     data object Legal : MissionRoute
     data object BecomeProvider : MissionRoute
+    data object Works : MissionRoute
 
     companion object {
         /** Écrans ouverts d'emblée pour les captures de la CI. */
@@ -191,7 +192,8 @@ sealed interface MissionRoute {
             "alerts" -> listOf(NotificationSettings)
             "help" -> listOf(Help)
             "legal" -> listOf(Legal)
-            "become" -> listOf(BecomeProvider)
+            "become", PortfolioDemo.STEP -> listOf(BecomeProvider)
+            PortfolioDemo.PROFILE -> listOf(Works)
             in IdentityDemo.codes -> listOf(BecomeProvider)
             else -> null
         }
@@ -334,6 +336,7 @@ private fun MissionScreen(route: MissionRoute) {
         MissionRoute.Help -> HelpScreen()
         MissionRoute.Legal -> LegalScreen()
         MissionRoute.BecomeProvider -> BecomeProviderScreen()
+        MissionRoute.Works -> PortfolioScreen()
     }
 }
 

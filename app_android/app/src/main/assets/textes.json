@@ -254,6 +254,16 @@
   "fr": "Vidéo enregistrée · {seconds} s",
   "ln": "Video ebombami · {seconds} s"
  },
+ "becomeWorks": {
+  "en": "Your past work",
+  "fr": "Vos réalisations",
+  "ln": "Misala oyo osalaki"
+ },
+ "becomeWorksHint": {
+  "en": "Optional: photos of past jobs help the team check your trade.",
+  "fr": "Facultatif : des photos de travaux déjà faits aident l'équipe à vérifier votre métier.",
+  "ln": "Soki olingi : ba foto ya misala osalaki kala esalisaka équipe mpo na kotala mosala na yo."
+ },
  "bestRated": {
   "en": "Top rated",
   "fr": "Le mieux noté",
@@ -914,6 +924,16 @@
   "en": "My wallets",
   "fr": "Mes portefeuilles",
   "ln": "Esika na ngai ya mbongo"
+ },
+ "myWorks": {
+  "en": "My past work",
+  "fr": "Mes réalisations",
+  "ln": "Misala na ngai"
+ },
+ "myWorksSub": {
+  "en": "Photos of your work, seen only by the team",
+  "fr": "Photos de vos travaux, vues par l'équipe seulement",
+  "ln": "Ba foto ya misala na yo, kaka équipe nde ekomona"
  },
  "navHome": {
   "en": "Home",
@@ -1981,6 +2001,81 @@
   "en": "Which service?",
   "fr": "Quel service ?",
   "ln": "Mosala nini ?"
+ },
+ "worksAddPhotos": {
+  "en": "Add photos",
+  "fr": "Ajouter des photos",
+  "ln": "Kobakisa ba foto"
+ },
+ "worksAskedShort": {
+  "en": "The team is asking for photos of your work",
+  "fr": "L'équipe vous demande des photos de vos travaux",
+  "ln": "Équipe ezali kosenga ba foto ya misala na yo"
+ },
+ "worksCertificates": {
+  "en": "Diploma or certificate",
+  "fr": "Diplôme ou attestation",
+  "ln": "Diplôme to attestation"
+ },
+ "worksCertificatesSub": {
+  "en": "Optional: INPP, training centre, former employer…",
+  "fr": "Facultatif : INPP, centre de formation, ancien patron…",
+  "ln": "Soki olingi : INPP, centre ya formation, mokonzi ya kala…"
+ },
+ "worksCount": {
+  "en": "{count} of {max}",
+  "fr": "{count} sur {max}",
+  "ln": "{count} na {max}"
+ },
+ "worksDemoNote": {
+  "en": "Preview: the photos stay on this phone and are not sent anywhere.",
+  "fr": "Aperçu : les photos restent sur ce téléphone et ne sont envoyées nulle part.",
+  "ln": "Aperçu : ba foto etikalaka na telefone oyo, etindamaka esika moko te."
+ },
+ "worksNote": {
+  "en": "What you did, where and when",
+  "fr": "Ce que vous avez fait, où et quand",
+  "ln": "Nini osalaki, wapi mpe ntango nini"
+ },
+ "worksNoteExample": {
+  "en": "E.g. water heater installed, Limete, 2025",
+  "fr": "Ex. : pose d'un chauffe-eau, Limete, 2025",
+  "ln": "Ndakisa : kotia chauffe-eau, Limete, 2025"
+ },
+ "worksPhotoFailed": {
+  "en": "This photo couldn't be read.",
+  "fr": "Cette photo n'a pas pu être lue.",
+  "ln": "Foto oyo ekoki kotangama te."
+ },
+ "worksPrivacy": {
+  "en": "Only the NexisHub team sees these photos, never clients. It may ask you for more later.",
+  "fr": "Seule l'équipe NexisHub voit ces photos, jamais les clients. Elle peut vous en demander plus tard.",
+  "ln": "Kaka équipe ya NexisHub nde ekomona ba foto oyo, ba client te. Ekoki kosenga yo mosusu sima."
+ },
+ "worksRemove": {
+  "en": "Remove photo",
+  "fr": "Retirer la photo",
+  "ln": "Kolongola foto"
+ },
+ "worksRequested": {
+  "en": "The NexisHub team is asking for photos of your work: {services}.",
+  "fr": "L'équipe NexisHub vous demande des photos de vos travaux : {services}.",
+  "ln": "Équipe ya NexisHub ezali kosenga yo ba foto ya misala na yo : {services}."
+ },
+ "worksSave": {
+  "en": "Send to the team",
+  "fr": "Envoyer à l'équipe",
+  "ln": "Kotindela équipe"
+ },
+ "worksSaved": {
+  "en": "Sent. The NexisHub team will look at them.",
+  "fr": "C'est envoyé. L'équipe NexisHub les regardera.",
+  "ln": "Etindami. Équipe ya NexisHub ekotala yango."
+ },
+ "worksSkip": {
+  "en": "Skip this step",
+  "fr": "Passer cette étape",
+  "ln": "Koleka etape oyo"
  },
  "writeNexis": {
   "en": "Write to NexisHub",

@@ -809,6 +809,42 @@
   },
   "becomeServices": "Quels services proposez-vous ?",
   "becomeServicesHint": "Choisissez-en au moins un.",
+  "becomeWorks": "Vos réalisations",
+  "becomeWorksHint": "Facultatif : des photos de travaux déjà faits aident l'équipe à vérifier votre métier.",
+  "worksPrivacy": "Seule l'équipe NexisHub voit ces photos, jamais les clients. Elle peut vous en demander plus tard.",
+  "worksAddPhotos": "Ajouter des photos",
+  "worksCount": "{count} sur {max}",
+  "@worksCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "worksNote": "Ce que vous avez fait, où et quand",
+  "worksNoteExample": "Ex. : pose d'un chauffe-eau, Limete, 2025",
+  "worksCertificates": "Diplôme ou attestation",
+  "worksCertificatesSub": "Facultatif : INPP, centre de formation, ancien patron…",
+  "worksSkip": "Passer cette étape",
+  "worksRemove": "Retirer la photo",
+  "worksPhotoFailed": "Cette photo n'a pas pu être lue.",
+  "worksDemoNote": "Aperçu : les photos restent sur ce téléphone et ne sont envoyées nulle part.",
+  "myWorks": "Mes réalisations",
+  "myWorksSub": "Photos de vos travaux, vues par l'équipe seulement",
+  "worksAskedShort": "L'équipe vous demande des photos de vos travaux",
+  "worksRequested": "L'équipe NexisHub vous demande des photos de vos travaux : {services}.",
+  "@worksRequested": {
+    "placeholders": {
+      "services": {
+        "type": "String"
+      }
+    }
+  },
+  "worksSave": "Envoyer à l'équipe",
+  "worksSaved": "C'est envoyé. L'équipe NexisHub les regardera.",
   "becomeCommunes": "Où travaillez-vous ?",
   "becomeCommunesHint": "Les communes où vous acceptez de vous déplacer.",
   "becomeIdentity": "Vérifions votre identité",

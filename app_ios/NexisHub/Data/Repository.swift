@@ -51,9 +51,19 @@ protocol NexisRepository: AnyObject {
     func legalText(_ key: LegalDocumentKey) async throws -> LegalText
     /// Demande à devenir prestataire. Le profil reste en vérification jusqu'à
     /// la décision de l'équipe NexisHub. Le recto, le verso et la vidéo ne
-    /// servent qu'à cette vérification.
+    /// servent qu'à cette vérification. Les preuves de réalisations sont
+    /// facultatives (`Portfolio()` si aucune) et vues seulement par l'équipe.
     func applyAsProvider(services: [String], communes: [String], identity: IdentityCapture,
-                         acceptedTermsVersion: Date?) async throws
+                         portfolio: Portfolio, acceptedTermsVersion: Date?) async throws
+    /// Les services de la demande prestataire (vide pour un client seulement).
+    func providerServices() async throws -> [String]
+    /// Les preuves de réalisations envoyées à l'équipe.
+    func portfolio() async throws -> Portfolio
+    /// Une demande de preuves faite par l'équipe, s'il y en a une en cours.
+    func portfolioRequest() async throws -> PortfolioRequest?
+    /// Remplace les preuves envoyées (prestataire en vérification ou
+    /// vérifié). Répond aussi à la demande de l'équipe, s'il y en a une.
+    func sendPortfolio(_ portfolio: Portfolio) async throws
 
     // --- Client : devis, paiement, suivi, litige ---
 
@@ -375,21 +385,49 @@ final class DemoRepository: NexisRepository {
         LegalText(key: key, version: key == .cgu ? signupTermsVersion : providerTermsVersion, text: nil)
     }
 
+    private var chosenServices: [String] = []
+    private var sentPortfolio = Portfolio()
+    private var pendingPortfolioRequest: PortfolioRequest?
+
     func applyAsProvider(services: [String], communes chosen: [String], identity: IdentityCapture,
-                         acceptedTermsVersion: Date?) async throws {
+                         portfolio: Portfolio, acceptedTermsVersion: Date?) async throws {
         let current = try await profile()
         let catalog = Set(try await serviceCatalog().map(\.id))
         guard current.providerStatus == nil,
               !services.isEmpty, services.count <= 50, Set(services).isSubset(of: catalog),
               !chosen.isEmpty, chosen.count <= 50, Set(chosen).isSubset(of: Set(communes)),
               identity.isComplete,
+              portfolio.isValid(services: Set(services)),
               acceptedTermsVersion == providerTermsVersion
         else { throw NexisRefusal(code: "provider_application_invalid") }
-        // Aperçu : le recto, le verso et la vidéo ne sont gardés nulle part.
+        // Aperçu : le recto, le verso et la vidéo ne sont gardés nulle part ;
+        // les preuves restent en mémoire, sur ce téléphone.
         try await Task.sleep(for: .seconds(1))
         providerTermsAcceptedAt = .now
+        chosenServices = services
+        sentPortfolio = portfolio
         store(Profile(firstName: current.firstName, lastName: current.lastName, phone: current.phone,
                       commune: current.commune, providerStatus: .pending, termsVersion: current.termsVersion))
+    }
+
+    func providerServices() async throws -> [String] { chosenServices }
+
+    func portfolio() async throws -> Portfolio { sentPortfolio }
+
+    func portfolioRequest() async throws -> PortfolioRequest? { pendingPortfolioRequest }
+
+    func sendPortfolio(_ portfolio: Portfolio) async throws {
+        guard try await profile().providerStatus != nil, portfolio.isValid(services: Set(chosenServices)) else {
+            throw NexisRefusal(code: "portfolio_invalid")
+        }
+        try await Task.sleep(for: .seconds(1))
+        sentPortfolio = portfolio
+        pendingPortfolioRequest = nil
+    }
+
+    /// Démonstration et tests : l'équipe demande des preuves.
+    func demoAskPortfolio(services: [String]) {
+        pendingPortfolioRequest = PortfolioRequest(services: services, askedAt: .now)
     }
 
     // MARK: Client : devis, paiement, suivi, litige

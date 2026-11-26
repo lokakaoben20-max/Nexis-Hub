@@ -26,6 +26,7 @@ enum MissionRoute: Hashable {
     case help
     case legal
     case becomeProvider
+    case portfolio
 
     /// Écrans ouverts d'emblée pour les captures de la CI.
     static func forCapture(_ capture: String?) -> [MissionRoute]? {
@@ -45,7 +46,8 @@ enum MissionRoute: Hashable {
         case "alerts": return [.notificationSettings]
         case "help": return [.help]
         case "legal": return [.legal]
-        case "become": return [.becomeProvider]
+        case "become", PortfolioDemo.step: return [.becomeProvider]
+        case PortfolioDemo.profile: return [.portfolio]
         case let capture? where IdentityDemo.captures.contains(capture): return [.becomeProvider]
         default: return nil
         }
@@ -55,7 +57,8 @@ enum MissionRoute: Hashable {
     static let providerCaptures: Set<String> = ["provider", "request", "job"]
 
     /// Captures qui se font depuis l'onglet Profil.
-    static let profileCaptures: Set<String> = Set(["info", "devices", "alerts", "help", "legal", "become"])
+    static let profileCaptures: Set<String> = Set(["info", "devices", "alerts", "help", "legal", "become",
+                                                   PortfolioDemo.step, PortfolioDemo.profile])
         .union(IdentityDemo.captures)
 }
 
@@ -162,6 +165,7 @@ private struct MissionScreen: View {
         case .help: HelpView()
         case .legal: LegalView()
         case .becomeProvider: BecomeProviderView()
+        case .portfolio: PortfolioView()
         }
     }
 }

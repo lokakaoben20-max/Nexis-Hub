@@ -121,6 +121,32 @@ publié) et devenir prestataire (services, communes, pièce d'identité recto
 et verso puis vidéo du visage, conditions des prestataires ; le profil reste
 « en vérification » jusqu'à la décision de l'équipe).
 
+### Preuves de réalisations (2026-11-26)
+
+Choix de Ben : **facultatives**, vues **seulement par l'équipe** (jamais par
+les clients), et l'équipe peut en demander plus tard. La galerie est permise
+pour cette étape seulement.
+
+- « Devenir prestataire » passe à **5 étapes** : services, **vos
+  réalisations** (facultatif, « Passer cette étape »), communes, pièce
+  d'identité, conditions.
+- Pour chaque service choisi : 1 à 5 photos de travaux déjà faits et une
+  phrase de 200 signes au plus (« Pose d'un chauffe-eau, Limete, 2025 ») ;
+  plus 3 diplômes ou attestations au plus. Règles dans `Portfolio`
+  (`Data/Portfolio.swift`, `data/Portfolio.kt`), testées des deux côtés.
+- Choix des photos par le sélecteur du système (`PhotosPicker` sur iOS,
+  Photo Picker `PickMultipleVisualMedia` sur Android, sans autorisation de
+  lecture de la galerie). Chaque photo est remise à l'endroit, réduite à
+  1 600 px et réencodée en JPEG : les métadonnées (lieu, appareil) partent.
+- Profil → **« Mes réalisations »** (prestataire en vérification ou vérifié) :
+  revoir, compléter et renvoyer. Si l'équipe a demandé des preuves, l'écran
+  le dit (« L'équipe NexisHub vous demande des photos de vos travaux : … »)
+  et la ligne du profil aussi.
+- Dépôt de données : `applyAsProvider(… portfolio:)`, `providerServices()`,
+  `portfolio()`, `portfolioRequest()`, `sendPortfolio(_:)`.
+- Captures de la CI : `become-portfolio`, `portfolio` (avec une demande de
+  l'équipe), images dessinées.
+
 ### Pièce d'identité et vidéo du visage (2026-11-26)
 
 Demande de Ben : la pièce (carte d'électeur, permis…) est prise **recto puis

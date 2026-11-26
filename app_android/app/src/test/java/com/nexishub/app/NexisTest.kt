@@ -16,8 +16,11 @@ import com.nexishub.app.data.ImageHash
 import com.nexishub.app.data.MachineZone
 import com.nexishub.app.data.MissionStatus
 import com.nexishub.app.data.Money
+import com.nexishub.app.data.NexisRefusal
+import com.nexishub.app.data.Portfolio
 import com.nexishub.app.data.SelfieScript
 import com.nexishub.app.data.Texts
+import com.nexishub.app.data.WorkProof
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -331,7 +334,7 @@ class AccountTest {
             IdentityDocument.VOTER_CARD, byteArrayOf(1), byteArrayOf(2), byteArrayOf(3), 7, listOf(HeadTurn.RIGHT, HeadTurn.LEFT),
         )
         fun send(sent: IdentityCapture, terms: java.time.LocalDate?) = refusal {
-            repo.applyAsProvider(listOf("nettoyage"), listOf("Limete"), sent, terms)
+            repo.applyAsProvider(listOf("nettoyage"), listOf("Limete"), sent, Portfolio(), terms)
         }
         assertEquals("provider_application_invalid", send(identity, null))
         val noVerso = IdentityCapture(identity.document, identity.recto, ByteArray(0), identity.video, 7, identity.headTurns)
@@ -364,6 +367,8 @@ class AccountTest {
         assertEquals(com.nexishub.app.Capture.BECOME_REVIEW, com.nexishub.app.Capture.from("become-review"))
         assertEquals(com.nexishub.app.Capture.BECOME_PASSPORT, com.nexishub.app.Capture.from("become-passport"))
         assertEquals(com.nexishub.app.Capture.BECOME_WRONG_PAGE, com.nexishub.app.Capture.from("become-wrong-page"))
+        assertEquals(com.nexishub.app.Capture.BECOME_PORTFOLIO, com.nexishub.app.Capture.from("become-portfolio"))
+        assertEquals(com.nexishub.app.Capture.PORTFOLIO, com.nexishub.app.Capture.from("portfolio"))
         assertEquals(com.nexishub.app.Capture.TRACKING, com.nexishub.app.Capture.from("tracking"))
     }
 }
@@ -477,5 +482,54 @@ class IdentityGuideTest {
         assertFalse(HeadPose.isFramed(FaceSample(1, centerX = 0.8, turnDegrees = 3.0)))
         assertFalse(HeadPose.isFramed(FaceSample(1, width = 0.1, turnDegrees = 3.0)))
         assertFalse(HeadPose.isFramed(FaceSample(2, turnDegrees = 3.0)))
+    }
+}
+
+class PortfolioTest {
+    private fun work(service: String, photos: Int = 1, note: String = "") = WorkProof(service, List(photos) { byteArrayOf(1) }, note)
+
+    @Test
+    fun portfolioRules() {
+        val services = setOf("plomberie", "electricite")
+        assertTrue(Portfolio().isValid(services))
+        assertTrue(Portfolio(listOf(work("plomberie", photos = 5)), listOf(byteArrayOf(2))).isValid(services))
+        // Plus de 5 photos, un service non choisi, deux fois le même service.
+        assertFalse(Portfolio(listOf(work("plomberie", photos = 6))).isValid(services))
+        assertFalse(Portfolio(listOf(work("coiffure"))).isValid(services))
+        assertFalse(Portfolio(listOf(work("plomberie"), work("plomberie"))).isValid(services))
+        // Une phrase trop longue, 4 attestations, un fichier vide.
+        assertFalse(Portfolio(listOf(work("plomberie", note = "a".repeat(201)))).isValid(services))
+        assertFalse(Portfolio(certificates = List(4) { byteArrayOf(2) }).isValid(services))
+        assertFalse(Portfolio(certificates = listOf(ByteArray(0))).isValid(services))
+    }
+
+    @Test
+    fun cleanedDropsServicesWithoutPhotos() {
+        val portfolio = Portfolio(listOf(work("plomberie", photos = 0, note = "Fuite"), work("electricite", note = "  Tableau  ")))
+        assertEquals(listOf("electricite"), portfolio.cleaned.works.map { it.serviceId })
+        assertEquals("Tableau", portfolio.cleaned.works.first().note)
+        assertTrue(Portfolio(listOf(work("plomberie", photos = 0))).cleaned.isEmpty)
+    }
+
+    @Test
+    fun portfolioIsSentWithTheApplicationAndLater() = runBlocking {
+        val repo = DemoRepository()
+        assertTrue(repo.registerClient("+243810000002", "Jean", "K", "Limete", repo.signupTermsVersion))
+        // Un client seulement ne peut pas envoyer de preuves.
+        assertEquals("portfolio_invalid", runCatching { repo.sendPortfolio(Portfolio(listOf(work("plomberie")))) }
+            .exceptionOrNull()?.let { (it as NexisRefusal).code })
+        val identity = IdentityCapture(IdentityDocument.PASSPORT, byteArrayOf(1), null, byteArrayOf(3), 7, listOf(HeadTurn.LEFT, HeadTurn.RIGHT))
+        repo.applyAsProvider(listOf("plomberie"), listOf("Limete"), identity, Portfolio(listOf(work("plomberie", photos = 2))), repo.providerTermsVersion)
+        assertEquals(2, repo.portfolio().works.first().photos.size)
+        assertEquals(listOf("plomberie"), repo.providerServices())
+        // L'équipe demande des preuves ; l'envoi y répond.
+        repo.demoAskPortfolio(listOf("plomberie"))
+        assertEquals(listOf("plomberie"), repo.portfolioRequest()?.services)
+        repo.sendPortfolio(Portfolio(listOf(work("plomberie", photos = 3)), listOf(byteArrayOf(4))))
+        assertEquals(null, repo.portfolioRequest())
+        assertEquals(1, repo.portfolio().certificates.size)
+        // Un service qui n'est pas dans la demande est refusé.
+        assertEquals("portfolio_invalid", runCatching { repo.sendPortfolio(Portfolio(listOf(work("coiffure")))) }
+            .exceptionOrNull()?.let { (it as NexisRefusal).code })
     }
 }

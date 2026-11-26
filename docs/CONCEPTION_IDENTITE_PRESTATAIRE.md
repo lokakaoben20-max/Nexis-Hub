@@ -137,6 +137,38 @@ de protection des données.
   doit être bornée (par exemple 35 jours), sinon l'effacement n'est pas réel.
   À régler avec l'hébergement.
 
+## 5 bis. Preuves de réalisations (décision de Ben, 2026-11-26)
+
+**Facultatives**, vues **seulement par l'équipe** (jamais par les clients),
+l'équipe peut en demander. La galerie est permise ici seulement.
+
+- **Envoi** : comme les pièces, en deux temps. `POST
+  /api/app/v1/me/work-proof-files` (usages `work_photo` et `certificate`,
+  JPEG seulement, 3 Mo au plus, métadonnées retirées), puis `PUT
+  /api/app/v1/me/work-proofs` qui **remplace** l'ensemble envoyé (par
+  service : 1 à 5 photos et une phrase de 200 signes au plus ; 3
+  attestations au plus ; seulement des services de la demande prestataire),
+  avec une clé d'idempotence. La demande prestataire peut les porter dès le
+  départ.
+- **Table `provider_work_proofs`** : compte, service, ordre, fichier, phrase,
+  date ; et `work_proof_requests` : compte, services demandés, admin, date,
+  date de réponse. Mêmes fichiers chiffrés que les pièces, clé à part ou non
+  selon la décision 2.
+- **Demande de l'équipe** : `POST /api/admin/providers/{id}/work-proof-requests`
+  (services voulus, raison inscrite). Le prestataire reçoit une notification
+  par la boîte d'envoi (app, et Telegram ou WhatsApp quand ils seront
+  branchés) ; la demande est close par le prochain envoi. Une demande ne
+  bloque rien toute seule : c'est l'équipe qui décide.
+- **Lecture** : rôle de l'équipe chargé des prestataires, chaque ouverture
+  inscrite, comme les pièces. **Jamais** exposées par une route publique ni
+  dans le profil vu par un client.
+- **Aucune IA** ne les analyse (pas de recherche d'image inversée
+  automatique) sans nouvelle décision de Ben.
+- **Conservation** (à confirmer par le juriste) : tant que le compte
+  prestataire existe ; effacées 30 jours après une demande refusée ou la
+  fermeture du compte ; les fichiers remplacés sont effacés par la même
+  tâche `purge-identite`.
+
 ## 6. Ce qui sera testé
 
 Type réel refusé (PNG renommé, MP4 avec son), taille, fichier d'un autre
@@ -145,6 +177,11 @@ même clé d'idempotence, coupure entre l'écriture du fichier et la ligne en
 base, lecture sans le rôle, journal de lecture, tâche d'effacement (dates,
 blocage légal, relance), migration sur base vide (`alembic upgrade head` puis
 `alembic check`).
+
+Pour les preuves de réalisations : service hors de la demande refusé,
+6 photos refusées, phrase trop longue refusée, remplacement idempotent,
+fichiers remplacés effacés, demande de l'équipe close par l'envoi, aucune
+route de client ne les renvoie.
 
 ## 7. Décisions attendues de Ben
 

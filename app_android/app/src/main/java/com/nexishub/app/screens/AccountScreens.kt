@@ -537,7 +537,8 @@ fun LegalReader(key: LegalDocumentKey, onClose: () -> Unit) {
 
 // Devenir prestataire
 
-private const val BECOME_STEPS = 4
+/** Services, réalisations (facultatif), communes, pièce d'identité, conditions. */
+private const val BECOME_STEPS = 5
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -546,9 +547,18 @@ fun BecomeProviderScreen() {
     val flow = LocalFlow.current
     val p = LocalPalette.current
     val scope = rememberCoroutineScope()
-    var step by remember { mutableStateOf(if (app.capture in IdentityDemo.codes) 3 else 1) }
+    var step by remember {
+        mutableStateOf(
+            when (app.capture) {
+                in IdentityDemo.codes -> 4
+                PortfolioDemo.STEP -> 2
+                else -> 1
+            },
+        )
+    }
     var catalog by remember { mutableStateOf(emptyList<CatalogService>()) }
-    var services by remember { mutableStateOf(emptySet<String>()) }
+    var services by remember { mutableStateOf(if (app.capture == PortfolioDemo.STEP) setOf("plomberie", "electricite") else emptySet()) }
+    var works by remember { mutableStateOf(if (app.capture == PortfolioDemo.STEP) PortfolioDemo.draft(listOf("plomberie")) else PortfolioDraft()) }
     var communes by remember { mutableStateOf(emptySet<String>()) }
     var identity by remember { mutableStateOf(IdentityDraft()) }
     var accepted by remember { mutableStateOf(false) }
@@ -579,14 +589,20 @@ fun BecomeProviderScreen() {
     }
     val ready = when (step) {
         1 -> services.isNotEmpty()
-        2 -> communes.isNotEmpty()
-        3 -> identity.capture != null
+        2 -> true
+        3 -> communes.isNotEmpty()
+        4 -> identity.capture != null
         else -> accepted
     }
     FlowScaffold(
         app.t("becomeProvider"), onBack = { if (step > 1) step -= 1 else flow.back() },
         bottom = {
-            PrimaryButton(app.t(if (step < BECOME_STEPS) "nextStep" else "becomeSend"), {
+            val label = when {
+                step == BECOME_STEPS -> "becomeSend"
+                step == 2 && works.isEmpty -> "worksSkip"
+                else -> "nextStep"
+            }
+            PrimaryButton(app.t(label), {
                 if (step < BECOME_STEPS) {
                     step += 1
                 } else {
@@ -595,8 +611,9 @@ fun BecomeProviderScreen() {
                     failed = false
                     scope.launch {
                         try {
+                            val chosen = catalog.map { it.id }.filter { it in services }
                             app.repository.applyAsProvider(
-                                catalog.map { it.id }.filter { it in services }, communes.sorted(), capture,
+                                chosen, communes.sorted(), capture, works.portfolio(chosen),
                                 if (accepted) app.repository.providerTermsVersion else null,
                             )
                             app.dataChanged()
@@ -631,6 +648,11 @@ fun BecomeProviderScreen() {
                 }
             }
             2 -> {
+                StepHeading(app.t("becomeWorks"), app.t("becomeWorksHint"))
+                PortfolioEditor(catalog.filter { it.id in services }, works) { works = it }
+                InfoNote(app.t("worksDemoNote"), NoteKind.VIOLET)
+            }
+            3 -> {
                 StepHeading(app.t("becomeCommunes"), app.t("becomeCommunesHint"))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     app.repository.communes.forEach { commune ->
@@ -640,7 +662,7 @@ fun BecomeProviderScreen() {
                     }
                 }
             }
-            3 -> {
+            4 -> {
                 StepHeading(app.t("becomeIdentity"), null)
                 IdentityStep(identity) { identity = it }
             }

@@ -94,6 +94,11 @@ Ceci concerne l'IA **dans Nexis** (assistants, tri, détection), pas les agents 
   `setGalleryImportAllowed(false)`). La règle de confidentialité ci-dessus reste entière :
   **aucune pièce ni aucun selfie n'est envoyé à un service d'IA extérieur** sans l'avis du
   juriste et l'accord de Ben.
+  Les **preuves de réalisations** (photos de travaux déjà faits, diplômes ou
+  attestations) sont la seule partie de « Devenir prestataire » où la galerie est
+  permise (décision de Ben, même jour) : elles sont **facultatives**, vues
+  **seulement par l'équipe** (jamais par les clients), et l'équipe peut en
+  demander plus tard. Aucune IA ne les analyse.
 
 ## Objectif du projet
 

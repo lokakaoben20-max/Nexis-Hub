@@ -497,6 +497,7 @@ struct BecomeProviderView: View {
     @State private var catalog: [CatalogService] = []
     @State private var services: Set<String> = []
     @State private var communes: Set<String> = []
+    @State private var works = PortfolioDraft()
     @State private var identity = IdentityDraft()
     @State private var accepted = false
     @State private var readingTerms = false
@@ -504,7 +505,8 @@ struct BecomeProviderView: View {
     @State private var failed = false
     @State private var sent = false
 
-    private let total = 4
+    /// Services, réalisations (facultatif), communes, pièce d'identité, conditions.
+    private let total = 5
 
     var body: some View {
         Group {
@@ -525,14 +527,33 @@ struct BecomeProviderView: View {
         }
         .task { catalog = (try? await app.repository.serviceCatalog()) ?? [] }
         .sheet(isPresented: $readingTerms) { LegalReader(key: .providerTerms) }
-        .onAppear { if let capture = app.capture, IdentityDemo.captures.contains(capture) { step = 3 } }
+        .onAppear(perform: openDemo)
+    }
+
+    /// Captures de la CI : l'étape voulue, avec des données dessinées.
+    private func openDemo() {
+        guard let capture = app.capture else { return }
+        if IdentityDemo.captures.contains(capture) { step = 4 }
+        if capture == PortfolioDemo.step {
+            services = ["plomberie", "electricite"]
+            works = PortfolioDemo.draft(services: ["plomberie"])
+            step = 2
+        }
+    }
+
+    private var chosenServices: [String] { catalog.map(\.id).filter(services.contains) }
+
+    private var nextLabel: String {
+        if step == total { return app.t("becomeSend") }
+        return app.t(step == 2 && works.isEmpty ? "worksSkip" : "nextStep")
     }
 
     private var stepReady: Bool {
         switch step {
         case 1: return !services.isEmpty
-        case 2: return !communes.isEmpty
-        case 3: return identity.capture != nil
+        case 2: return true
+        case 3: return !communes.isEmpty
+        case 4: return identity.capture != nil
         default: return accepted
         }
     }
@@ -548,8 +569,9 @@ struct BecomeProviderView: View {
                 }
                 switch step {
                 case 1: servicesStep
-                case 2: communesStep
-                case 3: identityStep
+                case 2: worksStep
+                case 3: communesStep
+                case 4: identityStep
                 default: termsStep
                 }
                 if failed {
@@ -562,7 +584,7 @@ struct BecomeProviderView: View {
             Button {
                 if step < total { withAnimation(.snappy) { step += 1 } } else { Task { await send() } }
             } label: {
-                BusyLabel(text: app.t(step < total ? "nextStep" : "becomeSend"), busy: busy)
+                BusyLabel(text: nextLabel, busy: busy)
             }
             .nxProminentButton()
             .disabled(!stepReady || busy)
@@ -582,6 +604,14 @@ struct BecomeProviderView: View {
                     if services.contains(item.id) { services.remove(item.id) } else { services.insert(item.id) }
                 }
             }
+        }
+    }
+
+    private var worksStep: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            StepHeading(title: app.t("becomeWorks"), hint: app.t("becomeWorksHint"))
+            PortfolioEditor(services: catalog.filter { services.contains($0.id) }, draft: $works)
+            InfoNote(text: app.t("worksDemoNote"), kind: .violet)
         }
     }
 
@@ -653,8 +683,8 @@ struct BecomeProviderView: View {
         failed = false
         do {
             try await app.repository.applyAsProvider(
-                services: catalog.map(\.id).filter(services.contains), communes: communes.sorted(),
-                identity: capture,
+                services: chosenServices, communes: communes.sorted(),
+                identity: capture, portfolio: works.portfolio(services: chosenServices),
                 acceptedTermsVersion: accepted ? app.repository.providerTermsVersion : nil)
             app.dataChanged()
             withAnimation(.snappy) { sent = true }

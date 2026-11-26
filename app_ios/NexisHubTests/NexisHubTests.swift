@@ -315,21 +315,21 @@ final class AccountTests: XCTestCase {
         let identity = IdentityCapture(document: .voterCard, recto: Data([1]), verso: Data([2]), video: Data([3]),
                                        videoSeconds: 7, headTurns: [.right, .left])
         let noTerms = await refusal {
-            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: identity,
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: identity, portfolio: Portfolio(),
                                            acceptedTermsVersion: nil)
         }
         XCTAssertEqual(noTerms, "provider_application_invalid")
         var noVerso = identity
         noVerso.verso = Data()
         let missingVerso = await refusal {
-            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: noVerso,
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: noVerso, portfolio: Portfolio(),
                                            acceptedTermsVersion: repo.providerTermsVersion)
         }
         XCTAssertEqual(missingVerso, "provider_application_invalid")
         var noVideo = identity
         noVideo.video = Data()
         let missingVideo = await refusal {
-            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: noVideo,
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: noVideo, portfolio: Portfolio(),
                                            acceptedTermsVersion: repo.providerTermsVersion)
         }
         XCTAssertEqual(missingVideo, "provider_application_invalid")
@@ -337,7 +337,7 @@ final class AccountTests: XCTestCase {
         var passportWithVerso = identity
         passportWithVerso.document = .passport
         let versoOnPassport = await refusal {
-            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: passportWithVerso,
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: passportWithVerso, portfolio: Portfolio(),
                                            acceptedTermsVersion: repo.providerTermsVersion)
         }
         XCTAssertEqual(versoOnPassport, "provider_application_invalid")
@@ -350,17 +350,83 @@ final class AccountTests: XCTestCase {
         var oneTurn = identity
         oneTurn.headTurns = [.left, .left]
         let missingTurn = await refusal {
-            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: oneTurn,
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: oneTurn, portfolio: Portfolio(),
                                            acceptedTermsVersion: repo.providerTermsVersion)
         }
         XCTAssertEqual(missingTurn, "provider_application_invalid")
-        try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: identity,
+        try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: identity, portfolio: Portfolio(),
                                        acceptedTermsVersion: repo.providerTermsVersion)
         let profile = try await repo.profile()
         XCTAssertEqual(profile.providerStatus, .pending)
         XCTAssertFalse(profile.isProvider)
         let documents = try await repo.legalDocuments()
         XCTAssertEqual(documents.map(\.key), [.cgu, .providerTerms])
+    }
+}
+
+@MainActor
+final class PortfolioTests: XCTestCase {
+    private func work(_ service: String, photos: Int = 1, note: String = "") -> WorkProof {
+        WorkProof(serviceId: service, photos: Array(repeating: Data([1]), count: photos), note: note)
+    }
+
+    func testPortfolioRules() {
+        let services: Set<String> = ["plomberie", "electricite"]
+        XCTAssertTrue(Portfolio().isValid(services: services))
+        XCTAssertTrue(Portfolio(works: [work("plomberie", photos: 5)], certificates: [Data([2])]).isValid(services: services))
+        // Plus de 5 photos, un service non choisi, deux fois le même service.
+        XCTAssertFalse(Portfolio(works: [work("plomberie", photos: 6)]).isValid(services: services))
+        XCTAssertFalse(Portfolio(works: [work("coiffure")]).isValid(services: services))
+        XCTAssertFalse(Portfolio(works: [work("plomberie"), work("plomberie")]).isValid(services: services))
+        // Une phrase trop longue, 4 attestations, un fichier vide.
+        XCTAssertFalse(Portfolio(works: [work("plomberie", note: String(repeating: "a", count: 201))]).isValid(services: services))
+        XCTAssertFalse(Portfolio(certificates: Array(repeating: Data([2]), count: 4)).isValid(services: services))
+        XCTAssertFalse(Portfolio(certificates: [Data()]).isValid(services: services))
+    }
+
+    func testCleanedDropsServicesWithoutPhotos() {
+        let portfolio = Portfolio(works: [work("plomberie", photos: 0, note: "Fuite"), work("electricite", note: "  Tableau  ")])
+        XCTAssertEqual(portfolio.cleaned.works.map(\.serviceId), ["electricite"])
+        XCTAssertEqual(portfolio.cleaned.works.first?.note, "Tableau")
+        XCTAssertTrue(Portfolio(works: [work("plomberie", photos: 0)]).cleaned.isEmpty)
+    }
+
+    func testPortfolioIsSentWithTheApplicationAndLater() async throws {
+        let repo = DemoRepository()
+        XCTAssertTrue(repo.registerClient(phone: "+243810000002", firstName: "Jean", lastName: "K",
+                                          commune: "Limete", acceptedTermsVersion: repo.signupTermsVersion))
+        // Un client seulement ne peut pas envoyer de preuves.
+        do {
+            try await repo.sendPortfolio(Portfolio(works: [work("plomberie")]))
+            XCTFail("refus attendu")
+        } catch let refusal as NexisRefusal {
+            XCTAssertEqual(refusal.code, "portfolio_invalid")
+        }
+        let identity = IdentityCapture(document: .passport, recto: Data([1]), verso: nil, video: Data([3]),
+                                       videoSeconds: 7, headTurns: [.left, .right])
+        try await repo.applyAsProvider(services: ["plomberie"], communes: ["Limete"], identity: identity,
+                                       portfolio: Portfolio(works: [work("plomberie", photos: 2)]),
+                                       acceptedTermsVersion: repo.providerTermsVersion)
+        let sentCount = try await repo.portfolio().works.first?.photos.count
+        XCTAssertEqual(sentCount, 2)
+        let services = try await repo.providerServices()
+        XCTAssertEqual(services, ["plomberie"])
+        // L'équipe demande des preuves ; l'envoi y répond.
+        repo.demoAskPortfolio(services: ["plomberie"])
+        let asked = try await repo.portfolioRequest()
+        XCTAssertEqual(asked?.services, ["plomberie"])
+        try await repo.sendPortfolio(Portfolio(works: [work("plomberie", photos: 3)], certificates: [Data([4])]))
+        let after = try await repo.portfolioRequest()
+        XCTAssertNil(after)
+        let certificates = try await repo.portfolio().certificates.count
+        XCTAssertEqual(certificates, 1)
+        // Un service qui n'est pas dans la demande est refusé.
+        do {
+            try await repo.sendPortfolio(Portfolio(works: [work("coiffure")]))
+            XCTFail("refus attendu")
+        } catch let refusal as NexisRefusal {
+            XCTAssertEqual(refusal.code, "portfolio_invalid")
+        }
     }
 }
 

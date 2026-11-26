@@ -72,8 +72,21 @@ interface NexisRepository {
      * servent qu'à cette vérification. */
     suspend fun applyAsProvider(
         services: List<String>, communes: List<String>, identity: IdentityCapture,
-        acceptedTermsVersion: LocalDate?,
+        portfolio: Portfolio, acceptedTermsVersion: LocalDate?,
     )
+
+    /** Les services de la demande prestataire (vide pour un client seulement). */
+    suspend fun providerServices(): List<String>
+
+    /** Les preuves de réalisations envoyées à l'équipe. */
+    suspend fun portfolio(): Portfolio
+
+    /** Une demande de preuves faite par l'équipe, s'il y en a une en cours. */
+    suspend fun portfolioRequest(): PortfolioRequest?
+
+    /** Remplace les preuves envoyées (prestataire en vérification ou vérifié).
+     * Répond aussi à la demande de l'équipe, s'il y en a une. */
+    suspend fun sendPortfolio(portfolio: Portfolio)
 
     // --- Client : devis, paiement, suivi, litige ---
 
@@ -365,21 +378,46 @@ class DemoRepository(private val now: Instant = Instant.now()) : NexisRepository
     override suspend fun legalText(key: LegalDocumentKey): LegalText =
         LegalText(key, if (key == LegalDocumentKey.CGU) signupTermsVersion else providerTermsVersion, null)
 
+    private var chosenServices: List<String> = emptyList()
+    private var sentPortfolio = Portfolio()
+    private var pendingPortfolioRequest: PortfolioRequest? = null
+
     override suspend fun applyAsProvider(
         services: List<String>, communes: List<String>, identity: IdentityCapture,
-        acceptedTermsVersion: LocalDate?,
+        portfolio: Portfolio, acceptedTermsVersion: LocalDate?,
     ) {
         val me = profile()
         val catalog = serviceCatalog().map { it.id }.toSet()
         val valid = me.providerStatus == null &&
             services.isNotEmpty() && services.size <= 50 && catalog.containsAll(services) &&
             communes.isNotEmpty() && communes.size <= 50 && this.communes.containsAll(communes) &&
-            identity.isComplete && acceptedTermsVersion == providerTermsVersion
+            identity.isComplete && portfolio.isValid(services.toSet()) && acceptedTermsVersion == providerTermsVersion
         if (!valid) throw NexisRefusal("provider_application_invalid")
-        // Aperçu : le recto, le verso et la vidéo ne sont gardés nulle part.
+        // Aperçu : le recto, le verso et la vidéo ne sont gardés nulle part ;
+        // les preuves restent en mémoire, sur ce téléphone.
         kotlinx.coroutines.delay(1_000)
         providerTermsAcceptedAt = LocalDate.now()
+        chosenServices = services
+        sentPortfolio = portfolio
         store(me.copy(providerStatus = ProviderStatus.PENDING))
+    }
+
+    override suspend fun providerServices(): List<String> = chosenServices
+
+    override suspend fun portfolio(): Portfolio = sentPortfolio
+
+    override suspend fun portfolioRequest(): PortfolioRequest? = pendingPortfolioRequest
+
+    override suspend fun sendPortfolio(portfolio: Portfolio) {
+        if (profile().providerStatus == null || !portfolio.isValid(chosenServices.toSet())) throw NexisRefusal("portfolio_invalid")
+        kotlinx.coroutines.delay(1_000)
+        sentPortfolio = portfolio
+        pendingPortfolioRequest = null
+    }
+
+    /** Démonstration et tests : l'équipe demande des preuves. */
+    fun demoAskPortfolio(services: List<String>) {
+        pendingPortfolioRequest = PortfolioRequest(services, LocalDate.now())
     }
 
     // --- Client : devis, paiement, suivi, litige ---
