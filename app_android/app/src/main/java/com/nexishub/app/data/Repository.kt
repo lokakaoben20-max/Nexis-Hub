@@ -68,12 +68,31 @@ interface NexisRepository {
     suspend fun legalText(key: LegalDocumentKey): LegalText
 
     /** Demande à devenir prestataire. Le profil reste en vérification jusqu'à
-     * la décision de l'équipe NexisHub. Les photos ne servent qu'à cette
-     * vérification. */
+     * la décision de l'équipe NexisHub. Le recto, le verso et la vidéo ne
+     * servent qu'à cette vérification. Les preuves de réalisations sont
+     * facultatives (`Portfolio()` si aucune) et revues par l'équipe avant
+     * d'être montrées aux clients. */
     suspend fun applyAsProvider(
-        services: List<String>, communes: List<String>, idDocument: ByteArray, selfie: ByteArray,
-        acceptedTermsVersion: LocalDate?,
+        services: List<String>, communes: List<String>, identity: IdentityCapture,
+        portfolio: Portfolio, acceptedTermsVersion: LocalDate?,
     )
+
+    /** Les services de la demande prestataire (vide pour un client seulement). */
+    suspend fun providerServices(): List<String>
+
+    /** Les preuves de réalisations envoyées, avec la décision de l'équipe
+     * pour chaque service. */
+    suspend fun portfolio(): Portfolio
+
+    /** Une demande de preuves faite par l'équipe, s'il y en a une en cours. */
+    suspend fun portfolioRequest(): PortfolioRequest?
+
+    /** Remplace les preuves envoyées (prestataire en vérification ou vérifié).
+     * Répond aussi à la demande de l'équipe, s'il y en a une. Un service
+     * modifié repasse par l'équipe avant d'être remontré. Refusé
+     * (`portfolio_locked`) pendant la vérification du prestataire, sauf
+     * demande de l'équipe. */
+    suspend fun sendPortfolio(portfolio: Portfolio)
 
     // --- Client : devis, paiement, suivi, litige ---
 
@@ -81,6 +100,10 @@ interface NexisRepository {
 
     /** Les devis reçus pour une mission, le mieux noté en premier. */
     suspend fun quotes(missionId: Int): List<Quote>
+
+    /** Les réalisations approuvées du prestataire d'un devis (`null` s'il n'en
+     * a pas). Jamais ses diplômes : seulement le fait qu'ils sont vérifiés. */
+    suspend fun providerShowcase(quoteId: Int): ProviderShowcase?
     suspend fun payAccounts(): List<PayAccount>
 
     /** Demande le paiement du devis choisi à l'opérateur. Le montant est celui
@@ -365,21 +388,65 @@ class DemoRepository(private val now: Instant = Instant.now()) : NexisRepository
     override suspend fun legalText(key: LegalDocumentKey): LegalText =
         LegalText(key, if (key == LegalDocumentKey.CGU) signupTermsVersion else providerTermsVersion, null)
 
+    private var chosenServices: List<String> = emptyList()
+    private var sentPortfolio = Portfolio()
+    private var pendingPortfolioRequest: PortfolioRequest? = null
+
     override suspend fun applyAsProvider(
-        services: List<String>, communes: List<String>, idDocument: ByteArray, selfie: ByteArray,
-        acceptedTermsVersion: LocalDate?,
+        services: List<String>, communes: List<String>, identity: IdentityCapture,
+        portfolio: Portfolio, acceptedTermsVersion: LocalDate?,
     ) {
         val me = profile()
         val catalog = serviceCatalog().map { it.id }.toSet()
         val valid = me.providerStatus == null &&
             services.isNotEmpty() && services.size <= 50 && catalog.containsAll(services) &&
             communes.isNotEmpty() && communes.size <= 50 && this.communes.containsAll(communes) &&
-            idDocument.isNotEmpty() && selfie.isNotEmpty() && acceptedTermsVersion == providerTermsVersion
+            identity.isComplete && portfolio.isValid(services.toSet()) && acceptedTermsVersion == providerTermsVersion
         if (!valid) throw NexisRefusal("provider_application_invalid")
-        // Aperçu : les photos ne sont gardées nulle part.
+        // Aperçu : le recto, le verso et la vidéo ne sont gardés nulle part ;
+        // les preuves restent en mémoire, sur ce téléphone.
         kotlinx.coroutines.delay(1_000)
         providerTermsAcceptedAt = LocalDate.now()
+        chosenServices = services
+        sentPortfolio = portfolio.resubmitted(Portfolio())
         store(me.copy(providerStatus = ProviderStatus.PENDING))
+    }
+
+    override suspend fun providerServices(): List<String> = chosenServices
+
+    override suspend fun portfolio(): Portfolio = sentPortfolio
+
+    override suspend fun portfolioRequest(): PortfolioRequest? = pendingPortfolioRequest
+
+    override suspend fun sendPortfolio(portfolio: Portfolio) {
+        if (profile().providerStatus == null || !portfolio.isValid(chosenServices.toSet())) throw NexisRefusal("portfolio_invalid")
+        if (!Portfolio.isEditable(profile().providerStatus, pendingPortfolioRequest != null)) throw NexisRefusal("portfolio_locked")
+        kotlinx.coroutines.delay(1_000)
+        sentPortfolio = portfolio.resubmitted(sentPortfolio)
+        pendingPortfolioRequest = null
+    }
+
+    /** Démonstration et tests : l'équipe a accepté le prestataire. */
+    fun demoVerifyProvider() {
+        store(profile = (registered[activePhone] ?: sampleProfile).copy(providerStatus = ProviderStatus.VERIFIED))
+    }
+
+    /** Démonstration et tests : la décision de l'équipe sur un service. */
+    fun demoReview(serviceId: String, review: ProofReview) {
+        sentPortfolio = Portfolio(
+            sentPortfolio.works.map { if (it.serviceId == serviceId) it.withReview(review) else it },
+            sentPortfolio.certificates, sentPortfolio.certificatesVerified,
+        )
+    }
+
+    /** Démonstration et tests : l'équipe a vérifié les diplômes. */
+    fun demoVerifyCertificates() {
+        sentPortfolio = Portfolio(sentPortfolio.works, sentPortfolio.certificates, sentPortfolio.certificates.isNotEmpty())
+    }
+
+    /** Démonstration et tests : l'équipe demande des preuves. */
+    fun demoAskPortfolio(services: List<String>) {
+        pendingPortfolioRequest = PortfolioRequest(services, LocalDate.now())
     }
 
     // --- Client : devis, paiement, suivi, litige ---
@@ -389,6 +456,28 @@ class DemoRepository(private val now: Instant = Instant.now()) : NexisRepository
 
     override suspend fun quotes(missionId: Int): List<Quote> =
         quotesByMission[missionId].orEmpty().sortedByDescending { it.rating }
+
+    override suspend fun providerShowcase(quoteId: Int): ProviderShowcase? = demoPortfolios[quoteId]?.showcase
+
+    /** Ce que l'équipe a reçu de Prisca et de Joël : un service approuvé, un
+     * refusé, un en attente. Seul l'approuvé arrive chez le client ; les
+     * diplômes ne quittent jamais l'équipe. */
+    private val demoPortfolios: Map<Int, Portfolio> by lazy {
+        mapOf(
+            521 to Portfolio(
+                listOf(
+                    WorkProof(
+                        "nettoyage",
+                        listOf(DemoPictures.jpeg(), DemoPictures.jpeg(0xFFB9C9DE.toInt(), round = true), DemoPictures.jpeg(0xFF8FA3BF.toInt())),
+                        "Salon et cuisine après travaux, Limete, 2025", ProofReview.APPROVED,
+                    ),
+                    WorkProof("jardinage", listOf(DemoPictures.jpeg()), "", ProofReview.REJECTED),
+                ),
+                listOf(DemoPictures.jpeg(round = true)), certificatesVerified = true,
+            ),
+            522 to Portfolio(listOf(WorkProof("nettoyage", listOf(DemoPictures.jpeg()), "", ProofReview.PENDING))),
+        )
+    }
 
     override suspend fun payAccounts(): List<PayAccount> = listOf(
         PayAccount(MobileOperator.MPESA, "+243 81 •• •• 412"),

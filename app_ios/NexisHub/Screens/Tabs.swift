@@ -142,6 +142,7 @@ struct ProfileView: View {
     @Environment(AppModel.self) private var app
     @State private var profile: Profile?
     @State private var devicesCount = 1
+    @State private var worksAsked = false
     @State private var flow = MissionFlow()
 
     var body: some View {
@@ -201,6 +202,12 @@ struct ProfileView: View {
                     Section {
                         row("briefcase", app.t("becomeProvider"), app.t("becomeProviderSub"), .becomeProvider)
                     }
+                } else if profile != nil {
+                    Section {
+                        // Preuves de réalisations : vues seulement par l'équipe ; un point si elle en demande.
+                        row("photo.stack", app.t("myWorks"), app.t(worksAsked ? "worksAskedShort" : "myWorksSub"), .portfolio)
+                            .badge(worksAsked ? 1 : 0)
+                    }
                 }
                 Section {
                     row("doc.text", app.t("legalTerms"), nil, .legal)
@@ -222,6 +229,7 @@ struct ProfileView: View {
             .task(id: app.revision) {
                 profile = try? await app.repository.profile()
                 devicesCount = (try? await app.repository.devices())?.count ?? 1
+                worksAsked = ((try? await app.repository.portfolioRequest()) ?? nil) != nil
             }
         }
         .missionFlow(flow, tab: .profile)

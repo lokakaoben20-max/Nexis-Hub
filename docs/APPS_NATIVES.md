@@ -117,10 +117,123 @@ ce téléphone », définitif), notifications (l'autorisation réelle du
 téléphone et ce que NexisHub envoie), aide et litiges (mes litiges, questions
 fréquentes tirées des règles de `CONCEPTION_ARGENT.md`), conditions
 d'utilisation (versions en vigueur, date d'acceptation, lecture du texte
-publié) et devenir prestataire (services, communes, pièce d'identité et
-photo, conditions des prestataires ; le profil reste « en vérification »
-jusqu'à la décision de l'équipe). Les photos de vérification restent en
-mémoire, réduites ; dans l'aperçu elles ne partent nulle part.
+publié) et devenir prestataire (services, communes, pièce d'identité recto
+et verso puis vidéo du visage, conditions des prestataires ; le profil reste
+« en vérification » jusqu'à la décision de l'équipe).
+
+### Preuves de réalisations (2026-11-26)
+
+Choix de Ben : **facultatives**, et l'équipe peut en demander plus tard. La
+galerie est permise pour cette étape seulement. Deuxième choix du même jour
+(« c'est mieux que ces photos soient partagées aussi aux clients ») :
+**l'équipe d'abord**, puis les photos d'un service approuvé et la phrase sont
+montrées aux clients ; les **diplômes restent à l'équipe**, le client voit
+seulement « Diplôme vérifié par NexisHub ».
+
+- « Devenir prestataire » passe à **5 étapes** : services, **vos
+  réalisations** (facultatif, « Passer cette étape »), communes, pièce
+  d'identité, conditions.
+- Pour chaque service choisi : 1 à 5 photos de travaux déjà faits et une
+  phrase de 200 signes au plus (« Pose d'un chauffe-eau, Limete, 2025 ») ;
+  plus 3 diplômes ou attestations au plus. Règles dans `Portfolio`
+  (`Data/Portfolio.swift`, `data/Portfolio.kt`), testées des deux côtés.
+- Choix des photos par le sélecteur du système (`PhotosPicker` sur iOS,
+  Photo Picker `PickMultipleVisualMedia` sur Android, sans autorisation de
+  lecture de la galerie). Chaque photo est remise à l'endroit, réduite à
+  1 600 px et réencodée en JPEG : les métadonnées (lieu, appareil) partent.
+- Profil → **« Mes réalisations »** (prestataire en vérification ou vérifié) :
+  revoir, compléter et renvoyer. Si l'équipe a demandé des preuves, l'écran
+  le dit (« L'équipe NexisHub vous demande des photos de vos travaux : … »)
+  et la ligne du profil aussi.
+- Décision de l'équipe par service (`ProofReview` : en attente, approuvé,
+  refusé), donnée par le serveur et jamais par l'app. « Mes réalisations »
+  l'affiche sur chaque service (« En attente de l'équipe », « Visible par les
+  clients », « Refusé par l'équipe : envoyez d'autres photos ») et
+  « Vérifié par l'équipe » sur les diplômes. Un service dont les photos ou la
+  phrase changent repasse en attente et disparaît des clients jusqu'au nouvel
+  accord ; des diplômes changés ne sont plus vérifiés
+  (`Portfolio.resubmitted(over:)`).
+- Côté client : sur la comparaison des devis, **« Voir ses réalisations »**
+  quand le prestataire a au moins un service approuvé. La feuille montre ces
+  services (photos, phrase), « Photos vérifiées par l'équipe NexisHub » et,
+  si c'est le cas, « Diplôme vérifié par NexisHub ». Ce que voit le client
+  vient de `Portfolio.showcase` (`ProviderShowcase`) : seulement l'approuvé,
+  jamais un diplôme. Testé des deux côtés.
+- **Figées pendant la vérification du prestataire** (choix de Ben, même
+  jour) : tant que le profil est « en vérification », « Mes réalisations »
+  montre ce qui a été envoyé, sans ajout, retrait ni phrase modifiable, et
+  sans bouton d'envoi (« L'équipe NexisHub vérifie votre profil… »). Seule
+  une demande de l'équipe rouvre l'écran. Après l'accord, elles redeviennent
+  modifiables. Règle `Portfolio.isEditable`, refus `portfolio_locked` dans
+  le dépôt, testés des deux côtés ; capture `portfolio-locked`.
+- Conseil affiché au prestataire : éviter les visages, les adresses et les
+  plaques sur les photos.
+- Dépôt de données : `applyAsProvider(… portfolio:)`, `providerServices()`,
+  `portfolio()`, `portfolioRequest()`, `sendPortfolio(_:)`,
+  `providerShowcase(quoteId:)`.
+- Captures de la CI : `become-portfolio`, `portfolio` (avec une demande de
+  l'équipe et un service déjà visible), `showcase` (réalisations de Prisca
+  depuis les devis), images dessinées. Textes lingala nouveaux à relire.
+
+### Pièce d'identité et vidéo du visage (2026-11-26)
+
+Demande de Ben : la pièce (carte d'électeur, permis…) est prise **recto puis
+verso par un scanner**, et le prestataire se filme au lieu d'envoyer une
+photo. **Jamais de galerie**, ni pour la pièce ni pour la vidéo. L'analyse
+d'image se fait sur le téléphone et **guide seulement la prise** : c'est
+l'équipe NexisHub qui vérifie la personne (exception notée dans `AGENTS.md`).
+
+- **iOS** (`Screens/IdentityStep.swift`, `Design/IdentityCamera.swift`) :
+  caméra arrière (AVFoundation), carte cherchée sur chaque image
+  (`VNDetectRectanglesRequest`, format ID-1). Quand elle reste immobile
+  12 images de suite (`StableCardTracker`), la photo se prend seule, la carte
+  est redressée (`CIPerspectiveCorrection`) et remise à l'endroit.
+- **Android** (`screens/IdentityStep.kt`) : scanner de documents de ML Kit
+  (`setGalleryImportAllowed(false)`, une page, mode de base sans filtres) ;
+  il détecte la carte, la cadre et la prend seul. Après le recto, l'écran dit
+  « Retournez la carte » et rouvre le scanner pour le verso. Le scanner passe
+  par les services Google Play : un téléphone sans eux (certains Huawei) ne
+  peut pas faire cette étape, l'écran le dit.
+- **Choix de la pièce** (ajouté le 2026-11-26 à 11 h 20, demande de Ben) :
+  carte d'électeur, permis de conduire ou passeport, choisi avant la prise.
+  Une carte se prend recto puis verso ; un **passeport, seulement la page
+  avec la photo** (pas de verso). Changer de pièce efface les faces prises.
+  La page du passeport est reconnue à un visage **et** à sa zone de lecture
+  automatique (deux lignes de 44 signes, la première commence par `P`,
+  `MachineZone`, testé), lue sur le téléphone (`VNRecognizeTextRequest` sur
+  iOS, ML Kit Text Recognition sur Android). Le texte lu n'est ni gardé ni
+  envoyé. Sinon : « Ce n'est pas la bonne page… ». Cadre au format de la
+  page (125 × 88 mm) au lieu de la carte.
+- **Recto ou verso** (`CardCheck`, testé des deux côtés) : le recto porte la
+  photo de la personne, donc un visage doit être vu sur la carte (Vision ou
+  ML Kit, dans les quatre sens). Sinon : « C'est le verso. Montrez d'abord le
+  recto… ». Le verso ne doit pas être la même image que le recto (empreinte
+  `dHash` de 64 bits, comparée à l'endroit et retournée) ; sinon : « C'est
+  encore le recto. Retournez la carte. ». Aperçu de chaque face avec
+  « Reprendre ».
+- **Vidéo du visage** (`SelfieScript`, testé des deux côtés) : caméra avant,
+  **sans micro** (iOS : aucune entrée audio ; Android : pas de
+  `withAudioEnabled()`, et `RECORD_AUDIO` retiré du manifeste fusionné). Les
+  consignes viennent l'une après l'autre : visage dans le cercle (début de
+  l'enregistrement), tourner la tête d'un côté puis de l'autre (ordre tiré au
+  sort, envoyé avec la vidéo pour que l'équipe le compare), regarder devant
+  soi (fin). Chaque consigne doit être tenue sur 5 images analysées. Le sens
+  se lit à la position du nez dans l'image non inversée, l'angle de la tête
+  sert pour l'amplitude (20° au moins). Plus de 20 s, ou visage perdu plus de
+  30 images : on recommence. Deux visages : « Une seule personne… ». Vidéo
+  H.264 de 2 Mbit/s, 720p au plus.
+- Tout reste en mémoire jusqu'à l'envoi ; les fichiers temporaires (vidéo,
+  page scannée) sont effacés dès qu'ils sont lus. Dans l'aperçu, rien ne part.
+- Le dépôt de données reçoit `IdentityCapture` (type de pièce, recto ou page
+  photo, verso pour une carte seulement, vidéo, durée, ordre des consignes) à
+  la place de `idDocument` / `selfie`.
+- **Sans appareil photo** : le simulateur iOS (et donc Appetize) joue le
+  parcours avec des images dessinées, marqué « Simulateur : démonstration sans
+  appareil photo ». Captures de la CI : `become-identity` (recto),
+  `become-wrong-side`, `become-verso`, `become-selfie`, `become-review`,
+  `become-passport`, `become-wrong-page`.
+- Conception côté serveur (fichiers, conservation, suppression) : à valider
+  par Ben, la durée de conservation de la vidéo est à voir avec le juriste.
 
 Code NexisHub, Face ID et empreinte (2026-11-26, demandé par Ben) :
 
@@ -171,7 +284,7 @@ Les textes des écrans du profil ont été ajoutés aux `.arb` (puis copiés par
 `outils/textes_apps_natives.py`). **Lingala à faire relire** par une
 personne de Kinshasa : `nextStep`, et les clés qui commencent par `info`,
 `devices`, `notif`, `help`, `faq`, `legal` (sauf `legalTerms`,
-`legalPrivacy`), `become` et `providerPending`, puis `cancel`, `bioFingerprint`
+`legalPrivacy`), `become`, `providerPending`, `scan`, `camera` et `selfie`, puis `cancel`, `bioFingerprint`
 et les clés qui commencent par `protect`, `lock`, `guard` et `security`. Les fichiers
 `app_localizations*.dart` ne contiennent pas encore ces clés : Flutter les
 régénère à la compilation (`generate: true`).

@@ -1,14 +1,32 @@
 package com.nexishub.app
 
+import com.nexishub.app.data.CardCheck
+import com.nexishub.app.data.CardSide
+import com.nexishub.app.data.CardVerdict
 import com.nexishub.app.data.Currency
 import com.nexishub.app.data.DemoRepository
 import com.nexishub.app.data.DrcPhone
+import com.nexishub.app.data.FaceSample
+import com.nexishub.app.data.HeadPose
+import com.nexishub.app.data.HeadPosition
+import com.nexishub.app.data.HeadTurn
+import com.nexishub.app.data.IdentityCapture
+import com.nexishub.app.data.IdentityDocument
+import com.nexishub.app.data.ImageHash
+import com.nexishub.app.data.MachineZone
 import com.nexishub.app.data.MissionStatus
 import com.nexishub.app.data.Money
+import com.nexishub.app.data.NexisRefusal
+import com.nexishub.app.data.Portfolio
+import com.nexishub.app.data.SelfieScript
 import com.nexishub.app.data.Texts
+import com.nexishub.app.data.ProofReview
+import com.nexishub.app.data.ProviderStatus
+import com.nexishub.app.data.WorkProof
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -315,14 +333,25 @@ class AccountTest {
     fun providerApplicationNeedsEveryStep() = runBlocking {
         val repo = DemoRepository()
         assertTrue(repo.registerClient("+243810000001", "Esther", "M", "Limete", repo.signupTermsVersion))
-        val photo = byteArrayOf(1, 2, 3)
-        assertEquals("provider_application_invalid", refusal {
-            repo.applyAsProvider(listOf("nettoyage"), listOf("Limete"), photo, photo, null)
-        })
-        assertEquals("provider_application_invalid", refusal {
-            repo.applyAsProvider(listOf("nettoyage"), listOf("Limete"), ByteArray(0), photo, repo.providerTermsVersion)
-        })
-        repo.applyAsProvider(listOf("nettoyage"), listOf("Limete"), photo, photo, repo.providerTermsVersion)
+        val identity = IdentityCapture(
+            IdentityDocument.VOTER_CARD, byteArrayOf(1), byteArrayOf(2), byteArrayOf(3), 7, listOf(HeadTurn.RIGHT, HeadTurn.LEFT),
+        )
+        fun send(sent: IdentityCapture, terms: java.time.LocalDate?) = refusal {
+            repo.applyAsProvider(listOf("nettoyage"), listOf("Limete"), sent, Portfolio(), terms)
+        }
+        assertEquals("provider_application_invalid", send(identity, null))
+        val noVerso = IdentityCapture(identity.document, identity.recto, ByteArray(0), identity.video, 7, identity.headTurns)
+        assertEquals("provider_application_invalid", send(noVerso, repo.providerTermsVersion))
+        val noVideo = IdentityCapture(identity.document, identity.recto, identity.verso, ByteArray(0), 7, identity.headTurns)
+        assertEquals("provider_application_invalid", send(noVideo, repo.providerTermsVersion))
+        val oneTurn = IdentityCapture(identity.document, identity.recto, identity.verso, identity.video, 7, listOf(HeadTurn.LEFT, HeadTurn.LEFT))
+        // Passeport : une seule page, jamais de verso.
+        val passportWithVerso = IdentityCapture(IdentityDocument.PASSPORT, identity.recto, identity.verso, identity.video, 7, identity.headTurns)
+        assertEquals("provider_application_invalid", send(passportWithVerso, repo.providerTermsVersion))
+        assertTrue(IdentityCapture(IdentityDocument.PASSPORT, identity.recto, null, identity.video, 7, identity.headTurns).isComplete)
+        assertFalse(IdentityCapture(IdentityDocument.DRIVING_LICENCE, identity.recto, null, identity.video, 7, identity.headTurns).isComplete)
+        assertEquals("provider_application_invalid", send(oneTurn, repo.providerTermsVersion))
+        assertEquals(null, send(identity, repo.providerTermsVersion))
         val profile = repo.profile()
         assertEquals(com.nexishub.app.data.ProviderStatus.PENDING, profile.providerStatus)
         assertTrue(!profile.isProvider)
@@ -335,6 +364,255 @@ class AccountTest {
     @Test
     fun captureCodesMatchTheScript() {
         assertEquals(com.nexishub.app.Capture.BECOME_IDENTITY, com.nexishub.app.Capture.from("become-identity"))
+        assertEquals(com.nexishub.app.Capture.BECOME_WRONG_SIDE, com.nexishub.app.Capture.from("become-wrong-side"))
+        assertEquals(com.nexishub.app.Capture.BECOME_VERSO, com.nexishub.app.Capture.from("become-verso"))
+        assertEquals(com.nexishub.app.Capture.BECOME_SELFIE, com.nexishub.app.Capture.from("become-selfie"))
+        assertEquals(com.nexishub.app.Capture.BECOME_REVIEW, com.nexishub.app.Capture.from("become-review"))
+        assertEquals(com.nexishub.app.Capture.BECOME_PASSPORT, com.nexishub.app.Capture.from("become-passport"))
+        assertEquals(com.nexishub.app.Capture.BECOME_WRONG_PAGE, com.nexishub.app.Capture.from("become-wrong-page"))
+        assertEquals(com.nexishub.app.Capture.BECOME_PORTFOLIO, com.nexishub.app.Capture.from("become-portfolio"))
+        assertEquals(com.nexishub.app.Capture.PORTFOLIO, com.nexishub.app.Capture.from("portfolio"))
+        assertEquals(com.nexishub.app.Capture.PORTFOLIO_LOCKED, com.nexishub.app.Capture.from("portfolio-locked"))
+        assertEquals(com.nexishub.app.Capture.SHOWCASE, com.nexishub.app.Capture.from("showcase"))
         assertEquals(com.nexishub.app.Capture.TRACKING, com.nexishub.app.Capture.from("tracking"))
+    }
+}
+
+class IdentityGuideTest {
+    @Test
+    fun rectoNeedsAFace() {
+        assertEquals(CardVerdict.ACCEPTED, CardCheck.verdict(CardSide.RECTO, true, listOf(1L), null))
+        assertEquals(CardVerdict.SHOW_RECTO_FIRST, CardCheck.verdict(CardSide.RECTO, false, listOf(1L), null))
+    }
+
+    @Test
+    fun versoMustDifferFromRecto() {
+        val recto = 0x0F0F_0F0F_0F0F_0F0FL
+        val same = recto xor 0b111L
+        val other = recto.inv()
+        assertEquals(CardVerdict.STILL_RECTO, CardCheck.verdict(CardSide.VERSO, false, listOf(same), recto))
+        assertEquals(CardVerdict.ACCEPTED, CardCheck.verdict(CardSide.VERSO, false, listOf(other), recto))
+        // Carte à l'envers : l'une des deux lectures ressemble au recto.
+        assertEquals(CardVerdict.STILL_RECTO, CardCheck.verdict(CardSide.VERSO, false, listOf(other, same), recto))
+        // Avec un visage visible, un écart moyen suffit à dire « encore le recto ».
+        val medium = recto xor 0xFFFFL
+        assertEquals(CardVerdict.STILL_RECTO, CardCheck.verdict(CardSide.VERSO, true, listOf(medium), recto))
+        assertEquals(CardVerdict.ACCEPTED, CardCheck.verdict(CardSide.VERSO, false, listOf(medium), recto))
+    }
+
+    @Test
+    fun passportNeedsFaceAndMachineZone() {
+        assertEquals(listOf(CardSide.PASSPORT_PAGE), IdentityDocument.PASSPORT.sides)
+        assertEquals(listOf(CardSide.RECTO, CardSide.VERSO), IdentityDocument.DRIVING_LICENCE.sides)
+        assertEquals(CardVerdict.ACCEPTED, CardCheck.verdict(CardSide.PASSPORT_PAGE, true, emptyList(), null, machineZone = true))
+        assertEquals(CardVerdict.SHOW_PHOTO_PAGE, CardCheck.verdict(CardSide.PASSPORT_PAGE, true, emptyList(), null, machineZone = false))
+        assertEquals(CardVerdict.SHOW_PHOTO_PAGE, CardCheck.verdict(CardSide.PASSPORT_PAGE, false, emptyList(), null, machineZone = true))
+    }
+
+    @Test
+    fun machineZoneIsRecognised() {
+        val zone = listOf(
+            "REPUBLIQUE DEMOCRATIQUE DU CONGO",
+            "P<CODMUKENDI<<GRACE<<<<<<<<<<<<<<<<<<<<<<<<",
+            "OP12345674COD9001014F3001019<<<<<<<<<<<<<<06",
+        )
+        assertTrue(MachineZone.found(zone))
+        // Lu avec des espaces et des minuscules.
+        assertTrue(MachineZone.found(listOf("p<cod mukendi<<grace<<<<<<<<<<<<<<<<<<<<", "OP1234567 4COD9001014F3001019<<<<<<<<<06")))
+        // Une seule ligne, ou une page de visas : pas la page photo.
+        assertFalse(MachineZone.found(listOf("P<CODMUKENDI<<GRACE<<<<<<<<<<<<<<<<<<<<<<<<")))
+        assertFalse(MachineZone.found(listOf("VISAS", "Page 12", "ENTREE ARRIVAL 12/05/2025 KINSHASA NDJILI")))
+    }
+
+    @Test
+    fun differenceHash() {
+        val rising = IntArray(72) { (it % 9) * 20 }
+        assertEquals(-1L, ImageHash.dHash(rising))
+        assertEquals(0L, ImageHash.dHash(ImageHash.halfTurn(rising)))
+        assertEquals(64, ImageHash.distance(0L, -1L))
+    }
+
+    @Test
+    fun headPoseUsesTheNoseForTheDirection() {
+        // Nez vers la droite de l'image (non inversée) : la personne tourne vers sa gauche.
+        assertEquals(HeadPosition.Turned(HeadTurn.LEFT), HeadPose.position(FaceSample(1, turnDegrees = 28.0, noseOffset = 0.12)))
+        assertEquals(HeadPosition.Turned(HeadTurn.RIGHT), HeadPose.position(FaceSample(1, turnDegrees = 28.0, noseOffset = -0.12)))
+        assertEquals(HeadPosition.Ahead, HeadPose.position(FaceSample(1, turnDegrees = 4.0, noseOffset = 0.01)))
+        assertEquals(HeadPosition.Between, HeadPose.position(FaceSample(1, turnDegrees = 15.0, noseOffset = 0.05)))
+        assertEquals(HeadPosition.Turned(HeadTurn.RIGHT), HeadPose.position(FaceSample(1, noseOffset = -0.2)))
+    }
+
+    @Test
+    fun selfieStepsComeInOrder() {
+        val script = SelfieScript(listOf(HeadTurn.RIGHT, HeadTurn.LEFT), holdNeeded = 3)
+        var time = 0.0
+        fun run(sample: FaceSample, frames: Int) = (0 until frames).map { time += 0.1; script.feed(sample, time) }
+        val framed = FaceSample(1, turnDegrees = 2.0)
+        val left = FaceSample(1, turnDegrees = 30.0, noseOffset = 0.15)
+        val right = FaceSample(1, turnDegrees = 30.0, noseOffset = -0.15)
+        assertEquals(1, script.number)
+        assertEquals(SelfieScript.Event.START_RECORDING, run(framed, 3).last())
+        assertEquals(SelfieScript.Step.Turn(HeadTurn.RIGHT), script.step)
+        // Tourner du mauvais côté ne fait pas avancer.
+        assertFalse(SelfieScript.Event.ADVANCED in run(left, 5))
+        assertEquals(SelfieScript.Event.ADVANCED, run(right, 3).last())
+        assertEquals(SelfieScript.Event.ADVANCED, run(left, 3).last())
+        assertEquals(SelfieScript.Step.LookAhead, script.step)
+        assertEquals(4, script.number)
+        assertEquals(SelfieScript.Event.FINISHED, run(framed, 3).last())
+        assertEquals(SelfieScript.Step.Done, script.step)
+        assertTrue(script.seconds > 0)
+    }
+
+    @Test
+    fun selfieRestartsWhenTooSlowOrFaceLost() {
+        val script = SelfieScript(listOf(HeadTurn.LEFT, HeadTurn.RIGHT), holdNeeded = 1, timeLimit = 5.0, lostLimit = 2)
+        val framed = FaceSample(1, turnDegrees = 0.0)
+        assertEquals(SelfieScript.Event.START_RECORDING, script.feed(framed, 0.0))
+        assertEquals(SelfieScript.Event.RESTART, script.feed(framed, 6.0))
+        assertEquals(SelfieScript.Step.FaceIn, script.step)
+        assertEquals(SelfieScript.Event.START_RECORDING, script.feed(framed, 7.0))
+        assertEquals(SelfieScript.Event.NONE, script.feed(FaceSample(0), 7.1))
+        assertEquals(SelfieScript.Event.NONE, script.feed(FaceSample(0), 7.2))
+        assertEquals(SelfieScript.Event.RESTART, script.feed(FaceSample(0), 7.3))
+        // Deux visages : rien n'avance, et l'écran le dit.
+        script.feed(FaceSample(2), 8.0)
+        assertTrue(script.severalFaces)
+        assertEquals(SelfieScript.Step.FaceIn, script.step)
+    }
+
+    @Test
+    fun faceMustBeCenteredToStart() {
+        assertTrue(HeadPose.isFramed(FaceSample(1, turnDegrees = 3.0)))
+        assertFalse(HeadPose.isFramed(FaceSample(1, centerX = 0.8, turnDegrees = 3.0)))
+        assertFalse(HeadPose.isFramed(FaceSample(1, width = 0.1, turnDegrees = 3.0)))
+        assertFalse(HeadPose.isFramed(FaceSample(2, turnDegrees = 3.0)))
+    }
+}
+
+class PortfolioTest {
+    private fun work(service: String, photos: Int = 1, note: String = "") = WorkProof(service, List(photos) { byteArrayOf(1) }, note)
+
+    @Test
+    fun portfolioRules() {
+        val services = setOf("plomberie", "electricite")
+        assertTrue(Portfolio().isValid(services))
+        assertTrue(Portfolio(listOf(work("plomberie", photos = 5)), listOf(byteArrayOf(2))).isValid(services))
+        // Plus de 5 photos, un service non choisi, deux fois le même service.
+        assertFalse(Portfolio(listOf(work("plomberie", photos = 6))).isValid(services))
+        assertFalse(Portfolio(listOf(work("coiffure"))).isValid(services))
+        assertFalse(Portfolio(listOf(work("plomberie"), work("plomberie"))).isValid(services))
+        // Une phrase trop longue, 4 attestations, un fichier vide.
+        assertFalse(Portfolio(listOf(work("plomberie", note = "a".repeat(201)))).isValid(services))
+        assertFalse(Portfolio(certificates = List(4) { byteArrayOf(2) }).isValid(services))
+        assertFalse(Portfolio(certificates = listOf(ByteArray(0))).isValid(services))
+    }
+
+    @Test
+    fun cleanedDropsServicesWithoutPhotos() {
+        val portfolio = Portfolio(listOf(work("plomberie", photos = 0, note = "Fuite"), work("electricite", note = "  Tableau  ")))
+        assertEquals(listOf("electricite"), portfolio.cleaned.works.map { it.serviceId })
+        assertEquals("Tableau", portfolio.cleaned.works.first().note)
+        assertTrue(Portfolio(listOf(work("plomberie", photos = 0))).cleaned.isEmpty)
+    }
+
+    @Test
+    fun portfolioIsSentWithTheApplicationAndLater() = runBlocking {
+        val repo = DemoRepository()
+        assertTrue(repo.registerClient("+243810000002", "Jean", "K", "Limete", repo.signupTermsVersion))
+        // Un client seulement ne peut pas envoyer de preuves.
+        assertEquals("portfolio_invalid", runCatching { repo.sendPortfolio(Portfolio(listOf(work("plomberie")))) }
+            .exceptionOrNull()?.let { (it as NexisRefusal).code })
+        val identity = IdentityCapture(IdentityDocument.PASSPORT, byteArrayOf(1), null, byteArrayOf(3), 7, listOf(HeadTurn.LEFT, HeadTurn.RIGHT))
+        repo.applyAsProvider(listOf("plomberie"), listOf("Limete"), identity, Portfolio(listOf(work("plomberie", photos = 2))), repo.providerTermsVersion)
+        assertEquals(2, repo.portfolio().works.first().photos.size)
+        assertEquals(listOf("plomberie"), repo.providerServices())
+        // L'équipe demande des preuves ; l'envoi y répond.
+        repo.demoAskPortfolio(listOf("plomberie"))
+        assertEquals(listOf("plomberie"), repo.portfolioRequest()?.services)
+        repo.sendPortfolio(Portfolio(listOf(work("plomberie", photos = 3)), listOf(byteArrayOf(4))))
+        assertEquals(null, repo.portfolioRequest())
+        assertEquals(1, repo.portfolio().certificates.size)
+        // Un service qui n'est pas dans la demande est refusé.
+        assertEquals("portfolio_invalid", runCatching { repo.sendPortfolio(Portfolio(listOf(work("coiffure")))) }
+            .exceptionOrNull()?.let { (it as NexisRefusal).code })
+        // Pendant la vérification, sans demande de l'équipe : figé.
+        assertEquals("portfolio_locked", runCatching { repo.sendPortfolio(Portfolio(listOf(work("plomberie")))) }
+            .exceptionOrNull()?.let { (it as NexisRefusal).code })
+        // Après l'accord de l'équipe : de nouveau modifiable.
+        repo.demoVerifyProvider()
+        repo.sendPortfolio(Portfolio(listOf(work("plomberie"))))
+        assertEquals(1, repo.portfolio().works.first().photos.size)
+    }
+
+    @Test
+    fun worksAreFrozenWhileTheTeamChecksTheProvider() {
+        assertFalse(Portfolio.isEditable(null, false))
+        assertFalse(Portfolio.isEditable(ProviderStatus.PENDING, false))
+        assertTrue(Portfolio.isEditable(ProviderStatus.PENDING, true))
+        assertTrue(Portfolio.isEditable(ProviderStatus.VERIFIED, false))
+    }
+    @Test
+    fun clientsSeeOnlyApprovedWorksAndNeverCertificates() {
+        val portfolio = Portfolio(
+            listOf(work("plomberie", photos = 2, note = "Cuisine").withReview(ProofReview.APPROVED),
+                work("electricite").withReview(ProofReview.REJECTED), work("coiffure")),
+            listOf(byteArrayOf(9)), certificatesVerified = true,
+        )
+        val showcase = portfolio.showcase
+        assertEquals(listOf("plomberie"), showcase?.works?.map { it.serviceId })
+        assertEquals("Cuisine", showcase?.works?.first()?.note)
+        assertEquals(true, showcase?.certificateVerified)
+        // Rien d'approuvé : rien chez le client, même avec un diplôme vérifié.
+        assertNull(Portfolio(listOf(work("plomberie")), listOf(byteArrayOf(9)), certificatesVerified = true).showcase)
+    }
+
+    @Test
+    fun changedWorksGoBackToTheTeam() {
+        val previous = Portfolio(
+            listOf(work("plomberie", photos = 2, note = "Cuisine").withReview(ProofReview.APPROVED),
+                work("electricite").withReview(ProofReview.REJECTED)),
+            listOf(byteArrayOf(9)), certificatesVerified = true,
+        )
+        // Rien de changé : les décisions restent.
+        val same = Portfolio(listOf(work("plomberie", photos = 2, note = "Cuisine"), work("electricite")), listOf(byteArrayOf(9)))
+            .resubmitted(previous)
+        assertEquals(listOf(ProofReview.APPROVED, ProofReview.REJECTED), same.works.map { it.review })
+        assertTrue(same.certificatesVerified)
+        // Une photo ajoutée, une phrase changée, un diplôme changé : tout repasse par l'équipe.
+        val changed = Portfolio(listOf(work("plomberie", photos = 3, note = "Cuisine"), work("electricite", note = "Tableau")), listOf(byteArrayOf(8)))
+            .resubmitted(previous)
+        assertEquals(listOf(ProofReview.PENDING, ProofReview.PENDING), changed.works.map { it.review })
+        assertFalse(changed.certificatesVerified)
+        assertNull(changed.showcase)
+    }
+
+    @Test
+    fun providerSeesTheTeamDecision() = runBlocking {
+        val repo = DemoRepository()
+        assertTrue(repo.registerClient("+243810000003", "Jean", "K", "Limete", repo.signupTermsVersion))
+        val identity = IdentityCapture(IdentityDocument.PASSPORT, byteArrayOf(1), null, byteArrayOf(3), 7, listOf(HeadTurn.LEFT, HeadTurn.RIGHT))
+        // L'app ne peut pas se donner l'accord de l'équipe.
+        val forged = Portfolio(listOf(work("plomberie", photos = 2).withReview(ProofReview.APPROVED)), certificatesVerified = true)
+        repo.applyAsProvider(listOf("plomberie"), listOf("Limete"), identity, forged, repo.providerTermsVersion)
+        assertEquals(ProofReview.PENDING, repo.portfolio().works.first().review)
+        assertFalse(repo.portfolio().certificatesVerified)
+        repo.demoReview("plomberie", ProofReview.APPROVED)
+        assertEquals(ProofReview.APPROVED, repo.portfolio().works.first().review)
+        // Renvoyé sans changement, après l'accord du prestataire : toujours approuvé.
+        repo.demoVerifyProvider()
+        repo.sendPortfolio(Portfolio(listOf(work("plomberie", photos = 2))))
+        assertEquals(ProofReview.APPROVED, repo.portfolio().works.first().review)
+    }
+
+    @Test
+    fun quoteShowsOnlyTheApprovedShowcase() = runBlocking {
+        val repo = DemoRepository()
+        val prisca = repo.providerShowcase(521)
+        assertEquals(listOf("nettoyage"), prisca?.works?.map { it.serviceId })
+        assertEquals(true, prisca?.certificateVerified)
+        // Joël attend encore l'équipe ; Aline n'a rien envoyé.
+        assertNull(repo.providerShowcase(522))
+        assertNull(repo.providerShowcase(523))
     }
 }

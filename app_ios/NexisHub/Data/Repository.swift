@@ -50,16 +50,34 @@ protocol NexisRepository: AnyObject {
     func legalDocuments() async throws -> [LegalDocument]
     func legalText(_ key: LegalDocumentKey) async throws -> LegalText
     /// Demande à devenir prestataire. Le profil reste en vérification jusqu'à
-    /// la décision de l'équipe NexisHub. Les photos ne servent qu'à cette
-    /// vérification.
-    func applyAsProvider(services: [String], communes: [String], idDocument: Data, selfie: Data,
-                         acceptedTermsVersion: Date?) async throws
+    /// la décision de l'équipe NexisHub. Le recto, le verso et la vidéo ne
+    /// servent qu'à cette vérification. Les preuves de réalisations sont
+    /// facultatives (`Portfolio()` si aucune) et revues par l'équipe avant
+    /// d'être montrées aux clients.
+    func applyAsProvider(services: [String], communes: [String], identity: IdentityCapture,
+                         portfolio: Portfolio, acceptedTermsVersion: Date?) async throws
+    /// Les services de la demande prestataire (vide pour un client seulement).
+    func providerServices() async throws -> [String]
+    /// Les preuves de réalisations envoyées, avec la décision de l'équipe
+    /// pour chaque service.
+    func portfolio() async throws -> Portfolio
+    /// Une demande de preuves faite par l'équipe, s'il y en a une en cours.
+    func portfolioRequest() async throws -> PortfolioRequest?
+    /// Remplace les preuves envoyées (prestataire en vérification ou
+    /// vérifié). Répond aussi à la demande de l'équipe, s'il y en a une. Un
+    /// service modifié repasse par l'équipe avant d'être remontré. Refusé
+    /// (`portfolio_locked`) pendant la vérification du prestataire, sauf
+    /// demande de l'équipe.
+    func sendPortfolio(_ portfolio: Portfolio) async throws
 
     // --- Client : devis, paiement, suivi, litige ---
 
     func mission(_ id: Int) async throws -> Mission
     /// Les devis reçus pour une mission, le mieux noté en premier.
     func quotes(missionId: Int) async throws -> [Quote]
+    /// Les réalisations approuvées du prestataire d'un devis (`nil` s'il n'en
+    /// a pas). Jamais ses diplômes : seulement le fait qu'ils sont vérifiés.
+    func providerShowcase(quoteId: Int) async throws -> ProviderShowcase?
     func payAccounts() async throws -> [PayAccount]
     /// Demande le paiement du devis choisi à l'opérateur. Le montant est celui
     /// du devis enregistré sur le serveur, jamais un calcul de l'app.
@@ -375,21 +393,73 @@ final class DemoRepository: NexisRepository {
         LegalText(key: key, version: key == .cgu ? signupTermsVersion : providerTermsVersion, text: nil)
     }
 
-    func applyAsProvider(services: [String], communes chosen: [String], idDocument: Data, selfie: Data,
-                         acceptedTermsVersion: Date?) async throws {
+    private var chosenServices: [String] = []
+    private var sentPortfolio = Portfolio()
+    private var pendingPortfolioRequest: PortfolioRequest?
+
+    func applyAsProvider(services: [String], communes chosen: [String], identity: IdentityCapture,
+                         portfolio: Portfolio, acceptedTermsVersion: Date?) async throws {
         let current = try await profile()
         let catalog = Set(try await serviceCatalog().map(\.id))
         guard current.providerStatus == nil,
               !services.isEmpty, services.count <= 50, Set(services).isSubset(of: catalog),
               !chosen.isEmpty, chosen.count <= 50, Set(chosen).isSubset(of: Set(communes)),
-              !idDocument.isEmpty, !selfie.isEmpty,
+              identity.isComplete,
+              portfolio.isValid(services: Set(services)),
               acceptedTermsVersion == providerTermsVersion
         else { throw NexisRefusal(code: "provider_application_invalid") }
-        // Aperçu : les photos ne sont gardées nulle part.
+        // Aperçu : le recto, le verso et la vidéo ne sont gardés nulle part ;
+        // les preuves restent en mémoire, sur ce téléphone.
         try await Task.sleep(for: .seconds(1))
         providerTermsAcceptedAt = .now
+        chosenServices = services
+        sentPortfolio = portfolio.resubmitted(over: Portfolio())
         store(Profile(firstName: current.firstName, lastName: current.lastName, phone: current.phone,
                       commune: current.commune, providerStatus: .pending, termsVersion: current.termsVersion))
+    }
+
+    func providerServices() async throws -> [String] { chosenServices }
+
+    func portfolio() async throws -> Portfolio { sentPortfolio }
+
+    func portfolioRequest() async throws -> PortfolioRequest? { pendingPortfolioRequest }
+
+    func sendPortfolio(_ portfolio: Portfolio) async throws {
+        guard try await profile().providerStatus != nil, portfolio.isValid(services: Set(chosenServices)) else {
+            throw NexisRefusal(code: "portfolio_invalid")
+        }
+        guard Portfolio.isEditable(status: try await profile().providerStatus, requested: pendingPortfolioRequest != nil) else {
+            throw NexisRefusal(code: "portfolio_locked")
+        }
+        try await Task.sleep(for: .seconds(1))
+        sentPortfolio = portfolio.resubmitted(over: sentPortfolio)
+        pendingPortfolioRequest = nil
+    }
+
+    /// Démonstration et tests : la décision de l'équipe sur un service.
+    func demoReview(serviceId: String, _ review: ProofReview) {
+        sentPortfolio.works = sentPortfolio.works.map { work in
+            var reviewed = work
+            if work.serviceId == serviceId { reviewed.review = review }
+            return reviewed
+        }
+    }
+
+    /// Démonstration et tests : l'équipe a vérifié les diplômes.
+    func demoVerifyCertificates() {
+        sentPortfolio.certificatesVerified = !sentPortfolio.certificates.isEmpty
+    }
+
+    /// Démonstration et tests : l'équipe a accepté le prestataire.
+    func demoVerifyProvider() {
+        let current = registered[activePhone] ?? sampleProfile
+        store(Profile(firstName: current.firstName, lastName: current.lastName, phone: current.phone,
+                      commune: current.commune, providerStatus: .verified, termsVersion: current.termsVersion))
+    }
+
+    /// Démonstration et tests : l'équipe demande des preuves.
+    func demoAskPortfolio(services: [String]) {
+        pendingPortfolioRequest = PortfolioRequest(services: services, askedAt: .now)
     }
 
     // MARK: Client : devis, paiement, suivi, litige
@@ -404,6 +474,27 @@ final class DemoRepository: NexisRepository {
     func quotes(missionId: Int) async throws -> [Quote] {
         (quotesByMission[missionId] ?? []).sorted { $0.rating > $1.rating }
     }
+
+    func providerShowcase(quoteId: Int) async throws -> ProviderShowcase? {
+        demoPortfolios[quoteId]?.showcase
+    }
+
+    /// Ce que l'équipe a reçu de Prisca et de Joël : un service approuvé, un
+    /// refusé, un en attente. Seul l'approuvé arrive chez le client ; les
+    /// diplômes ne quittent jamais l'équipe.
+    private lazy var demoPortfolios: [Int: Portfolio] = [
+        521: Portfolio(works: [
+            WorkProof(serviceId: "nettoyage",
+                      photos: ["sparkles", "bubbles.and.sparkles.fill", "sofa.fill"].map { DemoPictures.jpeg(symbol: $0) },
+                      note: "Salon et cuisine après travaux, Limete, 2025", review: .approved),
+            WorkProof(serviceId: "jardinage", photos: [DemoPictures.jpeg(symbol: "leaf.fill")],
+                      note: "", review: .rejected),
+        ], certificates: [DemoPictures.jpeg(symbol: "doc.text.fill")], certificatesVerified: true),
+        522: Portfolio(works: [
+            WorkProof(serviceId: "nettoyage", photos: [DemoPictures.jpeg(symbol: "sparkles")],
+                      note: "", review: .pending),
+        ]),
+    ]
 
     func payAccounts() async throws -> [PayAccount] {
         [

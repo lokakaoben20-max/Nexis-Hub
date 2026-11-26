@@ -3,16 +3,11 @@ package com.nexishub.app.screens
 import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,12 +18,10 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
@@ -37,7 +30,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.Badge
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Description
@@ -48,9 +40,6 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.Payments
-import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.PhotoCamera
-import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.PhoneIphone
 import androidx.compose.material.icons.rounded.Schedule
@@ -84,9 +73,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -96,7 +82,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -124,7 +109,6 @@ import com.nexishub.app.ui.PaymentPill
 import com.nexishub.app.ui.Pill
 import com.nexishub.app.ui.PillTone
 import com.nexishub.app.ui.PrimaryButton
-import com.nexishub.app.ui.SectionTitle
 import com.nexishub.app.ui.ServiceTile
 import com.nexishub.app.ui.body
 import com.nexishub.app.ui.clock
@@ -134,11 +118,7 @@ import com.nexishub.app.ui.place
 import com.nexishub.app.ui.stamp
 import com.nexishub.app.ui.title
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
-import java.io.File
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -557,7 +537,8 @@ fun LegalReader(key: LegalDocumentKey, onClose: () -> Unit) {
 
 // Devenir prestataire
 
-private const val BECOME_STEPS = 4
+/** Services, réalisations (facultatif), communes, pièce d'identité, conditions. */
+private const val BECOME_STEPS = 5
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -566,12 +547,20 @@ fun BecomeProviderScreen() {
     val flow = LocalFlow.current
     val p = LocalPalette.current
     val scope = rememberCoroutineScope()
-    var step by remember { mutableStateOf(if (app.capture == "become-identity") 3 else 1) }
+    var step by remember {
+        mutableStateOf(
+            when (app.capture) {
+                in IdentityDemo.codes -> 4
+                PortfolioDemo.STEP -> 2
+                else -> 1
+            },
+        )
+    }
     var catalog by remember { mutableStateOf(emptyList<CatalogService>()) }
-    var services by remember { mutableStateOf(emptySet<String>()) }
+    var services by remember { mutableStateOf(if (app.capture == PortfolioDemo.STEP) setOf("plomberie", "electricite") else emptySet()) }
+    var works by remember { mutableStateOf(if (app.capture == PortfolioDemo.STEP) PortfolioDemo.draft(listOf("plomberie")) else PortfolioDraft()) }
     var communes by remember { mutableStateOf(emptySet<String>()) }
-    var idDocument by remember { mutableStateOf<ByteArray?>(null) }
-    var selfie by remember { mutableStateOf<ByteArray?>(null) }
+    var identity by remember { mutableStateOf(IdentityDraft()) }
     var accepted by remember { mutableStateOf(false) }
     var readingTerms by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -600,25 +589,31 @@ fun BecomeProviderScreen() {
     }
     val ready = when (step) {
         1 -> services.isNotEmpty()
-        2 -> communes.isNotEmpty()
-        3 -> idDocument != null && selfie != null
+        2 -> true
+        3 -> communes.isNotEmpty()
+        4 -> identity.capture != null
         else -> accepted
     }
     FlowScaffold(
         app.t("becomeProvider"), onBack = { if (step > 1) step -= 1 else flow.back() },
         bottom = {
-            PrimaryButton(app.t(if (step < BECOME_STEPS) "nextStep" else "becomeSend"), {
+            val label = when {
+                step == BECOME_STEPS -> "becomeSend"
+                step == 2 && works.isEmpty -> "worksSkip"
+                else -> "nextStep"
+            }
+            PrimaryButton(app.t(label), {
                 if (step < BECOME_STEPS) {
                     step += 1
                 } else {
-                    val document = idDocument ?: return@PrimaryButton
-                    val face = selfie ?: return@PrimaryButton
+                    val capture = identity.capture ?: return@PrimaryButton
                     busy = true
                     failed = false
                     scope.launch {
                         try {
+                            val chosen = catalog.map { it.id }.filter { it in services }
                             app.repository.applyAsProvider(
-                                catalog.map { it.id }.filter { it in services }, communes.sorted(), document, face,
+                                chosen, communes.sorted(), capture, works.portfolio(chosen),
                                 if (accepted) app.repository.providerTermsVersion else null,
                             )
                             app.dataChanged()
@@ -653,6 +648,11 @@ fun BecomeProviderScreen() {
                 }
             }
             2 -> {
+                StepHeading(app.t("becomeWorks"), app.t("becomeWorksHint"))
+                PortfolioEditor(catalog.filter { it.id in services }, works) { works = it }
+                InfoNote(app.t("worksDemoNote"), NoteKind.VIOLET)
+            }
+            3 -> {
                 StepHeading(app.t("becomeCommunes"), app.t("becomeCommunesHint"))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     app.repository.communes.forEach { commune ->
@@ -662,12 +662,9 @@ fun BecomeProviderScreen() {
                     }
                 }
             }
-            3 -> {
+            4 -> {
                 StepHeading(app.t("becomeIdentity"), null)
-                IdentityPhotoCard(app.t("becomeIdDocument"), app.t("becomeIdDocumentSub"), Icons.Rounded.Badge, idDocument, "piece") { idDocument = it }
-                IdentityPhotoCard(app.t("becomeSelfie"), app.t("becomeSelfieSub"), Icons.Rounded.Person, selfie, "visage") { selfie = it }
-                InfoNote(app.t("becomeIdentityHint"), icon = Icons.Rounded.Lock)
-                InfoNote(app.t("becomeDemoNote"), NoteKind.VIOLET)
+                IdentityStep(identity) { identity = it }
             }
             else -> {
                 StepHeading(app.t("legalProviderTerms"), null)
@@ -733,75 +730,5 @@ private fun ToggleChip(label: String, selected: Boolean, onToggle: () -> Unit) {
     ) {
         if (selected) Icon(Icons.Rounded.Check, contentDescription = null, tint = p.accent, modifier = Modifier.size(14.dp))
         Text(label, style = body(14, FontWeight.SemiBold, if (selected) p.accent else p.ink))
-    }
-}
-
-/** La photo réduite (1 600 px au plus grand côté), en JPEG. */
-private fun reducedJpeg(bitmap: Bitmap): ByteArray {
-    val longest = maxOf(bitmap.width, bitmap.height)
-    val scaled = if (longest > 1600) {
-        val k = 1600f / longest
-        Bitmap.createScaledBitmap(bitmap, (bitmap.width * k).toInt(), (bitmap.height * k).toInt(), true)
-    } else {
-        bitmap
-    }
-    return ByteArrayOutputStream().use { out ->
-        scaled.compress(Bitmap.CompressFormat.JPEG, 75, out)
-        out.toByteArray()
-    }
-}
-
-private fun readPhoto(context: Context, uri: Uri): ByteArray? =
-    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }?.let(::reducedJpeg)
-
-/** Une photo de vérification : prise avec l'appareil photo ou choisie. Elle
- * reste en mémoire, réduite, jusqu'à l'envoi ; le fichier de l'appareil photo
- * est effacé tout de suite. */
-@Composable
-private fun IdentityPhotoCard(
-    heading: String, subtitle: String, icon: ImageVector, data: ByteArray?, name: String, onPhoto: (ByteArray) -> Unit,
-) {
-    val app = LocalApp.current
-    val p = LocalPalette.current
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val shot = remember(name) { File(File(context.cacheDir, "photos").apply { mkdirs() }, "$name.jpg") }
-    val shotUri = remember(shot) { FileProvider.getUriForFile(context, "${context.packageName}.photos", shot) }
-    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
-        scope.launch {
-            val bytes = withContext(Dispatchers.IO) {
-                val read = if (taken) readPhoto(context, shotUri) else null
-                shot.delete()
-                read
-            }
-            bytes?.let(onPhoto)
-        }
-    }
-    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) scope.launch { withContext(Dispatchers.IO) { readPhoto(context, uri) }?.let(onPhoto) }
-    }
-    val preview = remember(data) { data?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() } }
-    Column(Modifier.fillMaxWidth().nexisCard(p).padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(64.dp).clip(RoundedCornerShape(14.dp)).background(p.soft),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (preview != null) {
-                    Image(preview, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                } else {
-                    Icon(icon, contentDescription = null, tint = p.softInk, modifier = Modifier.size(26.dp))
-                }
-            }
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(heading, style = body(15, FontWeight.Bold, p.ink))
-                Text(subtitle, style = body(13, color = p.muted))
-            }
-            if (data != null) Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Nexis.ok)
-        }
-        OutlineButton(app.t(if (data == null) "becomeTakePhoto" else "becomeRetake"), { camera.launch(shotUri) }, icon = Icons.Rounded.PhotoCamera)
-        OutlineButton(app.t("becomeChoosePhoto"), {
-            gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-        }, icon = Icons.Rounded.PhotoLibrary)
     }
 }

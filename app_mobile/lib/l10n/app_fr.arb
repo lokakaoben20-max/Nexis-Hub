@@ -809,23 +809,135 @@
   },
   "becomeServices": "Quels services proposez-vous ?",
   "becomeServicesHint": "Choisissez-en au moins un.",
+  "becomeWorks": "Vos réalisations",
+  "becomeWorksHint": "Facultatif : des photos de travaux déjà faits aident l'équipe à vérifier votre métier, puis les clients à vous choisir.",
+  "worksPrivacy": "L'équipe NexisHub regarde d'abord vos photos. Après son accord, elles sont montrées aux clients avec votre phrase. Évitez les visages, les adresses et les plaques.",
+  "worksAddPhotos": "Ajouter des photos",
+  "worksCount": "{count} sur {max}",
+  "@worksCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "worksNote": "Ce que vous avez fait, où et quand",
+  "worksNoteExample": "Ex. : pose d'un chauffe-eau, Limete, 2025",
+  "worksCertificates": "Diplôme ou attestation",
+  "worksCertificatesSub": "Facultatif, vu par l'équipe seulement. Les clients voient seulement « Diplôme vérifié par NexisHub ».",
+  "worksSkip": "Passer cette étape",
+  "worksRemove": "Retirer la photo",
+  "worksPhotoFailed": "Cette photo n'a pas pu être lue.",
+  "worksDemoNote": "Aperçu : les photos restent sur ce téléphone et ne sont envoyées nulle part.",
+  "myWorks": "Mes réalisations",
+  "myWorksSub": "Photos de vos travaux, montrées aux clients après accord de l'équipe",
+  "worksAskedShort": "L'équipe vous demande des photos de vos travaux",
+  "worksRequested": "L'équipe NexisHub vous demande des photos de vos travaux : {services}.",
+  "@worksRequested": {
+    "placeholders": {
+      "services": {
+        "type": "String"
+      }
+    }
+  },
+  "worksSave": "Envoyer à l'équipe",
+  "worksSaved": "C'est envoyé. L'équipe NexisHub les regardera.",
+  "worksLocked": "L'équipe NexisHub vérifie votre profil. Vos réalisations restent comme vous les avez envoyées jusqu'à sa décision, puis vous pourrez les modifier.",
+  "worksReviewPending": "En attente de l'équipe",
+  "worksReviewApproved": "Visible par les clients",
+  "worksReviewRejected": "Refusé par l'équipe : envoyez d'autres photos",
+  "worksCertificatesVerified": "Vérifié par l'équipe",
+  "showcaseOpen": "Voir ses réalisations",
+  "showcaseTitle": "Réalisations de {name}",
+  "@showcaseTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "showcaseChecked": "Photos vérifiées par l'équipe NexisHub",
+  "showcaseCertificate": "Diplôme vérifié par NexisHub",
+  "showcasePhoto": "Photo d'un travail déjà fait",
   "becomeCommunes": "Où travaillez-vous ?",
   "becomeCommunesHint": "Les communes où vous acceptez de vous déplacer.",
   "becomeIdentity": "Vérifions votre identité",
-  "becomeIdentityHint": "Vos photos servent seulement à la vérification par l'équipe NexisHub. Elles ne sont montrées à aucun client.",
+  "becomeIdentityHint": "Vos photos et votre vidéo servent seulement à la vérification par l'équipe NexisHub. Elles ne sont montrées à aucun client.",
   "becomeIdDocument": "Pièce d'identité",
-  "becomeIdDocumentSub": "Carte d'électeur, passeport ou permis de conduire",
-  "becomeSelfie": "Photo de vous",
-  "becomeSelfieSub": "Votre visage, bien éclairé",
-  "becomeTakePhoto": "Prendre la photo",
-  "becomeChoosePhoto": "Choisir une photo",
-  "becomeRetake": "Changer",
+  "becomeIdDocumentSub": "Carte d'électeur, permis de conduire ou passeport",
+  "becomeDocChoose": "Quelle pièce avez-vous ?",
+  "docVoterCard": "Carte d'électeur",
+  "docDrivingLicence": "Permis de conduire",
+  "docPassport": "Passeport",
+  "becomeCardSides": "Recto et verso, la photo se prend toute seule",
+  "becomePassportSub": "La page avec votre photo, la photo se prend toute seule",
+  "becomePhotoPage": "Page photo",
+  "scanPassportTitle": "La page photo du passeport",
+  "scanPassportHint": "Ouvrez le passeport à la page avec votre photo et posez-le à plat. Les deux lignes du bas doivent se voir. La photo se prend toute seule.",
+  "scanWrongPage": "Ce n'est pas la bonne page. Montrez la page avec votre photo et les deux lignes du bas.",
+  "scanStartPassport": "Scanner la page photo",
+  "becomeSelfie": "Vidéo de vous",
+  "becomeSelfieSub": "Quelques secondes, sans son : suivez les consignes",
+  "becomeRetake": "Reprendre",
   "becomeAcceptTerms": "J'ai lu et j'accepte les conditions des prestataires",
   "becomeSend": "Envoyer ma demande",
   "becomeSentTitle": "Demande envoyée",
   "becomeSentText": "L'équipe NexisHub vérifie vos informations. Vous serez prévenu dès que votre profil de prestataire est validé.",
   "becomeFailed": "La demande n'a pas pu être envoyée. Vérifiez chaque étape et réessayez.",
-  "becomeDemoNote": "Aperçu : les photos restent sur ce téléphone et ne sont envoyées nulle part.",
+  "becomeDemoNote": "Aperçu : les photos et la vidéo restent sur ce téléphone et ne sont envoyées nulle part.",
+  "becomeGuideNote": "L'app vous guide pendant la prise. C'est l'équipe NexisHub qui vérifie votre identité, pas l'app.",
+  "becomeScanCard": "Scanner ma pièce",
+  "becomeRecordVideo": "Filmer mon visage",
+  "becomeRecto": "Recto",
+  "becomeVerso": "Verso",
+  "becomeVideoDone": "Vidéo enregistrée · {seconds} s",
+  "@becomeVideoDone": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "scanRectoTitle": "Le recto de votre pièce",
+  "scanRectoHint": "Posez le recto, le côté avec votre photo, sur une surface plane et sombre. La photo se prend toute seule.",
+  "scanTurnTitle": "Retournez la carte",
+  "scanVersoHint": "Montrez maintenant le verso. La photo se prend toute seule.",
+  "scanSearching": "Placez la carte dans le cadre",
+  "scanHold": "Ne bougez plus…",
+  "scanChecking": "Vérification de la photo…",
+  "scanWrongVerso": "C'est le verso. Montrez d'abord le recto, le côté avec votre photo.",
+  "scanWrongRecto": "C'est encore le recto. Retournez la carte.",
+  "scanStartRecto": "Scanner le recto",
+  "scanStartVerso": "Scanner le verso",
+  "scanUnavailable": "Le scanner de documents n'est pas disponible sur ce téléphone. Mettez à jour les services Google Play, puis réessayez.",
+  "scanDone": "Recto et verso pris",
+  "cameraDenied": "NexisHub n'a pas accès à l'appareil photo. Autorisez-le dans les réglages pour continuer.",
+  "cameraMissing": "Aucun appareil photo utilisable sur ce téléphone.",
+  "cameraSimulator": "Simulateur : démonstration sans appareil photo.",
+  "selfieTitle": "Vidéo de vérification",
+  "selfieIntro": "Mettez-vous dans un endroit bien éclairé, seul devant l'appareil. La vidéo dure quelques secondes, sans son.",
+  "selfieFaceIn": "Placez votre visage dans le cercle",
+  "selfieTurnLeft": "Tournez la tête à gauche",
+  "selfieTurnRight": "Tournez la tête à droite",
+  "selfieLookAhead": "Regardez droit devant vous",
+  "selfieOneFace": "Une seule personne devant l'appareil",
+  "selfieTooSlow": "Le temps est écoulé. Recommençons.",
+  "selfieDone": "C'est fait, merci",
+  "selfieRecording": "Enregistrement",
+  "selfieStep": "Consigne {step} sur {total}",
+  "@selfieStep": {
+    "placeholders": {
+      "step": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "providerPending": "Prestataire · en vérification",
   "providerPendingHint": "Votre profil de prestataire est en cours de vérification par l'équipe NexisHub.",
   "faqDeviceA": "Par sécurité, un téléphone ajouté à votre compte attend 72 heures avant de pouvoir faire sortir de l'argent de votre portefeuille.",

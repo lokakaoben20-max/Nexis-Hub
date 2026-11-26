@@ -169,6 +169,7 @@ enum class Capture(
     // Écrans de mission (voir MissionRoute.forCapture).
     TRACKING(true, tab = 1),
     QUOTES(true, tab = 1),
+    SHOWCASE(true, tab = 1),
     PAY(true, tab = 1),
     PENDING(true, tab = 1),
     CONFIRM(true, tab = 1),
@@ -186,7 +187,20 @@ enum class Capture(
     HELP(true, tab = 3),
     LEGAL(true, tab = 3),
     BECOME(true, tab = 3),
+
+    // Étape « Pièce d'identité », figée sans caméra (voir IdentityDemo).
     BECOME_IDENTITY(true, tab = 3),
+    BECOME_WRONG_SIDE(true, tab = 3),
+    BECOME_VERSO(true, tab = 3),
+    BECOME_SELFIE(true, tab = 3),
+    BECOME_REVIEW(true, tab = 3),
+    BECOME_PASSPORT(true, tab = 3),
+    BECOME_WRONG_PAGE(true, tab = 3),
+
+    // Preuves de réalisations (voir PortfolioDemo).
+    BECOME_PORTFOLIO(true, tab = 3),
+    PORTFOLIO(true, tab = 3),
+    PORTFOLIO_LOCKED(true, tab = 3),
 
     // Code NexisHub et empreinte.
     PROTECT(true),

@@ -99,10 +99,10 @@
   "fr": "J'ai lu et j'accepte les conditions des prestataires",
   "ln": "Natángi mpe nandimi mibeko ya basali"
  },
- "becomeChoosePhoto": {
-  "en": "Choose a photo",
-  "fr": "Choisir une photo",
-  "ln": "Kopona foto"
+ "becomeCardSides": {
+  "en": "Front and back, taken automatically",
+  "fr": "Recto et verso, la photo se prend toute seule",
+  "ln": "Liboso mpe nsima, foto ekozwama yango moko"
  },
  "becomeCommunes": {
   "en": "Where do you work?",
@@ -115,14 +115,24 @@
   "ln": "Ba commune oyo ondimi kokende."
  },
  "becomeDemoNote": {
-  "en": "Preview: the photos stay on this phone and are not sent anywhere.",
-  "fr": "Aperçu : les photos restent sur ce téléphone et ne sont envoyées nulle part.",
-  "ln": "Aperçu: ba foto etikalaka na telefone oyo, etindamaka esika moko te."
+  "en": "Preview: the photos and video stay on this phone and are not sent anywhere.",
+  "fr": "Aperçu : les photos et la vidéo restent sur ce téléphone et ne sont envoyées nulle part.",
+  "ln": "Aperçu: ba foto mpe video etikalaka na telefone oyo, etindamaka esika moko te."
+ },
+ "becomeDocChoose": {
+  "en": "Which ID do you have?",
+  "fr": "Quelle pièce avez-vous ?",
+  "ln": "Mokanda nini ya identité ozali na yango ?"
  },
  "becomeFailed": {
   "en": "The request could not be sent. Check each step and try again.",
   "fr": "La demande n'a pas pu être envoyée. Vérifiez chaque étape et réessayez.",
   "ln": "Bosenga etindami te. Talá etape nyonso mpe meká lisusu."
+ },
+ "becomeGuideNote": {
+  "en": "The app guides you while you take them. The NexisHub team checks your identity, not the app.",
+  "fr": "L'app vous guide pendant la prise. C'est l'équipe NexisHub qui vérifie votre identité, pas l'app.",
+  "ln": "Application ekosalisa yo ntango ozali kozwa yango. Équipe ya NexisHub nde etalaka soki ozali nani, kasi application te."
  },
  "becomeIdDocument": {
   "en": "ID document",
@@ -130,9 +140,9 @@
   "ln": "Carte ya identité"
  },
  "becomeIdDocumentSub": {
-  "en": "Voter card, passport or driving licence",
-  "fr": "Carte d'électeur, passeport ou permis de conduire",
-  "ln": "Carte d'électeur, passeport to permis"
+  "en": "Voter card, driving licence or passport",
+  "fr": "Carte d'électeur, permis de conduire ou passeport",
+  "ln": "Carte d'électeur, permis to passeport"
  },
  "becomeIdentity": {
   "en": "Let's check your identity",
@@ -140,14 +150,24 @@
   "ln": "Totala soki ozali nani"
  },
  "becomeIdentityHint": {
-  "en": "Your photos are only used by the NexisHub team to check your identity. No client ever sees them.",
-  "fr": "Vos photos servent seulement à la vérification par l'équipe NexisHub. Elles ne sont montrées à aucun client.",
-  "ln": "Ba foto na yo esalisaka kaka équipe ya NexisHub mpo na kotala. Client moko te akomona yango."
+  "en": "Your photos and video are only used by the NexisHub team to check your identity. No client ever sees them.",
+  "fr": "Vos photos et votre vidéo servent seulement à la vérification par l'équipe NexisHub. Elles ne sont montrées à aucun client.",
+  "ln": "Ba foto mpe video na yo esalisaka kaka équipe ya NexisHub mpo na kotala. Client moko te akomona yango."
  },
  "becomeIntro": {
   "en": "Offer your services with the same account and the same wallet. The NexisHub team checks every provider before their first mission.",
   "fr": "Proposez vos services avec le même compte et le même portefeuille. L'équipe NexisHub vérifie chaque prestataire avant sa première mission.",
   "ln": "Pesá misala na yo na compte moko mpe portefeuille moko. Équipe ya NexisHub etalaka mosali nyonso liboso ya mosala na ye ya liboso."
+ },
+ "becomePassportSub": {
+  "en": "The page with your photo, taken automatically",
+  "fr": "La page avec votre photo, la photo se prend toute seule",
+  "ln": "Lokasa oyo ezali na foto na yo, foto ekozwama yango moko"
+ },
+ "becomePhotoPage": {
+  "en": "Photo page",
+  "fr": "Page photo",
+  "ln": "Lokasa ya foto"
  },
  "becomeProvider": {
   "en": "Become a provider",
@@ -164,20 +184,35 @@
   "fr": "Lire les conditions",
   "ln": "Tángá mibeko"
  },
+ "becomeRecordVideo": {
+  "en": "Film my face",
+  "fr": "Filmer mon visage",
+  "ln": "Kozwa video ya elongi na ngai"
+ },
+ "becomeRecto": {
+  "en": "Front",
+  "fr": "Recto",
+  "ln": "Liboso"
+ },
  "becomeRetake": {
-  "en": "Change",
-  "fr": "Changer",
-  "ln": "Kobongola"
+  "en": "Retake",
+  "fr": "Reprendre",
+  "ln": "Kozwa lisusu"
+ },
+ "becomeScanCard": {
+  "en": "Scan my ID",
+  "fr": "Scanner ma pièce",
+  "ln": "Kosala scan ya carte na ngai"
  },
  "becomeSelfie": {
-  "en": "Photo of you",
-  "fr": "Photo de vous",
-  "ln": "Foto na yo"
+  "en": "Video of you",
+  "fr": "Vidéo de vous",
+  "ln": "Video na yo"
  },
  "becomeSelfieSub": {
-  "en": "Your face, well lit",
-  "fr": "Votre visage, bien éclairé",
-  "ln": "Elongi na yo, na pole"
+  "en": "A few seconds, no sound: follow the instructions",
+  "fr": "Quelques secondes, sans son : suivez les consignes",
+  "ln": "Ba seconde moke, kozanga lokito: landá malako"
  },
  "becomeSend": {
   "en": "Send my request",
@@ -209,10 +244,25 @@
   "fr": "Étape {step} sur {total}",
   "ln": "Etape {step} na {total}"
  },
- "becomeTakePhoto": {
-  "en": "Take the photo",
-  "fr": "Prendre la photo",
-  "ln": "Kozwa foto"
+ "becomeVerso": {
+  "en": "Back",
+  "fr": "Verso",
+  "ln": "Nsima"
+ },
+ "becomeVideoDone": {
+  "en": "Video recorded · {seconds} s",
+  "fr": "Vidéo enregistrée · {seconds} s",
+  "ln": "Video ebombami · {seconds} s"
+ },
+ "becomeWorks": {
+  "en": "Your past work",
+  "fr": "Vos réalisations",
+  "ln": "Misala oyo osalaki"
+ },
+ "becomeWorksHint": {
+  "en": "Optional: photos of past jobs help the team check your trade, then help clients choose you.",
+  "fr": "Facultatif : des photos de travaux déjà faits aident l'équipe à vérifier votre métier, puis les clients à vous choisir.",
+  "ln": "Soki olingi : ba foto ya misala osalaki kala esalisaka équipe mpo na kotala mosala na yo, sima ba client mpo na kopona yo."
  },
  "bestRated": {
   "en": "Top rated",
@@ -262,6 +312,21 @@
   "en": "Call",
   "fr": "Appeler",
   "ln": "Kobenga"
+ },
+ "cameraDenied": {
+  "en": "NexisHub can't use the camera. Allow it in settings to continue.",
+  "fr": "NexisHub n'a pas accès à l'appareil photo. Autorisez-le dans les réglages pour continuer.",
+  "ln": "NexisHub ekoki kosalela appareil photo te. Pesá nzela na ba réglages mpo na kokoba."
+ },
+ "cameraMissing": {
+  "en": "No usable camera on this phone.",
+  "fr": "Aucun appareil photo utilisable sur ce téléphone.",
+  "ln": "Appareil photo ezali te na telefone oyo."
+ },
+ "cameraSimulator": {
+  "en": "Simulator: demo without a camera.",
+  "fr": "Simulateur : démonstration sans appareil photo.",
+  "ln": "Simulateur: démonstration kozanga appareil photo."
  },
  "cancel": {
   "en": "Cancel",
@@ -539,6 +604,21 @@
   "en": "{name} is {km} km away",
   "fr": "{name} est à {km} km",
   "ln": "{name} azali na {km} km"
+ },
+ "docDrivingLicence": {
+  "en": "Driving licence",
+  "fr": "Permis de conduire",
+  "ln": "Permis ya kokumba motuka"
+ },
+ "docPassport": {
+  "en": "Passport",
+  "fr": "Passeport",
+  "ln": "Passeport"
+ },
+ "docVoterCard": {
+  "en": "Voter card",
+  "fr": "Carte d'électeur",
+  "ln": "Carte d'électeur"
  },
  "editProfile": {
   "en": "Edit",
@@ -933,6 +1013,16 @@
   "en": "My wallets",
   "fr": "Mes portefeuilles",
   "ln": "Esika na ngai ya mbongo"
+ },
+ "myWorks": {
+  "en": "My past work",
+  "fr": "Mes réalisations",
+  "ln": "Misala na ngai"
+ },
+ "myWorksSub": {
+  "en": "Photos of your work, shown to clients once the team approves",
+  "fr": "Photos de vos travaux, montrées aux clients après accord de l'équipe",
+  "ln": "Ba foto ya misala na yo, ba client bakomona yango soki équipe endimi"
  },
  "navHome": {
   "en": "Home",
@@ -1571,6 +1661,91 @@
   "fr": "{count} avis",
   "ln": "{count} makanisi"
  },
+ "scanChecking": {
+  "en": "Checking the photo…",
+  "fr": "Vérification de la photo…",
+  "ln": "Tozali kotala foto…"
+ },
+ "scanDone": {
+  "en": "Front and back taken",
+  "fr": "Recto et verso pris",
+  "ln": "Liboso mpe nsima ezwami"
+ },
+ "scanHold": {
+  "en": "Hold still…",
+  "fr": "Ne bougez plus…",
+  "ln": "Kotambola lisusu te…"
+ },
+ "scanPassportHint": {
+  "en": "Open the passport at the page with your photo and lay it flat. The two lines at the bottom must be visible. The photo is taken automatically.",
+  "fr": "Ouvrez le passeport à la page avec votre photo et posez-le à plat. Les deux lignes du bas doivent se voir. La photo se prend toute seule.",
+  "ln": "Fungolá passeport na lokasa oyo ezali na foto na yo mpe tiá yango patatalu. Milongo mibale ya nse esengeli komonana. Foto ekozwama yango moko."
+ },
+ "scanPassportTitle": {
+  "en": "Your passport photo page",
+  "fr": "La page photo du passeport",
+  "ln": "Lokasa ya foto ya passeport"
+ },
+ "scanRectoHint": {
+  "en": "Lay the front, the side with your photo, on a flat dark surface. The photo is taken automatically.",
+  "fr": "Posez le recto, le côté avec votre photo, sur une surface plane et sombre. La photo se prend toute seule.",
+  "ln": "Tiá liboso ya carte, epai ya foto na yo, na esika ya patatalu mpe ya molili. Foto ekozwama yango moko."
+ },
+ "scanRectoTitle": {
+  "en": "The front of your ID",
+  "fr": "Le recto de votre pièce",
+  "ln": "Liboso ya carte na yo"
+ },
+ "scanSearching": {
+  "en": "Place the card inside the frame",
+  "fr": "Placez la carte dans le cadre",
+  "ln": "Tiá carte na kati ya cadre"
+ },
+ "scanStartPassport": {
+  "en": "Scan the photo page",
+  "fr": "Scanner la page photo",
+  "ln": "Kosala scan ya lokasa ya foto"
+ },
+ "scanStartRecto": {
+  "en": "Scan the front",
+  "fr": "Scanner le recto",
+  "ln": "Kosala scan ya liboso"
+ },
+ "scanStartVerso": {
+  "en": "Scan the back",
+  "fr": "Scanner le verso",
+  "ln": "Kosala scan ya nsima"
+ },
+ "scanTurnTitle": {
+  "en": "Turn the card over",
+  "fr": "Retournez la carte",
+  "ln": "Bongolá carte"
+ },
+ "scanUnavailable": {
+  "en": "The document scanner isn't available on this phone. Update Google Play services, then try again.",
+  "fr": "Le scanner de documents n'est pas disponible sur ce téléphone. Mettez à jour les services Google Play, puis réessayez.",
+  "ln": "Scanner ya mikanda ezali te na telefone oyo. Bongolá ba services Google Play, sima meká lisusu."
+ },
+ "scanVersoHint": {
+  "en": "Now show the back. The photo is taken automatically.",
+  "fr": "Montrez maintenant le verso. La photo se prend toute seule.",
+  "ln": "Sikoyo lakisá nsima ya carte. Foto ekozwama yango moko."
+ },
+ "scanWrongPage": {
+  "en": "That's not the right page. Show the page with your photo and the two lines at the bottom.",
+  "fr": "Ce n'est pas la bonne page. Montrez la page avec votre photo et les deux lignes du bas.",
+  "ln": "Ezali lokasa ya malamu te. Lakisá lokasa oyo ezali na foto na yo mpe milongo mibale ya nse."
+ },
+ "scanWrongRecto": {
+  "en": "That's still the front. Turn the card over.",
+  "fr": "C'est encore le recto. Retournez la carte.",
+  "ln": "Ezali kaka liboso. Bongolá carte."
+ },
+ "scanWrongVerso": {
+  "en": "That's the back. Show the front first, the side with your photo.",
+  "fr": "C'est le verso. Montrez d'abord le recto, le côté avec votre photo.",
+  "ln": "Oyo ezali nsima. Lakisá liboso, epai ya foto na yo."
+ },
  "searchService": {
   "en": "Search for a service",
   "fr": "Rechercher un service",
@@ -1656,6 +1831,61 @@
   "fr": "Voir mon portefeuille",
   "ln": "Tala esika ya mbongo na ngai"
  },
+ "selfieDone": {
+  "en": "All done, thank you",
+  "fr": "C'est fait, merci",
+  "ln": "Esili, matondi"
+ },
+ "selfieFaceIn": {
+  "en": "Place your face inside the circle",
+  "fr": "Placez votre visage dans le cercle",
+  "ln": "Tiá elongi na yo na kati ya cercle"
+ },
+ "selfieIntro": {
+  "en": "Stand somewhere well lit, alone in front of the camera. The video lasts a few seconds, with no sound.",
+  "fr": "Mettez-vous dans un endroit bien éclairé, seul devant l'appareil. La vidéo dure quelques secondes, sans son.",
+  "ln": "Tiká na esika ya pole, yo moko liboso ya appareil. Video eumelaka ba seconde moke, kozanga lokito."
+ },
+ "selfieLookAhead": {
+  "en": "Look straight ahead",
+  "fr": "Regardez droit devant vous",
+  "ln": "Talá liboso na yo"
+ },
+ "selfieOneFace": {
+  "en": "Only one person in front of the camera",
+  "fr": "Une seule personne devant l'appareil",
+  "ln": "Moto moko kaka liboso ya appareil"
+ },
+ "selfieRecording": {
+  "en": "Recording",
+  "fr": "Enregistrement",
+  "ln": "Ezali kozwa video"
+ },
+ "selfieStep": {
+  "en": "Instruction {step} of {total}",
+  "fr": "Consigne {step} sur {total}",
+  "ln": "Malako {step} na {total}"
+ },
+ "selfieTitle": {
+  "en": "Verification video",
+  "fr": "Vidéo de vérification",
+  "ln": "Video ya kotala"
+ },
+ "selfieTooSlow": {
+  "en": "Time's up. Let's start again.",
+  "fr": "Le temps est écoulé. Recommençons.",
+  "ln": "Ntango esili. Tobanda lisusu."
+ },
+ "selfieTurnLeft": {
+  "en": "Turn your head to the left",
+  "fr": "Tournez la tête à gauche",
+  "ln": "Bongolá motó na loboko ya mwasi"
+ },
+ "selfieTurnRight": {
+  "en": "Turn your head to the right",
+  "fr": "Tournez la tête à droite",
+  "ln": "Bongolá motó na loboko ya mobali"
+ },
  "sendAQuote": {
   "en": "Send a quote",
   "fr": "Envoyer un devis",
@@ -1715,6 +1945,31 @@
   "en": "Show amounts",
   "fr": "Afficher les montants",
   "ln": "Komonisa mitango"
+ },
+ "showcaseCertificate": {
+  "en": "Diploma checked by NexisHub",
+  "fr": "Diplôme vérifié par NexisHub",
+  "ln": "Diplôme etalami na NexisHub"
+ },
+ "showcaseChecked": {
+  "en": "Photos checked by the NexisHub team",
+  "fr": "Photos vérifiées par l'équipe NexisHub",
+  "ln": "Ba foto etalami na équipe ya NexisHub"
+ },
+ "showcaseOpen": {
+  "en": "See past work",
+  "fr": "Voir ses réalisations",
+  "ln": "Komona misala na ye"
+ },
+ "showcasePhoto": {
+  "en": "Photo of a past job",
+  "fr": "Photo d'un travail déjà fait",
+  "ln": "Foto ya mosala esalamaki"
+ },
+ "showcaseTitle": {
+  "en": "{name}'s past work",
+  "fr": "Réalisations de {name}",
+  "ln": "Misala ya {name}"
  },
  "signInTitle": {
   "en": "Sign in",
@@ -1965,6 +2220,106 @@
   "en": "Which service?",
   "fr": "Quel service ?",
   "ln": "Mosala nini ?"
+ },
+ "worksAddPhotos": {
+  "en": "Add photos",
+  "fr": "Ajouter des photos",
+  "ln": "Kobakisa ba foto"
+ },
+ "worksAskedShort": {
+  "en": "The team is asking for photos of your work",
+  "fr": "L'équipe vous demande des photos de vos travaux",
+  "ln": "Équipe ezali kosenga ba foto ya misala na yo"
+ },
+ "worksCertificates": {
+  "en": "Diploma or certificate",
+  "fr": "Diplôme ou attestation",
+  "ln": "Diplôme to attestation"
+ },
+ "worksCertificatesSub": {
+  "en": "Optional, seen only by the team. Clients only see “Diploma checked by NexisHub”.",
+  "fr": "Facultatif, vu par l'équipe seulement. Les clients voient seulement « Diplôme vérifié par NexisHub ».",
+  "ln": "Soki olingi, kaka équipe nde ekomona. Ba client bakomona kaka « Diplôme etalami na NexisHub »."
+ },
+ "worksCertificatesVerified": {
+  "en": "Checked by the team",
+  "fr": "Vérifié par l'équipe",
+  "ln": "Équipe etali"
+ },
+ "worksCount": {
+  "en": "{count} of {max}",
+  "fr": "{count} sur {max}",
+  "ln": "{count} na {max}"
+ },
+ "worksDemoNote": {
+  "en": "Preview: the photos stay on this phone and are not sent anywhere.",
+  "fr": "Aperçu : les photos restent sur ce téléphone et ne sont envoyées nulle part.",
+  "ln": "Aperçu : ba foto etikalaka na telefone oyo, etindamaka esika moko te."
+ },
+ "worksLocked": {
+  "en": "The NexisHub team is checking your profile. Your past work stays as you sent it until the team decides; then you can change it.",
+  "fr": "L'équipe NexisHub vérifie votre profil. Vos réalisations restent comme vous les avez envoyées jusqu'à sa décision, puis vous pourrez les modifier.",
+  "ln": "Équipe ya NexisHub ezali kotala profil na yo. Misala na yo ekotikala ndenge otindaki yango kino équipe ekozwa mokano, sima okoki kobongola yango."
+ },
+ "worksNote": {
+  "en": "What you did, where and when",
+  "fr": "Ce que vous avez fait, où et quand",
+  "ln": "Nini osalaki, wapi mpe ntango nini"
+ },
+ "worksNoteExample": {
+  "en": "E.g. water heater installed, Limete, 2025",
+  "fr": "Ex. : pose d'un chauffe-eau, Limete, 2025",
+  "ln": "Ndakisa : kotia chauffe-eau, Limete, 2025"
+ },
+ "worksPhotoFailed": {
+  "en": "This photo couldn't be read.",
+  "fr": "Cette photo n'a pas pu être lue.",
+  "ln": "Foto oyo ekoki kotangama te."
+ },
+ "worksPrivacy": {
+  "en": "The NexisHub team looks at your photos first. Once approved, clients see them with your note. Avoid faces, addresses and number plates.",
+  "fr": "L'équipe NexisHub regarde d'abord vos photos. Après son accord, elles sont montrées aux clients avec votre phrase. Évitez les visages, les adresses et les plaques.",
+  "ln": "Équipe ya NexisHub ekotala liboso ba foto na yo. Soki endimi, ba client bakomona yango elongo na maloba na yo. Kolakisa elongi ya bato te, adresse te, plaque te."
+ },
+ "worksRemove": {
+  "en": "Remove photo",
+  "fr": "Retirer la photo",
+  "ln": "Kolongola foto"
+ },
+ "worksRequested": {
+  "en": "The NexisHub team is asking for photos of your work: {services}.",
+  "fr": "L'équipe NexisHub vous demande des photos de vos travaux : {services}.",
+  "ln": "Équipe ya NexisHub ezali kosenga yo ba foto ya misala na yo : {services}."
+ },
+ "worksReviewApproved": {
+  "en": "Visible to clients",
+  "fr": "Visible par les clients",
+  "ln": "Ba client bakoki komona"
+ },
+ "worksReviewPending": {
+  "en": "Waiting for the team",
+  "fr": "En attente de l'équipe",
+  "ln": "Ezali kozela équipe"
+ },
+ "worksReviewRejected": {
+  "en": "Declined by the team: send other photos",
+  "fr": "Refusé par l'équipe : envoyez d'autres photos",
+  "ln": "Équipe eboyi : tinda ba foto mosusu"
+ },
+ "worksSave": {
+  "en": "Send to the team",
+  "fr": "Envoyer à l'équipe",
+  "ln": "Kotindela équipe"
+ },
+ "worksSaved": {
+  "en": "Sent. The NexisHub team will look at them.",
+  "fr": "C'est envoyé. L'équipe NexisHub les regardera.",
+  "ln": "Etindami. Équipe ya NexisHub ekotala yango."
+ },
+ "worksSkip": {
+  "en": "Skip this step",
+  "fr": "Passer cette étape",
+  "ln": "Koleka etape oyo"
  },
  "writeNexis": {
   "en": "Write to NexisHub",

@@ -644,9 +644,11 @@ private fun ProfileTab(onComingSoon: (String) -> Unit) {
     val p = LocalPalette.current
     var profile by remember { mutableStateOf<Profile?>(null) }
     var devicesCount by remember { mutableStateOf(1) }
+    var worksAsked by remember { mutableStateOf(false) }
     LaunchedEffect(app.revision) {
         profile = app.repository.profile()
         devicesCount = attempt { app.repository.devices() }?.size ?: 1
+        worksAsked = attempt { app.repository.portfolioRequest() } != null
     }
     TabScaffold(app.t("navProfile"), actions = { LanguageMenu() }) { padding ->
         LazyColumn(
@@ -693,6 +695,15 @@ private fun ProfileTab(onComingSoon: (String) -> Unit) {
                 item {
                     SettingsGroup(p, listOf(
                         SettingsRow(app.t("becomeProvider"), app.t("becomeProviderSub")) { flow.push(MissionRoute.BecomeProvider) },
+                    ))
+                }
+            } else if (profile != null) {
+                // Preuves de réalisations : vues seulement par l'équipe.
+                item {
+                    SettingsGroup(p, listOf(
+                        SettingsRow(app.t("myWorks"), app.t(if (worksAsked) "worksAskedShort" else "myWorksSub")) {
+                            flow.push(MissionRoute.Works)
+                        },
                     ))
                 }
             }

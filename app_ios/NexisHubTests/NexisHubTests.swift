@@ -312,19 +312,50 @@ final class AccountTests: XCTestCase {
         let repo = DemoRepository()
         XCTAssertTrue(repo.registerClient(phone: "+243810000001", firstName: "Esther", lastName: "M",
                                           commune: "Limete", acceptedTermsVersion: repo.signupTermsVersion))
-        let photo = Data([1, 2, 3])
+        let identity = IdentityCapture(document: .voterCard, recto: Data([1]), verso: Data([2]), video: Data([3]),
+                                       videoSeconds: 7, headTurns: [.right, .left])
         let noTerms = await refusal {
-            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], idDocument: photo,
-                                           selfie: photo, acceptedTermsVersion: nil)
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: identity, portfolio: Portfolio(),
+                                           acceptedTermsVersion: nil)
         }
         XCTAssertEqual(noTerms, "provider_application_invalid")
-        let noPhoto = await refusal {
-            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], idDocument: Data(),
-                                           selfie: photo, acceptedTermsVersion: repo.providerTermsVersion)
+        var noVerso = identity
+        noVerso.verso = Data()
+        let missingVerso = await refusal {
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: noVerso, portfolio: Portfolio(),
+                                           acceptedTermsVersion: repo.providerTermsVersion)
         }
-        XCTAssertEqual(noPhoto, "provider_application_invalid")
-        try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], idDocument: photo,
-                                       selfie: photo, acceptedTermsVersion: repo.providerTermsVersion)
+        XCTAssertEqual(missingVerso, "provider_application_invalid")
+        var noVideo = identity
+        noVideo.video = Data()
+        let missingVideo = await refusal {
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: noVideo, portfolio: Portfolio(),
+                                           acceptedTermsVersion: repo.providerTermsVersion)
+        }
+        XCTAssertEqual(missingVideo, "provider_application_invalid")
+        // Passeport : une seule page, jamais de verso.
+        var passportWithVerso = identity
+        passportWithVerso.document = .passport
+        let versoOnPassport = await refusal {
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: passportWithVerso, portfolio: Portfolio(),
+                                           acceptedTermsVersion: repo.providerTermsVersion)
+        }
+        XCTAssertEqual(versoOnPassport, "provider_application_invalid")
+        var passport = passportWithVerso
+        passport.verso = nil
+        XCTAssertTrue(passport.isComplete)
+        var cardWithoutVerso = identity
+        cardWithoutVerso.verso = nil
+        XCTAssertFalse(cardWithoutVerso.isComplete)
+        var oneTurn = identity
+        oneTurn.headTurns = [.left, .left]
+        let missingTurn = await refusal {
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: oneTurn, portfolio: Portfolio(),
+                                           acceptedTermsVersion: repo.providerTermsVersion)
+        }
+        XCTAssertEqual(missingTurn, "provider_application_invalid")
+        try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: identity, portfolio: Portfolio(),
+                                       acceptedTermsVersion: repo.providerTermsVersion)
         let profile = try await repo.profile()
         XCTAssertEqual(profile.providerStatus, .pending)
         XCTAssertFalse(profile.isProvider)
@@ -430,5 +461,289 @@ final class AppSecurityTests: XCTestCase {
         app.signIn()
         let result = await app.confirmMoneyOut("Payer")
         XCTAssertFalse(result)
+    }
+}
+
+@MainActor
+final class PortfolioTests: XCTestCase {
+    private func work(_ service: String, photos: Int = 1, note: String = "") -> WorkProof {
+        WorkProof(serviceId: service, photos: Array(repeating: Data([1]), count: photos), note: note)
+    }
+
+    func testPortfolioRules() {
+        let services: Set<String> = ["plomberie", "electricite"]
+        XCTAssertTrue(Portfolio().isValid(services: services))
+        XCTAssertTrue(Portfolio(works: [work("plomberie", photos: 5)], certificates: [Data([2])]).isValid(services: services))
+        // Plus de 5 photos, un service non choisi, deux fois le même service.
+        XCTAssertFalse(Portfolio(works: [work("plomberie", photos: 6)]).isValid(services: services))
+        XCTAssertFalse(Portfolio(works: [work("coiffure")]).isValid(services: services))
+        XCTAssertFalse(Portfolio(works: [work("plomberie"), work("plomberie")]).isValid(services: services))
+        // Une phrase trop longue, 4 attestations, un fichier vide.
+        XCTAssertFalse(Portfolio(works: [work("plomberie", note: String(repeating: "a", count: 201))]).isValid(services: services))
+        XCTAssertFalse(Portfolio(certificates: Array(repeating: Data([2]), count: 4)).isValid(services: services))
+        XCTAssertFalse(Portfolio(certificates: [Data()]).isValid(services: services))
+    }
+
+    func testCleanedDropsServicesWithoutPhotos() {
+        let portfolio = Portfolio(works: [work("plomberie", photos: 0, note: "Fuite"), work("electricite", note: "  Tableau  ")])
+        XCTAssertEqual(portfolio.cleaned.works.map(\.serviceId), ["electricite"])
+        XCTAssertEqual(portfolio.cleaned.works.first?.note, "Tableau")
+        XCTAssertTrue(Portfolio(works: [work("plomberie", photos: 0)]).cleaned.isEmpty)
+    }
+
+    func testPortfolioIsSentWithTheApplicationAndLater() async throws {
+        let repo = DemoRepository()
+        XCTAssertTrue(repo.registerClient(phone: "+243810000002", firstName: "Jean", lastName: "K",
+                                          commune: "Limete", acceptedTermsVersion: repo.signupTermsVersion))
+        // Un client seulement ne peut pas envoyer de preuves.
+        do {
+            try await repo.sendPortfolio(Portfolio(works: [work("plomberie")]))
+            XCTFail("refus attendu")
+        } catch let refusal as NexisRefusal {
+            XCTAssertEqual(refusal.code, "portfolio_invalid")
+        }
+        let identity = IdentityCapture(document: .passport, recto: Data([1]), verso: nil, video: Data([3]),
+                                       videoSeconds: 7, headTurns: [.left, .right])
+        try await repo.applyAsProvider(services: ["plomberie"], communes: ["Limete"], identity: identity,
+                                       portfolio: Portfolio(works: [work("plomberie", photos: 2)]),
+                                       acceptedTermsVersion: repo.providerTermsVersion)
+        let sentCount = try await repo.portfolio().works.first?.photos.count
+        XCTAssertEqual(sentCount, 2)
+        let services = try await repo.providerServices()
+        XCTAssertEqual(services, ["plomberie"])
+        // L'équipe demande des preuves ; l'envoi y répond.
+        repo.demoAskPortfolio(services: ["plomberie"])
+        let asked = try await repo.portfolioRequest()
+        XCTAssertEqual(asked?.services, ["plomberie"])
+        try await repo.sendPortfolio(Portfolio(works: [work("plomberie", photos: 3)], certificates: [Data([4])]))
+        let after = try await repo.portfolioRequest()
+        XCTAssertNil(after)
+        let certificates = try await repo.portfolio().certificates.count
+        XCTAssertEqual(certificates, 1)
+        // Un service qui n'est pas dans la demande est refusé.
+        do {
+            try await repo.sendPortfolio(Portfolio(works: [work("coiffure")]))
+            XCTFail("refus attendu")
+        } catch let refusal as NexisRefusal {
+            XCTAssertEqual(refusal.code, "portfolio_invalid")
+        }
+        // Pendant la vérification, sans demande de l'équipe : figé.
+        do {
+            try await repo.sendPortfolio(Portfolio(works: [work("plomberie")]))
+            XCTFail("refus attendu")
+        } catch let refusal as NexisRefusal {
+            XCTAssertEqual(refusal.code, "portfolio_locked")
+        }
+        // Après l'accord de l'équipe : de nouveau modifiable.
+        repo.demoVerifyProvider()
+        try await repo.sendPortfolio(Portfolio(works: [work("plomberie")]))
+        let photos = try await repo.portfolio().works.first?.photos.count
+        XCTAssertEqual(photos, 1)
+    }
+
+    func testWorksAreFrozenWhileTheTeamChecksTheProvider() {
+        XCTAssertFalse(Portfolio.isEditable(status: nil, requested: false))
+        XCTAssertFalse(Portfolio.isEditable(status: .pending, requested: false))
+        XCTAssertTrue(Portfolio.isEditable(status: .pending, requested: true))
+        XCTAssertTrue(Portfolio.isEditable(status: .verified, requested: false))
+    }
+
+    func testClientsSeeOnlyApprovedWorksAndNeverCertificates() {
+        var approved = work("plomberie", photos: 2, note: "Cuisine")
+        approved.review = .approved
+        var rejected = work("electricite")
+        rejected.review = .rejected
+        let portfolio = Portfolio(works: [approved, rejected, work("coiffure")],
+                                  certificates: [Data([9])], certificatesVerified: true)
+        let showcase = portfolio.showcase
+        XCTAssertEqual(showcase?.works.map(\.serviceId), ["plomberie"])
+        XCTAssertEqual(showcase?.works.first?.note, "Cuisine")
+        XCTAssertEqual(showcase?.certificateVerified, true)
+        // Rien d'approuvé : rien chez le client, même avec un diplôme vérifié.
+        XCTAssertNil(Portfolio(works: [work("plomberie")], certificates: [Data([9])], certificatesVerified: true).showcase)
+    }
+
+    func testChangedWorksGoBackToTheTeam() {
+        var approved = work("plomberie", photos: 2, note: "Cuisine")
+        approved.review = .approved
+        var rejected = work("electricite")
+        rejected.review = .rejected
+        let previous = Portfolio(works: [approved, rejected], certificates: [Data([9])], certificatesVerified: true)
+        // Rien de changé : les décisions restent.
+        let same = Portfolio(works: [work("plomberie", photos: 2, note: "Cuisine"), work("electricite")],
+                             certificates: [Data([9])]).resubmitted(over: previous)
+        XCTAssertEqual(same.works.map(\.review), [.approved, .rejected])
+        XCTAssertTrue(same.certificatesVerified)
+        // Une photo ajoutée, une phrase changée, un diplôme changé : tout repasse par l'équipe.
+        let changed = Portfolio(works: [work("plomberie", photos: 3, note: "Cuisine"), work("electricite", note: "Tableau")],
+                                certificates: [Data([8])]).resubmitted(over: previous)
+        XCTAssertEqual(changed.works.map(\.review), [.pending, .pending])
+        XCTAssertFalse(changed.certificatesVerified)
+        XCTAssertNil(changed.showcase)
+    }
+
+    func testProviderSeesTheTeamDecision() async throws {
+        let repo = DemoRepository()
+        XCTAssertTrue(repo.registerClient(phone: "+243810000003", firstName: "Jean", lastName: "K",
+                                          commune: "Limete", acceptedTermsVersion: repo.signupTermsVersion))
+        let identity = IdentityCapture(document: .passport, recto: Data([1]), verso: nil, video: Data([3]),
+                                       videoSeconds: 7, headTurns: [.left, .right])
+        // L'app ne peut pas se donner l'accord de l'équipe.
+        var forged = work("plomberie", photos: 2)
+        forged.review = .approved
+        try await repo.applyAsProvider(services: ["plomberie"], communes: ["Limete"], identity: identity,
+                                       portfolio: Portfolio(works: [forged], certificatesVerified: true),
+                                       acceptedTermsVersion: repo.providerTermsVersion)
+        var sent = try await repo.portfolio()
+        XCTAssertEqual(sent.works.first?.review, .pending)
+        XCTAssertFalse(sent.certificatesVerified)
+        repo.demoReview(serviceId: "plomberie", .approved)
+        sent = try await repo.portfolio()
+        XCTAssertEqual(sent.works.first?.review, .approved)
+        // Renvoyé sans changement, après l'accord du prestataire : toujours approuvé.
+        repo.demoVerifyProvider()
+        try await repo.sendPortfolio(Portfolio(works: [work("plomberie", photos: 2)]))
+        sent = try await repo.portfolio()
+        XCTAssertEqual(sent.works.first?.review, .approved)
+    }
+
+    func testQuoteShowsOnlyTheApprovedShowcase() async throws {
+        let repo = DemoRepository()
+        let prisca = try await repo.providerShowcase(quoteId: 521)
+        XCTAssertEqual(prisca?.works.map(\.serviceId), ["nettoyage"])
+        XCTAssertEqual(prisca?.certificateVerified, true)
+        // Joël attend encore l'équipe ; Aline n'a rien envoyé.
+        let joel = try await repo.providerShowcase(quoteId: 522)
+        XCTAssertNil(joel)
+        let aline = try await repo.providerShowcase(quoteId: 523)
+        XCTAssertNil(aline)
+    }
+}
+
+final class IdentityGuideTests: XCTestCase {
+    private func quad(_ dx: CGFloat = 0) -> CardQuad {
+        CardQuad(topLeft: CGPoint(x: 0.1 + dx, y: 0.7), topRight: CGPoint(x: 0.9 + dx, y: 0.7),
+                 bottomRight: CGPoint(x: 0.9 + dx, y: 0.2), bottomLeft: CGPoint(x: 0.1 + dx, y: 0.2))
+    }
+
+    func testCardMustStayStillBeforeThePhoto() {
+        var tracker = StableCardTracker(needed: 4, tolerance: 0.02)
+        XCTAssertFalse(tracker.add(quad()))
+        XCTAssertFalse(tracker.add(quad(0.005)))
+        XCTAssertFalse(tracker.add(quad(0.01)))
+        XCTAssertTrue(tracker.add(quad(0.01)))
+        // La carte bouge : on recommence à compter.
+        XCTAssertFalse(tracker.add(quad(0.2)))
+        XCTAssertFalse(tracker.add(nil))
+        XCTAssertFalse(tracker.isHolding)
+    }
+
+    func testRectoNeedsAFace() {
+        XCTAssertEqual(CardCheck.verdict(expected: .recto, faceFound: true, hashes: [1], rectoHash: nil), .accepted)
+        XCTAssertEqual(CardCheck.verdict(expected: .recto, faceFound: false, hashes: [1], rectoHash: nil), .showRectoFirst)
+    }
+
+    func testVersoMustDifferFromRecto() {
+        let recto: UInt64 = 0xF0F0_F0F0_F0F0_F0F0
+        let same = recto ^ 0b111 // 3 bits d'écart
+        let other: UInt64 = 0x0F0F_0F0F_0F0F_0F0F
+        XCTAssertEqual(CardCheck.verdict(expected: .verso, faceFound: false, hashes: [same], rectoHash: recto), .stillRecto)
+        XCTAssertEqual(CardCheck.verdict(expected: .verso, faceFound: false, hashes: [other], rectoHash: recto), .accepted)
+        // Carte à l'envers : l'une des deux lectures ressemble au recto.
+        XCTAssertEqual(CardCheck.verdict(expected: .verso, faceFound: false, hashes: [other, same], rectoHash: recto), .stillRecto)
+        // Avec un visage visible, un écart moyen suffit à dire « encore le recto ».
+        let medium = recto ^ 0xFFFF // 16 bits d'écart
+        XCTAssertEqual(CardCheck.verdict(expected: .verso, faceFound: true, hashes: [medium], rectoHash: recto), .stillRecto)
+        XCTAssertEqual(CardCheck.verdict(expected: .verso, faceFound: false, hashes: [medium], rectoHash: recto), .accepted)
+    }
+
+    func testPassportNeedsFaceAndMachineZone() {
+        XCTAssertEqual(IdentityDocument.passport.sides, [.passportPage])
+        XCTAssertEqual(IdentityDocument.drivingLicence.sides, [.recto, .verso])
+        XCTAssertEqual(CardCheck.verdict(expected: .passportPage, faceFound: true, hashes: [], rectoHash: nil,
+                                         machineZone: true), .accepted)
+        XCTAssertEqual(CardCheck.verdict(expected: .passportPage, faceFound: true, hashes: [], rectoHash: nil,
+                                         machineZone: false), .showPhotoPage)
+        XCTAssertEqual(CardCheck.verdict(expected: .passportPage, faceFound: false, hashes: [], rectoHash: nil,
+                                         machineZone: true), .showPhotoPage)
+    }
+
+    func testMachineZoneIsRecognised() {
+        let zone = ["REPUBLIQUE DEMOCRATIQUE DU CONGO",
+                    "P<CODMUKENDI<<GRACE<<<<<<<<<<<<<<<<<<<<<<<<",
+                    "OP12345674COD9001014F3001019<<<<<<<<<<<<<<06"]
+        XCTAssertTrue(MachineZone.found(in: zone))
+        // Lu avec des espaces et des minuscules.
+        XCTAssertTrue(MachineZone.found(in: ["p<cod mukendi<<grace<<<<<<<<<<<<<<<<<<<<", "OP1234567 4COD9001014F3001019<<<<<<<<<06"]))
+        // Une seule ligne, ou une page de visas : pas la page photo.
+        XCTAssertFalse(MachineZone.found(in: ["P<CODMUKENDI<<GRACE<<<<<<<<<<<<<<<<<<<<<<<<"]))
+        XCTAssertFalse(MachineZone.found(in: ["VISAS", "Page 12", "ENTREE ARRIVAL 12/05/2025 KINSHASA NDJILI"]))
+    }
+
+    func testDifferenceHash() {
+        let rising = (0..<72).map { UInt8(($0 % 9) * 20) }
+        XCTAssertEqual(ImageHash.dHash(rising), UInt64.max)
+        XCTAssertEqual(ImageHash.dHash(ImageHash.halfTurn(rising)), 0)
+        XCTAssertEqual(ImageHash.distance(0, UInt64.max), 64)
+    }
+
+    func testHeadPoseUsesTheNoseForTheDirection() {
+        // Nez vers la droite de l'image (non inversée) : la personne tourne vers sa gauche.
+        XCTAssertEqual(HeadPose.position(FaceSample(faceCount: 1, turnDegrees: 28, noseOffset: 0.12)), .turned(.left))
+        XCTAssertEqual(HeadPose.position(FaceSample(faceCount: 1, turnDegrees: 28, noseOffset: -0.12)), .turned(.right))
+        XCTAssertEqual(HeadPose.position(FaceSample(faceCount: 1, turnDegrees: 4, noseOffset: 0.01)), .ahead)
+        XCTAssertEqual(HeadPose.position(FaceSample(faceCount: 1, turnDegrees: 15, noseOffset: 0.05)), .between)
+        XCTAssertEqual(HeadPose.position(FaceSample(faceCount: 1, turnDegrees: nil, noseOffset: -0.2)), .turned(.right))
+    }
+
+    private func run(_ script: inout SelfieScript, _ sample: FaceSample, frames: Int, from time: inout TimeInterval) -> [SelfieScript.Event] {
+        (0..<frames).map { _ in time += 0.1; return script.feed(sample, at: time) }
+    }
+
+    func testSelfieStepsComeInOrder() {
+        var script = SelfieScript(turns: [.right, .left])
+        script.holdNeeded = 3
+        var time: TimeInterval = 0
+        let framed = FaceSample(faceCount: 1, turnDegrees: 2, noseOffset: 0)
+        let left = FaceSample(faceCount: 1, turnDegrees: 30, noseOffset: 0.15)
+        let right = FaceSample(faceCount: 1, turnDegrees: 30, noseOffset: -0.15)
+        XCTAssertEqual(script.number, 1)
+        XCTAssertEqual(run(&script, framed, frames: 3, from: &time).last, .startRecording)
+        XCTAssertEqual(script.step, .turn(.right))
+        // Tourner du mauvais côté ne fait pas avancer.
+        XCTAssertFalse(run(&script, left, frames: 5, from: &time).contains(.advanced))
+        XCTAssertEqual(run(&script, right, frames: 3, from: &time).last, .advanced)
+        XCTAssertEqual(script.step, .turn(.left))
+        XCTAssertEqual(run(&script, left, frames: 3, from: &time).last, .advanced)
+        XCTAssertEqual(script.step, .lookAhead)
+        XCTAssertEqual(script.number, 4)
+        XCTAssertEqual(run(&script, framed, frames: 3, from: &time).last, .finished)
+        XCTAssertEqual(script.step, .done)
+        XCTAssertGreaterThan(script.seconds, 0)
+    }
+
+    func testSelfieRestartsWhenTooSlowOrFaceLost() {
+        var script = SelfieScript(turns: [.left, .right])
+        script.holdNeeded = 1
+        script.timeLimit = 5
+        script.lostLimit = 2
+        XCTAssertEqual(script.feed(FaceSample(faceCount: 1, turnDegrees: 0), at: 0), .startRecording)
+        XCTAssertEqual(script.feed(FaceSample(faceCount: 1, turnDegrees: 0), at: 6), .restart)
+        XCTAssertEqual(script.step, .faceIn)
+        XCTAssertEqual(script.feed(FaceSample(faceCount: 1, turnDegrees: 0), at: 7), .startRecording)
+        XCTAssertEqual(script.feed(FaceSample(faceCount: 0), at: 7.1), SelfieScript.Event.none)
+        XCTAssertEqual(script.feed(FaceSample(faceCount: 0), at: 7.2), SelfieScript.Event.none)
+        XCTAssertEqual(script.feed(FaceSample(faceCount: 0), at: 7.3), .restart)
+        // Deux visages : rien n'avance, et l'écran le dit.
+        _ = script.feed(FaceSample(faceCount: 2), at: 8)
+        XCTAssertTrue(script.severalFaces)
+        XCTAssertEqual(script.step, .faceIn)
+    }
+
+    func testFaceMustBeCenteredToStart() {
+        XCTAssertTrue(HeadPose.isFramed(FaceSample(faceCount: 1, turnDegrees: 3)))
+        XCTAssertFalse(HeadPose.isFramed(FaceSample(faceCount: 1, centerX: 0.8, turnDegrees: 3)))
+        XCTAssertFalse(HeadPose.isFramed(FaceSample(faceCount: 1, width: 0.1, turnDegrees: 3)))
+        XCTAssertFalse(HeadPose.isFramed(FaceSample(faceCount: 2, turnDegrees: 3)))
     }
 }

@@ -48,7 +48,7 @@ targets:
           UIImageRespectsSafeAreaInsets: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-        NSCameraUsageDescription: "NexisHub utilise l’appareil photo pour les photos de vérification de votre identité."
+        NSCameraUsageDescription: "NexisHub utilise l’appareil photo pour scanner votre pièce d’identité et filmer une courte vidéo de vérification, sans son."
         NSFaceIDUsageDescription: "NexisHub utilise Face ID pour ouvrir l’app et confirmer vos paiements. Votre visage reste dans votre iPhone."
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
