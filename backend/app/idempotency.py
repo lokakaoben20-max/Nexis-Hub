@@ -140,6 +140,40 @@ def run(
     return Outcome(200, body, replayed=False)
 
 
+def replay_of(db: Session, *, channel: str, key: str, request_fingerprint: str) -> dict | None:
+    """Pour une action qui valide elle-même (appel à un tiers après sa
+    transaction, comme une demande de paiement Mobile Money) : prend le verrou
+    de la clé et rend ce qui a été retenu pour elle, ou None si elle est
+    nouvelle. Autre demande sous la même clé : refus `idempotency_key_reused`."""
+    _lock(db, channel, key)
+    row = _stored(db, channel, key)
+    if row is None:
+        return None
+    return _replay(row, request_fingerprint).body
+
+
+def remember(db: Session, *, channel: str, key: str, request_fingerprint: str, body: dict, now: datetime | None = None) -> None:
+    """Ajoute la clé à la transaction en cours, sans valider : l'action
+    valide la clé avec ce qu'elle écrit. Le verrou est repris (il a pu être
+    relâché par une annulation entre-temps) ; une clé déjà retenue pour la
+    même demande n'est pas ajoutée une seconde fois."""
+    _lock(db, channel, key)
+    row = _stored(db, channel, key)
+    if row is not None:
+        _replay(row, request_fingerprint)
+        return
+    db.add(
+        IdempotencyKey(
+            channel=channel,
+            key=key,
+            fingerprint=request_fingerprint,
+            response_status=200,
+            response_body=body,
+            created_at=now or datetime.utcnow(),
+        )
+    )
+
+
 def purge(db: Session, *, now: datetime | None = None) -> int:
     """Efface les clés plus vieilles que `RETENTION`."""
     cutoff = (now or datetime.utcnow()) - RETENTION

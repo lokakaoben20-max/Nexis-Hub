@@ -494,11 +494,25 @@ def _funded_amounts(db: Session, mission: BotMission) -> dict[str, Decimal]:
     return {"total": to_money(details["total"]), "commission": to_money(details["commission"]), "net": to_money(details["net"])}
 
 
-def _write(db: Session, mission_id: int, phase: str, matches, write) -> None:
+def _write(db: Session, mission_id: int, phase: str, matches, write, *, commit: bool = True) -> None:
     """Écrit (`write`) puis valide, en une transaction. Si une requête
     concurrente a pris la même phase entre-temps (contrainte d'unicité, ou
     mission créée en même temps), annule tout et décide : rejeu identique
-    accepté, toute autre demande refusée."""
+    accepté, toute autre demande refusée.
+
+    `commit=False` : l'écriture se fait dans un point de sauvegarde, et c'est
+    l'appelant qui valide (avec la clé d'idempotence du message, par exemple).
+    Même décision en cas de conflit ; seul le point de sauvegarde est annulé."""
+    if not commit:
+        try:
+            with db.begin_nested():
+                write()
+        except IntegrityError:
+            existing = mission_operation(db, mission_id, phase)
+            if existing is not None and matches(existing):
+                return
+            raise MoneyError("already_paid" if phase == FUNDING else "already_settled", mission=db.get(BotMission, mission_id))
+        return
     try:
         write()
         db.commit()
@@ -523,6 +537,7 @@ def fund_mission(
     quote_id: int,
     reference: str | None = None,
     also=None,
+    commit: bool = True,
 ) -> BotMission:
     """Paie une mission en escrow, sur son devis accepté.
 
@@ -530,7 +545,8 @@ def fund_mission(
     (`funding_terms`), jamais de la demande. `reference` : référence de
     l'agrégateur (paiement Mobile Money réel) ; `also(mission)` : écritures à
     valider dans la même transaction (statut de l'intention de paiement, frais
-    d'agrégateur). La mission doit exister : un paiement n'en crée jamais."""
+    d'agrégateur). La mission doit exister : un paiement n'en crée jamais.
+    `commit=False` : rien n'est validé ici (voir `_write`)."""
     if method not in PAYMENT_METHODS:
         raise MoneyError("invalid_method", 400)
     terms = funding_terms(db, mission_id, quote_id, client_account_id)
@@ -620,7 +636,7 @@ def fund_mission(
         # Le prestataire apprend qu'il peut y aller, dans la même transaction.
         _events().mission_funded(db, mission, method)
 
-    _write(db, mission_id, FUNDING, matches, write)
+    _write(db, mission_id, FUNDING, matches, write, commit=commit)
     return db.get(BotMission, mission_id)
 
 

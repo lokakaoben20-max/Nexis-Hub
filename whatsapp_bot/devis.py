@@ -129,6 +129,8 @@ class QuotesFlow:
         for quote in accepted:
             amount, currency = amount_text(quote["amount"], quote["currency"])
             messages.append(meta.Text(text("wa_quote_accepted_line", lang, amount=amount, currency=currency, provider=_provider(quote))))
+            if _unpaid(mission):
+                messages.append(await self.conversation.payments.pay_card(message.bsuid, {**quote, "mission_id": mission["mission_id"]}, lang))
         if not accepted:
             messages += [self._quote_card(quote, lang) for quote in open_quotes]
             if not open_quotes and mission.get("status") in ("pending", "quoted"):
@@ -171,7 +173,11 @@ class QuotesFlow:
             amount=amount,
             currency=currency,
         )
-        return [meta.Text(accepted), self.conversation._menu(lang, name)], {}
+        if not _unpaid(answer.get("mission") or {}):
+            return [meta.Text(accepted), self.conversation._menu(lang, name)], {}
+        # Devis accepté : la demande se paie tout de suite, ou plus tard
+        # depuis « Mes demandes ».
+        return [meta.Text(accepted), await self.conversation.payments.pay_card(message.bsuid, quote, lang)], {}
 
     async def _reject(self, message, quote_id, lang, name):
         try:
@@ -252,6 +258,11 @@ def status_label(mission: dict, lang: str) -> str:
     else:
         key = "wa_status_other"
     return text(key, lang)
+
+
+def _unpaid(mission: dict) -> bool:
+    """Devis accepté, argent pas encore bloqué : la demande est à payer."""
+    return mission.get("status") == "confirmed" and mission.get("payment_status") in (None, "unpaid")
 
 
 def trust_line(trust: dict, lang: str) -> str:

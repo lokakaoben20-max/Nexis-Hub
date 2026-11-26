@@ -88,7 +88,7 @@ def _funding_parties(intent: PaymentIntent) -> dict:
 
 
 def create_intent(
-    db: Session, mission_id: int, *, phone: str, operator: str, client_account_id: int, quote_id: int
+    db: Session, mission_id: int, *, phone: str, operator: str, client_account_id: int, quote_id: int, also=None
 ) -> PaymentIntent:
     """Ouvre (ou renvoie) l'intention de paiement de la mission et demande à
     l'agrégateur d'envoyer la demande sur le téléphone du client.
@@ -96,7 +96,12 @@ def create_intent(
     Le montant est celui du devis accepté, lu dans le backend
     (`ledger.funding_terms`). `funding_request` garde le client, le devis et
     son prestataire ; `ledger.fund_mission` relit le devis quand l'argent
-    arrive."""
+    arrive.
+
+    `also(intent)` : écriture validée avec l'intention, avant tout appel à
+    l'agrégateur (la clé d'idempotence du message WhatsApp, qui désigne alors
+    cette intention). Appelée aussi quand l'intention ouverte existait déjà."""
+    remember = also or (lambda intent: None)
     _check_phone_and_operator(phone, operator)
     terms = ledger.funding_terms(db, mission_id, quote_id, client_account_id)
     mission = terms["mission"]
@@ -118,6 +123,8 @@ def create_intent(
 
     existing = _open_intent(db, mission_id)
     if existing is not None:
+        remember(existing)
+        db.commit()
         return existing
     if not interrupteurs.is_open(db, interrupteurs.COLLECTIONS):
         # Encaissements coupés par un admin : aucune nouvelle demande ne part.
@@ -137,6 +144,8 @@ def create_intent(
     )
     db.add(intent)
     try:
+        db.flush()
+        remember(intent)
         db.commit()
     except IntegrityError:
         # Deux clics simultanés : l'index « une intention ouverte par mission »
@@ -145,6 +154,8 @@ def create_intent(
         existing = _open_intent(db, mission_id)
         if existing is None:
             raise
+        remember(existing)
+        db.commit()
         return existing
 
     try:
