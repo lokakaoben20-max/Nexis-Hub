@@ -102,7 +102,7 @@ private enum class ProtectPhase { CREATE, CONFIRM, BIOMETRICS, DONE }
 fun ProtectScreen() {
     val app = LocalApp.current
     val p = LocalPalette.current
-    val activity = LocalContext.current.findActivity()
+    val activity = LocalContext.current.findFragmentActivity()
     val scope = rememberCoroutineScope()
     val shake = remember { Animatable(0f) }
     var phase by remember {
@@ -250,7 +250,7 @@ fun ProtectScreen() {
 fun LockScreen() {
     val app = LocalApp.current
     val p = LocalPalette.current
-    val activity = LocalContext.current.findActivity()
+    val activity = LocalContext.current.findFragmentActivity()
     val scope = rememberCoroutineScope()
     val shake = remember { Animatable(0f) }
     var profile by remember { mutableStateOf<Profile?>(null) }
@@ -361,7 +361,7 @@ fun LockScreen() {
 fun GateSheet(gate: MoneyGate) {
     val app = LocalApp.current
     val p = LocalPalette.current
-    val activity = LocalContext.current.findActivity()
+    val activity = LocalContext.current.findFragmentActivity()
     val scope = rememberCoroutineScope()
     val shake = remember { Animatable(0f) }
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -434,7 +434,7 @@ fun SecurityScreen() {
     val app = LocalApp.current
     val p = LocalPalette.current
     val flow = LocalFlow.current
-    val activity = LocalContext.current.findActivity()
+    val activity = LocalContext.current.findFragmentActivity()
     val scope = rememberCoroutineScope()
     val security = app.security
     val method = app.t("bioFingerprint")
@@ -712,8 +712,8 @@ fun Modifier.blockTouches(): Modifier = pointerInput(Unit) {
 }
 
 /** L'activité de l'app (l'invite d'empreinte en a besoin). */
-tailrec fun Context.findActivity(): FragmentActivity? = when (this) {
+private tailrec fun Context.findFragmentActivity(): FragmentActivity? = when (this) {
     is FragmentActivity -> this
-    is ContextWrapper -> baseContext.findActivity()
+    is ContextWrapper -> baseContext.findFragmentActivity()
     else -> null
 }
