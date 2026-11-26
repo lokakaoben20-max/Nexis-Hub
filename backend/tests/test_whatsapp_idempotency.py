@@ -186,6 +186,8 @@ def test_every_write_open_to_whatsapp_is_idempotent(backend):
         ("PATCH", "/api/me/language"),
         ("PATCH", "/api/me/name"),
         ("POST", "/api/bot/missions"),
+        ("POST", "/api/bot/quotes/{quote_id}/accept"),
+        ("POST", "/api/bot/quotes/{quote_id}/reject"),
         ("POST", "/api/me/terms"),
         ("POST", "/api/whatsapp/client"),
     ]

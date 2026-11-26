@@ -19,6 +19,7 @@ from backend.app import (
     app_sessions,
     conditions,
     crud,
+    evenements,
     fichiers,
     idempotency,
     interrupteurs,
@@ -597,6 +598,8 @@ def _quote_to_dict(quote: BotQuote, db=None) -> dict:
         provider = profils.provider_profile(db, provider_account_id)
     return {
         "provider_name": provider.full_name if provider is not None else None,
+        # Note, missions, badge et vérification : ce qui aide le client à choisir.
+        "provider_trust": evenements.provider_trust(provider) if db is not None else None,
         "id": quote.id,
         "mission_id": quote.mission_id,
         "provider_telegram_id": quote.provider_telegram_id,
@@ -969,11 +972,9 @@ def create_bot_mission(
         except crud.MissionRefused as refusal:
             raise HTTPException(status_code=refusal.http_status, detail={"code": refusal.code}) from refusal
         db.flush()
-        view = _mission_view(db, mission, "client")
-        if actor.channel != ledger.TELEGRAM:
-            # Un client hors Telegram n'a rien à faire des identifiants
-            # Telegram des prestataires : il n'en reçoit que le nombre.
-            view.pop("alerted_provider_telegram_ids")
+        # Un client hors Telegram ne reçoit que le nombre de prestataires
+        # prévenus, jamais leurs identifiants Telegram.
+        view = _for_channel(actor, _mission_view(db, mission, "client"))
         return jsonable_encoder({"status": "ok", "created": created, **view})
 
     return _run_idempotent(request, response, actor, idempotency_key, payload.model_dump(mode="json"), action)
@@ -1044,8 +1045,34 @@ def create_review(payload: ReviewCreatePayload, actor: Actor = Depends(current_a
         return {"status": "ok", "review": _review_to_dict(review)}
 
 
-def _quote_decision(quote_id: int, actor: Actor, decide) -> dict:
-    with SessionLocal() as db:
+# Identifiants Telegram : jamais montrés à un acteur d'un autre canal (un
+# client WhatsApp n'a rien à faire du Telegram d'un prestataire).
+_TELEGRAM_FIELDS = frozenset(
+    {"telegram_id", "provider_telegram_id", "alerted_provider_telegram_ids", "requested_by_telegram_id"}
+)
+
+
+def _for_channel(actor: Actor, body):
+    """Réponse telle que le canal de l'acteur la reçoit."""
+    if actor.channel == ledger.TELEGRAM:
+        return body
+    if isinstance(body, dict):
+        return {key: _for_channel(actor, value) for key, value in body.items() if key not in _TELEGRAM_FIELDS}
+    if isinstance(body, list):
+        return [_for_channel(actor, value) for value in body]
+    return body
+
+
+def _quote_view(db, quote: BotQuote) -> dict:
+    return {"status": "ok", "quote": _quote_to_dict(quote, db), "mission": _mission_to_dict(db.get(BotMission, quote.mission_id))}
+
+
+def _quote_decision(quote_id: int, request: Request, response: Response, actor: Actor, key: str | None, decide) -> dict:
+    """Accepter ou refuser un devis, au nom du client de la mission. Écriture
+    et clé d'idempotence (WhatsApp) validées ensemble ; rejouée, la décision
+    rend la même réponse."""
+
+    def action(db) -> dict:
         client_account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
         if client_account_id is None:
             raise HTTPException(status_code=403, detail={"code": "not_mission_client"})
@@ -1055,12 +1082,15 @@ def _quote_decision(quote_id: int, actor: Actor, decide) -> dict:
             status = 403 if str(exc) == "not_mission_client" else 409
             raise HTTPException(status_code=status, detail={"code": str(exc)}) from exc
         if quote is None:
-            raise HTTPException(status_code=404, detail="quote_not_found")
-        return {"status": "ok", "quote": _quote_to_dict(quote, db), "mission": _mission_to_dict(db.get(BotMission, quote.mission_id))}
+            raise HTTPException(status_code=404, detail={"code": "quote_not_found"})
+        return jsonable_encoder(_for_channel(actor, _quote_view(db, quote)))
+
+    return _run_idempotent(request, response, actor, key, {}, action)
 
 
 @router.get("/api/bot/quotes/{quote_id}")
 @terms_exempt
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
 def get_quote(quote_id: int, actor: Actor = Depends(current_actor)):
     """Lisible par le client de la mission et par l'auteur du devis (et
     l'admin) ; pour tout autre, le devis n'existe pas."""
@@ -1073,19 +1103,60 @@ def get_quote(quote_id: int, actor: Actor = Depends(current_actor)):
                 quote = None
         if quote is None:
             raise HTTPException(status_code=404, detail={"code": "quote_not_found"})
-        return {"status": "ok", "quote": _quote_to_dict(quote, db), "mission": _mission_to_dict(db.get(BotMission, quote.mission_id))}
+        return _for_channel(actor, _quote_view(db, quote))
+
+
+@router.get("/api/bot/missions/{mission_id}/quotes")
+@terms_exempt
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+def list_mission_quotes(mission_id: int, actor: Actor = Depends(current_actor)):
+    """Devis d'une mission, pour son client (et l'admin) : ce que le client
+    retrouve par « Mes demandes » même s'il a manqué la notification. Pour
+    tout autre, la mission n'existe pas."""
+    with SessionLocal() as db:
+        mission = db.get(BotMission, mission_id)
+        if mission is not None and not _is_admin(actor):
+            account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
+            if account_id is None or mission.client_account_id != account_id:
+                mission = None
+        if mission is None:
+            raise HTTPException(status_code=404, detail={"code": "mission_not_found"})
+        return _for_channel(
+            actor,
+            {
+                "status": "ok",
+                "mission": _mission_to_dict(mission),
+                "quotes": [_quote_to_dict(quote, db) for quote in crud.mission_quotes(db, mission_id)],
+            },
+        )
 
 
 @router.post("/api/bot/quotes/{quote_id}/accept")
 @needs_terms(conditions.CLIENT)
-def accept_quote(quote_id: int, actor: Actor = Depends(current_actor)):
-    return _quote_decision(quote_id, actor, crud.accept_quote)
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+@idempotent
+def accept_quote(
+    quote_id: int,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    return _quote_decision(quote_id, request, response, actor, idempotency_key, crud.decide_accept_quote)
 
 
 @router.post("/api/bot/quotes/{quote_id}/reject")
 @terms_exempt
-def reject_quote(quote_id: int, actor: Actor = Depends(current_actor)):
-    return _quote_decision(quote_id, actor, crud.reject_quote)
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+@idempotent
+def reject_quote(
+    quote_id: int,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    return _quote_decision(quote_id, request, response, actor, idempotency_key, crud.decide_reject_quote)
 
 
 def _money_response(db, mission: BotMission) -> dict:

@@ -168,7 +168,9 @@ def mission_reminder(db: Session, mission: BotMission, provider_account_ids: lis
         )
 
 
-def _trust(provider: ProviderProfile | None) -> dict:
+def provider_trust(provider: ProviderProfile | None) -> dict:
+    """Ce que le client voit pour se fier à un prestataire (note, missions,
+    badge, vérification)."""
     if provider is None:
         return {"total_missions": 0}
     return {
@@ -191,7 +193,7 @@ def quote_created(db: Session, quote: BotQuote) -> None:
         params={
             "mission_id": mission.mission_id,
             "prestataire": (provider.full_name if provider is not None else None) or "—",
-            "trust_line": {"$trust": _trust(provider)},
+            "trust_line": {"$trust": provider_trust(provider)},
             "amount": float(quote.amount),
             "currency": quote.currency,
             "delay": quote.delay_hours,

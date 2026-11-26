@@ -525,8 +525,32 @@ def _require_quote_client(db: Session, quote: BotQuote, client_account_id: int) 
 
 
 def accept_quote(db: Session, quote_id: int, client_account_id: int) -> BotQuote | None:
+    """`decide_accept_quote`, puis validation."""
+    return _committed(db, decide_accept_quote(db, quote_id, client_account_id))
+
+
+def reject_quote(db: Session, quote_id: int, client_account_id: int) -> BotQuote | None:
+    """`decide_reject_quote`, puis validation."""
+    return _committed(db, decide_reject_quote(db, quote_id, client_account_id))
+
+
+def _committed(db: Session, quote: BotQuote | None) -> BotQuote | None:
+    db.commit()
+    if quote is not None:
+        db.refresh(quote)
+    return quote
+
+
+def mission_quotes(db: Session, mission_id: int) -> list[BotQuote]:
+    """Devis d'une mission, du plus ancien au plus récent."""
+    return db.query(BotQuote).filter(BotQuote.mission_id == mission_id).order_by(BotQuote.id).all()
+
+
+def decide_accept_quote(db: Session, quote_id: int, client_account_id: int) -> BotQuote | None:
     """Un seul devis accepté par mission, et seulement tant qu'aucun ne l'est :
-    c'est ce devis, et lui seul, que le paiement relira."""
+    c'est ce devis, et lui seul, que le paiement relira. Écrit sans valider
+    (l'appelant valide, avec la clé d'idempotence du message WhatsApp par
+    exemple). Rejouée, l'acceptation rend le même devis sans rien refaire."""
     quote = db.get(BotQuote, quote_id)
     if quote is None:
         return None
@@ -555,12 +579,12 @@ def accept_quote(db: Session, quote_id: int, client_account_id: int) -> BotQuote
         mission.provider_account_id = quote.provider_account_id or _account_id_for_telegram(db, quote.provider_telegram_id)
 
     evenements.quote_accepted(db, quote)
-    db.commit()
-    db.refresh(quote)
+    db.flush()
     return quote
 
 
-def reject_quote(db: Session, quote_id: int, client_account_id: int) -> BotQuote | None:
+def decide_reject_quote(db: Session, quote_id: int, client_account_id: int) -> BotQuote | None:
+    """Refus d'un devis encore ouvert, sans valider. Rejoué : même devis."""
     quote = db.get(BotQuote, quote_id)
     if quote is None:
         return None
@@ -572,8 +596,7 @@ def reject_quote(db: Session, quote_id: int, client_account_id: int) -> BotQuote
         raise MissionRefused("quote_not_open")
     quote.status = "rejected"
     evenements.quote_rejected(db, quote)
-    db.commit()
-    db.refresh(quote)
+    db.flush()
     return quote
 
 

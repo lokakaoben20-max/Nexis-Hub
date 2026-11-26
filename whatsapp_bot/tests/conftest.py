@@ -191,6 +191,19 @@ def verified_provider(main, telegram_id: int = 7, service: str = "service_nettoy
     return account_id
 
 
+def provider_quote(main, mission_id: int, telegram_id: int = 7, amount: float = 40, currency: str = "USD", message: str = "Je passe ce soir") -> int:
+    """Devis du prestataire Telegram sur cette mission (comme le bot). Rend
+    son numéro."""
+    from fastapi.testclient import TestClient
+
+    headers = {"X-API-Key": TELEGRAM_KEY, "X-Actor-Channel": "telegram", "X-Actor-Id": str(telegram_id)}
+    body = {"mission_id": mission_id, "amount": amount, "currency": currency, "delay_hours": 4, "message": message}
+    with TestClient(main.app) as api:
+        response = api.post("/api/bot/quotes", json=body, headers=headers)
+    assert response.status_code == 200, response.json()
+    return response.json()["quote"]["id"]
+
+
 class _Transport(httpx.AsyncBaseTransport):
     """Transport fait d'une fonction (le backend, qu'on peut couper)."""
 

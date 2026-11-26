@@ -17,8 +17,9 @@ Parcours d'une personne inconnue :
    compte est refusé par le backend (`phone_owned_by_account`).
 
 Un client inscrit voit le menu (liste). « Nouvelle demande » crée une
-mission pas à pas (demande.py, étape 5) ; « Mes missions » et « Mon solde »
-arrivent aux étapes 6 et 7.
+mission pas à pas (demande.py, étape 5) ; « Mes demandes » montre les
+demandes et leurs devis, à accepter ou refuser (devis.py, étape 6). Le
+paiement suit (étape 6, seconde partie) ; « Mon solde » arrive à l'étape 7.
 
 Un bouton d'une ancienne conversation (étape oubliée après 24 h, ou Redis
 vidé) n'est jamais rejeté en silence : la langue choisie est reprise, le
@@ -31,7 +32,7 @@ import logging
 from dataclasses import dataclass, field
 
 from messages import get_message
-from whatsapp_bot import demande, meta
+from whatsapp_bot import demande, devis, meta
 from whatsapp_bot.backend import Backend, Refused
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ LANGUAGE_PREFIX = "lang:"
 TERMS_ACCEPT = "terms:accept"
 TERMS_DECLINE = "terms:decline"
 MENU_NEW_REQUEST = "menu:new_request"
+MENU_MISSIONS = "menu:missions"
 MENU_LANGUAGE = "menu:language"
 MENU_PROVIDER = "menu:provider"
 MENU_HELP = "menu:help"
@@ -89,6 +91,7 @@ class Conversation:
         self.backend = backend
         self.links = links
         self.missions = demande.MissionFlow(self)
+        self.quotes = devis.QuotesFlow(self)
 
     async def handle(self, message: meta.Incoming, state: dict) -> Outcome:
         """Peut lever `BackendUnavailable` : l'appelant prévient la personne,
@@ -187,12 +190,19 @@ class Conversation:
             return Outcome([meta.Text(text("wa_language_updated", new_lang)), self._menu(new_lang, name)], {})
         if choice == MENU_NEW_REQUEST:
             return Outcome(*await self.missions.start(message, lang))
+        if choice == MENU_MISSIONS:
+            return Outcome(*await self.quotes.missions(message, lang, name))
         if choice == MENU_LANGUAGE:
             return Outcome([_language_buttons(text("wa_choose_language", lang))], {"step": STEP_CHANGE_LANGUAGE})
         if choice == MENU_PROVIDER:
             return Outcome([meta.Text(self._provider_refusal(lang))], {})
         if choice == MENU_HELP:
             return Outcome([meta.Text(text("wa_help", lang))], {})
+        if devis.handles(choice, state):
+            # Une demande, ou un devis (depuis « Mes demandes » ou une
+            # notification) : la demande en cours de saisie, s'il y en a
+            # une, est laissée.
+            return Outcome(*await self.quotes.handle(message, state, lang, name))
         if demande.is_mission_step(state):
             # Une entrée d'un ancien menu (ci-dessus) quitte la demande en
             # cours ; tout le reste y répond.
@@ -208,6 +218,7 @@ class Conversation:
     def _menu(self, lang: str, name: str) -> meta.Menu:
         rows = (
             (MENU_NEW_REQUEST, text("wa_menu_new_request", lang), text("wa_menu_new_request_hint", lang)),
+            (MENU_MISSIONS, text("wa_menu_missions", lang), text("wa_menu_missions_hint", lang)),
             (MENU_LANGUAGE, text("wa_menu_language", lang), text("wa_menu_language_hint", lang)),
             (MENU_PROVIDER, text("wa_menu_provider", lang), text("wa_menu_provider_hint", lang)),
             (MENU_HELP, text("wa_menu_help", lang), text("wa_menu_help_hint", lang)),

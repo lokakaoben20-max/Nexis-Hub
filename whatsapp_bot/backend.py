@@ -107,6 +107,23 @@ class Backend:
         renvoyé ne crée qu'une mission."""
         return await self._call("POST", "/api/bot/missions", bsuid, body=request, key=key)
 
+    async def my_missions(self, bsuid: str, limit: int = 9) -> dict:
+        """Dernières missions commandées par la personne."""
+        return await self._call("GET", f"/api/me/missions?role=client&limit={limit}", bsuid)
+
+    async def mission_quotes(self, bsuid: str, mission_id: int) -> dict:
+        """La mission et ses devis (client de la mission seulement)."""
+        return await self._call("GET", f"/api/bot/missions/{mission_id}/quotes", bsuid)
+
+    async def quote(self, bsuid: str, quote_id: int) -> dict:
+        return await self._call("GET", f"/api/bot/quotes/{quote_id}", bsuid)
+
+    async def accept_quote(self, bsuid: str, key: str, quote_id: int) -> dict:
+        return await self._call("POST", f"/api/bot/quotes/{quote_id}/accept", bsuid, key=key)
+
+    async def reject_quote(self, bsuid: str, key: str, quote_id: int) -> dict:
+        return await self._call("POST", f"/api/bot/quotes/{quote_id}/reject", bsuid, key=key)
+
 
 def _is_refusal(answer) -> bool:
     """Un refus métier peut porter un code 5xx (ex. 503 `terms_unavailable`) :

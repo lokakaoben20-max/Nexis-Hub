@@ -35,6 +35,11 @@ WHATSAPP_ROUTES = {
     ("POST", "/api/me/terms"),
     # Créer une mission pas à pas (étape 5), parité : test_whatsapp_missions.py.
     ("POST", "/api/bot/missions"),
+    # Devis d'une mission : lire, accepter, refuser (étape 6), parité : test_whatsapp_quotes.py.
+    ("GET", "/api/bot/missions/{mission_id}/quotes"),
+    ("GET", "/api/bot/quotes/{quote_id}"),
+    ("POST", "/api/bot/quotes/{quote_id}/accept"),
+    ("POST", "/api/bot/quotes/{quote_id}/reject"),
 }
 
 # Actions de prestataire : jamais depuis WhatsApp, refus explicite.
