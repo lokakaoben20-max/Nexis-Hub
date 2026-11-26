@@ -1,5 +1,11 @@
 # Instructions pour les agents IA (Manus, Copilot, Codex, Claude Code, etc.)
 
+## Décisions de Ben en vigueur
+
+Le document `claude/decisions-en-vigueur.md` du projet « Nexis Hub Relais » liste les décisions de Ben en vigueur. **À lire au début de chaque session.** Quand une de ses décisions contredit une autre note de ce fichier, c'est le document qui compte. Une session sans accès à ce projet demande le fichier à Ben. Toute nouvelle décision de Ben s'y ajoute, et l'ancienne y est barrée avec ce qui la remplace.
+
+- **Le nom s'écrit « NexisHub », en un mot** (depuis le 25 novembre 2026). Les mentions « Nexis Hub » plus bas dans ce fichier sont l'ancienne forme : ne pas les suivre pour les textes visibles (exception voulue : VoiceOver et TalkBack lisent « Nexis Hub »).
+
 Ce fichier est le point d'entrée commun pour **tout outil IA** qui travaille sur ce dépôt
 (remplace l'ancien `MANUS_HANDOFF.md`, qui était spécifique à un seul outil — son contenu
 a été fusionné ici).
@@ -83,6 +89,27 @@ Ceci concerne l'IA **dans Nexis** (assistants, tri, détection), pas les agents 
   et vérification des règles Meta sur l'IA dans WhatsApp ; 3) en dernier, aide au contrôle
   des pièces d'identité, seulement si l'avocat l'autorise. L'aide à la rédaction des devis
   n'est pas prévue : le prix reste la décision du prestataire.
+- **Exception décidée par Ben le 2026-11-26 : guidage de la prise d'identité, sur le
+  téléphone.** Dans l'étape « Pièce d'identité » de « Devenir prestataire » (apps natives),
+  l'analyse d'image **sur le téléphone** est autorisée dès maintenant pour guider la prise :
+  Vision / VisionKit / AVFoundation sur iOS, CameraX + ML Kit (scanner de documents,
+  visages, angle de la tête) sur Android. Elle sert seulement à cadrer la carte et la
+  photographier toute seule, à dire si la face montrée est le recto ou le verso, et à
+  vérifier que chaque mouvement de tête demandé pendant la vidéo est fait. **Elle ne
+  valide ni ne refuse personne** : c'est l'équipe NexisHub qui vérifie la personne. Jamais
+  de photo ni de vidéo choisie dans la galerie (scanner ML Kit avec
+  `setGalleryImportAllowed(false)`). La règle de confidentialité ci-dessus reste entière :
+  **aucune pièce ni aucun selfie n'est envoyé à un service d'IA extérieur** sans l'avis du
+  juriste et l'accord de Ben.
+  Les **preuves de réalisations** (photos de travaux déjà faits, diplômes ou
+  attestations) sont la seule partie de « Devenir prestataire » où la galerie est
+  permise (décision de Ben, même jour) : elles sont **facultatives**, l'équipe peut en
+  demander plus tard, et aucune IA ne les analyse. Les **photos de travaux** sont
+  montrées aux clients, avec la phrase du prestataire, **seulement après l'accord de
+  l'équipe** (service par service ; un service modifié repasse par l'équipe). Les
+  **diplômes et attestations** restent vus **par l'équipe seulement** : le client voit
+  « Diplôme vérifié par NexisHub », jamais le document. Pendant que l'équipe vérifie le prestataire,
+  ses réalisations sont figées (sauf demande de l'équipe).
 
 ## Objectif du projet
 

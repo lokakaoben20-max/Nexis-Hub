@@ -1,0 +1,76 @@
+# Projet Xcode de l'app iOS NexisHub, généré par XcodeGen.
+#   brew install xcodegen
+#   cd app_ios && xcodegen generate && open NexisHub.xcodeproj
+# Le .xcodeproj n'est pas versionné : ce fichier est la seule source.
+name: NexisHub
+options:
+  bundleIdPrefix: com.nexishub
+  deploymentTarget:
+    iOS: "18.0"
+  developmentLanguage: fr
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+
+targets:
+  NexisHub:
+    type: application
+    platform: iOS
+    sources:
+      - path: NexisHub
+        excludes:
+          - "Resources/Fonts/*.txt"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nexishub.app
+        PRODUCT_NAME: NexisHub
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
+    info:
+      path: NexisHub/Info.plist
+      properties:
+        CFBundleDisplayName: NexisHub
+        CFBundleDevelopmentRegion: fr
+        CFBundleLocalizations: [fr, ln, en]
+        LSRequiresIPhoneOS: true
+        ITSAppUsesNonExemptEncryption: false
+        UIAppFonts:
+          - Inter.ttf
+          - Unbounded.ttf
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+          UIImageRespectsSafeAreaInsets: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSCameraUsageDescription: "NexisHub utilise l’appareil photo pour scanner votre pièce d’identité et filmer une courte vidéo de vérification, sans son."
+        NSFaceIDUsageDescription: "NexisHub utilise Face ID pour ouvrir l’app et confirmer vos paiements. Votre visage reste dans votre iPhone."
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+
+  NexisHubTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [NexisHubTests]
+    dependencies:
+      - target: NexisHub
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nexishub.app.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/NexisHub.app/NexisHub"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  NexisHub:
+    build:
+      targets:
+        NexisHub: all
+        NexisHubTests: [test]
+    test:
+      targets: [NexisHubTests]

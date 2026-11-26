@@ -1,6 +1,7 @@
 # Intégration continue de Nexis Hub.
 #
-# À chaque push et à chaque PR : contrôles du code, toute la suite de tests
+# À chaque push (une seule exécution par commit ; une PR affiche les
+# résultats du dernier commit de sa branche) : contrôles du code, toute la suite de tests
 # sur un vrai Postgres 16 et Redis 7 (comme en production) puis sur SQLite
 # (comme sur le PC de développement), et vérification des migrations.
 # Une PR ne doit être fusionnée que si tout est vert (protection de branche
@@ -8,9 +9,11 @@
 
 name: CI
 
+# Pas de déclencheur pull_request en plus : il relançait tout une seconde
+# fois pour chaque commit d'une PR et doublait les minutes GitHub Actions.
 on:
   push:
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read

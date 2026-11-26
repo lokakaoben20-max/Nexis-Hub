@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Les textes de l'app sont dans assets/textes.json (outils/textes_apps_natives.py). -->
+<resources>
+    <string name="app_name" translatable="false">NexisHub</string>
+</resources>

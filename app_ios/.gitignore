@@ -1,0 +1,7 @@
+NexisHub.xcodeproj/
+build/
+captures/
+*.xcuserstate
+livrable/
+build-device/
+Payload/

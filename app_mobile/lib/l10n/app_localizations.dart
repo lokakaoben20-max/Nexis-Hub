@@ -181,7 +181,7 @@ abstract class AppLocalizations {
   /// No description provided for @telegramSub.
   ///
   /// In fr, this message translates to:
-  /// **'Avec le bot Nexis Hub'**
+  /// **'Avec le bot NexisHub'**
   String get telegramSub;
 
   /// No description provided for @receiveCode.
@@ -433,7 +433,7 @@ abstract class AppLocalizations {
   /// No description provided for @paySecured.
   ///
   /// In fr, this message translates to:
-  /// **'Sécurisé par Nexis Hub'**
+  /// **'Sécurisé par NexisHub'**
   String get paySecured;
 
   /// No description provided for @payReleased.
@@ -685,7 +685,7 @@ abstract class AppLocalizations {
   /// No description provided for @securedUntilDone.
   ///
   /// In fr, this message translates to:
-  /// **'Votre argent reste sécurisé par Nexis Hub jusqu\'à ce que vous confirmiez que c\'est fait.'**
+  /// **'Votre argent reste sécurisé par NexisHub jusqu\'à ce que vous confirmiez que c\'est fait.'**
   String get securedUntilDone;
 
   /// No description provided for @payTitle.
@@ -709,7 +709,7 @@ abstract class AppLocalizations {
   /// No description provided for @paySecuredNote.
   ///
   /// In fr, this message translates to:
-  /// **'Sécurisé par Nexis Hub : {name} reçoit l\'argent quand vous confirmez que c\'est fait.'**
+  /// **'Sécurisé par NexisHub : {name} reçoit l\'argent quand vous confirmez que c\'est fait.'**
   String paySecuredNote(String name);
 
   /// No description provided for @payAmount.
@@ -751,7 +751,7 @@ abstract class AppLocalizations {
   /// No description provided for @pendingSecured.
   ///
   /// In fr, this message translates to:
-  /// **'Argent sécurisé par Nexis Hub'**
+  /// **'Argent sécurisé par NexisHub'**
   String get pendingSecured;
 
   /// No description provided for @pendingNotify.
@@ -841,7 +841,7 @@ abstract class AppLocalizations {
   /// No description provided for @confirmText.
   ///
   /// In fr, this message translates to:
-  /// **'Quand vous confirmez, Nexis Hub verse l\'argent sécurisé à {name}.'**
+  /// **'Quand vous confirmez, NexisHub verse l\'argent sécurisé à {name}.'**
   String confirmText(String name);
 
   /// No description provided for @paidTo.
@@ -853,7 +853,7 @@ abstract class AppLocalizations {
   /// No description provided for @amountFixed.
   ///
   /// In fr, this message translates to:
-  /// **'Montant fixé par Nexis Hub au paiement'**
+  /// **'Montant fixé par NexisHub au paiement'**
   String get amountFixed;
 
   /// No description provided for @report48h.
@@ -985,7 +985,7 @@ abstract class AppLocalizations {
   /// No description provided for @nexisLooking.
   ///
   /// In fr, this message translates to:
-  /// **'Nexis Hub regarde'**
+  /// **'NexisHub regarde'**
   String get nexisLooking;
 
   /// No description provided for @nexisLookingSub.
@@ -1015,7 +1015,7 @@ abstract class AppLocalizations {
   /// No description provided for @writeNexis.
   ///
   /// In fr, this message translates to:
-  /// **'Écrire à Nexis Hub'**
+  /// **'Écrire à NexisHub'**
   String get writeNexis;
 
   /// No description provided for @weSettled.
@@ -1039,7 +1039,7 @@ abstract class AppLocalizations {
   /// No description provided for @outcomeRefundText.
   ///
   /// In fr, this message translates to:
-  /// **'Après avoir regardé le dossier et parlé avec {name}, Nexis Hub a décidé de vous rembourser. L\'argent arrive dans votre portefeuille dans 3 jours si personne ne conteste.'**
+  /// **'Après avoir regardé le dossier et parlé avec {name}, NexisHub a décidé de vous rembourser. L\'argent arrive dans votre portefeuille dans 3 jours si personne ne conteste.'**
   String outcomeRefundText(String name);
 
   /// No description provided for @outcomeReleaseTitle.
@@ -1051,7 +1051,7 @@ abstract class AppLocalizations {
   /// No description provided for @outcomeReleaseText.
   ///
   /// In fr, this message translates to:
-  /// **'Après avoir regardé le dossier avec vous deux, Nexis Hub a décidé que l\'argent revient à {name}. Il part dans 3 jours si personne ne conteste.'**
+  /// **'Après avoir regardé le dossier avec vous deux, NexisHub a décidé que l\'argent revient à {name}. Il part dans 3 jours si personne ne conteste.'**
   String outcomeReleaseText(String name);
 
   /// No description provided for @outcomeSplitTitle.
@@ -1063,7 +1063,7 @@ abstract class AppLocalizations {
   /// No description provided for @outcomeSplitText.
   ///
   /// In fr, this message translates to:
-  /// **'Après avoir regardé le dossier avec vous deux, Nexis Hub a décidé de partager l\'argent entre vous et {name}. Votre part arrive dans votre portefeuille dans 3 jours si personne ne conteste.'**
+  /// **'Après avoir regardé le dossier avec vous deux, NexisHub a décidé de partager l\'argent entre vous et {name}. Votre part arrive dans votre portefeuille dans 3 jours si personne ne conteste.'**
   String outcomeSplitText(String name);
 
   /// No description provided for @toRefundYou.
@@ -1627,7 +1627,7 @@ abstract class AppLocalizations {
   /// No description provided for @describeLead.
   ///
   /// In fr, this message translates to:
-  /// **'Dites-nous ce dont vous avez besoin avec vos mots. L\'équipe Nexis Hub regarde votre demande et cherche le bon professionnel.'**
+  /// **'Dites-nous ce dont vous avez besoin avec vos mots. L\'équipe NexisHub regarde votre demande et cherche le bon professionnel.'**
   String get describeLead;
 
   /// No description provided for @describeTypeLabel.
@@ -1729,7 +1729,7 @@ abstract class AppLocalizations {
   /// No description provided for @securedByNexis.
   ///
   /// In fr, this message translates to:
-  /// **'Sécurisé par Nexis Hub'**
+  /// **'Sécurisé par NexisHub'**
   String get securedByNexis;
 
   /// No description provided for @signupTitle.

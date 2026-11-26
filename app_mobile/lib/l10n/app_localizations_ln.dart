@@ -51,7 +51,7 @@ class AppLocalizationsLn extends AppLocalizations {
   String get whatsappSub => 'Code ekoya na mwa ba seconde';
 
   @override
-  String get telegramSub => 'Na bot ya Nexis Hub';
+  String get telegramSub => 'Na bot ya NexisHub';
 
   @override
   String get receiveCode => 'Kozwa code';
@@ -190,7 +190,7 @@ class AppLocalizationsLn extends AppLocalizations {
   String get follow => 'Kolanda';
 
   @override
-  String get paySecured => 'Ebatelami na Nexis Hub';
+  String get paySecured => 'Ebatelami na NexisHub';
 
   @override
   String get payReleased => 'Epesami na mosali';
@@ -331,7 +331,7 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String get securedUntilDone =>
-      'Mbongo na yo ebatelami na Nexis Hub kino okondima ete mosala esili.';
+      'Mbongo na yo ebatelami na NexisHub kino okondima ete mosala esili.';
 
   @override
   String get payTitle => 'Kofuta';
@@ -344,7 +344,7 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String paySecuredNote(String name) {
-    return 'Ebatelami na Nexis Hub : $name akozwa mbongo soki ondimi ete mosala esili.';
+    return 'Ebatelami na NexisHub : $name akozwa mbongo soki ondimi ete mosala esili.';
   }
 
   @override
@@ -372,7 +372,7 @@ class AppLocalizationsLn extends AppLocalizations {
   String get pendingWithin => 'Ozali na miniti 5';
 
   @override
-  String get pendingSecured => 'Mbongo ebatelami na Nexis Hub';
+  String get pendingSecured => 'Mbongo ebatelami na NexisHub';
 
   @override
   String pendingNotify(String name) {
@@ -426,7 +426,7 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String confirmText(String name) {
-    return 'Soki ondimi, Nexis Hub akopesa $name mbongo oyo ebatelami.';
+    return 'Soki ondimi, NexisHub akopesa $name mbongo oyo ebatelami.';
   }
 
   @override
@@ -435,7 +435,7 @@ class AppLocalizationsLn extends AppLocalizations {
   }
 
   @override
-  String get amountFixed => 'Motango etiamaki na Nexis Hub na tango ya kofuta';
+  String get amountFixed => 'Motango etiamaki na NexisHub na tango ya kofuta';
 
   @override
   String get report48h =>
@@ -517,7 +517,7 @@ class AppLocalizationsLn extends AppLocalizations {
   }
 
   @override
-  String get nexisLooking => 'Nexis Hub azali kotala';
+  String get nexisLooking => 'NexisHub azali kotala';
 
   @override
   String get nexisLookingSub => 'Eyano nakati ya 48 h · tokoki kobenga bino';
@@ -534,7 +534,7 @@ class AppLocalizationsLn extends AppLocalizations {
   }
 
   @override
-  String get writeNexis => 'Komela Nexis Hub';
+  String get writeNexis => 'Komela NexisHub';
 
   @override
   String get weSettled => 'Toyokani';
@@ -547,7 +547,7 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String outcomeRefundText(String name) {
-    return 'Sima ya kotala likambo mpe kosolola na $name, Nexis Hub azwi mokano ya kozongisela yo mbongo. Mbongo ekokota na esika ya mbongo na yo nsima ya mikolo 3 soki moto moko te atelemeli.';
+    return 'Sima ya kotala likambo mpe kosolola na $name, NexisHub azwi mokano ya kozongisela yo mbongo. Mbongo ekokota na esika ya mbongo na yo nsima ya mikolo 3 soki moto moko te atelemeli.';
   }
 
   @override
@@ -557,7 +557,7 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String outcomeReleaseText(String name) {
-    return 'Sima ya kotala likambo na bino mibale, Nexis Hub azwi mokano ete mbongo ezali ya $name. Ekokende nsima ya mikolo 3 soki moto moko te atelemeli.';
+    return 'Sima ya kotala likambo na bino mibale, NexisHub azwi mokano ete mbongo ezali ya $name. Ekokende nsima ya mikolo 3 soki moto moko te atelemeli.';
   }
 
   @override
@@ -565,7 +565,7 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String outcomeSplitText(String name) {
-    return 'Sima ya kotala likambo na bino mibale, Nexis Hub azwi mokano ya kokabola mbongo kati na yo mpe $name. Eteni na yo ekokota na esika ya mbongo na yo nsima ya mikolo 3 soki moto moko te atelemeli.';
+    return 'Sima ya kotala likambo na bino mibale, NexisHub azwi mokano ya kokabola mbongo kati na yo mpe $name. Eteni na yo ekokota na esika ya mbongo na yo nsima ya mikolo 3 soki moto moko te atelemeli.';
   }
 
   @override
@@ -935,7 +935,7 @@ class AppLocalizationsLn extends AppLocalizations {
 
   @override
   String get describeLead =>
-      'Loba na biso oyo osengi na maloba na yo. Ekipi ya Nexis Hub ekotala bosengi na yo mpe ekoluka mosali malamu.';
+      'Loba na biso oyo osengi na maloba na yo. Ekipi ya NexisHub ekotala bosengi na yo mpe ekoluka mosali malamu.';
 
   @override
   String get describeTypeLabel => 'Mosala ya lolenge nini?';
@@ -992,7 +992,7 @@ class AppLocalizationsLn extends AppLocalizations {
   }
 
   @override
-  String get securedByNexis => 'Ebombami na Nexis Hub';
+  String get securedByNexis => 'Ebombami na NexisHub';
 
   @override
   String get signupTitle => 'Tóyebana';

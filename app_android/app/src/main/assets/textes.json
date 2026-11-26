@@ -1,0 +1,2378 @@
+{
+ "actionDeposit": {
+  "en": "Deposit",
+  "fr": "Dépôt",
+  "ln": "Kotia"
+ },
+ "actionFailed": {
+  "en": "That didn't work. Try again in a moment.",
+  "fr": "Cela n'a pas fonctionné. Réessayez dans un instant.",
+  "ln": "Ebimi malamu te. Meka lisusu mwa moke."
+ },
+ "actionHistory": {
+  "en": "History",
+  "fr": "Historique",
+  "ln": "Makambo ya kala"
+ },
+ "actionMore": {
+  "en": "More",
+  "fr": "Plus",
+  "ln": "Mosusu"
+ },
+ "actionServices": {
+  "en": "Services",
+  "fr": "Services",
+  "ln": "Misala"
+ },
+ "actionWithdraw": {
+  "en": "Withdraw",
+  "fr": "Retrait",
+  "ln": "Kobimisa"
+ },
+ "addNumber": {
+  "en": "Add a number",
+  "fr": "Ajouter un numéro",
+  "ln": "Bakisa nimero"
+ },
+ "addPhoto": {
+  "en": "Add a photo",
+  "fr": "Ajouter une photo",
+  "ln": "Bakisa elilingi"
+ },
+ "addShort": {
+  "en": "Add",
+  "fr": "Ajouter",
+  "ln": "Bakisa"
+ },
+ "addedThisWeek": {
+  "en": "Added this week",
+  "fr": "Ajouté cette semaine",
+  "ln": "Etondisami poso oyo"
+ },
+ "allServices": {
+  "en": "All services",
+  "fr": "Tous les services",
+  "ln": "Misala nyonso"
+ },
+ "amountFixed": {
+  "en": "Amount set by NexisHub at payment",
+  "fr": "Montant fixé par NexisHub au paiement",
+  "ln": "Motango etiamaki na NexisHub na tango ya kofuta"
+ },
+ "andList": {
+  "en": "{head} and {last}",
+  "fr": "{head} et {last}",
+  "ln": "{head} mpe {last}"
+ },
+ "arrivalConfirmed": {
+  "en": "Arrival confirmed",
+  "fr": "Arrivée confirmée",
+  "ln": "Bokomi endimami"
+ },
+ "arrivalWaiting": {
+  "en": "{name} must confirm your arrival on their phone. You can also type their presence code.",
+  "fr": "{name} doit confirmer votre arrivée sur son téléphone. Vous pouvez aussi taper son code de présence.",
+  "ln": "{name} asengeli kondima na telefone na ye ete okomi. Okoki mpe kokotisa code na ye ya bozali."
+ },
+ "arrivalWaitingSub": {
+  "en": "Waiting for {name}",
+  "fr": "En attente de {name}",
+  "ln": "Tozali kozela {name}"
+ },
+ "available": {
+  "en": "Available",
+  "fr": "Disponible",
+  "ln": "Ezali"
+ },
+ "back": {
+  "en": "Back",
+  "fr": "Retour",
+  "ln": "Kozonga"
+ },
+ "backHome": {
+  "en": "Back to home",
+  "fr": "Retour à l'accueil",
+  "ln": "Zonga na ebandeli"
+ },
+ "becomeAcceptTerms": {
+  "en": "I have read and accept the provider terms",
+  "fr": "J'ai lu et j'accepte les conditions des prestataires",
+  "ln": "Natángi mpe nandimi mibeko ya basali"
+ },
+ "becomeCardSides": {
+  "en": "Front and back, taken automatically",
+  "fr": "Recto et verso, la photo se prend toute seule",
+  "ln": "Liboso mpe nsima, foto ekozwama yango moko"
+ },
+ "becomeCommunes": {
+  "en": "Where do you work?",
+  "fr": "Où travaillez-vous ?",
+  "ln": "Osalaka wapi?"
+ },
+ "becomeCommunesHint": {
+  "en": "The communes you agree to travel to.",
+  "fr": "Les communes où vous acceptez de vous déplacer.",
+  "ln": "Ba commune oyo ondimi kokende."
+ },
+ "becomeDemoNote": {
+  "en": "Preview: the photos and video stay on this phone and are not sent anywhere.",
+  "fr": "Aperçu : les photos et la vidéo restent sur ce téléphone et ne sont envoyées nulle part.",
+  "ln": "Aperçu: ba foto mpe video etikalaka na telefone oyo, etindamaka esika moko te."
+ },
+ "becomeDocChoose": {
+  "en": "Which ID do you have?",
+  "fr": "Quelle pièce avez-vous ?",
+  "ln": "Mokanda nini ya identité ozali na yango ?"
+ },
+ "becomeFailed": {
+  "en": "The request could not be sent. Check each step and try again.",
+  "fr": "La demande n'a pas pu être envoyée. Vérifiez chaque étape et réessayez.",
+  "ln": "Bosenga etindami te. Talá etape nyonso mpe meká lisusu."
+ },
+ "becomeGuideNote": {
+  "en": "The app guides you while you take them. The NexisHub team checks your identity, not the app.",
+  "fr": "L'app vous guide pendant la prise. C'est l'équipe NexisHub qui vérifie votre identité, pas l'app.",
+  "ln": "Application ekosalisa yo ntango ozali kozwa yango. Équipe ya NexisHub nde etalaka soki ozali nani, kasi application te."
+ },
+ "becomeIdDocument": {
+  "en": "ID document",
+  "fr": "Pièce d'identité",
+  "ln": "Carte ya identité"
+ },
+ "becomeIdDocumentSub": {
+  "en": "Voter card, driving licence or passport",
+  "fr": "Carte d'électeur, permis de conduire ou passeport",
+  "ln": "Carte d'électeur, permis to passeport"
+ },
+ "becomeIdentity": {
+  "en": "Let's check your identity",
+  "fr": "Vérifions votre identité",
+  "ln": "Totala soki ozali nani"
+ },
+ "becomeIdentityHint": {
+  "en": "Your photos and video are only used by the NexisHub team to check your identity. No client ever sees them.",
+  "fr": "Vos photos et votre vidéo servent seulement à la vérification par l'équipe NexisHub. Elles ne sont montrées à aucun client.",
+  "ln": "Ba foto mpe video na yo esalisaka kaka équipe ya NexisHub mpo na kotala. Client moko te akomona yango."
+ },
+ "becomeIntro": {
+  "en": "Offer your services with the same account and the same wallet. The NexisHub team checks every provider before their first mission.",
+  "fr": "Proposez vos services avec le même compte et le même portefeuille. L'équipe NexisHub vérifie chaque prestataire avant sa première mission.",
+  "ln": "Pesá misala na yo na compte moko mpe portefeuille moko. Équipe ya NexisHub etalaka mosali nyonso liboso ya mosala na ye ya liboso."
+ },
+ "becomePassportSub": {
+  "en": "The page with your photo, taken automatically",
+  "fr": "La page avec votre photo, la photo se prend toute seule",
+  "ln": "Lokasa oyo ezali na foto na yo, foto ekozwama yango moko"
+ },
+ "becomePhotoPage": {
+  "en": "Photo page",
+  "fr": "Page photo",
+  "ln": "Lokasa ya foto"
+ },
+ "becomeProvider": {
+  "en": "Become a provider",
+  "fr": "Devenir prestataire",
+  "ln": "Kokoma mosali"
+ },
+ "becomeProviderSub": {
+  "en": "Same account, same wallet",
+  "fr": "Le même compte, le même portefeuille",
+  "ln": "Compte moko, esika ya mbongo moko"
+ },
+ "becomeReadTerms": {
+  "en": "Read the terms",
+  "fr": "Lire les conditions",
+  "ln": "Tángá mibeko"
+ },
+ "becomeRecordVideo": {
+  "en": "Film my face",
+  "fr": "Filmer mon visage",
+  "ln": "Kozwa video ya elongi na ngai"
+ },
+ "becomeRecto": {
+  "en": "Front",
+  "fr": "Recto",
+  "ln": "Liboso"
+ },
+ "becomeRetake": {
+  "en": "Retake",
+  "fr": "Reprendre",
+  "ln": "Kozwa lisusu"
+ },
+ "becomeScanCard": {
+  "en": "Scan my ID",
+  "fr": "Scanner ma pièce",
+  "ln": "Kosala scan ya carte na ngai"
+ },
+ "becomeSelfie": {
+  "en": "Video of you",
+  "fr": "Vidéo de vous",
+  "ln": "Video na yo"
+ },
+ "becomeSelfieSub": {
+  "en": "A few seconds, no sound: follow the instructions",
+  "fr": "Quelques secondes, sans son : suivez les consignes",
+  "ln": "Ba seconde moke, kozanga lokito: landá malako"
+ },
+ "becomeSend": {
+  "en": "Send my request",
+  "fr": "Envoyer ma demande",
+  "ln": "Kotinda bosenga na ngai"
+ },
+ "becomeSentText": {
+  "en": "The NexisHub team is checking your details. You'll be told as soon as your provider profile is approved.",
+  "fr": "L'équipe NexisHub vérifie vos informations. Vous serez prévenu dès que votre profil de prestataire est validé.",
+  "ln": "Équipe ya NexisHub ezali kotala bansango na yo. Okoyeba kaka ntango profil na yo ya mosali endimami."
+ },
+ "becomeSentTitle": {
+  "en": "Request sent",
+  "fr": "Demande envoyée",
+  "ln": "Bosenga etindami"
+ },
+ "becomeServices": {
+  "en": "Which services do you offer?",
+  "fr": "Quels services proposez-vous ?",
+  "ln": "Misala nini opesaka?"
+ },
+ "becomeServicesHint": {
+  "en": "Choose at least one.",
+  "fr": "Choisissez-en au moins un.",
+  "ln": "Poná ata moko."
+ },
+ "becomeStep": {
+  "en": "Step {step} of {total}",
+  "fr": "Étape {step} sur {total}",
+  "ln": "Etape {step} na {total}"
+ },
+ "becomeVerso": {
+  "en": "Back",
+  "fr": "Verso",
+  "ln": "Nsima"
+ },
+ "becomeVideoDone": {
+  "en": "Video recorded · {seconds} s",
+  "fr": "Vidéo enregistrée · {seconds} s",
+  "ln": "Video ebombami · {seconds} s"
+ },
+ "becomeWorks": {
+  "en": "Your past work",
+  "fr": "Vos réalisations",
+  "ln": "Misala oyo osalaki"
+ },
+ "becomeWorksHint": {
+  "en": "Optional: photos of past jobs help the team check your trade, then help clients choose you.",
+  "fr": "Facultatif : des photos de travaux déjà faits aident l'équipe à vérifier votre métier, puis les clients à vous choisir.",
+  "ln": "Soki olingi : ba foto ya misala osalaki kala esalisaka équipe mpo na kotala mosala na yo, sima ba client mpo na kopona yo."
+ },
+ "bestRated": {
+  "en": "Top rated",
+  "fr": "Le mieux noté",
+  "ln": "Oyo balingi mingi"
+ },
+ "bioFingerprint": {
+  "en": "fingerprint",
+  "fr": "l'empreinte",
+  "ln": "empreinte"
+ },
+ "blockedDaysLeft": {
+  "en": {
+   "=1": "On hold (dispute) · 1 more day",
+   "other": "On hold (dispute) · {count} more days"
+  },
+  "fr": {
+   "=1": "Bloqué (litige) · encore 1 jour",
+   "other": "Bloqué (litige) · encore {count} jours"
+  },
+  "ln": {
+   "=1": "Ekangami (matata) · mokolo 1 etikali",
+   "other": "Ekangami (matata) · mikolo {count} etikali"
+  }
+ },
+ "btnArrived": {
+  "en": "I've arrived",
+  "fr": "Je suis arrivé",
+  "ln": "Nakomi"
+ },
+ "btnFinished": {
+  "en": "I'm done",
+  "fr": "J'ai terminé",
+  "ln": "Nasilisi"
+ },
+ "btnLeave": {
+  "en": "I'm setting off",
+  "fr": "Je pars",
+  "ln": "Nabimi"
+ },
+ "callClient": {
+  "en": "Call {name}",
+  "fr": "Appeler {name}",
+  "ln": "Benga {name}"
+ },
+ "callLabel": {
+  "en": "Call",
+  "fr": "Appeler",
+  "ln": "Kobenga"
+ },
+ "cameraDenied": {
+  "en": "NexisHub can't use the camera. Allow it in settings to continue.",
+  "fr": "NexisHub n'a pas accès à l'appareil photo. Autorisez-le dans les réglages pour continuer.",
+  "ln": "NexisHub ekoki kosalela appareil photo te. Pesá nzela na ba réglages mpo na kokoba."
+ },
+ "cameraMissing": {
+  "en": "No usable camera on this phone.",
+  "fr": "Aucun appareil photo utilisable sur ce téléphone.",
+  "ln": "Appareil photo ezali te na telefone oyo."
+ },
+ "cameraSimulator": {
+  "en": "Simulator: demo without a camera.",
+  "fr": "Simulateur : démonstration sans appareil photo.",
+  "ln": "Simulateur: démonstration kozanga appareil photo."
+ },
+ "cancel": {
+  "en": "Cancel",
+  "fr": "Annuler",
+  "ln": "Kotika"
+ },
+ "cantFindHint": {
+  "en": "Describe your need in your own words, we pass it on to the team.",
+  "fr": "Décrivez votre besoin avec vos mots, nous le transmettons à l'équipe.",
+  "ln": "Limbola bosengi na yo na maloba na yo, tokopesa yango na ekipi."
+ },
+ "cantFindService": {
+  "en": "Can't find your service?",
+  "fr": "Vous ne trouvez pas votre service ?",
+  "ln": "Ozwi mosala na yo te?"
+ },
+ "changeCurrency": {
+  "en": "Change currency",
+  "fr": "Changer de devise",
+  "ln": "Bongola lolenge ya mbongo"
+ },
+ "changeLoginNumber": {
+  "en": "Change number",
+  "fr": "Changer de numéro",
+  "ln": "Bongolá nimero"
+ },
+ "chooseProvider": {
+  "en": "Choose {name}",
+  "fr": "Choisir {name}",
+  "ln": "Pona {name}"
+ },
+ "clientBadge": {
+  "en": "Client",
+  "fr": "Client",
+  "ln": "Mosombi"
+ },
+ "close": {
+  "en": "Close",
+  "fr": "Fermer",
+  "ln": "Kokanga"
+ },
+ "codeHint": {
+  "en": "Valid for 10 minutes. Don't share it with anyone.",
+  "fr": "Valable 10 minutes. Ne le partagez avec personne.",
+  "ln": "Ezali malamu mpo na miniti 10. Kopesa yango na moto moko te."
+ },
+ "codeLocked": {
+  "en": "Too many tries. Only {name} can confirm your arrival now.",
+  "fr": "Trop d'essais. Seul {name} peut maintenant confirmer votre arrivée.",
+  "ln": "Omeki mingi. Kaka {name} akoki sikoyo kondima ete okomi."
+ },
+ "codeResentToast": {
+  "en": "New code sent by {channel}.",
+  "fr": "Nouveau code envoyé par {channel}.",
+  "ln": "Code ya sika etindami na {channel}."
+ },
+ "codeSentBySms": {
+  "en": "Sent by SMS to {phone}.",
+  "fr": "Envoyé par SMS au {phone}.",
+  "ln": "Etindami na SMS na {phone}."
+ },
+ "codeSentTo": {
+  "en": "Sent on {channel} to {phone}.",
+  "fr": "Envoyé sur {channel} au {phone}.",
+  "ln": "Etindami na {channel} na {phone}."
+ },
+ "codeSentToast": {
+  "en": "Code sent by {channel}.",
+  "fr": "Code envoyé par {channel}.",
+  "ln": "Code etindami na {channel}."
+ },
+ "comingSoon": {
+  "en": "Coming soon",
+  "fr": "Bientôt dans l'app",
+  "ln": "Ekoya noki"
+ },
+ "comingSoonText": {
+  "en": "This screen comes in a next version.",
+  "fr": "Cet écran arrive dans une prochaine version.",
+  "ln": "Écran oyo ekoya na version ekolanda."
+ },
+ "commune": {
+  "en": "Commune",
+  "fr": "Commune",
+  "ln": "Commune"
+ },
+ "compareQuotes": {
+  "en": "Compare quotes",
+  "fr": "Comparer les devis",
+  "ln": "Kokokanisa ba devis"
+ },
+ "completedOn": {
+  "en": "Completed on {date}",
+  "fr": "Terminée le {date}",
+  "ln": "Esili na {date}"
+ },
+ "confirmAction": {
+  "en": "Confirm",
+  "fr": "Confirmer",
+  "ln": "Kondima"
+ },
+ "confirmCode": {
+  "en": "Confirm",
+  "fr": "Valider",
+  "ln": "Ndima"
+ },
+ "confirmQuestion": {
+  "en": "{name} is done.\nIs it done well?",
+  "fr": "{name} a terminé.\nC'est bien fait ?",
+  "ln": "{name} asilisi.\nEsalami malamu ?"
+ },
+ "confirmText": {
+  "en": "When you confirm, NexisHub pays the secured money to {name}.",
+  "fr": "Quand vous confirmez, NexisHub verse l'argent sécurisé à {name}.",
+  "ln": "Soki ondimi, NexisHub akopesa {name} mbongo oyo ebatelami."
+ },
+ "confirmedToast": {
+  "en": "Thanks! {name} gets paid.",
+  "fr": "Merci ! {name} reçoit l'argent.",
+  "ln": "Matondo ! {name} akozwa mbongo."
+ },
+ "contestHint": {
+  "en": {
+   "=1": "Disagree? You have 1 more day to ask for the decision to be reviewed. The money stays on hold meanwhile.",
+   "other": "Disagree? You have {count} days to ask for the decision to be reviewed. The money stays on hold meanwhile."
+  },
+  "fr": {
+   "=1": "Pas d'accord ? Vous avez encore 1 jour pour demander à revoir la décision. L'argent reste bloqué pendant ce temps.",
+   "other": "Pas d'accord ? Vous avez {count} jours pour demander à revoir la décision. L'argent reste bloqué pendant ce temps."
+  },
+  "ln": {
+   "=1": "Oyokani te ? Otikali na mokolo 1 mpo na kotelemela mokano. Mbongo ekotikala ekangami na tango yango.",
+   "other": "Oyokani te ? Ozali na mikolo {count} mpo na kotelemela mokano. Mbongo ekotikala ekangami na tango yango."
+  }
+ },
+ "currency": {
+  "en": "Currency",
+  "fr": "Devise",
+  "ln": "Mbongo"
+ },
+ "decisionStep": {
+  "en": "Decision and money",
+  "fr": "Décision et argent",
+  "ln": "Mokano mpe mbongo"
+ },
+ "decisionStepSub": {
+  "en": "Paid out, refunded or split",
+  "fr": "Versé, remboursé ou partagé",
+  "ln": "Epesami, ezongisami to ekabolami"
+ },
+ "describeLead": {
+  "en": "Tell us what you need in your own words. The NexisHub team looks at your request and finds the right professional.",
+  "fr": "Dites-nous ce dont vous avez besoin avec vos mots. L'équipe NexisHub regarde votre demande et cherche le bon professionnel.",
+  "ln": "Loba na biso oyo osengi na maloba na yo. Ekipi ya NexisHub ekotala bosengi na yo mpe ekoluka mosali malamu."
+ },
+ "describeNeed": {
+  "en": "Describe my need",
+  "fr": "Décrire mon besoin",
+  "ln": "Limbola bosengi na ngai"
+ },
+ "describeNoPay": {
+  "en": "You pay nothing at this step. You are notified in the app as soon as we have an answer.",
+  "fr": "Vous ne payez rien à cette étape. Vous êtes prévenu dans l'app dès que nous avons une réponse.",
+  "ln": "Ofutaka eloko te na etape oyo. Tokoyebisa yo na app tango tozwi eyano."
+ },
+ "describeTextHint": {
+  "en": "Where, what, and when if it is urgent",
+  "fr": "Où, quoi, et pour quand si c'est urgent",
+  "ln": "Wapi, nini, mpe ntango nini soki ezali lombangu"
+ },
+ "describeTextLabel": {
+  "en": "Describe your need",
+  "fr": "Décrivez votre besoin",
+  "ln": "Limbola bosengi na yo"
+ },
+ "describeTypeHint": {
+  "en": "For example: gate repair",
+  "fr": "Par exemple : réparation de portail",
+  "ln": "Ndakisa : kobongisa porte"
+ },
+ "describeTypeLabel": {
+  "en": "What kind of service?",
+  "fr": "Quel type de service ?",
+  "ln": "Mosala ya lolenge nini?"
+ },
+ "devicesAdded": {
+  "en": "Added on {date}",
+  "fr": "Ajouté le {date}",
+  "ln": "Ebakisami na {date}"
+ },
+ "devicesCount": {
+  "en": {
+   "=1": "1 connected device",
+   "other": "{count} connected devices"
+  },
+  "fr": {
+   "=1": "1 appareil connecté",
+   "other": "{count} appareils connectés"
+  },
+  "ln": {
+   "=1": "Appareil 1 ekangami",
+   "other": "Ba appareils {count} ekangami"
+  }
+ },
+ "devicesLastSeen": {
+  "en": "Last active: {when}",
+  "fr": "Dernière activité : {when}",
+  "ln": "Mbala ya nsuka: {when}"
+ },
+ "devicesMoneyHint": {
+  "en": "For your safety, a phone added to your account waits 72 hours before money can leave your wallet.",
+  "fr": "Par sécurité, un téléphone ajouté à votre compte attend 72 heures avant de pouvoir faire sortir de l'argent de votre portefeuille.",
+  "ln": "Mpo na libateli, telefone oyo ebakisami na compte na yo ezelaka ngonga 72 liboso mbongo ebima na portefeuille na yo."
+ },
+ "devicesMoneyIn": {
+  "en": {
+   "=1": "Money can leave in 1 hour",
+   "other": "Money can leave in {count} hours"
+  },
+  "fr": {
+   "=1": "Sortie d'argent possible dans 1 heure",
+   "other": "Sortie d'argent possible dans {count} heures"
+  },
+  "ln": {
+   "=1": "Mbongo ekoki kobima na ngonga 1",
+   "other": "Mbongo ekoki kobima na ngonga {count}"
+  }
+ },
+ "devicesNotMe": {
+  "en": "Don't recognise a phone? Sign it out right away.",
+  "fr": "Vous ne reconnaissez pas un téléphone ? Déconnectez-le tout de suite.",
+  "ln": "Oyebi telefone moko te? Bimisá yango kaka sikoyo."
+ },
+ "devicesOthers": {
+  "en": "Other phones",
+  "fr": "Autres téléphones",
+  "ln": "Ba telefone mosusu"
+ },
+ "devicesSignOut": {
+  "en": "Sign out this phone",
+  "fr": "Déconnecter ce téléphone",
+  "ln": "Bimisá telefone oyo"
+ },
+ "devicesSignOutText": {
+  "en": "It will no longer be able to do anything on your account. To come back, it will need a new code.",
+  "fr": "Il ne pourra plus rien faire sur votre compte. Pour revenir, il faudra se reconnecter avec un code.",
+  "ln": "Ekokoka lisusu kosala eloko te na compte na yo. Mpo na kozonga, esengeli kokɔta lisusu na code."
+ },
+ "devicesSignOutTitle": {
+  "en": "Sign out {name}?",
+  "fr": "Déconnecter {name} ?",
+  "ln": "Kobimisa {name}?"
+ },
+ "devicesSignedOut": {
+  "en": "{name} is signed out.",
+  "fr": "{name} est déconnecté.",
+  "ln": "{name} ebimi."
+ },
+ "devicesThis": {
+  "en": "This phone",
+  "fr": "Ce téléphone",
+  "ln": "Telefone oyo"
+ },
+ "disputeOver": {
+  "en": "Dispute closed",
+  "fr": "Litige terminé",
+  "ln": "Matata esili"
+ },
+ "disputeTitle": {
+  "en": "Dispute",
+  "fr": "Litige",
+  "ln": "Matata"
+ },
+ "distanceAway": {
+  "en": "{name} is {km} km away",
+  "fr": "{name} est à {km} km",
+  "ln": "{name} azali na {km} km"
+ },
+ "docDrivingLicence": {
+  "en": "Driving licence",
+  "fr": "Permis de conduire",
+  "ln": "Permis ya kokumba motuka"
+ },
+ "docPassport": {
+  "en": "Passport",
+  "fr": "Passeport",
+  "ln": "Passeport"
+ },
+ "docVoterCard": {
+  "en": "Voter card",
+  "fr": "Carte d'électeur",
+  "ln": "Carte d'électeur"
+ },
+ "editProfile": {
+  "en": "Edit",
+  "fr": "Modifier",
+  "ln": "Kobongola"
+ },
+ "enterCode": {
+  "en": "Enter the code",
+  "fr": "Entrez le code",
+  "ln": "Tya code"
+ },
+ "eveningHome": {
+  "en": "Hello, {name}",
+  "fr": "Bonsoir, {name}",
+  "ln": "Mbote, {name}"
+ },
+ "faqContestA": {
+  "en": "Yes, once, within 3 days of the decision. Another person at NexisHub then reviews the case.",
+  "fr": "Oui, une fois, dans les 3 jours qui suivent la décision. Une autre personne de NexisHub revoit alors le dossier.",
+  "ln": "Iyo, mbala moko, na mikolo 3 nsima ya mokano. Moto mosusu ya NexisHub akotala likambo lisusu."
+ },
+ "faqContestQ": {
+  "en": "Can I challenge a decision?",
+  "fr": "Puis-je contester une décision ?",
+  "ln": "Nakoki koboya mokano?"
+ },
+ "faqDeviceA": {
+  "en": "For your safety, a phone added to your account waits 72 hours before money can leave your wallet.",
+  "fr": "Par sécurité, un téléphone ajouté à votre compte attend 72 heures avant de pouvoir faire sortir de l'argent de votre portefeuille.",
+  "ln": "Mpo na libateli, telefone oyo ebakisami na compte na yo ezelaka ngonga 72 liboso mbongo ebima na portefeuille na yo."
+ },
+ "faqDeviceQ": {
+  "en": "Why can't my new phone withdraw money?",
+  "fr": "Pourquoi mon nouveau téléphone ne peut-il pas retirer d'argent ?",
+  "ln": "Mpo na nini telefone na ngai ya sika ekoki kobimisa mbongo te?"
+ },
+ "faqPaidA": {
+  "en": "Your money is secured by NexisHub as soon as you pay. It goes to the provider when you confirm the work is done, or 48 hours after the end of the mission if you haven't reported anything.",
+  "fr": "Votre argent est sécurisé par NexisHub dès le paiement. Il est versé au prestataire quand vous confirmez que c'est fait, ou 48 heures après la fin de la mission si vous n'avez rien signalé.",
+  "ln": "Mbongo na yo ebatelami na NexisHub kobanda ofuti. Mosali azwaka yango ntango ondimi ete mosala esili, to ngonga 48 nsima ya nsuka ya mosala soki oyebisi likambo te."
+ },
+ "faqPaidQ": {
+  "en": "When does the provider get paid?",
+  "fr": "Quand le prestataire reçoit-il l'argent ?",
+  "ln": "Mosali azwaka mbongo ntango nini?"
+ },
+ "faqReportA": {
+  "en": "The money is frozen: nobody can touch it. NexisHub looks at the case with both of you, then decides to refund you, pay the provider or split.",
+  "fr": "L'argent est bloqué : personne ne peut y toucher. NexisHub regarde le dossier avec vous deux, puis décide : vous rembourser, payer le prestataire ou partager.",
+  "ln": "Mbongo ekangami: moto moko te akoki kosimba yango. NexisHub etali likambo na bino mibale, sima ekati: kozongisela yo, kofuta mosali to kokabola."
+ },
+ "faqReportQ": {
+  "en": "What happens if I report a problem?",
+  "fr": "Que se passe-t-il si je signale un problème ?",
+  "ln": "Soki nayebisi likambo, nini ekosalema?"
+ },
+ "faqSettleA": {
+  "en": "Until NexisHub has decided, you can offer the provider an agreement: they come back, you pay them, you get a refund or you split. They have 48 hours to reply.",
+  "fr": "Tant que NexisHub n'a pas décidé, vous pouvez proposer un arrangement au prestataire : il repasse, vous le payez, vous êtes remboursé ou vous partagez. Il a 48 heures pour répondre.",
+  "ln": "Liboso NexisHub ekata, okoki kopesa mosali likanisi: azonga, ofuta ye, bazongisela yo mbongo to bokabola. Azali na ngonga 48 mpo na koyanola."
+ },
+ "faqSettleQ": {
+  "en": "What if we reach an agreement?",
+  "fr": "Et si nous trouvons un arrangement ?",
+  "ln": "Soki tokokani?"
+ },
+ "finishedNote": {
+  "en": "{name} has 48 h to confirm or report a problem. With no answer, the money is paid to you after 48 h.",
+  "fr": "{name} a 48 h pour confirmer ou signaler un problème. Sans réponse, l'argent vous est versé au bout de 48 h.",
+  "ln": "{name} azali na 48 h mpo na kondima to koyebisa mokakatano. Soki azongisi te, okozwa mbongo nsima ya 48 h."
+ },
+ "firstRequestTitle": {
+  "en": "What do you need help with?",
+  "fr": "De quoi avez-vous besoin ?",
+  "ln": "Ozali na mposa ya mosala nini ?"
+ },
+ "follow": {
+  "en": "Track",
+  "fr": "Suivre",
+  "ln": "Kolanda"
+ },
+ "followMission": {
+  "en": "Follow the mission",
+  "fr": "Suivre la mission",
+  "ln": "Landa mosala"
+ },
+ "forProvider": {
+  "en": "For {name}",
+  "fr": "Pour {name}",
+  "ln": "Mpo na {name}"
+ },
+ "guardPay": {
+  "en": "Pay {amount} to {name}",
+  "fr": "Payer {amount} à {name}",
+  "ln": "Kofuta {amount} na {name}"
+ },
+ "guardRelease": {
+  "en": "Release the money to {name}",
+  "fr": "Verser l'argent à {name}",
+  "ln": "Kopesa {name} mbongo"
+ },
+ "guardTitle": {
+  "en": "Confirm with your code",
+  "fr": "Confirmez avec votre code",
+  "ln": "Ndimisá na code na yo"
+ },
+ "haveAccount": {
+  "en": "I already have an account",
+  "fr": "J'ai déjà un compte",
+  "ln": "Nazali na compte"
+ },
+ "heldForMissions": {
+  "en": "{amount} held for your ongoing missions",
+  "fr": "{amount} bloqués pour vos missions en cours",
+  "ln": "{amount} ebombami mpo na misala na yo ezali kokende"
+ },
+ "heldTip": {
+  "en": "This money is still yours. It is set aside to pay the professional once the mission is done and you have confirmed it.",
+  "fr": "Cet argent reste à vous. Il est mis de côté pour payer le professionnel quand la mission est terminée et que vous l'avez confirmée.",
+  "ln": "Mbongo oyo ezali naino ya yo. Ebombami mpo na kofuta mosali tango mosala esili mpe ondimi yango."
+ },
+ "heldWhy": {
+  "en": "Why these funds are held",
+  "fr": "Pourquoi ces fonds sont bloqués",
+  "ln": "Mpo na nini mbongo oyo ebombami"
+ },
+ "hello": {
+  "en": "Hello, {name}",
+  "fr": "Bonjour, {name}",
+  "ln": "Mbote, {name}"
+ },
+ "helloHome": {
+  "en": "Hello, {name}",
+  "fr": "Bonjour, {name}",
+  "ln": "Mbote, {name}"
+ },
+ "help": {
+  "en": "Help",
+  "fr": "Aide",
+  "ln": "Lisalisi"
+ },
+ "helpDisputes": {
+  "en": "Help and disputes",
+  "fr": "Aide et litiges",
+  "ln": "Lisalisi mpe matata"
+ },
+ "helpDisputesSub": {
+  "en": "A problem with a mission",
+  "fr": "Un souci sur une mission",
+  "ln": "Likambo na mosala moko"
+ },
+ "helpMyDisputes": {
+  "en": "My disputes",
+  "fr": "Mes litiges",
+  "ln": "Ba likambo na ngai"
+ },
+ "helpNoDispute": {
+  "en": "No open dispute.",
+  "fr": "Aucun litige en cours.",
+  "ln": "Likambo moko te."
+ },
+ "helpQuestions": {
+  "en": "Common questions",
+  "fr": "Questions fréquentes",
+  "ln": "Mituna oyo ezalaka mingi"
+ },
+ "hideAmounts": {
+  "en": "Hide amounts",
+  "fr": "Masquer les montants",
+  "ln": "Kobomba mitango"
+ },
+ "hoursAgo": {
+  "en": "{count} h",
+  "fr": "{count} h",
+  "ln": "{count} h"
+ },
+ "inService": {
+  "en": "On duty",
+  "fr": "En service",
+  "ln": "Nazali na mosala"
+ },
+ "inServiceSub": {
+  "en": "You get requests from {communes}",
+  "fr": "Vous recevez les demandes de {communes}",
+  "ln": "Ozali kozwa bosengi ya {communes}"
+ },
+ "infoFailed": {
+  "en": "Your details could not be saved. Check them and try again.",
+  "fr": "Les informations n'ont pas pu être enregistrées. Vérifiez-les et réessayez.",
+  "ln": "Bansango ebombami te. Talá yango mpe meká lisusu."
+ },
+ "infoPhoneLocked": {
+  "en": "Your number is how you sign in. To change it, write to NexisHub.",
+  "fr": "Votre numéro sert à vous connecter. Pour le changer, écrivez à NexisHub.",
+  "ln": "Nimero na yo esalisaka yo kokɔta. Mpo na kobongola yango, komelá NexisHub."
+ },
+ "infoPhoneVerified": {
+  "en": "Verified number",
+  "fr": "Numéro vérifié",
+  "ln": "Nimero eyekwami"
+ },
+ "infoSave": {
+  "en": "Save",
+  "fr": "Enregistrer",
+  "ln": "Kobomba"
+ },
+ "infoSaved": {
+  "en": "Your details are saved.",
+  "fr": "Vos informations sont enregistrées.",
+  "ln": "Bansango na yo ebombami."
+ },
+ "jobArrivalPending": {
+  "en": "{name} must confirm your arrival",
+  "fr": "Arrivée à confirmer par {name}",
+  "ln": "{name} asengeli kondima ete okomi"
+ },
+ "jobOnSite": {
+  "en": "On site",
+  "fr": "Sur place",
+  "ln": "Na esika"
+ },
+ "jobOnTheWay": {
+  "en": "On the way",
+  "fr": "En route",
+  "ln": "Na nzela"
+ },
+ "jobTitle": {
+  "en": "Mission",
+  "fr": "Mission",
+  "ln": "Mission"
+ },
+ "jobToStart": {
+  "en": "Paid, time to set off",
+  "fr": "Payé, à vous de partir",
+  "ln": "Efutami, kende sikoyo"
+ },
+ "jobWaitingClient": {
+  "en": "Done, {name} must confirm",
+  "fr": "Terminé, {name} doit confirmer",
+  "ln": "Esili, {name} asengeli kondima"
+ },
+ "jobsInProgress": {
+  "en": "Ongoing missions",
+  "fr": "Missions en cours",
+  "ln": "Ba mission oyo ezali kosalema"
+ },
+ "language": {
+  "en": "Language",
+  "fr": "Langue",
+  "ln": "Lokota"
+ },
+ "lastServices": {
+  "en": "Recent services",
+  "fr": "Dernières prestations",
+  "ln": "Misala ya suka"
+ },
+ "legalAcceptedOn": {
+  "en": "Accepted on {date}",
+  "fr": "Acceptées le {date}",
+  "ln": "Endimami na {date}"
+ },
+ "legalCgu": {
+  "en": "Terms of use",
+  "fr": "Conditions générales d'utilisation",
+  "ln": "Mibeko ya kosalela"
+ },
+ "legalPrivacy": {
+  "en": "Privacy policy",
+  "fr": "Politique de confidentialité",
+  "ln": "Politiki ya kobomba sango"
+ },
+ "legalProviderTerms": {
+  "en": "Provider terms",
+  "fr": "Conditions des prestataires",
+  "ln": "Mibeko ya basali"
+ },
+ "legalRead": {
+  "en": "Read",
+  "fr": "Lire",
+  "ln": "Kotánga"
+ },
+ "legalTerms": {
+  "en": "Terms of use",
+  "fr": "Conditions d'utilisation",
+  "ln": "Mibeko ya kosalela"
+ },
+ "legalToAccept": {
+  "en": "To accept",
+  "fr": "À accepter",
+  "ln": "Esengeli kondima"
+ },
+ "lockBioChanged": {
+  "en": "{method} has changed on this phone. Enter your code; you can turn it back on in Code and security.",
+  "fr": "{method} a changé sur ce téléphone. Tapez votre code ; vous pourrez le réactiver dans Code et sécurité.",
+  "ln": "{method} ebongwani na telefone oyo. Kotá code na yo; okoki kofungola yango lisusu na Code mpe libateli."
+ },
+ "lockBlockedText": {
+  "en": "For your safety, you've been signed out on this phone. Sign in again with a code sent by SMS, WhatsApp or Telegram.",
+  "fr": "Par sécurité, vous êtes déconnecté de ce téléphone. Reconnectez-vous avec un code reçu par SMS, WhatsApp ou Telegram.",
+  "ln": "Mpo na libateli, bobimisami na telefone oyo. Kotá lisusu na code oyo okozwa na SMS, WhatsApp to Telegram."
+ },
+ "lockBlockedTitle": {
+  "en": "Too many tries",
+  "fr": "Trop d'essais",
+  "ln": "Komeka mingi"
+ },
+ "lockDelete": {
+  "en": "Delete",
+  "fr": "Effacer",
+  "ln": "Kolongola"
+ },
+ "lockForgot": {
+  "en": "Forgot your code?",
+  "fr": "Code oublié ?",
+  "ln": "Obosani code?"
+ },
+ "lockForgotAction": {
+  "en": "Sign me out",
+  "fr": "Me déconnecter",
+  "ln": "Bimisá ngai"
+ },
+ "lockForgotText": {
+  "en": "You'll be signed out on this phone. Sign in again with your number, then create a new code.",
+  "fr": "Vous allez être déconnecté de ce téléphone. Reconnectez-vous avec votre numéro, puis créez un nouveau code.",
+  "ln": "Bakobimisa yo na telefone oyo. Kotá lisusu na nimero na yo, sima salá code ya sika."
+ },
+ "lockPrompt": {
+  "en": "Enter your NexisHub code",
+  "fr": "Tapez votre code NexisHub",
+  "ln": "Kotá code na yo ya NexisHub"
+ },
+ "lockUseBio": {
+  "en": "Use {method}",
+  "fr": "Utiliser {method}",
+  "ln": "Kosalela {method}"
+ },
+ "lockUseCode": {
+  "en": "Enter my code",
+  "fr": "Taper mon code",
+  "ln": "Kotá code na ngai"
+ },
+ "lockWrong": {
+  "en": {
+   "=1": "Wrong code. 1 try left.",
+   "other": "Wrong code. {count} tries left."
+  },
+  "fr": {
+   "=1": "Code incorrect. Encore 1 essai.",
+   "other": "Code incorrect. Encore {count} essais."
+  },
+  "ln": {
+   "=1": "Code ezali malamu te. Komeka 1 etikali.",
+   "other": "Code ezali malamu te. Komeka {count} etikali."
+  }
+ },
+ "messageLabel": {
+  "en": "Message",
+  "fr": "Écrire",
+  "ln": "Kokoma"
+ },
+ "minutesAgo": {
+  "en": "{count} min",
+  "fr": "{count} min",
+  "ln": "{count} min"
+ },
+ "movements": {
+  "en": "Activity",
+  "fr": "Mouvements",
+  "ln": "Bokoti mpe bobimi"
+ },
+ "myDevices": {
+  "en": "My devices",
+  "fr": "Mes appareils",
+  "ln": "Ba appareil na ngai"
+ },
+ "myInfo": {
+  "en": "My details",
+  "fr": "Mes informations",
+  "ln": "Makambo na ngai"
+ },
+ "myInfoSub": {
+  "en": "Name, commune",
+  "fr": "Nom, commune",
+  "ln": "Nkombo, commune"
+ },
+ "myMissions": {
+  "en": "My missions",
+  "fr": "Mes missions",
+  "ln": "Misala na ngai"
+ },
+ "myWallets": {
+  "en": "My wallets",
+  "fr": "Mes portefeuilles",
+  "ln": "Esika na ngai ya mbongo"
+ },
+ "myWorks": {
+  "en": "My past work",
+  "fr": "Mes réalisations",
+  "ln": "Misala na ngai"
+ },
+ "myWorksSub": {
+  "en": "Photos of your work, shown to clients once the team approves",
+  "fr": "Photos de vos travaux, montrées aux clients après accord de l'équipe",
+  "ln": "Ba foto ya misala na yo, ba client bakomona yango soki équipe endimi"
+ },
+ "navHome": {
+  "en": "Home",
+  "fr": "Accueil",
+  "ln": "Ndako"
+ },
+ "navMissions": {
+  "en": "Missions",
+  "fr": "Missions",
+  "ln": "Misala"
+ },
+ "navProfile": {
+  "en": "Profile",
+  "fr": "Profil",
+  "ln": "Profil"
+ },
+ "navWallet": {
+  "en": "Wallet",
+  "fr": "Portefeuille",
+  "ln": "Mbongo"
+ },
+ "neverAskCode": {
+  "en": "We will never ask for this code by phone or message.",
+  "fr": "Nous ne vous demanderons jamais ce code par téléphone ni par message.",
+  "ln": "Tokosenga code oyo na telefone to na message soki moke te."
+ },
+ "newAndRecommended": {
+  "en": "New and recommended",
+  "fr": "Nouveaux et recommandés",
+  "ln": "Ya sika mpe oyo tolobi"
+ },
+ "newBadge": {
+  "en": "New",
+  "fr": "Nouveau",
+  "ln": "Ya sika"
+ },
+ "newPill": {
+  "en": "New",
+  "fr": "Nouveau",
+  "ln": "Ya sika"
+ },
+ "newRequests": {
+  "en": "New requests",
+  "fr": "Nouvelles demandes",
+  "ln": "Bosengi ya sika"
+ },
+ "nexisLooking": {
+  "en": "NexisHub is looking into it",
+  "fr": "NexisHub regarde",
+  "ln": "NexisHub azali kotala"
+ },
+ "nexisLookingSub": {
+  "en": "Answer within 48 h · we may call you",
+  "fr": "Réponse sous 48 h · nous pouvons vous appeler",
+  "ln": "Eyano nakati ya 48 h · tokoki kobenga bino"
+ },
+ "nextStep": {
+  "en": "Continue",
+  "fr": "Continuer",
+  "ln": "Kokoba"
+ },
+ "noAccountHint": {
+  "en": "Check the number you entered or create a profile with this number.",
+  "fr": "Vérifiez le numéro saisi ou créez un profil avec ce numéro.",
+  "ln": "Talá nimero oyo okotisi to salá profil na nimero oyo."
+ },
+ "noAccountTitle": {
+  "en": "No account found",
+  "fr": "Aucun compte trouvé",
+  "ln": "Compte moko te ezwami"
+ },
+ "noCodeChannel": {
+  "en": "No channel is available right now. Please try again in a moment.",
+  "fr": "Aucun canal n'est disponible pour le moment. Réessayez dans un instant.",
+  "ln": "Nzela moko te ezali sikoyo. Meka lisusu na mwa ntango moke."
+ },
+ "noMissions": {
+  "en": "Nothing here yet.",
+  "fr": "Rien ici pour l'instant.",
+  "ln": "Eloko te mpo na sikoyo."
+ },
+ "noRequests": {
+  "en": "No new requests for now.",
+  "fr": "Pas de nouvelle demande pour l'instant.",
+  "ln": "Bosengi ya sika ezali te sikoyo."
+ },
+ "noServiceMatches": {
+  "en": "No service matches.",
+  "fr": "Aucun service ne correspond.",
+  "ln": "Mosala moko te ekokani."
+ },
+ "nobodyTouches": {
+  "en": "Nobody can touch it",
+  "fr": "Personne ne peut y toucher",
+  "ln": "Moto moko te akoki kosimba yango"
+ },
+ "notInList": {
+  "en": "My need isn't in the list",
+  "fr": "Mon besoin n'est pas dans la liste",
+  "ln": "Mposa na ngai ezali na liste te"
+ },
+ "notReceived": {
+  "en": "Didn't get it?",
+  "fr": "Pas reçu ?",
+  "ln": "Ozwi te ?"
+ },
+ "nothingReceived": {
+  "en": "I didn't get anything",
+  "fr": "Je n'ai rien reçu",
+  "ln": "Nazwi eloko te"
+ },
+ "notifAllow": {
+  "en": "Allow notifications",
+  "fr": "Autoriser les notifications",
+  "ln": "Ndimá ba notification"
+ },
+ "notifAllowed": {
+  "en": "Notifications allowed",
+  "fr": "Notifications autorisées",
+  "ln": "Ba notification endimami"
+ },
+ "notifAllowedSub": {
+  "en": "NexisHub can alert you on this phone.",
+  "fr": "NexisHub peut vous prévenir sur ce téléphone.",
+  "ln": "NexisHub ekoki koyebisa yo na telefone oyo."
+ },
+ "notifAlwaysHint": {
+  "en": "These messages can't be turned off one by one: they are about your money and your account.",
+  "fr": "Ces messages ne se coupent pas un par un : ils concernent votre argent et votre compte.",
+  "ln": "Ba message oyo ekangamaka moko moko te: etali mbongo na yo mpe compte na yo."
+ },
+ "notifDisputes": {
+  "en": "Disputes and decisions",
+  "fr": "Litiges et décisions",
+  "ln": "Ba likambo mpe ba mikano"
+ },
+ "notifMission": {
+  "en": "Departure, arrival and end of a mission",
+  "fr": "Départ, arrivée et fin de mission",
+  "ln": "Kobima, kokoma mpe nsuka ya mosala"
+ },
+ "notifMoney": {
+  "en": "Payments, payouts and refunds",
+  "fr": "Paiements, argent versé et remboursements",
+  "ln": "Kofuta, mbongo etindami mpe kozongisa mbongo"
+ },
+ "notifOff": {
+  "en": "Notifications off",
+  "fr": "Notifications coupées",
+  "ln": "Ba notification ekangami"
+ },
+ "notifOffSub": {
+  "en": "You won't be alerted about quotes, the provider's arrival or payments.",
+  "fr": "Vous ne serez pas prévenu des devis, de l'arrivée du prestataire ni des paiements.",
+  "ln": "Okoyeba te soki devis eyei, soki mosali akomi to soki mbongo efuti."
+ },
+ "notifOpenSettings": {
+  "en": "Open settings",
+  "fr": "Ouvrir les réglages",
+  "ln": "Fungolá ba réglages"
+ },
+ "notifQuotes": {
+  "en": "Quotes and replies",
+  "fr": "Devis reçus et réponses",
+  "ln": "Ba devis mpe biyano"
+ },
+ "notifSecurity": {
+  "en": "New phone on your account",
+  "fr": "Nouveau téléphone sur votre compte",
+  "ln": "Telefone ya sika na compte na yo"
+ },
+ "notifWhatTitle": {
+  "en": "What NexisHub sends you",
+  "fr": "Ce que NexisHub vous envoie",
+  "ln": "Oyo NexisHub etindelaka yo"
+ },
+ "notifications": {
+  "en": "Notifications",
+  "fr": "Notifications",
+  "ln": "Ba notifications"
+ },
+ "notificationsSub": {
+  "en": "In the app",
+  "fr": "Dans l'app",
+  "ln": "Na app"
+ },
+ "numberNotCongolese": {
+  "en": "This doesn't look like a Congolese number.",
+  "fr": "Ce numéro ne semble pas être un numéro congolais.",
+  "ln": "Nimero oyo emonani lokola nimero ya Kongó te."
+ },
+ "numberVerified": {
+  "en": "{phone} verified",
+  "fr": "{phone} vérifié",
+  "ln": "{phone} eyekwami"
+ },
+ "offService": {
+  "en": "Off duty",
+  "fr": "Hors service",
+  "ln": "Nazali na mosala te"
+ },
+ "offServiceHint": {
+  "en": "Turn on “On duty” to get requests from clients.",
+  "fr": "Active « En service » pour recevoir les demandes des clients.",
+  "ln": "Fungola « Nazali na mosala » mpo na kozwa bosengi ya basombi."
+ },
+ "offServiceSub": {
+  "en": "You don't get new requests",
+  "fr": "Vous ne recevez pas de nouvelles demandes",
+  "ln": "Ozali kozwa bosengi ya sika te"
+ },
+ "ok": {
+  "en": "Got it",
+  "fr": "Compris",
+  "ln": "Nayoki"
+ },
+ "optional": {
+  "en": "optional",
+  "fr": "facultatif",
+  "ln": "ezali ntina te"
+ },
+ "otherNeed": {
+  "en": "Other",
+  "fr": "Autre",
+  "ln": "Mosusu"
+ },
+ "otherSlot": {
+  "en": "Other",
+  "fr": "Autre",
+  "ln": "Mosusu"
+ },
+ "outcomeRefundText": {
+  "en": "After reviewing the case and talking with {name}, NexisHub decided to refund you. The money reaches your wallet in 3 days unless someone contests.",
+  "fr": "Après avoir regardé le dossier et parlé avec {name}, NexisHub a décidé de vous rembourser. L'argent arrive dans votre portefeuille dans 3 jours si personne ne conteste.",
+  "ln": "Sima ya kotala likambo mpe kosolola na {name}, NexisHub azwi mokano ya kozongisela yo mbongo. Mbongo ekokota na esika ya mbongo na yo nsima ya mikolo 3 soki moto moko te atelemeli."
+ },
+ "outcomeRefundTitle": {
+  "en": "We're refunding you",
+  "fr": "Nous vous remboursons",
+  "ln": "Tokozongisela yo mbongo"
+ },
+ "outcomeReleaseText": {
+  "en": "After reviewing the case with you both, NexisHub decided the money goes to {name}. It's paid out in 3 days unless someone contests.",
+  "fr": "Après avoir regardé le dossier avec vous deux, NexisHub a décidé que l'argent revient à {name}. Il part dans 3 jours si personne ne conteste.",
+  "ln": "Sima ya kotala likambo na bino mibale, NexisHub azwi mokano ete mbongo ezali ya {name}. Ekokende nsima ya mikolo 3 soki moto moko te atelemeli."
+ },
+ "outcomeReleaseTitle": {
+  "en": "The money goes to {name}",
+  "fr": "L'argent va à {name}",
+  "ln": "Mbongo ekokende epai ya {name}"
+ },
+ "outcomeSplitText": {
+  "en": "After reviewing the case with you both, NexisHub decided to split the money between you and {name}. Your share reaches your wallet in 3 days unless someone contests.",
+  "fr": "Après avoir regardé le dossier avec vous deux, NexisHub a décidé de partager l'argent entre vous et {name}. Votre part arrive dans votre portefeuille dans 3 jours si personne ne conteste.",
+  "ln": "Sima ya kotala likambo na bino mibale, NexisHub azwi mokano ya kokabola mbongo kati na yo mpe {name}. Eteni na yo ekokota na esika ya mbongo na yo nsima ya mikolo 3 soki moto moko te atelemeli."
+ },
+ "outcomeSplitTitle": {
+  "en": "The money is split",
+  "fr": "L'argent est partagé",
+  "ln": "Mbongo ekabolami"
+ },
+ "pStepArrive": {
+  "en": "I arrive on site",
+  "fr": "J'arrive sur place",
+  "ln": "Nakokoma na esika"
+ },
+ "pStepDone": {
+  "en": "I'm done",
+  "fr": "J'ai terminé",
+  "ln": "Nasilisi"
+ },
+ "pStepLeft": {
+  "en": "I set off",
+  "fr": "Je suis parti",
+  "ln": "Nabimi"
+ },
+ "pStepOnSite": {
+  "en": "I'm on site",
+  "fr": "Je suis sur place",
+  "ln": "Nazali na esika"
+ },
+ "pStepPaid": {
+  "en": "Client paid",
+  "fr": "Client a payé",
+  "ln": "Mosombi afuti"
+ },
+ "paidTo": {
+  "en": "Paid to {name}",
+  "fr": "Versé à {name}",
+  "ln": "Ekopesama na {name}"
+ },
+ "payAmount": {
+  "en": "Pay {amount}",
+  "fr": "Payer {amount}",
+  "ln": "Futa {amount}"
+ },
+ "payAvailable": {
+  "en": "Available",
+  "fr": "Disponible",
+  "ln": "Ezali"
+ },
+ "payBlocked": {
+  "en": "On hold (dispute)",
+  "fr": "Bloqué (litige)",
+  "ln": "Ekangami (matata)"
+ },
+ "payRefunded": {
+  "en": "Refunded",
+  "fr": "Remboursé",
+  "ln": "Bazongisi"
+ },
+ "payReleased": {
+  "en": "Paid to provider",
+  "fr": "Versé au prestataire",
+  "ln": "Epesami na mosali"
+ },
+ "paySecured": {
+  "en": "Secured by NexisHub",
+  "fr": "Sécurisé par NexisHub",
+  "ln": "Ebatelami na NexisHub"
+ },
+ "paySecuredNote": {
+  "en": "Secured by NexisHub: {name} gets paid when you confirm it's done.",
+  "fr": "Sécurisé par NexisHub : {name} reçoit l'argent quand vous confirmez que c'est fait.",
+  "ln": "Ebatelami na NexisHub : {name} akozwa mbongo soki ondimi ete mosala esili."
+ },
+ "payTitle": {
+  "en": "Pay",
+  "fr": "Payer",
+  "ln": "Kofuta"
+ },
+ "payWith": {
+  "en": "Pay with",
+  "fr": "Payer avec",
+  "ln": "Futa na"
+ },
+ "paymentTitle": {
+  "en": "Payment",
+  "fr": "Paiement",
+  "ln": "Kofuta"
+ },
+ "pendingNotify": {
+  "en": "{name} is told right away",
+  "fr": "Nous prévenons {name} tout de suite",
+  "ln": "Tokoyebisa {name} noki"
+ },
+ "pendingSecured": {
+  "en": "Money secured by NexisHub",
+  "fr": "Argent sécurisé par NexisHub",
+  "ln": "Mbongo ebatelami na NexisHub"
+ },
+ "pendingSent": {
+  "en": "Request sent to {operator}",
+  "fr": "Demande envoyée à {operator}",
+  "ln": "Bosenga etindami na {operator}"
+ },
+ "pendingText": {
+  "en": "{operator} is sending you a request for {amount}. Enter your Mobile Money PIN to accept it.",
+  "fr": "{operator} vous envoie une demande de {amount}. Tapez votre code secret Mobile Money pour l'accepter.",
+  "ln": "{operator} ekotindela yo bosenga ya {amount}. Kotisa code na yo ya sekele ya Mobile Money mpo na kondima."
+ },
+ "pendingTitle": {
+  "en": "Approve on your phone",
+  "fr": "Validez sur votre téléphone",
+  "ln": "Ndima na telefone na yo"
+ },
+ "pendingWaiting": {
+  "en": "Waiting for confirmation",
+  "fr": "En attente de confirmation",
+  "ln": "Tozali kozela bondimi"
+ },
+ "pendingWithin": {
+  "en": "You have 5 minutes",
+  "fr": "Vous avez 5 minutes",
+  "ln": "Ozali na miniti 5"
+ },
+ "phone": {
+  "en": "Phone",
+  "fr": "Téléphone",
+  "ln": "Telefone"
+ },
+ "photos": {
+  "en": "Photos",
+  "fr": "Photos",
+  "ln": "Bafoto"
+ },
+ "photosCount": {
+  "en": {
+   "=0": "no photo",
+   "=1": "1 photo",
+   "other": "{count} photos"
+  },
+  "fr": {
+   "=0": "sans photo",
+   "=1": "1 photo",
+   "other": "{count} photos"
+  },
+  "ln": {
+   "=0": "elilingi te",
+   "=1": "elilingi 1",
+   "other": "bililingi {count}"
+  }
+ },
+ "pickServiceHint": {
+  "en": "Pick one, we'll handle the rest.",
+  "fr": "Choisissez, nous nous occupons du reste.",
+  "ln": "Pona, biso tokosala oyo etikali."
+ },
+ "presenceCode": {
+  "en": "Client's presence code",
+  "fr": "Code de présence du client",
+  "ln": "Code ya bozali ya mosombi"
+ },
+ "priceAsked": {
+  "en": "Amount asked from the client",
+  "fr": "Montant demandé au client",
+  "ln": "Mbongo osengi na mosombi"
+ },
+ "protectAdvice": {
+  "en": "Don't use your Mobile Money PIN or your date of birth. Never give it to anyone, not even NexisHub.",
+  "fr": "N'utilisez pas votre code secret Mobile Money ni votre date de naissance. Ne le donnez à personne, même pas à NexisHub.",
+  "ln": "Kosalela code secret ya Mobile Money te, to mokolo ya mbotama na yo te. Kopesa yango moto te, ata NexisHub te."
+ },
+ "protectBioLater": {
+  "en": "Later",
+  "fr": "Plus tard",
+  "ln": "Na sima"
+ },
+ "protectBioOn": {
+  "en": "Turn on {method}",
+  "fr": "Activer {method}",
+  "ln": "Kofungola {method}"
+ },
+ "protectBioText": {
+  "en": "Open the app and approve payments without typing your code. Your phone recognises you: NexisHub never sees your face or your fingerprint.",
+  "fr": "Ouvrez l'app et validez vos paiements sans taper votre code. C'est votre téléphone qui vous reconnaît : NexisHub ne voit jamais votre visage ni votre empreinte.",
+  "ln": "Fungolá app mpe ndimá bafuti na yo kozanga kokota code. Telefone na yo nde eyebaka yo: NexisHub emonaka ata mokolo moko te elongi to empreinte na yo."
+ },
+ "protectBioTitle": {
+  "en": "Use {method}?",
+  "fr": "Utiliser {method} ?",
+  "ln": "Kosalela {method}?"
+ },
+ "protectConfirmIntro": {
+  "en": "Type it once more.",
+  "fr": "Tapez-le une deuxième fois.",
+  "ln": "Kotá yango mbala ya mibale."
+ },
+ "protectConfirmTitle": {
+  "en": "Confirm your code",
+  "fr": "Confirmez votre code",
+  "ln": "Ndimisá code na yo"
+ },
+ "protectDone": {
+  "en": "Your account is protected.",
+  "fr": "Votre compte est protégé.",
+  "ln": "Compte na yo ebatelami."
+ },
+ "protectIntro": {
+  "en": "Create a 6-digit NexisHub code. You'll be asked for it to open the app and before any money leaves your account.",
+  "fr": "Créez un code NexisHub de 6 chiffres. Il vous sera demandé pour ouvrir l'app et avant chaque sortie d'argent.",
+  "ln": "Salá code ya NexisHub ya mituya 6. Bakosenga yango mpo na kofungola app mpe liboso mbongo nyonso ebima."
+ },
+ "protectMismatch": {
+  "en": "The two codes don't match. Start again.",
+  "fr": "Les deux codes ne sont pas pareils. Recommencez.",
+  "ln": "Ba code mibale ekokani te. Banda lisusu."
+ },
+ "protectTitle": {
+  "en": "Protect your account",
+  "fr": "Protégez votre compte",
+  "ln": "Batelá compte na yo"
+ },
+ "protectWeak": {
+  "en": "This code is too easy to guess. Choose another one.",
+  "fr": "Ce code est trop facile à deviner. Choisissez-en un autre.",
+  "ln": "Code oyo ezali pete mingi mpo na koyeba. Ponà mosusu."
+ },
+ "providerPending": {
+  "en": "Provider · being checked",
+  "fr": "Prestataire · en vérification",
+  "ln": "Mosali · bazali kotala"
+ },
+ "providerPendingHint": {
+  "en": "Your provider profile is being checked by the NexisHub team.",
+  "fr": "Votre profil de prestataire est en cours de vérification par l'équipe NexisHub.",
+  "ln": "Équipe ya NexisHub ezali kotala profil na yo ya mosali."
+ },
+ "providerReplied": {
+  "en": "{name} replied",
+  "fr": "{name} a répondu",
+  "ln": "{name} azongisaki"
+ },
+ "quickActions": {
+  "en": "Quick actions",
+  "fr": "Actions rapides",
+  "ln": "Misala ya noki"
+ },
+ "quoteFailed": {
+  "en": "The quote wasn't sent. Try again in a moment.",
+  "fr": "Le devis n'est pas parti. Réessayez dans un instant.",
+  "ln": "Devis ekendeki te. Meka lisusu mwa moke."
+ },
+ "quoteSentPill": {
+  "en": "Quote sent",
+  "fr": "Devis envoyé",
+  "ln": "Devis etindami"
+ },
+ "quoteSentToast": {
+  "en": "Quote sent. You'll be told if the client picks it.",
+  "fr": "Devis envoyé. Vous serez prévenu si le client le choisit.",
+  "ln": "Devis etindami. Tokoyebisa yo soki mosombi aponi yango."
+ },
+ "quotesPill": {
+  "en": "{count} quotes",
+  "fr": "{count} devis",
+  "ln": "Devis {count}"
+ },
+ "reasonBadWork": {
+  "en": "The work is poorly done",
+  "fr": "Le travail est mal fait",
+  "ln": "Mosala esalemi malamu te"
+ },
+ "reasonNoShow": {
+  "en": "The provider didn't come",
+  "fr": "Le prestataire n'est pas venu",
+  "ln": "Mosali ayaki te"
+ },
+ "reasonNotFinished": {
+  "en": "The work isn't finished",
+  "fr": "Le travail n'est pas fini",
+  "ln": "Mosala esili te"
+ },
+ "reasonOther": {
+  "en": "Another problem",
+  "fr": "Autre problème",
+  "ln": "Mokakatano mosusu"
+ },
+ "receiveCode": {
+  "en": "Get the code",
+  "fr": "Recevoir le code",
+  "ln": "Kozwa code"
+ },
+ "receiveCodeBy": {
+  "en": "Get the code by",
+  "fr": "Recevoir le code par",
+  "ln": "Kozwa code na"
+ },
+ "receiveInstead": {
+  "en": "Get it by {channel} instead",
+  "fr": "Recevoir plutôt par {channel}",
+  "ln": "Kozwa na {channel} na esika"
+ },
+ "recentMovements": {
+  "en": "Latest movements",
+  "fr": "Derniers mouvements",
+  "ln": "Makambo ya nsuka ya mbongo"
+ },
+ "recents": {
+  "en": "Recent",
+  "fr": "Récents",
+  "ln": "Ya nsuka"
+ },
+ "recommendedForYou": {
+  "en": "Recommended for you",
+  "fr": "Recommandé pour vous",
+  "ln": "Tozali kopesa yo yango"
+ },
+ "report48h": {
+  "en": "A problem? You have 48 h to report it. The money then stays blocked while we look into it with you both.",
+  "fr": "Un souci ? Vous avez 48 h pour le signaler. L'argent reste alors bloqué le temps que nous regardions avec vous deux.",
+  "ln": "Mokakatano ? Ozali na 48 h mpo na koyebisa yango. Mbongo ekotikala ekangami tango tozali kotala yango na bino mibale."
+ },
+ "reportFailed": {
+  "en": "The report wasn't sent. Try again in a moment.",
+  "fr": "Le signalement n'est pas parti. Réessayez dans un instant.",
+  "ln": "Bosengi ekendeki te. Meka lisusu mwa moke."
+ },
+ "reportFrozen": {
+  "en": "The {amount} stay on hold while we look into it with you both. Nobody can touch it.",
+  "fr": "Les {amount} sont bloqués le temps que nous regardions avec vous deux. Personne ne peut y toucher.",
+  "ln": "{amount} ekokangama tango tozali kotala yango na bino mibale. Moto moko te akoki kosimba yango."
+ },
+ "reportHint": {
+  "en": "Tell us in a few words what's wrong.",
+  "fr": "Racontez en quelques mots ce qui ne va pas.",
+  "ln": "Yebisa na maloba moke nini ezali malamu te."
+ },
+ "reportProblem": {
+  "en": "Report a problem",
+  "fr": "Signaler un problème",
+  "ln": "Koyebisa mokakatano"
+ },
+ "requestNotSent": {
+  "en": "The request was not sent. Try again in a moment.",
+  "fr": "La demande n'est pas partie. Réessayez dans un instant.",
+  "ln": "Bosengi etindami te. Meka lisusu na mwa ntango."
+ },
+ "requestSent": {
+  "en": "Request sent",
+  "fr": "Demande envoyée",
+  "ln": "Bosengi etindami"
+ },
+ "requestSentText": {
+  "en": "We have received your request. You will be notified in the app, and on WhatsApp or Telegram, as soon as we have an answer.",
+  "fr": "Nous avons bien reçu votre demande. Vous serez prévenu dans l'app, et sur WhatsApp ou Telegram, dès que nous avons une réponse.",
+  "ln": "Tozwi bosengi na yo. Tokoyebisa yo na app, mpe na WhatsApp to Telegram, tango tozwi eyano."
+ },
+ "requestService": {
+  "en": "Request a service",
+  "fr": "Demander un service",
+  "ln": "Kosenga mosala"
+ },
+ "requestedIn": {
+  "en": "Requested in {month}",
+  "fr": "Demandé en {month}",
+  "ln": "Osengaki na {month}"
+ },
+ "requestedOn": {
+  "en": "Requested on {date}",
+  "fr": "Demandé le {date}",
+  "ln": "Osengaki na {date}"
+ },
+ "resendIn": {
+  "en": "Resend in {time}",
+  "fr": "Renvoyer dans {time}",
+  "ln": "Kotinda lisusu na {time}"
+ },
+ "resendNow": {
+  "en": "Resend the code",
+  "fr": "Renvoyer le code",
+  "ln": "Tinda code lisusu"
+ },
+ "reviewsCount": {
+  "en": "{count} reviews",
+  "fr": "{count} avis",
+  "ln": "{count} makanisi"
+ },
+ "scanChecking": {
+  "en": "Checking the photo…",
+  "fr": "Vérification de la photo…",
+  "ln": "Tozali kotala foto…"
+ },
+ "scanDone": {
+  "en": "Front and back taken",
+  "fr": "Recto et verso pris",
+  "ln": "Liboso mpe nsima ezwami"
+ },
+ "scanHold": {
+  "en": "Hold still…",
+  "fr": "Ne bougez plus…",
+  "ln": "Kotambola lisusu te…"
+ },
+ "scanPassportHint": {
+  "en": "Open it at the page with your photo, then turn it on its side so that this page fills the frame. The photo is taken automatically.",
+  "fr": "Ouvrez-le à la page de votre photo, puis tournez-le sur le côté pour que cette page remplisse le cadre. La photo se prend toute seule.",
+  "ln": "Fungolá yango na lokasa ya foto na yo, sima balolá yango na ngámbo mpo lokasa yango etonda na kati ya cadre. Foto ekozwama yango moko."
+ },
+ "scanPassportTitle": {
+  "en": "Your passport photo page",
+  "fr": "La page photo du passeport",
+  "ln": "Lokasa ya foto ya passeport"
+ },
+ "scanRectoHint": {
+  "en": "Lay the front, the side with your photo, on a flat dark surface. The photo is taken automatically.",
+  "fr": "Posez le recto, le côté avec votre photo, sur une surface plane et sombre. La photo se prend toute seule.",
+  "ln": "Tiá liboso ya carte, epai ya foto na yo, na esika ya patatalu mpe ya molili. Foto ekozwama yango moko."
+ },
+ "scanRectoTitle": {
+  "en": "The front of your ID",
+  "fr": "Le recto de votre pièce",
+  "ln": "Liboso ya carte na yo"
+ },
+ "scanSearching": {
+  "en": "Place the card inside the frame",
+  "fr": "Placez la carte dans le cadre",
+  "ln": "Tiá carte na kati ya cadre"
+ },
+ "scanStartPassport": {
+  "en": "Scan the photo page",
+  "fr": "Scanner la page photo",
+  "ln": "Kosala scan ya lokasa ya foto"
+ },
+ "scanStartRecto": {
+  "en": "Scan the front",
+  "fr": "Scanner le recto",
+  "ln": "Kosala scan ya liboso"
+ },
+ "scanStartVerso": {
+  "en": "Scan the back",
+  "fr": "Scanner le verso",
+  "ln": "Kosala scan ya nsima"
+ },
+ "scanTurnTitle": {
+  "en": "Turn the card over",
+  "fr": "Retournez la carte",
+  "ln": "Bongolá carte"
+ },
+ "scanUnavailable": {
+  "en": "The document scanner isn't available on this phone. Update Google Play services, then try again.",
+  "fr": "Le scanner de documents n'est pas disponible sur ce téléphone. Mettez à jour les services Google Play, puis réessayez.",
+  "ln": "Scanner ya mikanda ezali te na telefone oyo. Bongolá ba services Google Play, sima meká lisusu."
+ },
+ "scanVersoHint": {
+  "en": "Now show the back. The photo is taken automatically.",
+  "fr": "Montrez maintenant le verso. La photo se prend toute seule.",
+  "ln": "Sikoyo lakisá nsima ya carte. Foto ekozwama yango moko."
+ },
+ "scanWrongPage": {
+  "en": "That's not the right page. Show the page with your photo and the two lines at the bottom.",
+  "fr": "Ce n'est pas la bonne page. Montrez la page avec votre photo et les deux lignes du bas.",
+  "ln": "Ezali lokasa ya malamu te. Lakisá lokasa oyo ezali na foto na yo mpe milongo mibale ya nse."
+ },
+ "scanWrongRecto": {
+  "en": "That's still the front. Turn the card over.",
+  "fr": "C'est encore le recto. Retournez la carte.",
+  "ln": "Ezali kaka liboso. Bongolá carte."
+ },
+ "scanWrongVerso": {
+  "en": "That's the back. Show the front first, the side with your photo.",
+  "fr": "C'est le verso. Montrez d'abord le recto, le côté avec votre photo.",
+  "ln": "Oyo ezali nsima. Lakisá liboso, epai ya foto na yo."
+ },
+ "searchService": {
+  "en": "Search for a service",
+  "fr": "Rechercher un service",
+  "ln": "Luka mosala"
+ },
+ "securedAmount": {
+  "en": "{amount} secured",
+  "fr": "{amount} sécurisés",
+  "ln": "{amount} ebatelami"
+ },
+ "securedByNexis": {
+  "en": "Secured by NexisHub",
+  "fr": "Sécurisé par NexisHub",
+  "ln": "Ebombami na NexisHub"
+ },
+ "securedUntilConfirm": {
+  "en": "{amount} secured, paid out when the client confirms",
+  "fr": "{amount} sécurisés, versés quand le client confirme",
+  "ln": "{amount} ebatelami, ekopesama soki mosombi andimi"
+ },
+ "securedUntilDone": {
+  "en": "Your money stays secured by NexisHub until you confirm it's done.",
+  "fr": "Votre argent reste sécurisé par NexisHub jusqu'à ce que vous confirmiez que c'est fait.",
+  "ln": "Mbongo na yo ebatelami na NexisHub kino okondima ete mosala esili."
+ },
+ "securityBioHint": {
+  "en": "To open the app and approve payments. Your code is still asked if {method} doesn't recognise you.",
+  "fr": "Pour ouvrir l'app et valider vos paiements. Votre code reste demandé si {method} ne vous reconnaît pas.",
+  "ln": "Mpo na kofungola app mpe kondima bafuti. Bakosenga code na yo soki {method} eyebi yo te."
+ },
+ "securityChangeCode": {
+  "en": "Change my code",
+  "fr": "Changer mon code",
+  "ln": "Kobongola code na ngai"
+ },
+ "securityCodeChanged": {
+  "en": "Your code is changed.",
+  "fr": "Votre code est changé.",
+  "ln": "Code na yo ebongwani."
+ },
+ "securityCurrentCode": {
+  "en": "Enter your current code",
+  "fr": "Tapez votre code actuel",
+  "ln": "Kotá code na yo ya sikoyo"
+ },
+ "securityLockNote": {
+  "en": "The app locks when it stays closed for more than a minute.",
+  "fr": "L'app se verrouille quand elle reste fermée plus d'une minute.",
+  "ln": "App ekangamaka soki etikali ekangami koleka miniti moko."
+ },
+ "securityNewCode": {
+  "en": "New code",
+  "fr": "Nouveau code",
+  "ln": "Code ya sika"
+ },
+ "securityNoBio": {
+  "en": "This phone can't recognise your face or fingerprint: your code is used for everything.",
+  "fr": "Ce téléphone ne peut pas vous reconnaître par le visage ou l'empreinte : votre code sert à tout.",
+  "ln": "Telefone oyo ekoki koyeba yo na elongi to na empreinte te: code na yo esalaka nyonso."
+ },
+ "securityRow": {
+  "en": "Code and security",
+  "fr": "Code et sécurité",
+  "ln": "Code mpe libateli"
+ },
+ "securityRowSub": {
+  "en": "To open the app and pay",
+  "fr": "Pour ouvrir l'app et payer",
+  "ln": "Mpo na kofungola app mpe kofuta"
+ },
+ "seeAll": {
+  "en": "See all",
+  "fr": "Tout voir",
+  "ln": "Komona nyonso"
+ },
+ "seeMissions": {
+  "en": "See all {count} missions",
+  "fr": "Voir les {count} missions",
+  "ln": "Tala misala {count}"
+ },
+ "seeWallet": {
+  "en": "See my wallet",
+  "fr": "Voir mon portefeuille",
+  "ln": "Tala esika ya mbongo na ngai"
+ },
+ "selfieDone": {
+  "en": "All done, thank you",
+  "fr": "C'est fait, merci",
+  "ln": "Esili, matondi"
+ },
+ "selfieFaceIn": {
+  "en": "Place your face inside the circle",
+  "fr": "Placez votre visage dans le cercle",
+  "ln": "Tiá elongi na yo na kati ya cercle"
+ },
+ "selfieIntro": {
+  "en": "Stand somewhere well lit, alone in front of the camera. The video lasts a few seconds, with no sound.",
+  "fr": "Mettez-vous dans un endroit bien éclairé, seul devant l'appareil. La vidéo dure quelques secondes, sans son.",
+  "ln": "Tiká na esika ya pole, yo moko liboso ya appareil. Video eumelaka ba seconde moke, kozanga lokito."
+ },
+ "selfieLookAhead": {
+  "en": "Look straight ahead",
+  "fr": "Regardez droit devant vous",
+  "ln": "Talá liboso na yo"
+ },
+ "selfieOneFace": {
+  "en": "Only one person in front of the camera",
+  "fr": "Une seule personne devant l'appareil",
+  "ln": "Moto moko kaka liboso ya appareil"
+ },
+ "selfieRecording": {
+  "en": "Recording",
+  "fr": "Enregistrement",
+  "ln": "Ezali kozwa video"
+ },
+ "selfieStep": {
+  "en": "Instruction {step} of {total}",
+  "fr": "Consigne {step} sur {total}",
+  "ln": "Malako {step} na {total}"
+ },
+ "selfieTitle": {
+  "en": "Verification video",
+  "fr": "Vidéo de vérification",
+  "ln": "Video ya kotala"
+ },
+ "selfieTooSlow": {
+  "en": "Time's up. Let's start again.",
+  "fr": "Le temps est écoulé. Recommençons.",
+  "ln": "Ntango esili. Tobanda lisusu."
+ },
+ "selfieTurnLeft": {
+  "en": "Turn your head to the left",
+  "fr": "Tournez la tête à gauche",
+  "ln": "Bongolá motó na loboko ya mwasi"
+ },
+ "selfieTurnRight": {
+  "en": "Turn your head to the right",
+  "fr": "Tournez la tête à droite",
+  "ln": "Bongolá motó na loboko ya mobali"
+ },
+ "sendAQuote": {
+  "en": "Send a quote",
+  "fr": "Envoyer un devis",
+  "ln": "Tinda devis"
+ },
+ "sendReport": {
+  "en": "Send the report",
+  "fr": "Envoyer le signalement",
+  "ln": "Tinda bosengi"
+ },
+ "sendRequest": {
+  "en": "Send my request",
+  "fr": "Envoyer ma demande",
+  "ln": "Tinda bosengi na ngai"
+ },
+ "sendTheQuote": {
+  "en": "Send the quote",
+  "fr": "Envoyer le devis",
+  "ln": "Tinda devis"
+ },
+ "serviceRequestDemo": {
+  "en": "This is a test request.",
+  "fr": "Cette demande est une simulation.",
+  "ln": "Bosengi oyo ezali ya komeka."
+ },
+ "serviceRequestNoPay": {
+  "en": "There is no charge at this step.",
+  "fr": "Vous ne payez rien à cette étape.",
+  "ln": "Okofuta eloko te na etape oyo."
+ },
+ "serviceRequestSaved": {
+  "en": "Test request saved",
+  "fr": "Demande de test enregistrée",
+  "ln": "Bosengi ya komeka ebombami"
+ },
+ "serviceRequestSavedText": {
+  "en": "Find it in My missions under “Waiting for quotes”.",
+  "fr": "Retrouvez-la dans vos missions, sous « En attente de devis ».",
+  "ln": "Okokuta yango na Misala na ngai, na kati ya misala oyo ezali kozela devis."
+ },
+ "settleHint": {
+  "en": "You can still sort it out with {name}. If you both agree, say so here and we close the dispute.",
+  "fr": "Vous pouvez encore vous arranger avec {name}. Si vous êtes d'accord, dites-le ici et nous clôturons le litige.",
+  "ln": "Okoki naino koyokana na {name}. Soki boyokani, yebisa awa mpe tokosilisa matata."
+ },
+ "shareLocation": {
+  "en": "Share my location",
+  "fr": "Partager ma position",
+  "ln": "Kabola esika nazali"
+ },
+ "shareLocationSub": {
+  "en": "{name} sees how far away you are",
+  "fr": "{name} voit la distance jusqu'à votre arrivée",
+  "ln": "{name} akomona ntaka tii okokoma"
+ },
+ "showAmounts": {
+  "en": "Show amounts",
+  "fr": "Afficher les montants",
+  "ln": "Komonisa mitango"
+ },
+ "showcaseCertificate": {
+  "en": "Diploma checked by NexisHub",
+  "fr": "Diplôme vérifié par NexisHub",
+  "ln": "Diplôme etalami na NexisHub"
+ },
+ "showcaseChecked": {
+  "en": "Photos checked by the NexisHub team",
+  "fr": "Photos vérifiées par l'équipe NexisHub",
+  "ln": "Ba foto etalami na équipe ya NexisHub"
+ },
+ "showcaseOpen": {
+  "en": "See past work",
+  "fr": "Voir ses réalisations",
+  "ln": "Komona misala na ye"
+ },
+ "showcasePhoto": {
+  "en": "Photo of a past job",
+  "fr": "Photo d'un travail déjà fait",
+  "ln": "Foto ya mosala esalamaki"
+ },
+ "showcaseTitle": {
+  "en": "{name}'s past work",
+  "fr": "Réalisations de {name}",
+  "ln": "Misala ya {name}"
+ },
+ "signInTitle": {
+  "en": "Sign in",
+  "fr": "Connectez-vous",
+  "ln": "Kɔtá na compte na yo"
+ },
+ "signOut": {
+  "en": "Sign out",
+  "fr": "Se déconnecter",
+  "ln": "Kobima"
+ },
+ "signupAcceptTerms": {
+  "en": "I’ve read and accept the terms of use",
+  "fr": "J’ai lu et j’accepte les CGU",
+  "ln": "Natángi mpe nandimi mibeko ya kosalela app"
+ },
+ "signupCreateProfile": {
+  "en": "Create my profile",
+  "fr": "Créer mon profil",
+  "ln": "Salá profil na ngai"
+ },
+ "signupDemoNotice": {
+  "en": "Demo sign-up. Use fictional information.",
+  "fr": "Inscription de démonstration. Utilisez des informations fictives.",
+  "ln": "Komikomisa ya komeka. Salelá ba sango ya ndakisa."
+ },
+ "signupDemoTerms": {
+  "en": "Demo document. Use this screen to try reading and accepting the terms. Profiles, missions and payments in this preview are fictional. Your sign-up details are cleared when the app reloads.",
+  "fr": "Document de démonstration. Cet écran sert à tester la lecture et l’acceptation des conditions. Les profils créés, les missions et les paiements de cet aperçu sont fictifs. Les informations de cette inscription sont effacées au rechargement de l’app.",
+  "ln": "Mokanda ya komeka. Awa okoki komeka kotánga mpe kondima mibeko. Ba profil, misala mpe mbongo na aperçu oyo ezali ya ndakisa. Sango ya komikomisa elongwaka ntango app efungwami lisusu."
+ },
+ "signupFailed": {
+  "en": "Your profile could not be created. Check your details and try again.",
+  "fr": "Le profil n’a pas pu être créé. Vérifiez les informations et réessayez.",
+  "ln": "Profil esalemi te. Talá sango na yo mpe mekisa lisusu."
+ },
+ "signupFirstName": {
+  "en": "First name",
+  "fr": "Prénom",
+  "ln": "Nkombo ya liboso"
+ },
+ "signupLastName": {
+  "en": "Last name",
+  "fr": "Nom",
+  "ln": "Nkombo ya libota"
+ },
+ "signupReadTerms": {
+  "en": "Read the terms of use",
+  "fr": "Lire les CGU",
+  "ln": "Tángá mibeko ya kosalela app"
+ },
+ "signupTitle": {
+  "en": "Let’s get to know you",
+  "fr": "Faisons connaissance",
+  "ln": "Tóyebana"
+ },
+ "slogan": {
+  "en": "Where trust meets service.",
+  "fr": "Là où la confiance rencontre le service.",
+  "ln": "Epai bosembo ekutani na mosala."
+ },
+ "smsSub": {
+  "en": "A text message to this number",
+  "fr": "Un message texte sur ce numéro",
+  "ln": "Message na nimero oyo"
+ },
+ "spaceClient": {
+  "en": "Client",
+  "fr": "Client",
+  "ln": "Mosombi"
+ },
+ "spaceProvider": {
+  "en": "Provider",
+  "fr": "Prestataire",
+  "ln": "Mosali"
+ },
+ "start": {
+  "en": "Get started",
+  "fr": "Commencer",
+  "ln": "Kobanda"
+ },
+ "statusAwaiting": {
+  "en": "To confirm",
+  "fr": "À confirmer",
+  "ln": "Ezali kozela ndingisa na yo"
+ },
+ "statusCancelled": {
+  "en": "Cancelled",
+  "fr": "Annulée",
+  "ln": "Ebongolami"
+ },
+ "statusCompleted": {
+  "en": "Completed",
+  "fr": "Terminée",
+  "ln": "Esili"
+ },
+ "statusConfirmed": {
+  "en": "Provider chosen",
+  "fr": "Prestataire choisi",
+  "ln": "Mosali aponami"
+ },
+ "statusDisputed": {
+  "en": "Dispute open",
+  "fr": "Litige en cours",
+  "ln": "Matata ezali kotalelama"
+ },
+ "statusInProgress": {
+  "en": "{name} is on the way",
+  "fr": "{name} est en route",
+  "ln": "{name} azali na nzela"
+ },
+ "statusPending": {
+  "en": "Waiting for quotes",
+  "fr": "En attente de devis",
+  "ln": "Ezali kozela devis"
+ },
+ "statusQuoted": {
+  "en": "{count} quotes received",
+  "fr": "{count} devis reçus",
+  "ln": "Devis {count} eyei"
+ },
+ "stepConfirm": {
+  "en": "You confirm, {name} gets paid",
+  "fr": "Vous confirmez, {name} reçoit l'argent",
+  "ln": "Ondimi, {name} akozwa mbongo"
+ },
+ "stepOnSite": {
+  "en": "On site",
+  "fr": "Sur place",
+  "ln": "Akomi"
+ },
+ "stepOnTheWay": {
+  "en": "On the way",
+  "fr": "En route",
+  "ln": "Azali na nzela"
+ },
+ "stepOnTheWaySub": {
+  "en": "Location tracking on",
+  "fr": "Suivi de position activé",
+  "ln": "Kolanda esika ebandi"
+ },
+ "stepPaid": {
+  "en": "Paid",
+  "fr": "Payé",
+  "ln": "Efutami"
+ },
+ "stepWorkDone": {
+  "en": "Work done",
+  "fr": "Travail terminé",
+  "ln": "Mosala esili"
+ },
+ "tabDone": {
+  "en": "Done",
+  "fr": "Terminées",
+  "ln": "Esili"
+ },
+ "tabOngoing": {
+  "en": "Ongoing",
+  "fr": "En cours",
+  "ln": "Ezali kosalema"
+ },
+ "telegramSub": {
+  "en": "With the NexisHub bot",
+  "fr": "Avec le bot NexisHub",
+  "ln": "Na bot ya NexisHub"
+ },
+ "termsVersion": {
+  "en": "Version of {date}",
+  "fr": "Version du {date}",
+  "ln": "Version ya {date}"
+ },
+ "toRefundYou": {
+  "en": "Refund to you",
+  "fr": "À vous rembourser",
+  "ln": "Ya kozongisela yo"
+ },
+ "today": {
+  "en": "Today",
+  "fr": "Aujourd'hui",
+  "ln": "Lelo"
+ },
+ "trackTitle": {
+  "en": "Tracking",
+  "fr": "Suivi",
+  "ln": "Kolanda"
+ },
+ "trackingOff": {
+  "en": "Tracking not turned on",
+  "fr": "Suivi non activé",
+  "ln": "Kolanda ebandi te"
+ },
+ "verifiedProvider": {
+  "en": "Verified provider",
+  "fr": "Prestataire vérifié",
+  "ln": "Mosali vérifié"
+ },
+ "viewQuotes": {
+  "en": "View quotes",
+  "fr": "Voir les devis",
+  "ln": "Kotala ba devis"
+ },
+ "waitingPill": {
+  "en": "Waiting",
+  "fr": "En attente",
+  "ln": "Ezali kozela"
+ },
+ "walletExplanation": {
+  "en": "This money is paid to the provider only after the client confirms the job.",
+  "fr": "Cet argent est versé au prestataire uniquement après confirmation du client.",
+  "ln": "Mbongo oyo ekopesama na mosali kaka sima ya kondimama na mosombi."
+ },
+ "walletInfoLabel": {
+  "en": "Why is this amount locked?",
+  "fr": "Pourquoi ce montant est-il bloqué ?",
+  "ln": "Mpo na nini mbongo oyo ekangami?"
+ },
+ "walletLocked": {
+  "en": "{amount} locked for your ongoing jobs",
+  "fr": "{amount} bloqués pour vos missions en cours",
+  "ln": "{amount} ekangami mpo na misala na yo oyo ezali kosalema"
+ },
+ "weSettled": {
+  "en": "We sorted it out",
+  "fr": "Nous nous sommes arrangés",
+  "ln": "Toyokani"
+ },
+ "welcomeBack": {
+  "en": "Welcome back",
+  "fr": "Bon retour",
+  "ln": "Boyei malamu"
+ },
+ "welcomeIntro": {
+  "en": "We connect you with trusted professionals",
+  "fr": "Nous vous mettons en relation avec des professionnels de confiance",
+  "ln": "Tokokutanisa bino na basali ya kotyela motema"
+ },
+ "whatHappened": {
+  "en": "What happened?",
+  "fr": "Que s'est-il passé ?",
+  "ln": "Nini esalemaki ?"
+ },
+ "whatsappSub": {
+  "en": "The code arrives in seconds",
+  "fr": "Le code arrive en quelques secondes",
+  "ln": "Code ekoya na mwa ba seconde"
+ },
+ "whichService": {
+  "en": "Which service?",
+  "fr": "Quel service ?",
+  "ln": "Mosala nini ?"
+ },
+ "worksAddPhotos": {
+  "en": "Add photos",
+  "fr": "Ajouter des photos",
+  "ln": "Kobakisa ba foto"
+ },
+ "worksAskedShort": {
+  "en": "The team is asking for photos of your work",
+  "fr": "L'équipe vous demande des photos de vos travaux",
+  "ln": "Équipe ezali kosenga ba foto ya misala na yo"
+ },
+ "worksCertificates": {
+  "en": "Diploma or certificate",
+  "fr": "Diplôme ou attestation",
+  "ln": "Diplôme to attestation"
+ },
+ "worksCertificatesSub": {
+  "en": "Optional, seen only by the team. Clients only see “Diploma checked by NexisHub”.",
+  "fr": "Facultatif, vu par l'équipe seulement. Les clients voient seulement « Diplôme vérifié par NexisHub ».",
+  "ln": "Soki olingi, kaka équipe nde ekomona. Ba client bakomona kaka « Diplôme etalami na NexisHub »."
+ },
+ "worksCertificatesVerified": {
+  "en": "Checked by the team",
+  "fr": "Vérifié par l'équipe",
+  "ln": "Équipe etali"
+ },
+ "worksCount": {
+  "en": "{count} of {max}",
+  "fr": "{count} sur {max}",
+  "ln": "{count} na {max}"
+ },
+ "worksDemoNote": {
+  "en": "Preview: the photos stay on this phone and are not sent anywhere.",
+  "fr": "Aperçu : les photos restent sur ce téléphone et ne sont envoyées nulle part.",
+  "ln": "Aperçu : ba foto etikalaka na telefone oyo, etindamaka esika moko te."
+ },
+ "worksLocked": {
+  "en": "The NexisHub team is checking your profile. Your past work stays as you sent it until the team decides; then you can change it.",
+  "fr": "L'équipe NexisHub vérifie votre profil. Vos réalisations restent comme vous les avez envoyées jusqu'à sa décision, puis vous pourrez les modifier.",
+  "ln": "Équipe ya NexisHub ezali kotala profil na yo. Misala na yo ekotikala ndenge otindaki yango kino équipe ekozwa mokano, sima okoki kobongola yango."
+ },
+ "worksNote": {
+  "en": "What you did, where and when",
+  "fr": "Ce que vous avez fait, où et quand",
+  "ln": "Nini osalaki, wapi mpe ntango nini"
+ },
+ "worksNoteExample": {
+  "en": "E.g. water heater installed, Limete, 2025",
+  "fr": "Ex. : pose d'un chauffe-eau, Limete, 2025",
+  "ln": "Ndakisa : kotia chauffe-eau, Limete, 2025"
+ },
+ "worksPhotoFailed": {
+  "en": "This photo couldn't be read.",
+  "fr": "Cette photo n'a pas pu être lue.",
+  "ln": "Foto oyo ekoki kotangama te."
+ },
+ "worksPrivacy": {
+  "en": "The NexisHub team looks at your photos first. Once approved, clients see them with your note. Avoid faces, addresses and number plates.",
+  "fr": "L'équipe NexisHub regarde d'abord vos photos. Après son accord, elles sont montrées aux clients avec votre phrase. Évitez les visages, les adresses et les plaques.",
+  "ln": "Équipe ya NexisHub ekotala liboso ba foto na yo. Soki endimi, ba client bakomona yango elongo na maloba na yo. Kolakisa elongi ya bato te, adresse te, plaque te."
+ },
+ "worksRemove": {
+  "en": "Remove photo",
+  "fr": "Retirer la photo",
+  "ln": "Kolongola foto"
+ },
+ "worksRequested": {
+  "en": "The NexisHub team is asking for photos of your work: {services}.",
+  "fr": "L'équipe NexisHub vous demande des photos de vos travaux : {services}.",
+  "ln": "Équipe ya NexisHub ezali kosenga yo ba foto ya misala na yo : {services}."
+ },
+ "worksReviewApproved": {
+  "en": "Visible to clients",
+  "fr": "Visible par les clients",
+  "ln": "Ba client bakoki komona"
+ },
+ "worksReviewPending": {
+  "en": "Waiting for the team",
+  "fr": "En attente de l'équipe",
+  "ln": "Ezali kozela équipe"
+ },
+ "worksReviewRejected": {
+  "en": "Declined by the team: send other photos",
+  "fr": "Refusé par l'équipe : envoyez d'autres photos",
+  "ln": "Équipe eboyi : tinda ba foto mosusu"
+ },
+ "worksSave": {
+  "en": "Send to the team",
+  "fr": "Envoyer à l'équipe",
+  "ln": "Kotindela équipe"
+ },
+ "worksSaved": {
+  "en": "Sent. The NexisHub team will look at them.",
+  "fr": "C'est envoyé. L'équipe NexisHub les regardera.",
+  "ln": "Etindami. Équipe ya NexisHub ekotala yango."
+ },
+ "worksSkip": {
+  "en": "Skip this step",
+  "fr": "Passer cette étape",
+  "ln": "Koleka etape oyo"
+ },
+ "writeNexis": {
+  "en": "Write to NexisHub",
+  "fr": "Écrire à NexisHub",
+  "ln": "Komela NexisHub"
+ },
+ "wrongCode": {
+  "en": {
+   "=1": "Wrong code. 1 try left.",
+   "other": "Wrong code. {count} tries left."
+  },
+  "fr": {
+   "=1": "Code incorrect. Encore 1 essai.",
+   "other": "Code incorrect. Encore {count} essais."
+  },
+  "ln": {
+   "=1": "Code ezali malamu te. Meka mbala 1 lisusu.",
+   "other": "Code ezali malamu te. Meka mbala {count} lisusu."
+  }
+ },
+ "yesDone": {
+  "en": "Yes, it's done",
+  "fr": "Oui, c'est fait",
+  "ln": "Ee, esili"
+ },
+ "yesterday": {
+  "en": "Yesterday",
+  "fr": "Hier",
+  "ln": "Lobi"
+ },
+ "youReported": {
+  "en": "You reported it",
+  "fr": "Vous avez signalé",
+  "ln": "Oyebisaki"
+ },
+ "yourNumber": {
+  "en": "Your number",
+  "fr": "Votre numéro",
+  "ln": "Nimero na yo"
+ },
+ "yourNumberIntro": {
+  "en": "We'll send you a code to check it's you.",
+  "fr": "Nous vous envoyons un code pour vérifier que c’est bien vous.",
+  "ln": "Tokotindela yo code mpo na koyeba ete ezali yo."
+ },
+ "yourPrice": {
+  "en": "Your price",
+  "fr": "Votre prix",
+  "ln": "Ntalo na yo"
+ },
+ "yourSlot": {
+  "en": "Your time slot",
+  "fr": "Votre créneau",
+  "ln": "Ngonga na yo"
+ }
+}
