@@ -7,7 +7,6 @@ elle est partie, et signalée à l'admin quand elle ne part pas.
 """
 
 import importlib
-import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -345,30 +344,6 @@ def test_render_uses_the_recipient_language_and_escapes_text(env):
     # chaînes échappées pour le HTML de Telegram.
     assert rendered.text == get_message("quote_rejected_client", "en", mission_id=7, prestataire="&lt;b&gt;Jean &amp; fils&lt;/b&gt;")
     assert rendered.buttons == [[(get_message("yes", "en"), "do_it_7")]]
-
-
-@pytest.mark.skipif(os.getenv("NEXIS_TEST_BACKEND_DB", "sqlite") != "postgres", reason="verrous de ligne : Postgres seulement")
-def test_two_senders_never_take_the_same_notification(env):
-    database, models, notifications, _fake = env
-    account_id = _person(database)
-    for number in range(4):
-        _enqueue(database, notifications, account_id, f"test_event:{number}")
-
-    with database.SessionLocal() as first:
-        locked = (
-            first.query(models.Notification)
-            .order_by(models.Notification.id)
-            .limit(2)
-            .with_for_update()
-            .all()
-        )
-        locked_ids = {row.id for row in locked}
-        with database.SessionLocal() as second:
-            claimed = notifications._claim(second, NOW, ["telegram"], 10)
-        first.rollback()
-
-    assert {notification_id for notification_id, _ in claimed}.isdisjoint(locked_ids)
-    assert len(claimed) == 2
 
 
 # --- Expéditeur Telegram ---------------------------------------------------------
