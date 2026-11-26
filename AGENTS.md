@@ -101,7 +101,8 @@ Ceci concerne l'IA **dans Nexis** (assistants, tri, détection), pas les agents 
   montrées aux clients, avec la phrase du prestataire, **seulement après l'accord de
   l'équipe** (service par service ; un service modifié repasse par l'équipe). Les
   **diplômes et attestations** restent vus **par l'équipe seulement** : le client voit
-  « Diplôme vérifié par NexisHub », jamais le document.
+  « Diplôme vérifié par NexisHub », jamais le document. Pendant que l'équipe vérifie le prestataire,
+  ses réalisations sont figées (sauf demande de l'équipe).
 
 ## Objectif du projet
 

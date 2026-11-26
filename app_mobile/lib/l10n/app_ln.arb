@@ -442,6 +442,7 @@
   "worksRequested": "Équipe ya NexisHub ezali kosenga yo ba foto ya misala na yo : {services}.",
   "worksSave": "Kotindela équipe",
   "worksSaved": "Etindami. Équipe ya NexisHub ekotala yango.",
+  "worksLocked": "Équipe ya NexisHub ezali kotala profil na yo. Misala na yo ekotikala ndenge otindaki yango kino équipe ekozwa mokano, sima okoki kobongola yango.",
   "worksReviewPending": "Ezali kozela équipe",
   "worksReviewApproved": "Ba client bakoki komona",
   "worksReviewRejected": "Équipe eboyi : tinda ba foto mosusu",

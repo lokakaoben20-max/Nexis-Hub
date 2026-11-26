@@ -90,6 +90,14 @@ class Portfolio(
         }
 
     companion object {
+        /** Pendant que l'équipe vérifie le prestataire, ses réalisations sont
+         * figées (décision de Ben, 2026-11-26) : l'équipe regarde ce qui a été
+         * envoyé avec la demande. Seule une demande de l'équipe les rouvre.
+         * Après l'accord, elles redeviennent modifiables (un service modifié
+         * repasse par l'équipe). */
+        fun isEditable(status: ProviderStatus?, requested: Boolean): Boolean =
+            status != null && (status == ProviderStatus.VERIFIED || requested)
+
         const val MAX_PHOTOS = 5
         const val MAX_CERTIFICATES = 3
         const val MAX_NOTE = 200

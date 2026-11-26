@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.MarkEmailUnread
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Cancel
+import androidx.compose.material.icons.rounded.HourglassTop
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material.icons.rounded.Visibility
@@ -178,13 +179,21 @@ private suspend fun prepareProof(context: Context, uri: Uri): ProofPhoto? = with
 }
 
 @Composable
-fun PortfolioEditor(services: List<CatalogService>, draft: PortfolioDraft, onChange: (PortfolioDraft) -> Unit) {
+fun PortfolioEditor(
+    services: List<CatalogService>,
+    draft: PortfolioDraft,
+    /** Figé pendant la vérification du prestataire : on montre ce qui a été
+     * envoyé, sans rien pouvoir changer. */
+    locked: Boolean = false,
+    onChange: (PortfolioDraft) -> Unit,
+) {
     val app = LocalApp.current
     val p = LocalPalette.current
     var failed by remember { mutableStateOf(false) }
-    InfoNote(app.t("worksPrivacy"), icon = Icons.Rounded.Lock)
-    services.forEach { service ->
+    if (!locked) InfoNote(app.t("worksPrivacy"), icon = Icons.Rounded.Lock)
+    services.filter { !locked || draft.photos[it.id].orEmpty().isNotEmpty() }.forEach { service ->
         ProofCard(
+            locked = locked,
             title = service.label(app.language), subtitle = null, status = reviewStatus(draft.review(service.id)),
             maxPhotos = Portfolio.MAX_PHOTOS,
             photos = draft.photos[service.id].orEmpty(),
@@ -194,7 +203,8 @@ fun PortfolioEditor(services: List<CatalogService>, draft: PortfolioDraft, onCha
             onFailed = { failed = it },
         ) { ServiceTile(service, 38.dp) }
     }
-    ProofCard(
+    if (!locked || draft.certificates.isNotEmpty()) ProofCard(
+        locked = locked,
         title = app.t("worksCertificates"), subtitle = app.t("worksCertificatesSub"),
         status = if (draft.certificatesVerified) ProofStatus(PillTone.OK, Icons.Rounded.Verified, app.t("worksCertificatesVerified")) else null,
         maxPhotos = Portfolio.MAX_CERTIFICATES,
@@ -224,6 +234,7 @@ private fun reviewStatus(review: ProofReview?): ProofStatus? {
 /** Les photos d'un service (ou les attestations), choisies dans la galerie. */
 @Composable
 private fun ProofCard(
+    locked: Boolean,
     title: String,
     subtitle: String?,
     status: ProofStatus?,
@@ -267,7 +278,7 @@ private fun ProofCard(
                 photos.forEach { photo ->
                     Box(Modifier.size(76.dp).clip(RoundedCornerShape(12.dp))) {
                         Image(photo.preview, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(76.dp))
-                        IconButton(
+                        if (!locked) IconButton(
                             onClick = { onPhotos(photos.filterNot { it.id == photo.id }) },
                             modifier = Modifier.align(Alignment.TopEnd).size(32.dp),
                         ) {
@@ -278,6 +289,10 @@ private fun ProofCard(
                     }
                 }
             }
+        }
+        if (locked) {
+            if (!note.isNullOrEmpty()) Text(note, style = body(14, color = p.ink))
+            return@Column
         }
         OutlineButton(
             app.t("worksAddPhotos"),
@@ -310,16 +325,22 @@ fun PortfolioScreen() {
     val app = LocalApp.current
     val flow = LocalFlow.current
     val scope = rememberCoroutineScope()
-    val demo = app.capture == PortfolioDemo.PROFILE
+    val demo = app.capture == PortfolioDemo.PROFILE || app.capture == PortfolioDemo.LOCKED
     var services by remember { mutableStateOf(emptyList<CatalogService>()) }
     var draft by remember { mutableStateOf(PortfolioDraft()) }
     var request by remember { mutableStateOf<PortfolioRequest?>(null) }
     var busy by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }
+    var locked by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         val catalog = attempt { app.repository.serviceCatalog() }.orEmpty()
-        if (demo) {
+        if (app.capture == PortfolioDemo.LOCKED) {
+            services = catalog.filter { it.id == "plomberie" || it.id == "electricite" }
+            val demoDraft = PortfolioDemo.draft(listOf("plomberie"))
+            draft = demoDraft.copy(sent = demoDraft.portfolio(listOf("plomberie")))
+            locked = true
+        } else if (demo) {
             services = catalog.filter { it.id == "plomberie" || it.id == "electricite" }
             request = PortfolioRequest(listOf("electricite"), java.time.LocalDate.now())
             // La plomberie a déjà été approuvée : les clients la voient.
@@ -331,9 +352,10 @@ fun PortfolioScreen() {
             services = catalog.filter { it.id in chosen }
             draft = PortfolioDraft.of(attempt { app.repository.portfolio() } ?: Portfolio())
             request = attempt { app.repository.portfolioRequest() }
+            locked = !Portfolio.isEditable(attempt { app.repository.profile() }?.providerStatus, request != null)
         }
     }
-    FlowScaffold(app.t("myWorks"), onBack = { flow.back() }, bottom = {
+    FlowScaffold(app.t("myWorks"), onBack = { flow.back() }, bottom = if (locked) null else ({
         PrimaryButton(app.t("worksSave"), {
             busy = true
             failed = false
@@ -343,6 +365,7 @@ fun PortfolioScreen() {
                     app.repository.sendPortfolio(draft.portfolio(services.map { it.id }))
                     request = null
                     saved = true
+                    locked = !Portfolio.isEditable(attempt { app.repository.profile() }?.providerStatus, false)
                     app.dataChanged()
                 } catch (cancel: CancellationException) {
                     throw cancel
@@ -353,12 +376,13 @@ fun PortfolioScreen() {
                 }
             }
         }, enabled = !busy && !demo, loading = busy)
-    }) {
+    })) {
         request?.let { asked ->
             val names = asked.services.mapNotNull { id -> services.firstOrNull { it.id == id }?.label(app.language) }
             InfoNote(app.t("worksRequested", "services" to names.joinToString(", ")), icon = Icons.Rounded.MarkEmailUnread)
         }
-        PortfolioEditor(services, draft) { draft = it }
+        if (locked) InfoNote(app.t("worksLocked"), icon = Icons.Rounded.HourglassTop)
+        PortfolioEditor(services, draft, locked) { draft = it }
         if (saved) InfoNote(app.t("worksSaved"), icon = Icons.Rounded.CheckCircle)
         if (failed) Text(app.t("actionFailed"), style = body(14, color = Nexis.danger))
         InfoNote(app.t("worksDemoNote"), NoteKind.VIOLET)
@@ -367,11 +391,12 @@ fun PortfolioScreen() {
 
 // --- Démonstration (captures de la CI) ---
 
-/** `become-portfolio` (étape de la demande) et `portfolio` (profil, avec une
- * demande de l'équipe). */
+/** `become-portfolio` (étape de la demande), `portfolio` (profil, avec une
+ * demande de l'équipe) et `portfolio-locked` (figé pendant la vérification). */
 object PortfolioDemo {
     const val STEP = "become-portfolio"
     const val PROFILE = "portfolio"
+    const val LOCKED = "portfolio-locked"
 
     /** Photos dessinées par l'app (pas de vraies photos). */
     fun draft(services: List<String>): PortfolioDraft {

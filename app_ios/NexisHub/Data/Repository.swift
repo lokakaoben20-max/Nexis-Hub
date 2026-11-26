@@ -65,7 +65,9 @@ protocol NexisRepository: AnyObject {
     func portfolioRequest() async throws -> PortfolioRequest?
     /// Remplace les preuves envoyées (prestataire en vérification ou
     /// vérifié). Répond aussi à la demande de l'équipe, s'il y en a une. Un
-    /// service modifié repasse par l'équipe avant d'être remontré.
+    /// service modifié repasse par l'équipe avant d'être remontré. Refusé
+    /// (`portfolio_locked`) pendant la vérification du prestataire, sauf
+    /// demande de l'équipe.
     func sendPortfolio(_ portfolio: Portfolio) async throws
 
     // --- Client : devis, paiement, suivi, litige ---
@@ -426,6 +428,9 @@ final class DemoRepository: NexisRepository {
         guard try await profile().providerStatus != nil, portfolio.isValid(services: Set(chosenServices)) else {
             throw NexisRefusal(code: "portfolio_invalid")
         }
+        guard Portfolio.isEditable(status: try await profile().providerStatus, requested: pendingPortfolioRequest != nil) else {
+            throw NexisRefusal(code: "portfolio_locked")
+        }
         try await Task.sleep(for: .seconds(1))
         sentPortfolio = portfolio.resubmitted(over: sentPortfolio)
         pendingPortfolioRequest = nil
@@ -443,6 +448,13 @@ final class DemoRepository: NexisRepository {
     /// Démonstration et tests : l'équipe a vérifié les diplômes.
     func demoVerifyCertificates() {
         sentPortfolio.certificatesVerified = !sentPortfolio.certificates.isEmpty
+    }
+
+    /// Démonstration et tests : l'équipe a accepté le prestataire.
+    func demoVerifyProvider() {
+        let current = registered[activePhone] ?? sampleProfile
+        store(Profile(firstName: current.firstName, lastName: current.lastName, phone: current.phone,
+                      commune: current.commune, providerStatus: .verified, termsVersion: current.termsVersion))
     }
 
     /// Démonstration et tests : l'équipe demande des preuves.

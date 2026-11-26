@@ -138,7 +138,8 @@ enum class Capture(
 
     // Preuves de réalisations (voir PortfolioDemo).
     BECOME_PORTFOLIO(true, tab = 3),
-    PORTFOLIO(true, tab = 3);
+    PORTFOLIO(true, tab = 3),
+    PORTFOLIO_LOCKED(true, tab = 3);
 
     /** Le nom passé par le script de captures (« become-identity »). */
     val code: String get() = name.lowercase().replace('_', '-')

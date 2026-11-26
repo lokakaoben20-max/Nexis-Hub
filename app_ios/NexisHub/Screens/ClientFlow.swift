@@ -48,7 +48,7 @@ enum MissionRoute: Hashable {
         case "help": return [.help]
         case "legal": return [.legal]
         case "become", PortfolioDemo.step: return [.becomeProvider]
-        case PortfolioDemo.profile: return [.portfolio]
+        case PortfolioDemo.profile, PortfolioDemo.locked: return [.portfolio]
         case let capture? where IdentityDemo.captures.contains(capture): return [.becomeProvider]
         default: return nil
         }
@@ -59,7 +59,7 @@ enum MissionRoute: Hashable {
 
     /// Captures qui se font depuis l'onglet Profil.
     static let profileCaptures: Set<String> = Set(["info", "devices", "alerts", "help", "legal", "become",
-                                                   PortfolioDemo.step, PortfolioDemo.profile])
+                                                   PortfolioDemo.step, PortfolioDemo.profile, PortfolioDemo.locked])
         .union(IdentityDemo.captures)
 }
 

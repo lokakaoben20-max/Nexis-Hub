@@ -2062,6 +2062,11 @@
   "fr": "Aperçu : les photos restent sur ce téléphone et ne sont envoyées nulle part.",
   "ln": "Aperçu : ba foto etikalaka na telefone oyo, etindamaka esika moko te."
  },
+ "worksLocked": {
+  "en": "The NexisHub team is checking your profile. Your past work stays as you sent it until the team decides; then you can change it.",
+  "fr": "L'équipe NexisHub vérifie votre profil. Vos réalisations restent comme vous les avez envoyées jusqu'à sa décision, puis vous pourrez les modifier.",
+  "ln": "Équipe ya NexisHub ezali kotala profil na yo. Misala na yo ekotikala ndenge otindaki yango kino équipe ekozwa mokano, sima okoki kobongola yango."
+ },
  "worksNote": {
   "en": "What you did, where and when",
   "fr": "Ce que vous avez fait, où et quand",

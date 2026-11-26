@@ -427,6 +427,25 @@ final class PortfolioTests: XCTestCase {
         } catch let refusal as NexisRefusal {
             XCTAssertEqual(refusal.code, "portfolio_invalid")
         }
+        // Pendant la vérification, sans demande de l'équipe : figé.
+        do {
+            try await repo.sendPortfolio(Portfolio(works: [work("plomberie")]))
+            XCTFail("refus attendu")
+        } catch let refusal as NexisRefusal {
+            XCTAssertEqual(refusal.code, "portfolio_locked")
+        }
+        // Après l'accord de l'équipe : de nouveau modifiable.
+        repo.demoVerifyProvider()
+        try await repo.sendPortfolio(Portfolio(works: [work("plomberie")]))
+        let photos = try await repo.portfolio().works.first?.photos.count
+        XCTAssertEqual(photos, 1)
+    }
+
+    func testWorksAreFrozenWhileTheTeamChecksTheProvider() {
+        XCTAssertFalse(Portfolio.isEditable(status: nil, requested: false))
+        XCTAssertFalse(Portfolio.isEditable(status: .pending, requested: false))
+        XCTAssertTrue(Portfolio.isEditable(status: .pending, requested: true))
+        XCTAssertTrue(Portfolio.isEditable(status: .verified, requested: false))
     }
 
     func testClientsSeeOnlyApprovedWorksAndNeverCertificates() {
@@ -481,7 +500,8 @@ final class PortfolioTests: XCTestCase {
         repo.demoReview(serviceId: "plomberie", .approved)
         sent = try await repo.portfolio()
         XCTAssertEqual(sent.works.first?.review, .approved)
-        // Renvoyé sans changement : toujours approuvé.
+        // Renvoyé sans changement, après l'accord du prestataire : toujours approuvé.
+        repo.demoVerifyProvider()
         try await repo.sendPortfolio(Portfolio(works: [work("plomberie", photos: 2)]))
         sent = try await repo.portfolio()
         XCTAssertEqual(sent.works.first?.review, .approved)

@@ -206,7 +206,7 @@ sealed interface MissionRoute {
             "help" -> listOf(Help)
             "legal" -> listOf(Legal)
             "become", PortfolioDemo.STEP -> listOf(BecomeProvider)
-            PortfolioDemo.PROFILE -> listOf(Works)
+            PortfolioDemo.PROFILE, PortfolioDemo.LOCKED -> listOf(Works)
             in IdentityDemo.codes -> listOf(BecomeProvider)
             else -> null
         }

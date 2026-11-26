@@ -21,6 +21,7 @@ import com.nexishub.app.data.Portfolio
 import com.nexishub.app.data.SelfieScript
 import com.nexishub.app.data.Texts
 import com.nexishub.app.data.ProofReview
+import com.nexishub.app.data.ProviderStatus
 import com.nexishub.app.data.WorkProof
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -371,6 +372,7 @@ class AccountTest {
         assertEquals(com.nexishub.app.Capture.BECOME_WRONG_PAGE, com.nexishub.app.Capture.from("become-wrong-page"))
         assertEquals(com.nexishub.app.Capture.BECOME_PORTFOLIO, com.nexishub.app.Capture.from("become-portfolio"))
         assertEquals(com.nexishub.app.Capture.PORTFOLIO, com.nexishub.app.Capture.from("portfolio"))
+        assertEquals(com.nexishub.app.Capture.PORTFOLIO_LOCKED, com.nexishub.app.Capture.from("portfolio-locked"))
         assertEquals(com.nexishub.app.Capture.SHOWCASE, com.nexishub.app.Capture.from("showcase"))
         assertEquals(com.nexishub.app.Capture.TRACKING, com.nexishub.app.Capture.from("tracking"))
     }
@@ -534,6 +536,21 @@ class PortfolioTest {
         // Un service qui n'est pas dans la demande est refusé.
         assertEquals("portfolio_invalid", runCatching { repo.sendPortfolio(Portfolio(listOf(work("coiffure")))) }
             .exceptionOrNull()?.let { (it as NexisRefusal).code })
+        // Pendant la vérification, sans demande de l'équipe : figé.
+        assertEquals("portfolio_locked", runCatching { repo.sendPortfolio(Portfolio(listOf(work("plomberie")))) }
+            .exceptionOrNull()?.let { (it as NexisRefusal).code })
+        // Après l'accord de l'équipe : de nouveau modifiable.
+        repo.demoVerifyProvider()
+        repo.sendPortfolio(Portfolio(listOf(work("plomberie"))))
+        assertEquals(1, repo.portfolio().works.first().photos.size)
+    }
+
+    @Test
+    fun worksAreFrozenWhileTheTeamChecksTheProvider() {
+        assertFalse(Portfolio.isEditable(null, false))
+        assertFalse(Portfolio.isEditable(ProviderStatus.PENDING, false))
+        assertTrue(Portfolio.isEditable(ProviderStatus.PENDING, true))
+        assertTrue(Portfolio.isEditable(ProviderStatus.VERIFIED, false))
     }
     @Test
     fun clientsSeeOnlyApprovedWorksAndNeverCertificates() {
@@ -582,7 +599,8 @@ class PortfolioTest {
         assertFalse(repo.portfolio().certificatesVerified)
         repo.demoReview("plomberie", ProofReview.APPROVED)
         assertEquals(ProofReview.APPROVED, repo.portfolio().works.first().review)
-        // Renvoyé sans changement : toujours approuvé.
+        // Renvoyé sans changement, après l'accord du prestataire : toujours approuvé.
+        repo.demoVerifyProvider()
         repo.sendPortfolio(Portfolio(listOf(work("plomberie", photos = 2))))
         assertEquals(ProofReview.APPROVED, repo.portfolio().works.first().review)
     }

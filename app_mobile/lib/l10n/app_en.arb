@@ -442,6 +442,7 @@
   "worksRequested": "The NexisHub team is asking for photos of your work: {services}.",
   "worksSave": "Send to the team",
   "worksSaved": "Sent. The NexisHub team will look at them.",
+  "worksLocked": "The NexisHub team is checking your profile. Your past work stays as you sent it until the team decides; then you can change it.",
   "worksReviewPending": "Waiting for the team",
   "worksReviewApproved": "Visible to clients",
   "worksReviewRejected": "Declined by the team: send other photos",

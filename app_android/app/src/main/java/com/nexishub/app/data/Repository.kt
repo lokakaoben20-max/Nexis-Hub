@@ -89,7 +89,9 @@ interface NexisRepository {
 
     /** Remplace les preuves envoyées (prestataire en vérification ou vérifié).
      * Répond aussi à la demande de l'équipe, s'il y en a une. Un service
-     * modifié repasse par l'équipe avant d'être remontré. */
+     * modifié repasse par l'équipe avant d'être remontré. Refusé
+     * (`portfolio_locked`) pendant la vérification du prestataire, sauf
+     * demande de l'équipe. */
     suspend fun sendPortfolio(portfolio: Portfolio)
 
     // --- Client : devis, paiement, suivi, litige ---
@@ -418,9 +420,15 @@ class DemoRepository(private val now: Instant = Instant.now()) : NexisRepository
 
     override suspend fun sendPortfolio(portfolio: Portfolio) {
         if (profile().providerStatus == null || !portfolio.isValid(chosenServices.toSet())) throw NexisRefusal("portfolio_invalid")
+        if (!Portfolio.isEditable(profile().providerStatus, pendingPortfolioRequest != null)) throw NexisRefusal("portfolio_locked")
         kotlinx.coroutines.delay(1_000)
         sentPortfolio = portfolio.resubmitted(sentPortfolio)
         pendingPortfolioRequest = null
+    }
+
+    /** Démonstration et tests : l'équipe a accepté le prestataire. */
+    fun demoVerifyProvider() {
+        store(profile = (registered[activePhone] ?: sampleProfile).copy(providerStatus = ProviderStatus.VERIFIED))
     }
 
     /** Démonstration et tests : la décision de l'équipe sur un service. */

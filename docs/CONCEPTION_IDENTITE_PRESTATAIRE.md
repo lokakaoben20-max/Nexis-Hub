@@ -162,6 +162,10 @@ par NexisHub »).
   par la boîte d'envoi (app, et Telegram ou WhatsApp quand ils seront
   branchés) ; la demande est close par le prochain envoi. Une demande ne
   bloque rien toute seule : c'est l'équipe qui décide.
+- **Figées pendant la vérification du prestataire** : `PUT …/work-proofs`
+  refusé (`409 portfolio_locked`) tant que la demande prestataire est en
+  attente, sauf demande ouverte de l'équipe (et seulement pour les services
+  demandés) ; de nouveau permis une fois le prestataire accepté.
 - **Revue par l'équipe** : colonne `review` sur chaque service
   (`pending`, `approved`, `rejected`), `reviewed_by`, `reviewed_at`, raison
   si refus ; `certificates_verified_at` sur le compte. `POST
@@ -205,7 +209,8 @@ fichiers remplacés effacés, demande de l'équipe close par l'envoi ; la route
 du client ne renvoie que l'approuvé (jamais un diplôme, un service en attente
 ou refusé), seulement au client qui a reçu le devis ; un service modifié
 repasse en attente et disparaît du client ; une décision envoyée par l'app
-est ignorée.
+est ignorée ; un envoi pendant la vérification sans demande de l'équipe est
+refusé.
 
 ## 7. Décisions attendues de Ben
 

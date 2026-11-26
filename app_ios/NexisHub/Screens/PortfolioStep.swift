@@ -81,13 +81,18 @@ struct PortfolioEditor: View {
     @Environment(AppModel.self) private var app
     let services: [CatalogService]
     @Binding var draft: PortfolioDraft
+    /// Figé pendant la vérification du prestataire : on montre ce qui a été
+    /// envoyé, sans rien pouvoir changer.
+    var locked = false
     @State private var failed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            InfoNote(text: app.t("worksPrivacy"), systemImage: "lock.shield.fill")
-            ForEach(services) { service in
-                ProofCard(title: service.name(app.language), status: status(draft.review(for: service.id)),
+            if !locked {
+                InfoNote(text: app.t("worksPrivacy"), systemImage: "lock.shield.fill")
+            }
+            ForEach(services.filter { !locked || !(draft.photos[$0.id] ?? []).isEmpty }) { service in
+                ProofCard(locked: locked, title: service.name(app.language), status: status(draft.review(for: service.id)),
                           maxPhotos: Portfolio.maxPhotos,
                           photos: Binding(get: { draft.photos[service.id] ?? [] }, set: { draft.photos[service.id] = $0 }),
                           note: Binding(get: { draft.notes[service.id] ?? "" }, set: { draft.notes[service.id] = $0 }),
@@ -95,13 +100,15 @@ struct PortfolioEditor: View {
                     ServiceTile(service, size: 38)
                 }
             }
-            ProofCard(title: app.t("worksCertificates"), subtitle: app.t("worksCertificatesSub"),
+            if !locked || !draft.certificates.isEmpty {
+            ProofCard(locked: locked, title: app.t("worksCertificates"), subtitle: app.t("worksCertificatesSub"),
                       status: draft.certificatesVerified ? ProofStatus(tone: .ok, icon: "checkmark.seal.fill", text: app.t("worksCertificatesVerified")) : nil,
                       maxPhotos: Portfolio.maxCertificates, photos: $draft.certificates, note: nil, failed: $failed) {
                 Image(systemName: "graduationcap").font(.system(size: 18)).foregroundStyle(Nexis.softInk)
                     .frame(width: 38, height: 38)
                     .background(Nexis.soft, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .accessibilityHidden(true)
+            }
             }
             if failed {
                 Text(app.t("worksPhotoFailed")).font(.body(14)).foregroundStyle(Nexis.danger)
@@ -128,6 +135,7 @@ struct ProofStatus {
 /// Les photos d'un service (ou les attestations), choisies dans la galerie.
 private struct ProofCard<Leading: View>: View {
     @Environment(AppModel.self) private var app
+    var locked = false
     let title: String
     var subtitle: String?
     var status: ProofStatus?
@@ -164,6 +172,7 @@ private struct ProofCard<Leading: View>: View {
                                 .frame(width: 76, height: 76)
                                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                                 .overlay(alignment: .topTrailing) {
+                                    if !locked {
                                     Button {
                                         photos.removeAll { $0.id == photo.id }
                                     } label: {
@@ -174,11 +183,17 @@ private struct ProofCard<Leading: View>: View {
                                             .padding(4)
                                     }
                                     .accessibilityLabel(app.t("worksRemove"))
+                                    }
                                 }
                         }
                     }
                 }
             }
+            if locked {
+                if let note, !note.wrappedValue.isEmpty {
+                    Text(note.wrappedValue).font(.body(14.5)).foregroundStyle(Nexis.ink)
+                }
+            } else {
             PhotosPicker(selection: $picked, maxSelectionCount: max(maxPhotos - photos.count, 1),
                          selectionBehavior: .ordered, matching: .images) {
                 Label(app.t("worksAddPhotos"), systemImage: "photo.on.rectangle.angled").font(.body(14.5, .semibold))
@@ -197,6 +212,7 @@ private struct ProofCard<Leading: View>: View {
                             if text.count > Portfolio.maxNote { note.wrappedValue = String(text.prefix(Portfolio.maxNote)) }
                         }
                 }
+            }
             }
         }
         .nxCard(padding: 14)
@@ -229,11 +245,28 @@ struct PortfolioView: View {
     @State private var services: [CatalogService] = []
     @State private var draft = PortfolioDraft()
     @State private var request: PortfolioRequest?
+    @State private var locked = false
     @State private var busy = false
     @State private var failed = false
     @State private var saved = false
 
     var body: some View {
+        Group {
+            if locked {
+                form
+            } else {
+                form.bottomActions {
+                    Button { Task { await send() } } label: { BusyLabel(text: app.t("worksSave"), busy: busy) }
+                        .nxProminentButton()
+                        .disabled(busy || app.capture == PortfolioDemo.profile)
+                }
+            }
+        }
+        .flowTitle(app.t("myWorks"))
+        .task { await load() }
+    }
+
+    private var form: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 if let request {
@@ -241,7 +274,10 @@ struct PortfolioView: View {
                     InfoNote(text: app.t("worksRequested", ["services": names.joined(separator: ", ")]),
                              systemImage: "envelope.badge.fill")
                 }
-                PortfolioEditor(services: services, draft: $draft)
+                if locked {
+                    InfoNote(text: app.t("worksLocked"), systemImage: "hourglass")
+                }
+                PortfolioEditor(services: services, draft: $draft, locked: locked)
                 if saved {
                     InfoNote(text: app.t("worksSaved"), systemImage: "checkmark.circle.fill")
                 }
@@ -252,13 +288,6 @@ struct PortfolioView: View {
             }
             .flowScreen()
         }
-        .flowTitle(app.t("myWorks"))
-        .bottomActions {
-            Button { Task { await send() } } label: { BusyLabel(text: app.t("worksSave"), busy: busy) }
-                .nxProminentButton()
-                .disabled(busy || app.capture == PortfolioDemo.profile)
-        }
-        .task { await load() }
     }
 
     private func load() async {
@@ -273,10 +302,19 @@ struct PortfolioView: View {
             draft.sent = sent
             return
         }
+        if app.capture == PortfolioDemo.locked {
+            services = catalog.filter { $0.id == "plomberie" || $0.id == "electricite" }
+            draft = PortfolioDemo.draft(services: ["plomberie"])
+            draft.sent = draft.portfolio(services: ["plomberie"])
+            locked = true
+            return
+        }
         let chosen = (try? await app.repository.providerServices()) ?? []
         services = catalog.filter { chosen.contains($0.id) }
         draft = PortfolioDraft((try? await app.repository.portfolio()) ?? Portfolio())
         request = try? await app.repository.portfolioRequest()
+        let status = try? await app.repository.profile().providerStatus
+        locked = !Portfolio.isEditable(status: status, requested: request != nil)
     }
 
     private func send() async {
@@ -287,6 +325,8 @@ struct PortfolioView: View {
             try await app.repository.sendPortfolio(draft.portfolio(services: services.map(\.id)))
             request = nil
             saved = true
+            let status = try? await app.repository.profile().providerStatus
+            locked = !Portfolio.isEditable(status: status, requested: false)
             app.dataChanged()
         } catch {
             failed = true
@@ -297,11 +337,12 @@ struct PortfolioView: View {
 
 // MARK: - Démonstration (captures de la CI)
 
-/// `become-portfolio` (étape de la demande) et `portfolio` (profil, avec une
-/// demande de l'équipe).
+/// `become-portfolio` (étape de la demande), `portfolio` (profil, avec une
+/// demande de l'équipe) et `portfolio-locked` (figé pendant la vérification).
 enum PortfolioDemo {
     static let step = "become-portfolio"
     static let profile = "portfolio"
+    static let locked = "portfolio-locked"
 
     /// Photos dessinées par l'app (pas de vraies photos).
     @MainActor

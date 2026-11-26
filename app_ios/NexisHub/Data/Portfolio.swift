@@ -68,6 +68,16 @@ struct Portfolio: Equatable {
         }, certificates: certificates, certificatesVerified: certificatesVerified)
     }
 
+    /// Pendant que l'équipe vérifie le prestataire, ses réalisations sont
+    /// figées (décision de Ben, 2026-11-26) : l'équipe regarde ce qui a été
+    /// envoyé avec la demande. Seule une demande de l'équipe les rouvre.
+    /// Après l'accord, elles redeviennent modifiables (un service modifié
+    /// repasse par l'équipe).
+    static func isEditable(status: ProviderStatus?, requested: Bool) -> Bool {
+        guard let status else { return false }
+        return status == .verified || requested
+    }
+
     /// Ce que le serveur garde quand le prestataire renvoie ses preuves : un
     /// service inchangé garde la décision de l'équipe ; un service nouveau ou
     /// modifié repasse en attente (il disparaît des clients jusqu'au nouvel

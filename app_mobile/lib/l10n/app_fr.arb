@@ -845,6 +845,7 @@
   },
   "worksSave": "Envoyer à l'équipe",
   "worksSaved": "C'est envoyé. L'équipe NexisHub les regardera.",
+  "worksLocked": "L'équipe NexisHub vérifie votre profil. Vos réalisations restent comme vous les avez envoyées jusqu'à sa décision, puis vous pourrez les modifier.",
   "worksReviewPending": "En attente de l'équipe",
   "worksReviewApproved": "Visible par les clients",
   "worksReviewRejected": "Refusé par l'équipe : envoyez d'autres photos",

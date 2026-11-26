@@ -159,6 +159,13 @@ seulement « Diplôme vérifié par NexisHub ».
   si c'est le cas, « Diplôme vérifié par NexisHub ». Ce que voit le client
   vient de `Portfolio.showcase` (`ProviderShowcase`) : seulement l'approuvé,
   jamais un diplôme. Testé des deux côtés.
+- **Figées pendant la vérification du prestataire** (choix de Ben, même
+  jour) : tant que le profil est « en vérification », « Mes réalisations »
+  montre ce qui a été envoyé, sans ajout, retrait ni phrase modifiable, et
+  sans bouton d'envoi (« L'équipe NexisHub vérifie votre profil… »). Seule
+  une demande de l'équipe rouvre l'écran. Après l'accord, elles redeviennent
+  modifiables. Règle `Portfolio.isEditable`, refus `portfolio_locked` dans
+  le dépôt, testés des deux côtés ; capture `portfolio-locked`.
 - Conseil affiché au prestataire : éviter les visages, les adresses et les
   plaques sur les photos.
 - Dépôt de données : `applyAsProvider(… portfolio:)`, `providerServices()`,
