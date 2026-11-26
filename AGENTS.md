@@ -11,7 +11,8 @@ a été fusionné ici).
 - Le bot et la Mini App utilisent Redis pour les états de conversation. Le dépôt fournit Postgres 17 et Redis 7 dans `docker-compose.yml`.
 - Les migrations du backend sont gérées par Alembic. Toujours exécuter `python -m alembic upgrade head` avant de lancer le backend.
 - Les tâches planifiées n'utilisent plus Celery : `backend/app/taches.py` porte le calendrier, lancé localement avec `python -m backend.app.taches planificateur`.
-- Les flows Telegram sont extraits dans `telegram_bot/` et chargés dans le même processus que `main.py`. Il n'existe pas encore de processus `whatsapp_bot/`, malgré le support WhatsApp déjà présent dans certaines routes du backend.
+- Les flows Telegram sont extraits dans `telegram_bot/` et chargés dans le même processus que `main.py`.
+- `whatsapp_bot/` (étape 4 du plan WhatsApp) est un processus séparé (`python -m whatsapp_bot`, rôle Docker `whatsapp`) : webhook Meta signé, chaque message traité une fois (Redis + idempotence du backend), inscription client, menu, refus prestataire. Il ne parle au backend que par son API ; parcours mission, devis, paiement et suivi : étapes 5 à 7. Tests : `whatsapp_bot/tests/` avec le faux serveur Meta (`whatsapp_bot/fake_meta.py`).
 
 ### Démarrage local — état du code au 2026-11-20
 
@@ -223,7 +224,7 @@ Toujours lancer depuis la racine du dépôt (`messages` y est importé).
 - Redis conserve les états du bot et les updates webhook.
 - Les tâches périodiques sont pilotées par `backend/app/taches.py`, sans Celery ni worker/beat Celery.
 - Les flows Telegram (inscription, mission/devis, paiement/lifecycle, admin, tableau de bord) sont extraits dans `telegram_bot/` mais tournent dans le même processus que `main.py`.
-- Le backend possède des routes explicitement ouvertes au canal WhatsApp et une garde par canal. Le dépôt ne contient pas encore de service `whatsapp_bot/` ni de webhook Meta opérationnel.
+- Le backend possède des routes explicitement ouvertes au canal WhatsApp et une garde par canal. Le service `whatsapp_bot/` reçoit le webhook Meta (inscription, menu, refus prestataire) ; il n'est encore branché sur aucun compte Meta réel.
 
 ## Avant toute modification
 
@@ -604,9 +605,9 @@ La référence produit reste [`docs/ARCHITECTURE_WHATSAPP.md`](docs/ARCHITECTURE
 
 - Les comptes Nexis, les profils par compte, les wallets par compte et les rôles admin persistés dans `admin_roles` sont dans le backend PostgreSQL.
 - Le backend résout l'acteur depuis son canal et son identifiant. La clé de service identifie le canal ; les routes WhatsApp sont ouvertes explicitement et les écritures multicanales sont protégées par idempotence.
-- Les routes client WhatsApp sont présentes côté backend, dont `POST /api/whatsapp/client`. Le dépôt n'a pas de service `whatsapp_bot/` ni d'exécution de webhook Meta : l'expérience WhatsApp complète reste à construire.
+- Les routes client WhatsApp sont présentes côté backend, dont `POST /api/whatsapp/client`. Le service `whatsapp_bot/` (étape 4) reçoit le webhook Meta signé et gère inscription, menu et refus prestataire ; mission, devis, paiement et suivi restent à construire (étapes 5 à 7).
 - Les tâches périodiques tournent via `python -m backend.app.taches planificateur`; Celery n'est plus utilisé.
 - Notifications : tout message à une autre personne que celle qui agit passe par la table `notifications` (`backend/app/notifications.py`), écrite avec l'événement par `backend/app/evenements.py`. Ne jamais envoyer directement depuis le bot ou le backend : un test l'interdit. Expéditeur Telegram : `backend/app/notify.py` ; expéditeur WhatsApp et statuts Meta : étape 8.
 - Le code ne lit pas `NEXIS_PUBLIC_URL` : `MINI_APP_URL` et `WEBHOOK_URL` restent deux réglages distincts. Le tunnel Cloudflare de test `nexishub.dpdns.org` n'est pas encore exposé comme configuration unique.
 
-Avant de poursuivre WhatsApp : construire et exploiter le service de canal, puis brancher l'expéditeur WhatsApp sur la table `notifications` et la configuration publique commune. Garder cette note et la section d'état au début du fichier synchronisées avec le code.
+Avant de poursuivre WhatsApp : étendre le service de canal (`whatsapp_bot/`, étapes 5 à 7), puis brancher l'expéditeur WhatsApp sur la table `notifications` et la configuration publique commune. Garder cette note et la section d'état au début du fichier synchronisées avec le code.

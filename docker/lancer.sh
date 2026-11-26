@@ -17,6 +17,9 @@ case "$role" in
   bot)
     export BOT_RUN_MODE=webhook WEBHOOK_LISTEN_HOST=0.0.0.0 WEBHOOK_LISTEN_PORT="${PORT:-8002}"
     exec python main.py ;;
+  whatsapp)
+    export WHATSAPP_LISTEN_HOST=0.0.0.0 WHATSAPP_LISTEN_PORT="${PORT:-8003}"
+    exec python -m whatsapp_bot ;;
   webhook-setup)
     exec python -m telegram_bot.webhook_setup ;;
   migration)
@@ -30,6 +33,6 @@ case "$role" in
   controle-registre)
     exec python -m backend.app.controle_registre "$@" ;;
   *)
-    echo "rôle inconnu : '$role' (backend, miniapp, bot, webhook-setup, migration, tache <nom>, planificateur, calendrier, controle-registre)" >&2
+    echo "rôle inconnu : '$role' (backend, miniapp, bot, whatsapp, webhook-setup, migration, tache <nom>, planificateur, calendrier, controle-registre)" >&2
     exit 64 ;;
 esac
