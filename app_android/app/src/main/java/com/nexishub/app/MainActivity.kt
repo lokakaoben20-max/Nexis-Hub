@@ -79,7 +79,7 @@ class MainActivity : FragmentActivity() {
                 security.presetForCapture("482916", biometricsOn = true)
                 app.locked = true
             }
-            else -> if (capture.signedIn) security.presetForCapture("482916", biometricsOn = true)
+            else -> if (capture?.signedIn == true) security.presetForCapture("482916", biometricsOn = true)
         }
         setContent {
             NexisTheme {

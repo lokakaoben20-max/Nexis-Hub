@@ -85,7 +85,6 @@ import com.nexishub.app.ui.PrimaryButton
 import com.nexishub.app.ui.body
 import com.nexishub.app.ui.nexisCard
 import com.nexishub.app.ui.title
-import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -97,7 +96,7 @@ import kotlinx.coroutines.launch
 
 // Création du code
 
-private enum ProtectPhase { CREATE, CONFIRM, BIOMETRICS, DONE }
+private enum class ProtectPhase { CREATE, CONFIRM, BIOMETRICS, DONE }
 
 @Composable
 fun ProtectScreen() {
@@ -264,8 +263,12 @@ fun LockScreen() {
 
     suspend fun tryBiometrics() {
         when (security.unlockWithBiometrics(activity, app.t("lockPrompt"), app.t("lockUseCode"))) {
-            BiometricResult.OK -> app.locked = false
-            BiometricResult.CHANGED -> message = app.t("lockBioChanged", "method" to method.replaceFirstChar { it.uppercase() })
+            BiometricResult.OK -> {
+                app.locked = false
+            }
+            BiometricResult.CHANGED -> {
+                message = app.t("lockBioChanged", "method" to method.replaceFirstChar { it.uppercase() })
+            }
             BiometricResult.FAILED -> Unit
         }
     }
@@ -318,7 +321,9 @@ fun LockScreen() {
                     message = app.plural("lockWrong", result.left)
                     scope.launch { shake.shakeOnce() }
                 }
-                AppSecurity.Check.Blocked -> blocked = true
+                AppSecurity.Check.Blocked -> {
+                    blocked = true
+                }
             }
         }
         TextButton(onClick = { forgot = true }, modifier = Modifier.padding(top = 8.dp, bottom = 12.dp).heightIn(min = 48.dp)) {
@@ -368,7 +373,9 @@ fun GateSheet(gate: MoneyGate) {
     suspend fun tryBiometrics() {
         when (security.unlockWithBiometrics(activity, gate.reason, app.t("lockUseCode"))) {
             BiometricResult.OK -> app.finishGate(true)
-            BiometricResult.CHANGED -> message = app.t("lockBioChanged", "method" to method.replaceFirstChar { it.uppercase() })
+            BiometricResult.CHANGED -> {
+                message = app.t("lockBioChanged", "method" to method.replaceFirstChar { it.uppercase() })
+            }
             BiometricResult.FAILED -> Unit
         }
     }
@@ -546,7 +553,9 @@ private fun ChangeCode(onBack: () -> Unit, onChanged: () -> Unit) {
                         phase = ChangePhase.CREATE
                     }
                     is AppSecurity.Check.Wrong -> refuse(app.plural("lockWrong", result.left))
-                    AppSecurity.Check.Blocked -> app.locked = true
+                    AppSecurity.Check.Blocked -> {
+                        app.locked = true
+                    }
                 }
                 ChangePhase.CREATE -> if (CodeRules.isWeak(code)) {
                     refuse(app.t("protectWeak"))
