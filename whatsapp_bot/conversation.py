@@ -32,7 +32,7 @@ import logging
 from dataclasses import dataclass, field
 
 from messages import get_message
-from whatsapp_bot import demande, devis, meta
+from whatsapp_bot import demande, devis, meta, paiement
 from whatsapp_bot.backend import Backend, Refused
 
 logger = logging.getLogger(__name__)
@@ -92,6 +92,7 @@ class Conversation:
         self.links = links
         self.missions = demande.MissionFlow(self)
         self.quotes = devis.QuotesFlow(self)
+        self.payments = paiement.PaymentFlow(self)
 
     async def handle(self, message: meta.Incoming, state: dict) -> Outcome:
         """Peut lever `BackendUnavailable` : l'appelant prévient la personne,
@@ -198,6 +199,10 @@ class Conversation:
             return Outcome([meta.Text(self._provider_refusal(lang))], {})
         if choice == MENU_HELP:
             return Outcome([meta.Text(text("wa_help", lang))], {})
+        if paiement.handles(choice):
+            # Un appui de paiement : comme un devis, il laisse la demande en
+            # cours de saisie.
+            return Outcome(*await self.payments.handle(message, lang, name))
         if devis.handles(choice, state):
             # Une demande, ou un devis (depuis « Mes demandes » ou une
             # notification) : la demande en cours de saisie, s'il y en a

@@ -124,6 +124,24 @@ class Backend:
     async def reject_quote(self, bsuid: str, key: str, quote_id: int) -> dict:
         return await self._call("POST", f"/api/bot/quotes/{quote_id}/reject", bsuid, key=key)
 
+    async def wallet(self, bsuid: str) -> dict:
+        return await self._call("GET", "/api/me/wallet", bsuid)
+
+    async def fund_wallet(self, bsuid: str, key: str, mission_id: int, *, quote_id: int) -> dict:
+        """Paie la mission par le wallet, sur son devis accepté : montant et
+        prestataire sont relus par le backend."""
+        body = {"method": "wallet", "quote_id": quote_id}
+        return await self._call("POST", f"/api/bot/missions/{mission_id}/fund", bsuid, body=body, key=key)
+
+    async def create_payment_intent(self, bsuid: str, key: str, mission_id: int, *, quote_id: int, phone: str, operator: str) -> dict:
+        """Demande de paiement Mobile Money envoyée au téléphone ; seule la
+        confirmation de l'agrégateur paie la mission."""
+        body = {"quote_id": quote_id, "phone": phone, "operator": operator}
+        return await self._call("POST", f"/api/bot/missions/{mission_id}/payment-intents", bsuid, body=body, key=key)
+
+    async def payment_intent(self, bsuid: str, intent_id: int) -> dict:
+        return await self._call("GET", f"/api/bot/payment-intents/{intent_id}", bsuid)
+
 
 def _is_refusal(answer) -> bool:
     """Un refus métier peut porter un code 5xx (ex. 503 `terms_unavailable`) :

@@ -1167,12 +1167,18 @@ def _money_response(db, mission: BotMission) -> dict:
     }
 
 
+_NOT_YOURS = frozenset({"not_mission_client", "not_mission_provider", "mission_not_found"})
+
+
 def _money_refusal(db, error: ledger.MoneyError) -> HTTPException:
     """Refus métier : code stable + état courant de la mission, que le bot
     recopie pour ne jamais afficher un état périmé."""
     # Id lu avant l'annulation : une mission créée par cette même demande
     # disparaît avec elle et l'objet n'est plus lisible ensuite.
     mission_id = error.mission.mission_id if error.mission is not None else None
+    if error.code in _NOT_YOURS:
+        # À qui n'est pas le client : rien de la mission (ni état, ni montants).
+        mission_id = None
     db.rollback()
     detail = {"code": error.code}
     if mission_id is not None:
@@ -1194,20 +1200,44 @@ def _money_call(operation):
 
 @router.post("/api/bot/missions/{mission_id}/fund")
 @needs_terms(conditions.CLIENT)
-def fund_mission(mission_id: int, payload: FundPayload, actor: Actor = Depends(current_actor)):
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+@idempotent
+def fund_mission(
+    mission_id: int,
+    payload: FundPayload,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    """Paiement par le wallet, sur le devis accepté. Le paiement et la clé
+    d'idempotence (WhatsApp) sont validés ensemble ; un second appui (autre
+    message) retrouve le même paiement (même référence) : jamais deux débits."""
     # Seul le wallet paie directement : un paiement Mobile Money n'existe que
     # confirmé par l'agrégateur (/payment-intents, CONCEPTION_MOBILE_MONEY.md).
     if payload.method != "wallet":
         raise HTTPException(status_code=400, detail={"code": "use_payment_intent"})
-    return _money_call(
-        lambda db: ledger.fund_mission(
-            db,
-            mission_id,
-            method=payload.method,
-            client_account_id=_actor_account(db, actor, missing="mission_not_found"),
-            quote_id=payload.quote_id,
-        )
-    )
+
+    def action(db) -> dict:
+        try:
+            mission = ledger.fund_mission(
+                db,
+                mission_id,
+                method=payload.method,
+                client_account_id=_actor_account(db, actor, missing="mission_not_found"),
+                quote_id=payload.quote_id,
+                commit=False,
+            )
+        except ledger.MoneyError as error:
+            raise _for_channel_refusal(actor, _money_refusal(db, error)) from error
+        return jsonable_encoder(_for_channel(actor, _money_response(db, mission)))
+
+    return _run_idempotent(request, response, actor, idempotency_key, payload.model_dump(), action)
+
+
+def _for_channel_refusal(actor: Actor, refusal: HTTPException) -> HTTPException:
+    refusal.detail = jsonable_encoder(_for_channel(actor, refusal.detail))
+    return refusal
 
 
 def _intent_to_dict(intent: PaymentIntent) -> dict:
@@ -1250,8 +1280,52 @@ def _intent_response(db, intent: PaymentIntent) -> dict:
 
 @router.post("/api/bot/missions/{mission_id}/payment-intents")
 @needs_terms(conditions.CLIENT)
-def create_payment_intent(mission_id: int, payload: PaymentIntentPayload, actor: Actor = Depends(current_actor)):
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+@idempotent
+def create_payment_intent(
+    mission_id: int,
+    payload: PaymentIntentPayload,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    """Ouvre l'intention de paiement Mobile Money (une seule ouverte par
+    mission) et demande à l'agrégateur d'envoyer la demande au téléphone.
+
+    L'appel à l'agrégateur a lieu après la transaction : la clé d'idempotence
+    (WhatsApp) est validée avec l'intention, avant l'appel, et désigne cette
+    intention. Un message rejoué ne relance donc jamais une demande : il rend
+    l'état actuel de la même intention (`Idempotent-Replayed: true`)."""
+    try:
+        key = idempotency.check_key(idempotency_key, required=actor.channel != ledger.TELEGRAM)
+    except idempotency.IdempotencyError as error:
+        raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
     with SessionLocal() as db:
+        remember = None
+        if key is not None:
+            request_fingerprint = idempotency.fingerprint(
+                route=f"{request.method} {request.scope['route'].path}",
+                channel=actor.channel,
+                actor_id=actor.external_id,
+                path_params=dict(request.path_params),
+                body=payload.model_dump(),
+            )
+            try:
+                replay = idempotency.replay_of(db, channel=actor.channel, key=key, request_fingerprint=request_fingerprint)
+            except idempotency.IdempotencyError as error:
+                db.rollback()
+                raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+            if replay is not None:
+                db.commit()  # rien écrit : libère le verrou de la clé
+                response.headers["Idempotent-Replayed"] = "true"
+                return _for_channel(actor, _intent_response(db, db.get(PaymentIntent, replay["intent_id"])))
+
+            def remember(intent: PaymentIntent) -> None:
+                idempotency.remember(
+                    db, channel=actor.channel, key=key, request_fingerprint=request_fingerprint, body={"intent_id": intent.id}
+                )
+
         try:
             intent = mobile_money.create_intent(
                 db,
@@ -1260,26 +1334,11 @@ def create_payment_intent(mission_id: int, payload: PaymentIntentPayload, actor:
                 operator=payload.operator,
                 client_account_id=_actor_account(db, actor, missing="mission_not_found"),
                 quote_id=payload.quote_id,
+                also=remember,
             )
         except ledger.MoneyError as error:
-            raise _money_refusal(db, error) from error
-        return _intent_response(db, intent)
-
-
-@router.post("/api/bot/payment-intents/{intent_id}/refresh")
-@terms_exempt
-def refresh_payment_intent(intent_id: int):
-    with SessionLocal() as db:
-        if db.get(PaymentIntent, intent_id) is None:
-            raise HTTPException(status_code=404, detail={"code": "intent_not_found"})
-
-        try:
-            # Même chemin que le webhook et la vérification de secours : le
-            # changement de statut écrit les notifications avec lui.
-            mobile_money.refresh_intent(db, intent_id)
-        except ledger.MoneyError as error:
-            raise _money_refusal(db, error) from error
-        return _intent_response(db, db.get(PaymentIntent, intent_id))
+            raise _for_channel_refusal(actor, _money_refusal(db, error)) from error
+        return _for_channel(actor, _intent_response(db, intent))
 
 
 def _payout_call(operation):
@@ -1432,6 +1491,41 @@ def list_payment_mismatches(limit: int = 20, actor: Actor = Depends(current_acto
                 for intent in intents
             ],
         }
+
+
+# Après /mismatches : sinon « mismatches » serait lu comme un numéro.
+@router.get("/api/bot/payment-intents/{intent_id}")
+@terms_exempt
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+def get_payment_intent(intent_id: int, actor: Actor = Depends(current_actor)):
+    """État d'un paiement Mobile Money, tel que le backend le connaît (le
+    webhook de l'agrégateur et la vérification de secours le tiennent à
+    jour). Lisible par le client qui paie et par l'admin ; pour tout autre,
+    le paiement n'existe pas."""
+    with SessionLocal() as db:
+        intent = db.get(PaymentIntent, intent_id)
+        if intent is not None and not _is_admin(actor):
+            if intent.account_id is None or intent.account_id != ledger.account_id_for(db, actor.channel, actor.external_id):
+                intent = None
+        if intent is None:
+            raise HTTPException(status_code=404, detail={"code": "intent_not_found"})
+        return _for_channel(actor, _intent_response(db, intent))
+
+
+@router.post("/api/bot/payment-intents/{intent_id}/refresh")
+@terms_exempt
+def refresh_payment_intent(intent_id: int):
+    with SessionLocal() as db:
+        if db.get(PaymentIntent, intent_id) is None:
+            raise HTTPException(status_code=404, detail={"code": "intent_not_found"})
+
+        try:
+            # Même chemin que le webhook et la vérification de secours : le
+            # changement de statut écrit les notifications avec lui.
+            mobile_money.refresh_intent(db, intent_id)
+        except ledger.MoneyError as error:
+            raise _money_refusal(db, error) from error
+        return _intent_response(db, db.get(PaymentIntent, intent_id))
 
 
 @router.post("/api/bot/payment-intents/{intent_id}/resolve-mismatch")

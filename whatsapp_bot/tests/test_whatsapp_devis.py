@@ -87,10 +87,12 @@ def test_accepting_a_quote_confirms_the_mission_and_rejects_the_others(bench):
             assert "Prestataire 8" in accepted[0].text
             assert _quotes(bench.main) == {first: "rejected", second: "accepted"}
             assert _mission(bench.main).status == "confirmed"
-            # La demande montre maintenant le devis accepté, sans boutons.
+            # La demande montre maintenant le devis accepté ; seuls restent
+            # les boutons du paiement (plus d'Accepter / Refuser).
             shown = await bench.tap(f"mis:{mission_id}")
             assert get_message("wa_status_confirmed_unpaid", "fr") in shown[0].text
-            assert not [message for message in shown if message.kind == "button"]
+            cards = [message for message in shown if message.kind == "button"]
+            assert [_choices([card]) for card in cards] == [[f"pay:mm:{second}", "pay:later"]]
             # L'ancien bouton de l'autre devis : il n'est plus ouvert.
             late = await bench.tap(f"quote_accept_{first}")
             assert late[0].text == get_message("wa_quote_closed", "fr")

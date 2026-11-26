@@ -40,6 +40,10 @@ WHATSAPP_ROUTES = {
     ("GET", "/api/bot/quotes/{quote_id}"),
     ("POST", "/api/bot/quotes/{quote_id}/accept"),
     ("POST", "/api/bot/quotes/{quote_id}/reject"),
+    # Paiement : wallet, Mobile Money et son état (étape 6), test_whatsapp_paiement.py.
+    ("POST", "/api/bot/missions/{mission_id}/fund"),
+    ("POST", "/api/bot/missions/{mission_id}/payment-intents"),
+    ("GET", "/api/bot/payment-intents/{intent_id}"),
 }
 
 # Actions de prestataire : jamais depuis WhatsApp, refus explicite.
