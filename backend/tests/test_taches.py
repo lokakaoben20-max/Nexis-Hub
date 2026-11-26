@@ -37,7 +37,7 @@ def test_le_calendrier_reprend_les_frequences_de_celery(taches):
         "verification-mobile-money": "*/2 * * * *",
         "rapprochement-quotidien": "0 6 * * *",
         "analytics-quotidiennes": "0 8 * * *",
-        "alertes-nouvel-appareil": "*/1 * * * *",
+        "envoi-notifications": "*/1 * * * *",
         "purge-nonces": "30 * * * *",
         "purge-cles-idempotence": "15 3 * * *",
     }
@@ -49,10 +49,10 @@ def test_les_taches_dues_suivent_l_heure_utc(taches):
 
     assert taches.taches_dues(a(6, 0)) == [
         "relances-prestataires", "devis-expires", "liberations-automatiques", "decisions-litiges",
-        "accords-expires", "verification-mobile-money", "rapprochement-quotidien", "alertes-nouvel-appareil",
+        "accords-expires", "verification-mobile-money", "rapprochement-quotidien", "envoi-notifications",
     ]
-    assert taches.taches_dues(a(6, 2)) == ["verification-mobile-money", "alertes-nouvel-appareil"]
-    assert taches.taches_dues(a(6, 3)) == ["alertes-nouvel-appareil"]
+    assert taches.taches_dues(a(6, 2)) == ["verification-mobile-money", "envoi-notifications"]
+    assert taches.taches_dues(a(6, 3)) == ["envoi-notifications"]
     assert "purge-nonces" in taches.taches_dues(a(6, 30))
     assert "litiges-en-retard" in taches.taches_dues(a(6, 15))
     assert "decisions-litiges" in taches.taches_dues(a(6, 10))
@@ -163,8 +163,8 @@ def test_le_planificateur_lance_chaque_tache_due_une_fois_par_minute_et_survit_a
 
     assert lancees == [
         "relances-prestataires", "devis-expires", "liberations-automatiques", "decisions-litiges",
-        "accords-expires", "verification-mobile-money", "alertes-nouvel-appareil",
-        "verification-mobile-money", "alertes-nouvel-appareil",
+        "accords-expires", "verification-mobile-money", "envoi-notifications",
+        "verification-mobile-money", "envoi-notifications",
     ]
 
 

@@ -37,10 +37,8 @@ from telegram_bot.keyboards import (
     CURRENCIES,
     CURRENCY_CALLBACKS,
     SERVICES,
-    clavier_alerte_mission,
     clavier_client,
     clavier_communes,
-    clavier_devis_client,
     clavier_devises,
     clavier_devises_devis,
     clavier_disponibilite,
@@ -483,54 +481,10 @@ async def mission_confirmer(callback: CallbackQuery, state: FSMContext):
         await callback.answer(money_failure_text(0, error, client_lang, "service_unavailable"), show_alert=True)
         return
     mission_id = result["mission"]["mission_id"]
-    # Prévenir exactement ceux que le backend a enregistrés (sur un nouvel
-    # essai, ceux du premier : c'est la liste qui fait foi).
-    matching_providers = [{"telegram_id": telegram_id} for telegram_id in result["alerted_provider_telegram_ids"]]
-
-    photo_file_ids = data["photo_file_ids"]
-    voice_file_ids = data["voice_file_ids"]
-    video_note_file_ids = media_list(data, "video_note_file_ids")
-
-    for provider in matching_providers:
-        # Chaque prestataire est alerté dans SA langue. L'ancienne version figeait
-        # "fr" ici, donc un prestataire lingala ou anglophone recevait l'alerte en
-        # français — corrigé en extrayant ce flow (voir le skill textes-utilisateur).
-        provider_lang = await get_language(provider["telegram_id"])
-        await callback.bot.send_message(
-            provider["telegram_id"],
-            get_message(
-                "new_mission_alert",
-                provider_lang,
-                mission_id=mission_id,
-                service=catalogue.service_label(data["service"], provider_lang),
-                commune=html.escape(data["commune"]),
-                urgent=yes_no_label(provider_lang, bool(data.get("urgent"))),
-            )
-            + f"\n\n{html.escape(data['description'])}",
-            parse_mode="HTML",
-            reply_markup=clavier_alerte_mission(mission_id),
-        )
-        for photo_file_id in photo_file_ids:
-            await callback.bot.send_photo(
-                provider["telegram_id"],
-                photo_file_id,
-                caption=get_message("mission_photo_caption", provider_lang, mission_id=mission_id),
-            )
-        for voice_file_id in voice_file_ids:
-            await callback.bot.send_voice(
-                provider["telegram_id"],
-                voice_file_id,
-                caption=get_message("mission_voice_caption", provider_lang, mission_id=mission_id),
-            )
-        for video_note_file_id in video_note_file_ids:
-            # Une note vidéo ne porte pas de légende : le numéro de mission
-            # suit, en réponse à la note.
-            sent = await callback.bot.send_video_note(provider["telegram_id"], video_note_file_id)
-            await callback.bot.send_message(
-                provider["telegram_id"],
-                get_message("mission_video_note_caption", provider_lang, mission_id=mission_id),
-                reply_to_message_id=getattr(sent, "message_id", None),
-            )
+    # Le backend a écrit l'alerte de chaque prestataire prévenu (texte,
+    # photos, notes vocales et vidéo) avec la mission : il l'envoie lui-même,
+    # dans la langue de chacun, une seule fois même si la demande est rejouée.
+    matching_providers = result["alerted_provider_telegram_ids"]
 
     await state.clear()
     matching_text = (
@@ -672,38 +626,8 @@ async def devis_message_recu(message: Message, state: FSMContext):
         await message.answer(money_failure_text(data["quote_mission_id"], error, provider_lang), reply_markup=clavier_prestataire(provider_lang))
         return
     quote_id = result["quote"]["id"]
-    mission = result["mission"]
-    # Le backend a remis à zéro les refus d'affilée du prestataire (il a
-    # répondu). Nom et ligne de confiance : son profil tel que le backend le
-    # calcule (notes, missions, taux de réussite).
-    me = await backend_client.my_profile(message.from_user.id)
-    provider = (me or {}).get("provider") or {}
-    display_full_name = provider.get("full_name") or result["quote"].get("provider_name") or ""
-    trust_source = {
-        "rating": provider.get("average_rating") or 0,
-        "total_missions": provider.get("total_missions") or 0,
-        "success_rate": provider.get("success_rate") or 0,
-        "badge": provider.get("badge"),
-        "is_verified": provider.get("is_verified", False),
-    }
-
-    client_lang = await get_language(mission["telegram_id"])
-    await message.bot.send_message(
-        mission["telegram_id"],
-        get_message(
-            "new_quote_received_client",
-            client_lang,
-            mission_id=data["quote_mission_id"],
-            prestataire=html.escape(display_full_name),
-            trust_line=provider_trust_line(trust_source),
-            amount=data["quote_amount"],
-            currency=data["quote_currency"],
-            delay=data["quote_delay_hours"],
-            message=html.escape(quote_message) if quote_message else get_message("quote_no_message", client_lang),
-        ),
-        parse_mode="HTML",
-        reply_markup=clavier_devis_client(quote_id),
-    )
+    # Le client reçoit le devis par le backend, écrit avec le devis
+    # (backend/app/evenements.py : quote_created).
 
     await state.clear()
     await message.answer(

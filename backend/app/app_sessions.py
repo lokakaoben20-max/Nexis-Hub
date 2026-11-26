@@ -51,7 +51,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app import app_auth, ledger
+from backend.app import app_auth, evenements, ledger
 from backend.app.app_auth import AuthError
 from backend.app.models import DEVICE_PLATFORMS, AppSession, AuthEvent, ChannelIdentity, Device, RequestNonce
 
@@ -89,7 +89,7 @@ class SessionTokens:
     device_id: int
     account_id: int
     # Téléphone créé par cette connexion (l'alerte « Nouvel appareil », s'il
-    # en faut une, est déjà dans la boîte d'envoi : Device.alert_due_at).
+    # en faut une, est déjà dans la boîte d'envoi : table `notifications`).
     new_device: bool = False
 
 
@@ -249,12 +249,13 @@ def sign_in(
             app_version=app_version,
             created_at=now,
             money_unlocked_at=now if not verified.existing_account else now + NEW_DEVICE_MONEY_DELAY,
-            # Téléphone ajouté à un compte existant : l'alerte part avec la
-            # transaction (tasks.send_pending_device_alerts), jamais perdue.
-            alert_due_at=now if verified.existing_account else None,
         )
         db.add(device)
         db.flush()
+        if verified.existing_account:
+            # Téléphone ajouté à un compte existant : l'alerte est écrite avec
+            # lui, dans la même transaction (backend/app/notifications.py).
+            evenements.new_device(db, device)
         _event(db, "device_added", "accepted", account_id=device.account_id, device_id=device.id, now=now)
     device.app_version = app_version
     device.last_seen_at = now
@@ -348,6 +349,7 @@ def sign_out(db: Session, principal: AppPrincipal, *, now: datetime | None = Non
 def _revoke_device(db: Session, device: Device, reason: str, now: datetime) -> None:
     if device.revoked_at is None:
         device.revoked_at, device.revoked_reason = now, reason
+        evenements.device_revoked(db, device.id)
     for session in db.query(AppSession).filter(AppSession.device_id == device.id, AppSession.revoked_at.is_(None)):
         session.revoked_at, session.revoked_reason = now, reason
 
@@ -512,5 +514,7 @@ def report_not_me(db: Session, *, account_id: int, device_id: int, now: datetime
         return device, False
     _revoke_device(db, device, "not_me", now)
     _event(db, "device_revoked", "not_me", account_id=account_id, device_id=device.id, now=now)
+    # L'équipe est prévenue dans la même transaction (compte peut-être visé).
+    evenements.device_not_me(db, device.id, account_id)
     db.commit()
     return device, True

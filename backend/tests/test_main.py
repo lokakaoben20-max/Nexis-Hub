@@ -10,7 +10,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.app.main import app  # noqa: E402
-from backend.tests import profils_de_test  # noqa: E402
+from backend.tests import boite_envoi, profils_de_test  # noqa: E402
 
 client = TestClient(app)
 
@@ -537,10 +537,9 @@ def test_money_endpoints_return_a_stable_code_and_the_current_mission_on_refusal
 def test_dispute_decision_waits_can_be_contested_and_is_reviewed_by_someone_else(tmp_path, monkeypatch, backend_db_url):
     backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     _grant_admin(database_module, 1)
-    from backend.app import tasks
 
     sent = []
-    monkeypatch.setattr(tasks, "send_telegram_message", lambda telegram_id, text, markup=None: sent.append((telegram_id, markup)) or True)
+    boite_envoi.record_telegram(monkeypatch, lambda telegram_id, text, markup: sent.append((telegram_id, markup)))
 
     with _authed_client(backend_main) as test_client:
         mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
@@ -564,6 +563,7 @@ def test_dispute_decision_waits_can_be_contested_and_is_reviewed_by_someone_else
         assert not_admin.json()["detail"] == {"code": "not_admin"}
 
         # Première décision : enregistrée, l'argent ne bouge pas avant 3 jours.
+        sent.clear()
         decided = test_client.post(
             f"/api/bot/missions/{mission_id}/dispute/decide",
             json={"decision": "release"},
@@ -1150,7 +1150,7 @@ def test_a_signed_webhook_finds_the_intent_by_our_reference(tmp_path, monkeypatc
     demande ; il ne fait jamais foi seul : le statut est relu chez l'agrégateur."""
     import json
 
-    from backend.app import payment_gateway, tasks
+    from backend.app import payment_gateway
     from backend.app.payment_gateway import PENDING, GatewayResult, InvalidWebhook, SimulationGateway, WebhookNotice
 
     confirmed = set()
@@ -1172,7 +1172,7 @@ def test_a_signed_webhook_finds_the_intent_by_our_reference(tmp_path, monkeypatc
     monkeypatch.setitem(payment_gateway.GATEWAYS, "signed", SignedGateway)
     monkeypatch.setenv("PAYMENT_GATEWAY", "signed")
     backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
-    monkeypatch.setattr(tasks, "send_telegram_message", lambda *args, **kwargs: True)
+    boite_envoi.record_telegram(monkeypatch)
 
     with _authed_client(backend_main) as test_client:
         mission_id, quote_id = _setup_mission_with_quote(test_client)
@@ -1270,10 +1270,9 @@ def test_a_wallet_is_only_read_by_its_owner(tmp_path, monkeypatch, backend_db_ur
 def test_an_amicable_agreement_is_proposed_by_the_client_and_accepted_by_the_provider(tmp_path, monkeypatch, backend_db_url):
     backend_main, database_module = _reload_backend_with_db(monkeypatch, backend_db_url)
     _grant_admin(database_module, 1)
-    from backend.app import tasks
 
     sent = []
-    monkeypatch.setattr(tasks, "send_telegram_message", lambda telegram_id, text, markup=None: sent.append((telegram_id, markup)) or True)
+    boite_envoi.record_telegram(monkeypatch, lambda telegram_id, text, markup: sent.append((telegram_id, markup)))
 
     with _authed_client(backend_main) as test_client:
         mission_id, quote_id = _setup_mission_with_quote(test_client, amount=100.0)
@@ -1285,6 +1284,7 @@ def test_an_amicable_agreement_is_proposed_by_the_client_and_accepted_by_the_pro
         assert by_provider.status_code == 403
         assert by_provider.json()["detail"]["code"] == "not_mission_client"
 
+        sent.clear()
         proposed = test_client.post(path, json={"kind": "split", "provider_percentage": 50}, headers=_as(42))
         assert proposed.status_code == 200
         offer = proposed.json()["money"]["dispute_offers"][0]
@@ -1317,10 +1317,9 @@ def test_an_amicable_agreement_is_proposed_by_the_client_and_accepted_by_the_pro
 
 def test_a_declined_agreement_keeps_the_dispute_and_whatsapp_cannot_answer_as_provider(tmp_path, monkeypatch, backend_db_url):
     backend_main, _ = _reload_backend_with_db(monkeypatch, backend_db_url)
-    from backend.app import tasks
 
     sent = []
-    monkeypatch.setattr(tasks, "send_telegram_message", lambda telegram_id, text, markup=None: sent.append((telegram_id, markup)) or True)
+    boite_envoi.record_telegram(monkeypatch, lambda telegram_id, text, markup: sent.append((telegram_id, markup)))
     assert backend_main.is_provider_action(backend_main.accept_dispute_settlement)
     assert backend_main.is_provider_action(backend_main.decline_dispute_settlement)
 

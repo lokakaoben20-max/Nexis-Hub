@@ -611,13 +611,8 @@ class Device(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     revoked_reason: Mapped[str | None] = mapped_column(String(30), nullable=True)
-    # Alerte « Nouvel appareil » (boîte d'envoi) : `alert_due_at` est posé dans
-    # la même transaction que la création du téléphone, puis la tâche planifiée
-    # `alertes-nouvel-appareil` l'envoie et réessaie en cas d'échec. NULL : rien
-    # à envoyer (premier téléphone d'un compte neuf, alerte envoyée ou abandonnée).
-    alert_due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
-    alert_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    alert_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # L'alerte « Nouvel appareil » est une notification (table `notifications`,
+    # événement `new_device:<id>`), écrite avec le téléphone.
 
 
 class AppSession(Base):
@@ -1068,3 +1063,67 @@ class LegalAcceptance(Base):
     surface: Mapped[str] = mapped_column(String(20))
     language: Mapped[str] = mapped_column(String(5))
     accepted_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+# --- Notifications (backend/app/notifications.py) ----------------------------
+
+NOTIFICATION_CHANNELS = ("telegram", "whatsapp")
+NOTIFICATION_STATUSES = ("pending", "sending", "sent", "uncertain", "failed")
+
+
+class Notification(Base):
+    """Un message à envoyer à une personne, écrit **dans la transaction de
+    l'événement** qui le cause (devis reçu, paiement confirmé, litige...) :
+    si l'événement est annulé, la notification l'est aussi ; s'il est
+    validé, elle ne peut plus se perdre. Un expéditeur l'envoie ensuite et
+    note ce qu'il sait (backend/app/notifications.py).
+
+    Une seule notification par événement et par destinataire (`event_key`,
+    `recipient_account_id`) : un événement rejoué n'en crée pas une seconde.
+
+    Le contenu est gardé sous forme de clé de traduction et de paramètres,
+    jamais de texte figé : il est rédigé à l'envoi, dans la langue du
+    destinataire et au format de son canal. Aucune notification ne porte
+    d'action d'argent : l'argent a été décidé avant elle.
+
+    `channel` NULL : la personne n'a aucun canal joignable (notification
+    notée `failed`, l'admin est prévenu)."""
+
+    __tablename__ = "notifications"
+    __table_args__ = (
+        UniqueConstraint("event_key", "recipient_account_id", name="uq_notifications_event_recipient"),
+        CheckConstraint(_in("status", NOTIFICATION_STATUSES), name="ck_notifications_status"),
+        CheckConstraint(
+            f"channel IS NULL OR {_in('channel', NOTIFICATION_CHANNELS)}", name="ck_notifications_channel"
+        ),
+        CheckConstraint("attempts >= 0 AND uncertain_count >= 0", name="ck_notifications_counters"),
+        CheckConstraint(
+            "(status = 'sent') = (sent_at IS NOT NULL)", name="ck_notifications_sent_at"
+        ),
+        Index("ix_notifications_due", "status", "next_attempt_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Événement métier qui cause le message, par exemple `quote_received:42`.
+    event_key: Mapped[str] = mapped_column(String(120))
+    recipient_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    # Canal choisi à la création : celui du destinataire, jamais celui de
+    # l'événement.
+    channel: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    message_key: Mapped[str] = mapped_column(String(80))
+    params: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Boutons : lignes de {"label": clé de traduction, "action": identifiant}.
+    buttons: Mapped[list] = mapped_column(JSON, default=list)
+    # Pièce jointe : {"kind": "photo"|"voice"|"video_note", "channel": ..., "id": ...}.
+    media: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(12), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    uncertain_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Début de l'envoi en cours (`sending`) : un envoi interrompu se reconnaît.
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Identifiant du message chez Telegram ou Meta (`wamid`), une fois accepté.
+    provider_message_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)

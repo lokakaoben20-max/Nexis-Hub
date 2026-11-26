@@ -5,7 +5,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app import app_auth, ledger, profils
+from backend.app import app_auth, evenements, ledger, profils
 from backend.app.models import (
     SERVICE_REQUEST_STATUSES,
     BotMission,
@@ -270,17 +270,21 @@ def create_mission(
     db.flush()
     for position, (kind, external_id) in enumerate(media):
         db.add(MissionMedia(mission_id=mission.mission_id, channel=channel, kind=kind, external_id=external_id, position=position))
-    alerted = 0
+    alerted: list[int] = []
     for provider in profils.eligible_providers(db, service, commune, exclude_account_id=client_account_id):
-        if alerted == ALERTS_PER_MISSION:
+        if len(alerted) == ALERTS_PER_MISSION:
             break
         # Un prestataire est prévenu sur Telegram (seul canal des prestataires
         # aujourd'hui) : sans identité Telegram, personne ne le préviendrait.
         if ledger.telegram_id_of(db, provider.account_id) is None:
             continue
         db.add(MissionAlert(mission_id=mission.mission_id, provider_account_id=provider.account_id))
-        alerted += 1
+        alerted.append(provider.account_id)
     try:
+        db.flush()
+        # Les prestataires prévenus reçoivent la demande : notifications
+        # écrites avec la mission, jamais perdues, jamais envoyées deux fois.
+        evenements.mission_created(db, mission, alerted)
         db.commit()
     except IntegrityError:
         # La même demande, arrivée au même instant, a été écrite la première :
@@ -460,6 +464,8 @@ def create_quote(
         # Il a répondu à une mission : ses refus d'affilée repartent de zéro,
         # dans la même transaction que le devis.
         profils.reset_declined_alerts(db, provider_account_id)
+    db.flush()
+    evenements.quote_created(db, quote)
     db.commit()
     db.refresh(quote)
     return quote
@@ -538,6 +544,7 @@ def accept_quote(db: Session, quote_id: int, client_account_id: int) -> BotQuote
         mission.provider_telegram_id = quote.provider_telegram_id
         mission.provider_account_id = quote.provider_account_id or _account_id_for_telegram(db, quote.provider_telegram_id)
 
+    evenements.quote_accepted(db, quote)
     db.commit()
     db.refresh(quote)
     return quote
@@ -554,6 +561,7 @@ def reject_quote(db: Session, quote_id: int, client_account_id: int) -> BotQuote
         # Un devis accepté ne se refuse plus : c'est celui que le paiement relit.
         raise MissionRefused("quote_not_open")
     quote.status = "rejected"
+    evenements.quote_rejected(db, quote)
     db.commit()
     db.refresh(quote)
     return quote
@@ -825,6 +833,10 @@ def find_missions_needing_reminder(db: Session) -> dict[str, list[BotMission]]:
     for mission in second_tier:
         mission.reminder_sent_20min = True
 
+    # Relances écrites avec leur palier : jamais deux fois, jamais perdues.
+    for missions, tier in ((first_tier, "10min"), (second_tier, "20min")):
+        for mission in missions:
+            evenements.mission_reminder(db, mission, alerted_provider_account_ids(db, mission.mission_id), tier)
     db.commit()
     return {"first": first_tier, "second": second_tier}
 
@@ -915,6 +927,9 @@ def decide_client_request(db: Session, request_id: int, status: str, admin_note:
         .filter(ClientServiceRequest.id == request_id, ClientServiceRequest.status == "pending")
         .update({"status": status, "admin_note": admin_note or None, "reviewed_at": datetime.utcnow()})
     )
+    if updated:
+        # Le client reçoit la réponse sur son canal, avec la décision.
+        evenements.client_request_decided(db, db.get(ClientServiceRequest, request_id))
     db.commit()
     request = db.get(ClientServiceRequest, request_id)
     if request is None:
@@ -971,6 +986,8 @@ def update_service_request_status(
         .filter(ProviderServiceRequest.id == request_id, ProviderServiceRequest.status == "pending")
         .update({"status": status, "admin_note": admin_note, "reviewed_at": datetime.utcnow()})
     )
+    if updated and status != "pending":
+        evenements.service_request_decided(db, db.get(ProviderServiceRequest, request_id))
     db.commit()
     if updated == 0:
         if db.get(ProviderServiceRequest, request_id) is None:

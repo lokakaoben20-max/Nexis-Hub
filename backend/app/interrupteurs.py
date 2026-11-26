@@ -112,6 +112,21 @@ def switch(
     db.add(
         MoneySwitchEvent(name=name, is_open=open, at=now, by_telegram_id=by_telegram_id, source=source, reason=reason)
     )
+    # Les autres admins sont prévenus dans la même transaction (tous, si le
+    # changement vient du serveur).
+    from backend.app import evenements, ledger
+
+    admin_account_id = ledger.account_id_for(db, ledger.TELEGRAM, by_telegram_id) if by_telegram_id else None
+    evenements.money_switch_changed(
+        db,
+        label=LABELS[name].capitalize(),
+        state_text="rouverts" if open else "coupés",
+        opened=open,
+        admin_account_id=admin_account_id,
+        source=source,
+        reason=reason,
+        changed_at=now,
+    )
     db.commit()
     logger.warning(
         "Interrupteur %s %s par %s (%s) : %s",

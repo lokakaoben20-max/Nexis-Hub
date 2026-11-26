@@ -4,11 +4,12 @@ from dataclasses import dataclass
 from typing import Annotated
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, StringConstraints
 from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
 import nexis_config
 import nexis_logs
@@ -23,6 +24,7 @@ from backend.app import (
     interrupteurs,
     ledger,
     mobile_money,
+    notifications,
     payment_gateway,
     presence,
     profils,
@@ -30,7 +32,7 @@ from backend.app import (
     service_keys,
 )
 from backend.app.database import SessionLocal
-from backend.app.models import BotMission, BotQuote, BotReview, DisputeSettlementOffer, PaymentIntent, Payout, ProviderProfile, ProviderServiceRequest, StoredFile
+from backend.app.models import BotMission, BotQuote, BotReview, PaymentIntent, Payout, ProviderProfile, ProviderServiceRequest, StoredFile
 
 load_dotenv()
 
@@ -52,6 +54,34 @@ async def _lifespan(_app: FastAPI):
 # démarrage). Plus de `create_all` au démarrage : il créait des tables hors
 # migrations, et la migration suivante échouait sur une table déjà là.
 app = FastAPI(title="Nexis Hub V5 Backend", lifespan=_lifespan)
+
+
+@app.middleware("http")
+async def send_notifications_after_response(request: Request, call_next):
+    """Les notifications sont écrites dans la transaction de l'événement
+    (backend/app/notifications.py). Une demande qui en a créé les envoie
+    juste après sa réponse, sans la retarder ; la tâche `envoi-notifications`
+    repasse chaque minute pour celles qui restent."""
+    pending, token = notifications.begin_request()
+    try:
+        response = await call_next(request)
+    finally:
+        notifications.end_request(token)
+    if pending.added:
+        previous = response.background
+
+        def after_response() -> None:
+            notifications.send_pending_in_background()
+
+        if previous is None:
+            response.background = BackgroundTask(after_response)
+        else:
+            async def both() -> None:
+                await previous()
+                await run_in_threadpool(after_response)
+
+            response.background = BackgroundTask(both)
+    return response
 
 
 # --- Canaux autorisés par route ----------------------------------------------
@@ -884,15 +914,9 @@ def app_login_telegram_contact(payload: AppLoginTelegramContactPayload, actor: A
         return {"status": "ok", "code": issued.code, "expires_at": issued.expires_at.isoformat()}
 
 
-def _alert_admin_not_me(device_id: int, account_id: int) -> None:
-    from backend.app.tasks import alert_admin_not_me
-
-    alert_admin_not_me(device_id, account_id)
-
-
 @router.post("/api/bot/app-devices/{device_id}/not-me")
 @terms_exempt
-def app_device_not_me(device_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
+def app_device_not_me(device_id: int, actor: Actor = Depends(current_actor)):
     """« Ce n'est pas moi », appuyé sous l'alerte « Nouvel appareil » : le
     téléphone est coupé tout de suite, avec toutes ses sessions, et l'admin
     est prévenu. Seul le compte du téléphone peut le faire ; un second appui
@@ -906,8 +930,6 @@ def app_device_not_me(device_id: int, background_tasks: BackgroundTasks, actor: 
         except app_auth.AuthError as error:
             db.rollback()
             raise HTTPException(status_code=error.http_status, detail={"code": error.code})
-        if revoked_now:
-            background_tasks.add_task(_alert_admin_not_me, device.id, account_id)
         return {"status": "ok", "revoked": True, "already": not revoked_now}
 
 
@@ -1157,15 +1179,13 @@ def create_payment_intent(mission_id: int, payload: PaymentIntentPayload, actor:
 @terms_exempt
 def refresh_payment_intent(intent_id: int):
     with SessionLocal() as db:
-        from backend.app.tasks import refresh_and_notify_intent
-
         if db.get(PaymentIntent, intent_id) is None:
             raise HTTPException(status_code=404, detail={"code": "intent_not_found"})
 
         try:
-            # Même chemin que le webhook et la vérification de secours : celui
-            # qui fait changer le statut prévient client et prestataire.
-            refresh_and_notify_intent(db, intent_id)
+            # Même chemin que le webhook et la vérification de secours : le
+            # changement de statut écrit les notifications avec lui.
+            mobile_money.refresh_intent(db, intent_id)
         except ledger.MoneyError as error:
             raise _money_refusal(db, error) from error
         return _intent_response(db, db.get(PaymentIntent, intent_id))
@@ -1323,27 +1343,17 @@ def list_payment_mismatches(limit: int = 20, actor: Actor = Depends(current_acto
         }
 
 
-def _notify_mismatch_resolved(intent_id: int) -> None:
-    from backend.app.tasks import notify_mismatch_resolved
-
-    with SessionLocal() as db:
-        notify_mismatch_resolved(db, db.get(PaymentIntent, intent_id))
-
-
 @router.post("/api/bot/payment-intents/{intent_id}/resolve-mismatch")
 @terms_exempt
-def resolve_payment_mismatch(
-    intent_id: int, payload: MismatchDecisionPayload, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)
-):
+def resolve_payment_mismatch(intent_id: int, payload: MismatchDecisionPayload, actor: Actor = Depends(current_actor)):
+    """Le client (et le prestataire si la mission est payée) est prévenu par
+    des notifications écrites avec la décision, envoyées après la réponse."""
     admin_telegram_id = _require_admin(actor)
     with SessionLocal() as db:
         try:
-            intent, resolved_now = mobile_money.resolve_mismatch(db, intent_id, admin_telegram_id, payload.decision)
+            intent, _ = mobile_money.resolve_mismatch(db, intent_id, admin_telegram_id, payload.decision)
         except ledger.MoneyError as error:
             raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
-        if resolved_now:
-            # Après la réponse : l'admin voit le résultat sans attendre Telegram.
-            background_tasks.add_task(_notify_mismatch_resolved, intent.id)
         return _intent_response(db, intent)
 
 
@@ -1374,14 +1384,12 @@ async def payment_webhook(gateway_name: str, request: Request):
         notice = gateway.verify_webhook(request.headers, await request.body())
     except payment_gateway.InvalidWebhook as error:
         raise HTTPException(status_code=401, detail={"code": "invalid_signature"}) from error
-    from backend.app.tasks import refresh_and_notify_intent, refresh_and_notify_payout
-
     with SessionLocal() as db:
         intent, payout = _webhook_target(db, gateway.name, notice)
         if intent is not None:
-            refresh_and_notify_intent(db, intent.id)
+            mobile_money.refresh_intent(db, intent.id)
         elif payout is not None:
-            refresh_and_notify_payout(db, payout.id)
+            mobile_money.refresh_payout(db, payout.id)
         else:
             return {"status": "ignored"}
     return {"status": "ok"}
@@ -1396,48 +1404,20 @@ class PresenceCodePayload(BaseModel):
     code: str = Field(max_length=20)
 
 
-def _presence_after_commit(mission_id: int, events: list[str], *, actor_role: str, client_asked: bool) -> None:
-    """Messages de l'arrivée, après validation et après la réponse : celui qui
-    vient d'agir voit la réponse dans son canal, l'autre partie est prévenue
-    ici."""
-    with SessionLocal() as db:
-        if client_asked:
-            presence.notify_client_question(db, mission_id)
-        if "confirmed" in events:
-            presence.notify_confirmed(db, mission_id, tell_client=actor_role != "client", tell_provider=actor_role != "provider")
-        if "not_yet" in events:
-            presence.notify_not_yet(db, mission_id)
-        if "wrong_person" in events:
-            presence.notify_wrong_person(db, mission_id)
-
-
-def _code_locked_after_commit(mission_id: int) -> None:
-    with SessionLocal() as db:
-        presence.notify_code_locked(db, mission_id)
-
-
-def _presence_call(operation, background_tasks: BackgroundTasks, actor_role: str):
+def _presence_call(operation, actor_role: str):
+    """Les messages de l'arrivée (question au client, mission démarrée,
+    « pas encore », « ce n'est pas lui », code bloqué) sont des notifications
+    écrites par `presence` avec la décision : celui qui vient d'agir voit la
+    réponse dans son canal, l'autre partie est prévenue."""
     with SessionLocal() as db:
         try:
             result = operation(db)
         except presence.PresenceCodeRefused as error:
             refusal = _money_refusal(db, error)
             refusal.detail["attempts_left"] = error.attempts_left
-            if not error.just_locked:
-                raise refusal from error
-            # Un refus levé abandonne les tâches d'après réponse : la réponse
-            # est construite ici pour que l'admin et le client soient prévenus.
-            return JSONResponse(
-                status_code=refusal.status_code,
-                content=jsonable_encoder({"detail": refusal.detail}),
-                background=BackgroundTask(_code_locked_after_commit, error.mission.mission_id),
-            )
+            raise refusal from error
         except ledger.MoneyError as error:
             raise _money_refusal(db, error) from error
-        if result.events or result.client_asked:
-            background_tasks.add_task(
-                _presence_after_commit, result.mission.mission_id, result.events, actor_role=actor_role, client_asked=result.client_asked
-            )
         mission = db.get(BotMission, result.mission.mission_id)
         return {
             **_money_response(db, mission),
@@ -1457,37 +1437,37 @@ def _client_account(db, actor: Actor) -> int:
 @router.post("/api/bot/missions/{mission_id}/presence/arrived")
 @terms_exempt
 @provider_action
-def declare_arrival(mission_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
-    return _presence_call(lambda db: presence.declare_arrival(db, mission_id, _provider_account(db, actor)), background_tasks, "provider")
+def declare_arrival(mission_id: int, actor: Actor = Depends(current_actor)):
+    return _presence_call(lambda db: presence.declare_arrival(db, mission_id, _provider_account(db, actor)), "provider")
 
 
 @router.post("/api/bot/missions/{mission_id}/presence/code")
 @terms_exempt
 @provider_action
 def confirm_presence_by_code(
-    mission_id: int, payload: PresenceCodePayload, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)
+    mission_id: int, payload: PresenceCodePayload, actor: Actor = Depends(current_actor)
 ):
     return _presence_call(
-        lambda db: presence.confirm_by_code(db, mission_id, _provider_account(db, actor), payload.code), background_tasks, "provider"
+        lambda db: presence.confirm_by_code(db, mission_id, _provider_account(db, actor), payload.code), "provider"
     )
 
 
 @router.post("/api/bot/missions/{mission_id}/presence/confirm")
 @terms_exempt
-def confirm_presence_by_client(mission_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
-    return _presence_call(lambda db: presence.confirm_by_client(db, mission_id, _client_account(db, actor)), background_tasks, "client")
+def confirm_presence_by_client(mission_id: int, actor: Actor = Depends(current_actor)):
+    return _presence_call(lambda db: presence.confirm_by_client(db, mission_id, _client_account(db, actor)), "client")
 
 
 @router.post("/api/bot/missions/{mission_id}/presence/not-yet")
 @terms_exempt
-def presence_not_yet(mission_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
-    return _presence_call(lambda db: presence.answer_not_yet(db, mission_id, _client_account(db, actor)), background_tasks, "client")
+def presence_not_yet(mission_id: int, actor: Actor = Depends(current_actor)):
+    return _presence_call(lambda db: presence.answer_not_yet(db, mission_id, _client_account(db, actor)), "client")
 
 
 @router.post("/api/bot/missions/{mission_id}/presence/wrong-person")
 @terms_exempt
-def presence_wrong_person(mission_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
-    return _presence_call(lambda db: presence.report_wrong_person(db, mission_id, _client_account(db, actor)), background_tasks, "client")
+def presence_wrong_person(mission_id: int, actor: Actor = Depends(current_actor)):
+    return _presence_call(lambda db: presence.report_wrong_person(db, mission_id, _client_account(db, actor)), "client")
 
 
 @router.get("/api/bot/missions/{mission_id}/presence")
@@ -1540,19 +1520,15 @@ def open_dispute(mission_id: int, payload: DisputeOpenPayload, actor: Actor = De
 
 @router.post("/api/bot/missions/{mission_id}/dispute/decide")
 @terms_exempt
-def decide_dispute(
-    mission_id: int, payload: DisputeDecidePayload, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)
-):
+def decide_dispute(mission_id: int, payload: DisputeDecidePayload, actor: Actor = Depends(current_actor)):
     """Décision de Nexis Hub : la première est exécutée 3 jours plus tard sauf
     contestation ; la révision d'une décision contestée, prise par une autre
     personne, est exécutée tout de suite (ledger.decide_dispute). Le client et
-    le prestataire sont prévenus une fois, après la réponse."""
+    le prestataire sont prévenus par des notifications écrites avec la
+    décision : une seule fois, même si la demande est rejouée."""
     admin_telegram_id = _require_admin(actor)
-    recorded = {}
-
-    def decide(db):
-        before = len(ledger.dispute_decisions(db, mission_id))
-        mission = ledger.decide_dispute(
+    return _money_call(
+        lambda db: ledger.decide_dispute(
             db,
             mission_id,
             decision=payload.decision,
@@ -1561,120 +1537,60 @@ def decide_dispute(
             admin_telegram_id=admin_telegram_id,
             provider_percentage=payload.provider_percentage,
         )
-        recorded["new"] = len(ledger.dispute_decisions(db, mission_id)) > before
-        return mission
-
-    response = _money_call(decide)
-    if recorded.get("new"):
-        background_tasks.add_task(_notify_dispute, mission_id, "decided")
-    return response
+    )
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute/contest")
 @terms_exempt
-def contest_dispute(
-    mission_id: int, payload: DisputeContestPayload, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)
-):
+def contest_dispute(mission_id: int, payload: DisputeContestPayload, actor: Actor = Depends(current_actor)):
     """Le client ou le prestataire conteste la première décision, avant son
     exécution. L'autre partie et l'admin sont prévenus une fois."""
-    recorded = {}
-
-    def contest(db):
-        first = next((row for row in ledger.dispute_decisions(db, mission_id) if row.round == ledger.FIRST_DECISION), None)
-        already = first is not None and first.contested_at is not None
-        mission = ledger.contest_dispute_decision(
+    return _money_call(
+        lambda db: ledger.contest_dispute_decision(
             db, mission_id, _actor_account(db, actor, missing="not_mission_party", http_status=403), payload.reason
         )
-        recorded["new"] = not already
-        return mission
-
-    response = _money_call(contest)
-    if recorded.get("new"):
-        background_tasks.add_task(_notify_dispute, mission_id, "contested")
-    return response
+    )
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute/offers")
 @terms_exempt
-def propose_dispute_settlement(
-    mission_id: int, payload: DisputeOfferPayload, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)
-):
+def propose_dispute_settlement(mission_id: int, payload: DisputeOfferPayload, actor: Actor = Depends(current_actor)):
     """Le client propose un accord amiable (ledger.propose_dispute_settlement).
     Le prestataire est prévenu une fois, avec les boutons pour répondre."""
-    recorded = {}
-
-    def propose(db):
-        before = ledger.pending_settlement_offer(db, mission_id)
-        before_id = before.id if before is not None else None
-        mission = ledger.propose_dispute_settlement(
+    return _money_call(
+        lambda db: ledger.propose_dispute_settlement(
             db,
             mission_id,
             _actor_account(db, actor, missing="not_mission_client", http_status=403),
             kind=payload.kind,
             provider_percentage=payload.provider_percentage,
         )
-        after = ledger.pending_settlement_offer(db, mission_id)
-        recorded["offer_id"] = after.id if after is not None and after.id != before_id else None
-        return mission
-
-    response = _money_call(propose)
-    if recorded.get("offer_id") is not None:
-        background_tasks.add_task(_notify_offer, recorded["offer_id"], "proposed")
-    return response
+    )
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute/offers/{offer_id}/accept")
 @terms_exempt
 @provider_action
-def accept_dispute_settlement(mission_id: int, offer_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
+def accept_dispute_settlement(mission_id: int, offer_id: int, actor: Actor = Depends(current_actor)):
     """Le prestataire accepte : le prestataire repasse, ou le règlement est
     écrit tout de suite. Le client et Nexis Hub sont prévenus une fois."""
-    return _offer_answer(mission_id, offer_id, "accepted", ledger.accept_dispute_settlement, background_tasks, actor)
+    return _money_call(
+        lambda db: ledger.accept_dispute_settlement(
+            db, mission_id, offer_id, _actor_account(db, actor, missing="offer_not_for_you", http_status=403)
+        )
+    )
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute/offers/{offer_id}/decline")
 @terms_exempt
 @provider_action
-def decline_dispute_settlement(mission_id: int, offer_id: int, background_tasks: BackgroundTasks, actor: Actor = Depends(current_actor)):
+def decline_dispute_settlement(mission_id: int, offer_id: int, actor: Actor = Depends(current_actor)):
     """Le prestataire refuse : le litige continue. Le client est prévenu une fois."""
-    return _offer_answer(mission_id, offer_id, "declined", ledger.decline_dispute_settlement, background_tasks, actor)
-
-
-def _offer_answer(mission_id: int, offer_id: int, status: str, answer, background_tasks: BackgroundTasks, actor: Actor):
-    recorded = {}
-
-    def respond(db):
-        offer = db.get(DisputeSettlementOffer, offer_id)
-        already = offer is not None and offer.status == status
-        mission = answer(db, mission_id, offer_id, _actor_account(db, actor, missing="offer_not_for_you", http_status=403))
-        recorded["new"] = not already
-        return mission
-
-    response = _money_call(respond)
-    if recorded.get("new"):
-        background_tasks.add_task(_notify_offer, offer_id, status)
-    return response
-
-
-def _notify_offer(offer_id: int, event: str) -> None:
-    from backend.app import tasks
-
-    with SessionLocal() as db:
-        tasks.notify_settlement_offer(db, offer_id, event)
-
-
-def _notify_dispute(mission_id: int, event: str) -> None:
-    from backend.app import tasks
-
-    with SessionLocal() as db:
-        mission = db.get(BotMission, mission_id)
-        if event == "contested":
-            tasks.notify_dispute_contested(db, mission)
-        elif mission.status == "disputed":
-            tasks.notify_dispute_decided(db, mission)
-        else:
-            # Révision : exécutée tout de suite.
-            tasks.notify_dispute_settled(db, mission)
+    return _money_call(
+        lambda db: ledger.decline_dispute_settlement(
+            db, mission_id, offer_id, _actor_account(db, actor, missing="offer_not_for_you", http_status=403)
+        )
+    )
 
 
 @router.get("/api/bot/missions/{mission_id}")

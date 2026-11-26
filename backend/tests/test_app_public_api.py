@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from backend.app import app_auth, app_sessions, conditions, ledger
-from backend.tests import profils_de_test
+from backend.tests import boite_envoi, profils_de_test
 from test_app_sessions import PHONE, Phone
 
 API = "/api/app/v1"
@@ -52,12 +52,9 @@ def alerts(env):
     d'envoi (envoyée ensuite par la tâche planifiée)."""
     database, _ = env
 
-    Device = importlib.import_module("backend.app.models").Device  # modèle rechargé par `env`
-
     def queued():
         with database.SessionLocal() as session:
-            rows = session.query(Device.id).filter(Device.alert_due_at.is_not(None)).order_by(Device.id)
-            return [device_id for (device_id,) in rows]
+            return [int(note.event_key.split(":")[1]) for note in boite_envoi.messages(session, event_prefix="new_device:")]
 
     return queued
 

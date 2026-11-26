@@ -153,6 +153,7 @@ def test_admin_provider_actions_by_account(live_backend):
     # Un autre prestataire d'abord : le compte et le telegram_id diffèrent.
     live_backend.provider(2020, "Autre", verified=False)
     account_id = live_backend.provider(2021, "Cible", verified=False)
+    live_backend.sent.clear()
 
     bot = DummyBot()
     asyncio.run(admin.admin_verify_provider(DummyCallback(ADMIN, data=f"admin_verify_provider_acc_{account_id}", bot=bot)))
@@ -163,7 +164,8 @@ def test_admin_provider_actions_by_account(live_backend):
     assert live_backend.profile(2021)["provider"]["is_suspended"] is True
     asyncio.run(admin.admin_unsuspend_provider(DummyCallback(ADMIN, data=f"admin_unsuspend_provider_acc_{account_id}", bot=bot)))
     assert live_backend.profile(2021)["provider"]["is_suspended"] is False
-    assert [chat_id for chat_id, _ in bot.messages] == [2021, 2021, 2021], "prévenu par callback.bot à chaque décision"
+    assert bot.messages == [], "le bot ne prévient personne lui-même"
+    assert [chat_id for chat_id, _ in live_backend.sent] == [2021, 2021, 2021], "prévenu par le backend à chaque décision"
 
 
 def test_a_verified_provider_cannot_be_rejected(live_backend):
@@ -224,26 +226,28 @@ def test_provider_admin_buttons_carry_the_nexis_account():
 # --- services proposés --------------------------------------------------------
 
 
-def test_admin_accept_service_notifies_provider_via_callback_bot(live_backend):
+def test_admin_accept_service_notifies_the_provider_through_the_backend(live_backend):
     live_backend.grant_admin(ADMIN)
     request_id = _propose(live_backend, 2003)
+    live_backend.sent.clear()
 
     bot = DummyBot()
     asyncio.run(admin.admin_accept_service(DummyCallback(ADMIN, data=f"admin_accept_service_{request_id}", bot=bot)))
 
     assert _requests(live_backend)[request_id] == "accepted"
-    assert [chat_id for chat_id, _ in bot.messages] == [2003], "la notification part vers le prestataire, pas l'admin"
+    assert [chat_id for chat_id, _ in live_backend.sent] == [2003], "la notification part vers le prestataire, pas l'admin"
 
 
-def test_admin_reject_service_notifies_provider_via_callback_bot(live_backend):
+def test_admin_reject_service_notifies_the_provider_through_the_backend(live_backend):
     live_backend.grant_admin(ADMIN)
     request_id = _propose(live_backend, 2004, "Service refusé")
+    live_backend.sent.clear()
 
     bot = DummyBot()
     asyncio.run(admin.admin_reject_service(DummyCallback(ADMIN, data=f"admin_reject_service_{request_id}", bot=bot)))
 
     assert _requests(live_backend)[request_id] == "rejected"
-    assert [chat_id for chat_id, _ in bot.messages] == [2004]
+    assert [chat_id for chat_id, _ in live_backend.sent] == [2004]
 
 
 def test_admin_service_requests_lists_pending_only(live_backend):
@@ -264,6 +268,7 @@ def test_admin_cannot_decide_a_service_request_twice(live_backend):
     renotifie pas le prestataire."""
     live_backend.grant_admin(ADMIN)
     request_id = _propose(live_backend, 2010)
+    live_backend.sent.clear()
 
     bot = DummyBot()
     asyncio.run(admin.admin_accept_service(DummyCallback(ADMIN, data=f"admin_accept_service_{request_id}", bot=bot)))
@@ -273,4 +278,4 @@ def test_admin_cannot_decide_a_service_request_twice(live_backend):
     assert _requests(live_backend)[request_id] == "accepted"
     assert second.answered == "Cette proposition a déjà été traitée."
     assert second.message.edited_text is None
-    assert len(bot.messages) == 1, "le prestataire n'est notifié qu'une fois"
+    assert len(live_backend.sent) == 1, "le prestataire n'est notifié qu'une fois"

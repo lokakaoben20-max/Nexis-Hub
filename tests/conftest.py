@@ -52,14 +52,42 @@ def _catalogue():
     )
 
 
+class _SentMessages(list):
+    """Messages envoyés ; les vider vide aussi leurs boutons."""
+
+    def __init__(self, markups: list):
+        super().__init__()
+        self._markups = markups
+
+    def clear(self) -> None:
+        super().clear()
+        self._markups.clear()
+
+
 class LiveBackend:
     """Le vrai backend en mémoire, et de quoi lire son registre."""
 
     def __init__(self, database_module):
         self.database = database_module
-        # Notifications que le backend enverrait lui-même par Telegram.
-        self.sent = []
-        self.markups = []
+        # Notifications que le backend envoie lui-même par Telegram (lues
+        # dans sa boîte d'envoi : `sent` envoie d'abord celles qui attendent).
+        self._markups = []
+        self._sent = _SentMessages(self._markups)
+
+    def deliver(self) -> None:
+        from backend.app import notifications
+
+        notifications.send_due()
+
+    @property
+    def sent(self) -> list:
+        self.deliver()
+        return self._sent
+
+    @property
+    def markups(self) -> list:
+        self.deliver()
+        return self._markups
 
     def client(self, telegram_id: int, first_name: str = "Client", language: str = "fr", phone: str | None = None) -> int:
         """Profil client, comme après l'inscription dans le bot."""
@@ -272,18 +300,16 @@ def live_backend(monkeypatch, backend_db_url):
     monkeypatch.setattr(backend_client, "BACKEND_AUTH_HEADERS", {"X-API-Key": TEST_BACKEND_API_KEY})
     live = LiveBackend(database_module)
     tasks_module = importlib.import_module("backend.app.tasks")
-    monkeypatch.setattr(tasks_module, "send_telegram_message", lambda chat_id, text, reply_markup=None: live.sent.append((chat_id, text)))
     # Les tâches du planificateur ouvrent leur propre session : sur cette base.
     monkeypatch.setattr(tasks_module, "SessionLocal", database_module.SessionLocal)
-    # Messages envoyés par le backend lui-même (arrivée du prestataire) : gardés
+    # Messages que le backend envoie lui-même (boîte d'envoi `notifications`) :
+    # un expéditeur Telegram de test les garde, rédigés comme ils partiraient,
     # avec leurs boutons pour que les tests puissent les « appuyer ».
-    notify_module = importlib.import_module("backend.app.notify")
+    from backend.tests import boite_envoi
 
-    def _record(chat_id, text, reply_markup=None):
-        live.sent.append((chat_id, text))
-        live.markups.append((chat_id, reply_markup))
-        return True
+    def _record(chat_id, text, markup):
+        live._sent.append((chat_id, text))
+        live._markups.append((chat_id, markup))
 
-    monkeypatch.setattr(notify_module, "send_telegram_message", _record)
-    monkeypatch.setattr(notify_module, "send_telegram_photo", lambda chat_id, file_id, caption, reply_markup=None: _record(chat_id, caption, reply_markup))
+    live.telegram = boite_envoi.record_telegram(monkeypatch, _record)
     return live

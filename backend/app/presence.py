@@ -22,13 +22,13 @@ l'admin est prévenu.
 
 Toutes les décisions passent par le verrou de la mission : deux réponses
 simultanées (le client appuie, le prestataire tape le code) n'enregistrent
-qu'une présence. Les messages partent après validation (`notify_*`), jamais
-avant : un message envoyé ne décrit que ce qui est enregistré.
+qu'une présence. Les messages sont des notifications écrites dans la même
+transaction que la décision (backend/app/evenements.py) : un message ne
+décrit que ce qui est enregistré, et rien d'enregistré n'est oublié.
 """
 
 import hashlib
 import hmac
-from html import escape
 import logging
 import os
 from dataclasses import dataclass, field
@@ -36,9 +36,8 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from backend.app import ledger, notify, profils
-from backend.app.models import BotMission, MissionPresence, NexisAccount
-from messages import get_message
+from backend.app import evenements, ledger
+from backend.app.models import BotMission, MissionPresence
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +130,8 @@ def declare_arrival(db: Session, mission_id: int, provider_account_id: int) -> P
     if presence.client_asked_at is None or answered_not_yet or now - presence.client_asked_at >= ASK_AGAIN_AFTER:
         presence.client_asked_at = now
         result.client_asked = result.changed = True
+        # La question part avec ce qui l'a causée, dans la même transaction.
+        evenements.presence_question(db, mission, presence_code(mission_id), now)
     db.commit()
     return result
 
@@ -145,6 +146,8 @@ def confirm_by_client(db: Session, mission_id: int, client_account_id: int) -> P
     _require_waiting_for_arrival(db, mission)
     presence = presence or _presence(db, mission_id, create=True)
     _confirm(db, mission, presence, "client")
+    # Le client voit la réponse dans son canal ; le prestataire est prévenu.
+    evenements.presence_confirmed(db, mission, tell_client=False, tell_provider=True)
     db.commit()
     return PresenceResult(mission, presence, changed=True, events=["confirmed"])
 
@@ -168,12 +171,14 @@ def confirm_by_code(db: Session, mission_id: int, provider_account_id: int, code
         raise PresenceCodeRefused("presence_code_locked", mission, 0)
     if hmac.compare_digest(code, expected):
         _confirm(db, mission, presence, "presence_code")
+        evenements.presence_confirmed(db, mission, tell_client=True, tell_provider=False)
         db.commit()
         return PresenceResult(mission, presence, changed=True, events=["confirmed"])
     presence.failed_code_attempts += 1
     just_locked = presence.failed_code_attempts >= MAX_CODE_ATTEMPTS
     if just_locked:
         presence.code_locked_at = _utcnow()
+        evenements.presence_code_locked(db, mission, MAX_CODE_ATTEMPTS)
     attempts_left = MAX_CODE_ATTEMPTS - presence.failed_code_attempts
     # Enregistré avant le refus : l'appelant annule la transaction en cours
     # sur un refus, l'essai doit rester compté.
@@ -195,6 +200,8 @@ def answer_not_yet(db: Session, mission_id: int, client_account_id: int) -> Pres
         presence.client_asked_at is not None and presence.not_yet_at < presence.client_asked_at
     )
     presence.not_yet_at = _utcnow()
+    if first_answer:
+        evenements.presence_not_yet(db, mission, presence.not_yet_at)
     db.commit()
     return PresenceResult(mission, presence, changed=first_answer, events=["not_yet"] if first_answer else [])
 
@@ -209,9 +216,11 @@ def report_wrong_person(db: Session, mission_id: int, client_account_id: int) ->
         return PresenceResult(mission, presence)
     presence = presence or _presence(db, mission_id, create=True)
     presence.wrong_person_reported_at = _utcnow()
-    # Mêmes règles qu'un litige ordinaire (payée, pas réglée, état permis) ;
-    # un refus annule aussi le signalement.
-    mission = ledger.open_dispute(db, mission_id, client_account_id, WRONG_PERSON_REASON)
+    # Prestataire et équipe prévenus dans la transaction du litige (écrits
+    # avant : `open_dispute` valide). Mêmes règles qu'un litige ordinaire
+    # (payée, pas réglée, état permis) ; un refus annule tout.
+    evenements.presence_wrong_person(db, mission)
+    mission = ledger.open_dispute(db, mission_id, client_account_id, WRONG_PERSON_REASON, notify_provider=False)
     db.commit()
     return PresenceResult(mission, db.get(MissionPresence, mission_id), changed=True, events=["wrong_person"])
 
@@ -245,107 +254,3 @@ def viewer_role(db: Session, mission: BotMission, account_id: int | None, is_adm
     if mission.provider_account_id == account_id:
         return "provider"
     return None
-
-
-# --- Messages (après validation) ---------------------------------------------
-
-
-def _telegram_party(db: Session, account_id: int | None) -> tuple[int | None, str]:
-    telegram_id = ledger.telegram_id_of(db, account_id)
-    account = db.get(NexisAccount, account_id) if account_id else None
-    return telegram_id, account.language if account is not None else "fr"
-
-
-def _provider_finish_keyboard(mission_id: int, lang: str) -> dict:
-    return {"inline_keyboard": [
-        [{"text": get_message("button_finish_mission", lang), "callback_data": f"mission_finish_{mission_id}"}],
-        [{"text": get_message("button_view_place", lang), "callback_data": f"mission_place_{mission_id}"}],
-    ]}
-
-
-def provider_arrival_keyboard(mission_id: int, lang: str) -> dict:
-    """Prestataire d'une mission payée qui n'a pas encore commencé."""
-    return {"inline_keyboard": [
-        [{"text": get_message("button_arrived", lang), "callback_data": f"presence_arrived_{mission_id}"}],
-        [{"text": get_message("button_presence_enter_code", lang), "callback_data": f"presence_code_{mission_id}"}],
-        [{"text": get_message("button_view_place", lang), "callback_data": f"mission_place_{mission_id}"}],
-    ]}
-
-
-def notify_client_question(db: Session, mission_id: int) -> None:
-    """« Votre prestataire est-il arrivé ? », avec la photo et le prénom du
-    prestataire (le client vérifie que c'est bien la personne inscrite) et
-    son code de présence."""
-    mission = db.get(BotMission, mission_id)
-    client_id, lang = _telegram_party(db, mission.client_account_id)
-    if client_id is None:
-        return
-    provider = profils.provider_profile(db, mission.provider_account_id)
-    name = (provider.full_name or "").split()[0] if provider is not None and provider.full_name else "—"
-    text = get_message(
-        "presence_question_client", lang, mission_id=mission_id, provider_name=escape(name), code=presence_code(mission_id)
-    )
-    markup = {"inline_keyboard": [
-        [{"text": get_message("button_presence_yes", lang), "callback_data": f"presence_yes_{mission_id}"}],
-        [{"text": get_message("button_presence_not_yet", lang), "callback_data": f"presence_notyet_{mission_id}"}],
-        [{"text": get_message("button_presence_wrong", lang), "callback_data": f"presence_wrong_{mission_id}"}],
-    ]}
-    if provider is not None and provider.selfie_file_id:
-        if notify.send_telegram_photo(client_id, provider.selfie_file_id, text, markup):
-            return
-    # Sans photo (ou photo refusée par Telegram), la question part quand même.
-    notify.send_telegram_message(client_id, text, markup)
-
-
-def notify_confirmed(db: Session, mission_id: int, *, tell_client: bool, tell_provider: bool) -> None:
-    """Présence confirmée et mission démarrée. Chacun est prévenu par ce
-    message, sauf celui dont le canal vient déjà d'afficher la réponse."""
-    mission = db.get(BotMission, mission_id)
-    if tell_client:
-        client_id, lang = _telegram_party(db, mission.client_account_id)
-        if client_id is not None:
-            notify.send_telegram_message(client_id, get_message("presence_confirmed_client", lang, mission_id=mission_id))
-    if tell_provider:
-        provider_id, lang = _telegram_party(db, mission.provider_account_id)
-        if provider_id is not None:
-            notify.send_telegram_message(
-                provider_id,
-                get_message("presence_confirmed_provider", lang, mission_id=mission_id),
-                _provider_finish_keyboard(mission_id, lang),
-            )
-
-
-def notify_not_yet(db: Session, mission_id: int) -> None:
-    mission = db.get(BotMission, mission_id)
-    provider_id, lang = _telegram_party(db, mission.provider_account_id)
-    if provider_id is not None:
-        notify.send_telegram_message(
-            provider_id, get_message("presence_not_yet_provider", lang, mission_id=mission_id), provider_arrival_keyboard(mission_id, lang)
-        )
-
-
-def notify_wrong_person(db: Session, mission_id: int) -> None:
-    from backend.app.tasks import _alert_admin
-
-    mission = db.get(BotMission, mission_id)
-    provider_id, lang = _telegram_party(db, mission.provider_account_id)
-    if provider_id is not None:
-        notify.send_telegram_message(provider_id, get_message("presence_wrong_provider", lang, mission_id=mission_id))
-    _alert_admin(
-        f"🚫 « Ce n'est pas lui » : le client de la mission NXH-{mission_id:04d} dit que la personne arrivée "
-        f"n'est pas le prestataire inscrit (Telegram {provider_id}). Litige ouvert, fonds gelés. À examiner dans /admin → Litiges."
-    )
-
-
-def notify_code_locked(db: Session, mission_id: int) -> None:
-    from backend.app.tasks import _alert_admin
-
-    mission = db.get(BotMission, mission_id)
-    provider_id = ledger.telegram_id_of(db, mission.provider_account_id)
-    client_id, lang = _telegram_party(db, mission.client_account_id)
-    if client_id is not None:
-        notify.send_telegram_message(client_id, get_message("presence_code_locked_client", lang, mission_id=mission_id))
-    _alert_admin(
-        f"⚠️ Code de présence : {MAX_CODE_ATTEMPTS} mauvais codes tapés par le prestataire (Telegram {provider_id}) "
-        f"sur la mission NXH-{mission_id:04d}. Seul le client peut maintenant confirmer l'arrivée. Tentative de deviner le code ?"
-    )

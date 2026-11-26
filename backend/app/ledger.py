@@ -103,6 +103,14 @@ FEES = "fees"  # frais facturés par l'agrégateur
 PLATFORM = "platform"
 
 
+def _events():
+    """Notifications des événements (backend/app/evenements.py), écrites dans
+    la transaction de l'opération. Import tardif : evenements lit ce module."""
+    from backend.app import evenements
+
+    return evenements
+
+
 def _utcnow() -> datetime:
     # Colonnes DateTime naïves en UTC, comme le reste du schéma.
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -609,6 +617,8 @@ def fund_mission(
         mission.net_provider = float(amounts["net"])
         mission.payment_status = "paid_escrow"
         _set_status(mission, "confirmed")
+        # Le prestataire apprend qu'il peut y aller, dans la même transaction.
+        _events().mission_funded(db, mission, method)
 
     _write(db, mission_id, FUNDING, matches, write)
     return db.get(BotMission, mission_id)
@@ -661,6 +671,7 @@ def finish_mission(db: Session, mission_id: int, provider_account_id: int) -> Bo
         raise MoneyError("invalid_state", mission=mission)
     _set_status(mission, "awaiting_confirmation")
     mission.release_after = mission.status_changed_at + AUTO_RELEASE_DELAY
+    _events().mission_finished(db, mission)
     db.commit()
     return mission
 
@@ -770,6 +781,7 @@ def confirm_completion(db: Session, mission_id: int, client_account_id: int) -> 
         payment_status="released",
         status="completed",
         matches=lambda operation: operation.kind == "release",
+        on_recorded=lambda operation: _events().mission_released(db, mission, automatic=False, details=operation.details),
     )
 
 
@@ -794,13 +806,16 @@ def auto_release(db: Session, mission_id: int, now: datetime | None = None) -> B
         payment_status="released",
         status="completed",
         matches=lambda operation: False,
+        on_recorded=lambda operation: _events().mission_released(db, mission, automatic=True, details=operation.details),
     )
 
 
 # --- Litige -------------------------------------------------------------------
 
 
-def open_dispute(db: Session, mission_id: int, client_account_id: int, reason: str) -> BotMission:
+def open_dispute(
+    db: Session, mission_id: int, client_account_id: int, reason: str, *, notify_provider: bool = True
+) -> BotMission:
     """Gèle les fonds : plus aucune libération (manuelle ou automatique) tant
     que l'admin n'a pas tranché."""
     reason = (reason or "").strip()
@@ -821,6 +836,8 @@ def open_dispute(db: Session, mission_id: int, client_account_id: int, reason: s
     mission.dispute_opened_at = now
     mission.dispute_deadline = now + DISPUTE_RESOLUTION_DELAY
     _set_status(mission, "disputed")
+    if notify_provider:
+        _events().dispute_opened(db, mission)
     db.commit()
     _recompute_stats(db, mission)
     return db.get(BotMission, mission_id)
@@ -935,6 +952,8 @@ def decide_dispute(
         try:
             _cancel_pending_offer(db, mission_id, now)
             db.add(row)
+            db.flush()
+            _events().dispute_decided(db, mission, row)
             db.commit()
         except IntegrityError:
             # Décision enregistrée au même instant par une autre demande : un
@@ -992,6 +1011,7 @@ def contest_dispute_decision(
     # Le délai de réponse repart pour la révision, avec ses alertes.
     mission.dispute_deadline = now + DISPUTE_REVIEW_DELAY
     mission.dispute_overdue_alerted_at = None
+    _events().dispute_contested(db, mission, first)
     db.commit()
     return db.get(BotMission, mission_id)
 
@@ -1042,6 +1062,7 @@ def _execute(db: Session, mission: BotMission, row: DisputeDecision, *, now: dat
     def mark_executed(operation: MoneyOperation) -> None:
         row.executed_at = now
         row.executed_operation_id = operation.id
+        _events().dispute_settled(db, mission, row.id, details)
 
     def matches(operation: MoneyOperation) -> bool:
         # Une exécution concurrente de la même décision a déjà écrit le règlement.
@@ -1166,20 +1187,21 @@ def propose_dispute_settlement(
         if kind == "redo"
         else _decision_amounts(funded, kind, percentage)
     )
-    db.add(
-        DisputeSettlementOffer(
-            mission_id=mission_id,
-            kind=kind,
-            provider_percentage=percentage,
-            currency=mission.currency,
-            status="pending",
-            proposed_by_account_id=client_account_id,
-            proposed_at=now,
-            expires_at=now + SETTLEMENT_OFFER_DELAY,
-            **amounts,
-        )
+    offer = DisputeSettlementOffer(
+        mission_id=mission_id,
+        kind=kind,
+        provider_percentage=percentage,
+        currency=mission.currency,
+        status="pending",
+        proposed_by_account_id=client_account_id,
+        proposed_at=now,
+        expires_at=now + SETTLEMENT_OFFER_DELAY,
+        **amounts,
     )
+    db.add(offer)
     try:
+        db.flush()
+        _events().settlement_offer(db, offer, "proposed")
         db.commit()
     except IntegrityError:
         # Proposition enregistrée au même instant par une autre demande.
@@ -1239,6 +1261,7 @@ def accept_dispute_settlement(
         offer.closed_at = now
         if operation is not None:
             offer.settlement_operation_id = operation.id
+        _events().settlement_offer(db, offer, "accepted")
 
     if offer.kind == "redo":
         accepted()
@@ -1291,6 +1314,7 @@ def decline_dispute_settlement(
     offer.status = "declined"
     offer.responded_by_account_id = provider_account_id
     offer.closed_at = now
+    _events().settlement_offer(db, offer, "declined")
     db.commit()
     return db.get(BotMission, mission_id)
 
@@ -1310,6 +1334,7 @@ def expire_dispute_settlement(db: Session, offer_id: int, now: datetime | None =
         return False
     offer.status = "expired"
     offer.closed_at = offer.expires_at
+    _events().settlement_offer(db, offer, "expired")
     db.commit()
     return True
 

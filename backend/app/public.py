@@ -226,8 +226,8 @@ def verify_challenge(
             app_version=app_version,
             label=payload.label,
         )
-    # Nouveau téléphone sur un compte existant : l'alerte Telegram est dans la
-    # boîte d'envoi (Device.alert_due_at), envoyée par la tâche planifiée.
+    # Nouveau téléphone sur un compte existant : l'alerte est dans la boîte
+    # d'envoi (table `notifications`), envoyée juste après la réponse.
     return _tokens_view(tokens)
 
 

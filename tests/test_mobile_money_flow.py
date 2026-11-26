@@ -55,6 +55,7 @@ def test_a_payment_waits_for_the_phone_then_the_backend_confirms_and_notifies(mo
     SlowGateway.validated = False
     monkeypatch.setattr(mobile_money, "get_gateway", lambda: SlowGateway())
     mission_id, quote_id = _accepted_quote(live_backend)
+    live_backend.sent.clear()
 
     callback = DummyCallback(CLIENT_ID, data=f"qpay_op_{quote_id}_mpesa")
     asyncio.run(payment.paiement_mobile_money_operateur(callback))
@@ -120,22 +121,27 @@ def test_a_withdrawal_is_reserved_then_sent_after_admin_approval(monkeypatch, li
     payout_line = listing.message.edited_text
     assert payout_line is not None
 
+    live_backend.sent.clear()
     bot = DummyBot()
     asyncio.run(admin.admin_decider_retrait(DummyCallback(ADMIN_ID, data="admin_payout_ok_1", bot=bot)))
     assert live_backend.balance(PROVIDER_ID) == 40.0
-    assert bot.messages[0].chat_id == PROVIDER_ID
-    assert "envoyé" in bot.messages[0].text
+    assert bot.messages == [], "le prestataire est prévenu par le backend"
+    # Validé (envoi en cours), puis envoyé : un message par état.
+    assert [chat_id for chat_id, _ in live_backend.sent] == [PROVIDER_ID, PROVIDER_ID]
+    assert "envoyé" in live_backend.sent[-1][1]
 
 
 def test_a_rejected_withdrawal_gives_the_money_back(monkeypatch, live_backend):
     _earned(live_backend)
     _withdraw("50")
+    live_backend.sent.clear()
 
     bot = DummyBot()
     asyncio.run(admin.admin_decider_retrait(DummyCallback(ADMIN_ID, data="admin_payout_no_1", bot=bot)))
 
     assert live_backend.balance(PROVIDER_ID) == 90.0
-    assert "revenu" in bot.messages[0].text
+    [(chat_id, text)] = live_backend.sent
+    assert chat_id == PROVIDER_ID and "revenu" in text
 
 
 def test_withdrawal_amount_is_checked_by_the_backend(monkeypatch, live_backend):
@@ -267,12 +273,13 @@ SECOND_ADMIN_ID = 9
 def test_an_admin_cuts_withdrawals_from_telegram_and_the_other_admins_are_told(monkeypatch, live_backend):
     _earned(live_backend)
     live_backend.grant_admin(SECOND_ADMIN_ID)
+    live_backend.sent.clear()
     bot = DummyBot()
 
     command = DummyMessage(ADMIN_ID, text="/couper versements fraude suspectée", bot=bot)
     asyncio.run(admin.cmd_couper_rouvrir(command))
     assert command.answers == ["⛔ Versements coupés."]
-    assert [(sent.chat_id, "fraude suspectée" in sent.text) for sent in bot.messages] == [(SECOND_ADMIN_ID, True)]
+    assert [(chat_id, "fraude suspectée" in text) for chat_id, text in live_backend.sent] == [(SECOND_ADMIN_ID, True)]
 
     _, final, _ = _withdraw("50")
     assert final.message.edited_text == get_message("money_error_payouts_paused", "fr")
