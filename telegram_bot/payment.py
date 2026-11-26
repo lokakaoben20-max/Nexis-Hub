@@ -41,7 +41,6 @@ from telegram_bot.backend_client import (
 from telegram_bot.keyboards import (
     build_quote_accept_rich_message,
     clavier_client,
-    clavier_confirmation_client,
     clavier_confirmer_acceptation,
     clavier_envoyer_accord,
     clavier_mission_prestataire,
@@ -127,18 +126,6 @@ async def client_accepte_devis(callback: CallbackQuery):
             reply_markup=clavier_paiement(quote_id),
         )
 
-    provider_lang = await get_language(quote["provider_telegram_id"])
-    await callback.bot.send_message(
-        quote["provider_telegram_id"],
-        get_message(
-            "quote_accept_provider_notify",
-            provider_lang,
-            mission_id=quote["mission_id"],
-            amount=quote["amount"],
-            currency=quote["currency"],
-        ),
-        parse_mode="HTML",
-    )
     await callback.answer(get_message("toast_quote_accepted", client_lang))
 
 
@@ -161,24 +148,6 @@ async def _payable_quote(callback: CallbackQuery, quote_id: int):
     return quote
 
 
-async def _notify_provider_paid(callback: CallbackQuery, quote, funding: dict, message_key: str):
-    provider_lang = await get_language(quote["provider_telegram_id"])
-    await callback.bot.send_message(
-        quote["provider_telegram_id"],
-        get_message(
-            message_key,
-            provider_lang,
-            mission_id=quote["mission_id"],
-            brut=float(funding["total"]),
-            commission=float(funding["commission"]),
-            net=float(funding["net"]),
-            currency=quote["currency"],
-        ),
-        parse_mode="HTML",
-        reply_markup=clavier_mission_prestataire(quote["mission_id"], "start", provider_lang),
-    )
-
-
 async def _client_phone(callback: CallbackQuery, lang: str) -> str | None:
     """Numéro du profil client, lu dans le backend. None après avoir dit
     pourquoi à la personne (pas de numéro, ou service indisponible)."""
@@ -193,10 +162,9 @@ async def _client_phone(callback: CallbackQuery, lang: str) -> str | None:
     return phone
 
 
-async def _show_mobile_money_status(callback: CallbackQuery, result: dict, lang: str, notify_provider):
-    """Écran selon le statut de l'intention. `notify_provider` : prévenir le
-    prestataire si le paiement vient d'être confirmé par cet appel (sinon le
-    backend s'en charge)."""
+async def _show_mobile_money_status(callback: CallbackQuery, result: dict, lang: str):
+    """Écran selon le statut de l'intention. Le prestataire est prévenu par
+    le backend, avec le paiement (backend/app/evenements.py)."""
     intent = result["intent"]
     mission_id = intent["mission_id"]
     if intent["status"] == "succeeded":
@@ -226,8 +194,6 @@ async def _show_mobile_money_status(callback: CallbackQuery, result: dict, lang:
         text = get_message("payment_mobile_failed_client", lang, mission_id=mission_id)
         markup = clavier_client(lang)
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=markup)
-    if intent["status"] == "succeeded" and notify_provider is not None:
-        await notify_provider(result["money"]["funding"])
     await callback.answer()
 
 
@@ -269,10 +235,7 @@ async def paiement_mobile_money_operateur(callback: CallbackQuery):
         await callback.answer(money_failure_text(quote["mission_id"], error, lang), show_alert=True)
         return
 
-    async def notify_provider(funding):
-        await _notify_provider_paid(callback, quote, funding, "payment_confirmed_provider_notify")
-
-    await _show_mobile_money_status(callback, result, lang, notify_provider)
+    await _show_mobile_money_status(callback, result, lang)
 
 
 @router.callback_query(F.data.startswith("check_mm_"))
@@ -289,7 +252,7 @@ async def verifier_paiement_mobile_money(callback: CallbackQuery):
     if result["mission"]["telegram_id"] != callback.from_user.id:
         await callback.answer(get_message("money_error_not_mission_client", lang), show_alert=True)
         return
-    await _show_mobile_money_status(callback, result, lang, None)
+    await _show_mobile_money_status(callback, result, lang)
 
 
 # --- Arrivée confirmée -------------------------------------------------------
@@ -460,23 +423,14 @@ async def prestataire_termine_mission(callback: CallbackQuery):
     mission_id = int(callback.data.replace("mission_finish_", "", 1))
     provider_lang = await get_language(callback.from_user)
     try:
-        result = await backend_client.finish_mission(mission_id, callback.from_user.id)
+        await backend_client.finish_mission(mission_id, callback.from_user.id)
     except (MoneyRefused, BackendUnavailable) as error:
         await callback.answer(money_failure_text(mission_id, error, provider_lang), show_alert=True)
         return
-    mission = result["mission"]
-
     await callback.message.edit_text(
         get_message("provider_mission_finished", provider_lang, mission_id=mission_id),
         parse_mode="HTML",
         reply_markup=clavier_prestataire(provider_lang),
-    )
-    client_lang = await get_language(mission["telegram_id"])
-    await callback.bot.send_message(
-        mission["telegram_id"],
-        get_message("mission_finished_client", client_lang, mission_id=mission_id),
-        parse_mode="HTML",
-        reply_markup=clavier_confirmation_client(mission_id),
     )
     await callback.answer(get_message("toast_client_notified", provider_lang))
 
@@ -491,28 +445,12 @@ async def client_confirme_mission_terminee(callback: CallbackQuery, state: FSMCo
         await callback.answer(money_failure_text(mission_id, error, lang), show_alert=True)
         return
     mission = result["mission"]
-    settlement = result["money"]["settlement"] or {}
 
     await callback.message.edit_text(
         get_message("payment_released_client", lang, mission_id=mission_id),
         parse_mode="HTML",
         reply_markup=clavier_client(lang),
     )
-    if mission["provider_telegram_id"]:
-        provider_lang = await get_language(mission["provider_telegram_id"])
-        await callback.bot.send_message(
-            mission["provider_telegram_id"],
-            get_message(
-                "payment_released_provider",
-                provider_lang,
-                mission_id=mission_id,
-                net=settlement.get("provider_amount", f"{mission['net_provider']:.2f}"),
-                currency=mission["currency"],
-            ),
-            parse_mode="HTML",
-            reply_markup=clavier_prestataire(provider_lang),
-        )
-
     if mission["provider_telegram_id"]:
         display_full_name = html.escape(mission.get("provider_name") or "")
         await state.set_state(RatingFlow.rating)
@@ -616,7 +554,7 @@ async def litige_motif_recu(message: Message, state: FSMContext):
         return
 
     try:
-        result = await backend_client.open_dispute(mission_id, message.from_user.id, reason)
+        await backend_client.open_dispute(mission_id, message.from_user.id, reason)
     except BackendUnavailable as error:
         # On garde le motif saisi : le client renvoie le même message quand
         # le service répond de nouveau.
@@ -632,7 +570,6 @@ async def litige_motif_recu(message: Message, state: FSMContext):
         await message.answer(text, parse_mode="HTML", reply_markup=clavier_client(lang))
         return
     await state.clear()
-    mission = result["mission"]
 
     await message.answer(
         get_message("dispute_opened", lang, mission_id=mission_id),
@@ -642,13 +579,6 @@ async def litige_motif_recu(message: Message, state: FSMContext):
     await message.answer(
         get_message("dispute_offer_hint", lang), parse_mode="HTML", reply_markup=clavier_proposer_accord(mission_id, lang)
     )
-    if mission["provider_telegram_id"]:
-        provider_lang = await get_language(mission["provider_telegram_id"])
-        await message.bot.send_message(
-            mission["provider_telegram_id"],
-            get_message("dispute_opened_provider_notify", provider_lang, mission_id=mission_id),
-            parse_mode="HTML",
-        )
 
 
 async def _contest_language(telegram_id: int, role: str) -> str:
@@ -859,7 +789,6 @@ async def paiement_wallet(callback: CallbackQuery):
         parse_mode="HTML",
         reply_markup=clavier_client(lang),
     )
-    await _notify_provider_paid(callback, quote, funding, "payment_wallet_confirmed_provider_notify")
     await callback.answer(get_message("toast_wallet_payment_confirmed", lang))
 
 
@@ -880,12 +809,6 @@ async def client_refuse_devis(callback: CallbackQuery):
             mission_id=quote["mission_id"],
             prestataire=html.escape(quote["provider_name"] or "—"),
         ),
-        parse_mode="HTML",
-    )
-    provider_lang = await get_language(quote["provider_telegram_id"])
-    await callback.bot.send_message(
-        quote["provider_telegram_id"],
-        get_message("quote_rejected_provider_notify", provider_lang, mission_id=quote["mission_id"]),
         parse_mode="HTML",
     )
     await callback.answer(get_message("toast_quote_rejected", client_lang))

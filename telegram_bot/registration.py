@@ -28,7 +28,6 @@ from telegram_bot.backend_client import (
     money_failure_text,
 )
 from telegram_bot.keyboards import (
-    clavier_admin_new_provider,
     clavier_client,
     clavier_communes_prestataire,
     clavier_contact,
@@ -578,44 +577,8 @@ async def _terminer_inscription_prestataire(callback: CallbackQuery, state: FSMC
         reply_markup=clavier_prestataire(lang),
     )
     await callback.answer(get_message("toast_registration_complete", lang))
-
-    await _notifier_admin_nouveau_prestataire(callback, provider, data["provider_id_document_file_id"], data["provider_selfie_file_id"], portfolio_file_ids)
-
-
-async def _notifier_admin_nouveau_prestataire(callback: CallbackQuery, provider: dict, id_document_file_id: str, selfie_file_id: str, portfolio_file_ids: list[str]) -> None:
-    """Prévient chaque admin (liste tenue par le backend) qu'un prestataire
-    attend sa vérification. Un envoi raté ne fait jamais échouer l'inscription,
-    et n'empêche pas les autres admins d'être prévenus : le prestataire reste
-    de toute façon dans la liste des prestataires en attente.
-    """
-    for admin_id in await backend_client.admin_telegram_ids():
-        try:
-            await _envoyer_dossier_prestataire(callback, admin_id, provider, id_document_file_id, selfie_file_id, portfolio_file_ids)
-        except Exception:
-            logger.warning("Dossier du nouveau prestataire non envoyé à un admin", exc_info=True)
-
-
-async def _envoyer_dossier_prestataire(callback: CallbackQuery, admin_id: int, provider: dict, id_document_file_id: str, selfie_file_id: str, portfolio_file_ids: list[str]) -> None:
-    # Langue de l'admin, pas celle du prestataire : c'est l'admin qui lit.
-    admin_lang = await get_language(admin_id)
-    summary = get_message(
-        "admin_new_provider_summary",
-        admin_lang,
-        nom=html.escape(provider["full_name"]),
-        telephone=html.escape(provider["phone_number"] or ""),
-        services=html.escape(", ".join(provider["services"])),
-        communes=html.escape(", ".join(provider["communes"])),
-    )
-    await callback.bot.send_message(admin_id, summary, parse_mode="HTML")
-    await callback.bot.send_photo(admin_id, id_document_file_id, caption=get_message("admin_new_provider_id_caption", admin_lang))
-    await callback.bot.send_photo(admin_id, selfie_file_id, caption=get_message("admin_new_provider_selfie_caption", admin_lang))
-    for photo_file_id in portfolio_file_ids:
-        await callback.bot.send_photo(admin_id, photo_file_id, caption=get_message("admin_new_provider_portfolio_caption", admin_lang))
-    await callback.bot.send_message(
-        admin_id,
-        get_message("admin_new_provider_approve_prompt", admin_lang),
-        reply_markup=clavier_admin_new_provider(provider["account_id"]),
-    )
+    # Le dossier part aux admins par le backend, écrit avec l'inscription
+    # (backend/app/evenements.py : provider_submitted).
 
 
 async def _my_provider(callback: CallbackQuery) -> tuple[dict | None, str]:

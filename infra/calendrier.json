@@ -8,7 +8,7 @@
   "verification-mobile-money": "*/2 * * * *",
   "rapprochement-quotidien": "0 6 * * *",
   "analytics-quotidiennes": "0 8 * * *",
-  "alertes-nouvel-appareil": "*/1 * * * *",
   "purge-nonces": "30 * * * *",
-  "purge-cles-idempotence": "15 3 * * *"
+  "purge-cles-idempotence": "15 3 * * *",
+  "envoi-notifications": "*/1 * * * *"
 }

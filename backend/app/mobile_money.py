@@ -20,7 +20,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app import interrupteurs, ledger
+from backend.app import evenements, interrupteurs, ledger
 from backend.app.ledger import CENT, ZERO, MoneyError, to_money
 from backend.app.models import NexisAccount, PaymentIntent, Payout
 from backend.app.payment_gateway import FAILED, NOT_FOUND, PENDING, SUCCEEDED, GatewayUnavailable, get_gateway
@@ -230,6 +230,7 @@ def _apply_collection_result(db: Session, intent: PaymentIntent, result) -> Paym
             # Le délai laisse arriver une demande encore en route.
             if intent.created_at < now - STALLED_CREATED_AFTER:
                 intent.status, intent.failure_reason, intent.updated_at = "failed", "never_reached_gateway", now
+                evenements.payment_intent_closed(db, intent)
         else:
             # L'agrégateur avait accusé réception et ne la connaît plus :
             # incohérence de son côté, jamais un échec du nôtre. Rien ne bouge ;
@@ -240,11 +241,14 @@ def _apply_collection_result(db: Session, intent: PaymentIntent, result) -> Paym
     if result.status == PENDING:
         if intent.status != "expired":
             intent.status = "expired" if now > intent.expires_at else "pending"
+            if intent.status == "expired":
+                evenements.payment_intent_closed(db, intent)
         intent.updated_at = now
         db.commit()
         return intent
     if result.status == FAILED:
         intent.status, intent.failure_reason, intent.updated_at = "failed", (result.reason or "refused")[:255], now
+        evenements.payment_intent_closed(db, intent)
         db.commit()
         return intent
     if result.status != SUCCEEDED:
@@ -255,6 +259,7 @@ def _apply_collection_result(db: Session, intent: PaymentIntent, result) -> Paym
         intent.status, intent.failure_reason, intent.updated_at = "mismatch", f"reçu {result.amount} {result.currency}", now
         intent.received_amount = to_money(result.amount) if result.amount is not None else None
         intent.received_currency = (result.currency or "")[:3] or None
+        evenements.payment_intent_closed(db, intent)
         db.commit()
         return intent
 
@@ -264,6 +269,7 @@ def _apply_collection_result(db: Session, intent: PaymentIntent, result) -> Paym
     def also(mission):
         intent.status, intent.updated_at = "succeeded", now
         ledger.record_collection_fee(db, mission_id=intent.mission_id, currency=intent.currency, fee=fee, reference=reference)
+        evenements.payment_confirmed(db, intent, mission)
 
     try:
         ledger.fund_mission(
@@ -284,6 +290,7 @@ def _apply_collection_result(db: Session, intent: PaymentIntent, result) -> Paym
         )
         ledger.record_collection_fee(db, mission_id=intent.mission_id, currency=intent.currency, fee=fee, reference=reference)
         intent.status, intent.failure_reason, intent.updated_at = "overpaid", error.code, now
+        evenements.payment_intent_closed(db, intent)
         db.commit()
     return db.get(PaymentIntent, intent_id)
 
@@ -373,6 +380,9 @@ def _resolve_mismatch(db: Session, intent_id: int, admin_telegram_id: int, decis
         mission_id=intent.mission_id, admin_telegram_id=admin_telegram_id,
     )
     ledger.record_collection_fee(db, mission_id=intent.mission_id, currency=currency, fee=result.fee or ZERO, reference=reference)
+    # Le client apprend la décision dans la même transaction (avec le
+    # paiement de la mission, que `fund_mission` valide, pour `pay_mission`).
+    evenements.mismatch_resolved(db, intent)
     if decision == "credit_wallet":
         db.commit()
         return db.get(PaymentIntent, intent_id), True
@@ -439,7 +449,9 @@ def request_payout(db: Session, *, account_id: int, amount, currency: str, phone
     ledger.hold_payout(db, payout)
     db.commit()
     if review is None:
-        return _send_payout(db, payout.id)
+        # La personne qui demande voit la réponse à l'écran : pas de message
+        # en plus pour ce premier envoi.
+        return _send_payout(db, payout.id, notify=False)
     return payout
 
 
@@ -455,6 +467,8 @@ def approve_payout(db: Session, payout_id: int, admin_telegram_id: int) -> Payou
         # Versements coupés : le retrait reste à valider, l'argent bloqué.
         raise MoneyError("payouts_paused", 503)
     payout.status, payout.decided_by_telegram_id, payout.updated_at = "processing", admin_telegram_id, _utcnow()
+    # La personne apprend que son retrait est validé et part.
+    evenements.payout_changed(db, payout)
     db.commit()
     return _send_payout(db, payout_id)
 
@@ -470,11 +484,12 @@ def reject_payout(db: Session, payout_id: int, admin_telegram_id: int, reason: s
     ledger.release_payout(db, payout, "payout_rejected")
     payout.status, payout.decided_by_telegram_id = "rejected", admin_telegram_id
     payout.failure_reason, payout.updated_at = (reason or "")[:255] or None, _utcnow()
+    evenements.payout_changed(db, payout)
     db.commit()
     return payout
 
 
-def _send_payout(db: Session, payout_id: int, *, resend: bool = False) -> Payout:
+def _send_payout(db: Session, payout_id: int, *, resend: bool = False, notify: bool = True) -> Payout:
     """Envoie l'ordre de versement, verrou du retrait tenu pendant l'appel.
 
     Premier envoi (`resend=False`) : seulement s'il n'est jamais parti, pour
@@ -507,7 +522,7 @@ def _send_payout(db: Session, payout_id: int, *, resend: bool = False) -> Payout
         # référence.
         db.commit()
         return payout
-    return _apply_payout_result(db, payout, result)
+    return _apply_payout_result(db, payout, result, notify=notify)
 
 
 def refresh_payout(db: Session, payout_id: int) -> Payout:
@@ -534,7 +549,7 @@ def refresh_payout(db: Session, payout_id: int) -> Payout:
     return _apply_payout_result(db, payout, result)
 
 
-def _apply_payout_result(db: Session, payout: Payout, result) -> Payout:
+def _apply_payout_result(db: Session, payout: Payout, result, *, notify: bool = True) -> Payout:
     if result.status not in (SUCCEEDED, FAILED, PENDING, NOT_FOUND):
         raise RuntimeError(f"Statut d'agrégateur inconnu : {result.status}")
     if result.reference and not payout.gateway_reference:
@@ -546,6 +561,8 @@ def _apply_payout_result(db: Session, payout: Payout, result) -> Payout:
     elif result.status == FAILED:
         ledger.release_payout(db, payout, "payout_failed")
         payout.status, payout.failure_reason = "failed", (result.reason or "refused")[:255]
+    if notify and payout.status in ("succeeded", "failed"):
+        evenements.payout_changed(db, payout)
     db.commit()
     return payout
 

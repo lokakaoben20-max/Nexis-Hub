@@ -1,10 +1,9 @@
 """Tâches planifiées du backend : quand elles tournent, et jamais deux fois en même temps.
 
-Remplace Celery (worker + beat). L'alerte « Nouvel appareil », seul envoi
-qui passait par `.delay()`, est une boîte d'envoi en base (`Device.alert_due_at`)
-vidée chaque minute par la tâche `alertes-nouvel-appareil` : elle ne se perd
-pas si un courtier tombe. Une seule définition du
-calendrier, ici, sert partout :
+Remplace Celery (worker + beat). Les messages aux personnes passent par la
+boîte d'envoi en base (backend/app/notifications.py) : la tâche
+`envoi-notifications` envoie chaque minute celles qui restent, et reprend un
+envoi interrompu. Une seule définition du calendrier, ici, sert partout :
 
 - en production, Cloud Scheduler lance `python -m backend.app.taches lancer <nom>`
   (une exécution de tâche Cloud Run) aux heures de `CALENDRIER`, dont il lit
@@ -87,8 +86,9 @@ class Tache:
     frequence: Frequence
 
 
-# Mêmes fréquences que l'ancien `celery_app.beat_schedule`, plus l'alerte
-# « Nouvel appareil » (boîte d'envoi, chaque minute).
+# Mêmes fréquences que l'ancien `celery_app.beat_schedule`, plus l'envoi des
+# notifications (chaque minute, en dernier : il envoie aussi celles que les
+# autres tâches viennent d'écrire).
 CALENDRIER: dict[str, Tache] = {
     "relances-prestataires": Tache(tasks.send_provider_reminders, Frequence(toutes_les_minutes=10)),
     "devis-expires": Tache(tasks.check_expired_quotes, Frequence(minute=0)),
@@ -99,9 +99,9 @@ CALENDRIER: dict[str, Tache] = {
     "verification-mobile-money": Tache(tasks.check_pending_mobile_money, Frequence(toutes_les_minutes=2)),
     "rapprochement-quotidien": Tache(tasks.send_daily_reconciliation, Frequence(heure=6, minute=0)),
     "analytics-quotidiennes": Tache(tasks.send_daily_analytics, Frequence(heure=8, minute=0)),
-    "alertes-nouvel-appareil": Tache(tasks.send_pending_device_alerts, Frequence(toutes_les_minutes=1)),
     "purge-nonces": Tache(tasks.purge_request_nonces, Frequence(minute=30)),
     "purge-cles-idempotence": Tache(tasks.purge_idempotency_keys, Frequence(heure=3, minute=15)),
+    "envoi-notifications": Tache(tasks.send_notifications, Frequence(toutes_les_minutes=1)),
 }
 
 

@@ -44,6 +44,14 @@ from backend.app.models import (
     Service,
 )
 
+def _events():
+    """Notifications écrites avec la décision (backend/app/evenements.py),
+    importé ici à l'appel : `evenements` lit les profils."""
+    from backend.app import evenements
+
+    return evenements
+
+
 logger = logging.getLogger(__name__)
 
 LANGUAGES = ("fr", "ln", "en")
@@ -363,6 +371,7 @@ def register_provider(
     if provider is not None and not added_services_reviewed:
         _refuse_unreviewed_additions(provider, service_keys, _current_services(db, account_id))
     created = provider is None
+    submitted = created or provider.status == "rejected"
     if created:
         provider = ProviderProfile(
             account_id=account_id,
@@ -396,6 +405,10 @@ def register_provider(
     db.flush()
     _replace_services(db, account_id, service_keys)
     _replace_communes(db, account_id, commune_names)
+    if submitted:
+        # Nouvelle demande de vérification : le dossier part aux admins avec
+        # l'inscription, une fois.
+        _events().provider_submitted(db, provider, provider.updated_at)
     return provider, created
 
 
@@ -583,6 +596,7 @@ def decide_service_addition(
     addition.decided_by_account_id = admin_account_id
     addition.decided_at = _now()
     db.flush()
+    _events().service_addition_decided(db, addition)
     return addition, True
 
 
@@ -643,6 +657,7 @@ def verify_provider(db: Session, account_id: int) -> ProviderProfile:
         provider.badge = "verified"
     provider.updated_at = _now()
     db.flush()
+    _events().provider_decided(db, provider, "verify", provider.updated_at)
     return provider
 
 
@@ -657,6 +672,7 @@ def reject_provider(db: Session, account_id: int) -> ProviderProfile:
     provider.status = "rejected"
     provider.updated_at = _now()
     db.flush()
+    _events().provider_decided(db, provider, "reject", provider.updated_at)
     return provider
 
 
@@ -668,6 +684,7 @@ def set_suspended(db: Session, account_id: int, suspended: bool) -> ProviderProf
         provider.suspended_at = _now() if suspended else None
         provider.updated_at = _now()
         db.flush()
+        _events().provider_decided(db, provider, "suspend" if suspended else "unsuspend", provider.updated_at)
     return provider
 
 
