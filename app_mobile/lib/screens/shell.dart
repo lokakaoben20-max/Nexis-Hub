@@ -63,6 +63,15 @@ class _ShellState extends State<Shell> {
     super.dispose();
   }
 
+  void _showClientMissions() {
+    AppScope.of(context).setProviderSpace(false);
+    setState(() {
+      _shownProvider = false;
+      _tab = 1;
+      _picking = false;
+    });
+  }
+
   void _togglePicker() => setState(() => _picking = !_picking);
 
   @override
@@ -74,7 +83,8 @@ class _ShellState extends State<Shell> {
     final safeBottom = MediaQuery.paddingOf(context).bottom;
     // 96 dans la maquette, dont 34 pour la barre d'accueil de l'iPhone.
     final double barHeight = 62 + (safeBottom < 16 ? 16 : safeBottom);
-    final provider = AppScope.of(context).providerSpace;
+    final app = AppScope.of(context);
+    final provider = app.providerSpace;
     if (_shownProvider != provider) {
       // Changer d'espace ramène à son accueil.
       _shownProvider = provider;
@@ -142,23 +152,38 @@ class _ShellState extends State<Shell> {
               left: 0,
               right: 0,
               bottom: barHeight - 10,
-              child: IgnorePointer(
-                ignoring: !_picking,
-                child: _ServiceSheet(
-                  open: _picking,
-                  reduce: reduce,
-                  onPicked: (label) {
-                    _togglePicker();
-                    showComingSoon(context, label);
-                  },
-                  onOther: () {
-                    _togglePicker();
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const AllServicesScreen(),
-                      ),
-                    );
-                  },
+              child: ExcludeFocus(
+                excluding: !_picking,
+                child: ExcludeSemantics(
+                  excluding: !_picking,
+                  child: IgnorePointer(
+                    ignoring: !_picking,
+                    child: _ServiceSheet(
+                      open: _picking,
+                      reduce: reduce,
+                      onPicked: (service) {
+                        _togglePicker();
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => DescribeNeedScreen.forService(
+                              service: service,
+                              onViewMissions: _showClientMissions,
+                            ),
+                          ),
+                        );
+                      },
+                      onAllServices: () {
+                        _togglePicker();
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => AllServicesScreen(
+                              onViewMissions: _showClientMissions,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -223,6 +248,8 @@ class _ShellState extends State<Shell> {
                       child: _PlusButton(
                         open: _picking,
                         reduce: reduce,
+                        onClientHome: !provider && _tab == 0,
+                        takeHint: app.takeServiceHint,
                         label: _picking ? l.close : l.requestService,
                         ringColor: barColor,
                         onTap: _togglePicker,
@@ -276,10 +303,12 @@ class _ShellState extends State<Shell> {
 
 /// Le « + » sans texte : dégradé E, bord blanc, anneau bleu clair.
 /// Ouvert : fond bleu nuit, anneau gris, l'icône tourne de 135° (un X).
-class _PlusButton extends StatelessWidget {
+class _PlusButton extends StatefulWidget {
   const _PlusButton({
     required this.open,
     required this.reduce,
+    required this.onClientHome,
+    required this.takeHint,
     required this.label,
     required this.ringColor,
     required this.onTap,
@@ -287,60 +316,170 @@ class _PlusButton extends StatelessWidget {
 
   final bool open;
   final bool reduce;
+  final bool onClientHome;
+  final bool Function() takeHint;
   final String label;
   final Color ringColor;
   final VoidCallback onTap;
 
   @override
+  State<_PlusButton> createState() => _PlusButtonState();
+}
+
+class _PlusButtonState extends State<_PlusButton>
+    with SingleTickerProviderStateMixin {
+  late final _hint = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2650),
+  );
+  late final _pulse = _hint.drive(
+    TweenSequence<double>([
+      TweenSequenceItem(tween: ConstantTween(0.0), weight: 650),
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 520),
+      TweenSequenceItem(tween: ConstantTween(0.0), weight: 130),
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 520),
+      TweenSequenceItem(tween: ConstantTween(0.0), weight: 130),
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 700),
+    ]),
+  );
+  late final _scale = _pulse.drive(
+    TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(
+          begin: 1.0,
+          end: 1.18,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 35,
+      ),
+      TweenSequenceItem(
+        tween: Tween(
+          begin: 1.18,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeInOutCubic)),
+        weight: 65,
+      ),
+    ]),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateHint();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PlusButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _updateHint();
+  }
+
+  void _updateHint() {
+    if (!widget.onClientHome || widget.open) {
+      if (_hint.isAnimating) _hint.reset();
+      return;
+    }
+    final firstEntry = widget.takeHint();
+    if (widget.reduce) {
+      if (_hint.isAnimating) _hint.reset();
+    } else if (firstEntry) {
+      _hint.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _hint.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final _PlusButton(:open, :reduce, :label, :ringColor, :onTap) = widget;
     return Semantics(
       button: true,
       label: label,
       excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,
-        child: AnimatedContainer(
-          duration: Duration(milliseconds: reduce ? 0 : 300),
-          curve: Curves.ease,
-          width: 62,
-          height: 62,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: ringColor, width: 5),
-            color: open ? NexisColors.navy : null,
-            gradient: open
-                ? null
-                : const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [NexisColors.halo, NexisColors.gradientEnd],
-                  ),
-            boxShadow: open
-                ? const [
-                    BoxShadow(color: Color(0xFFE3E7EE), spreadRadius: 6),
-                    BoxShadow(
-                      color: Color(0x73021937),
-                      offset: Offset(0, 10),
-                      blurRadius: 20,
-                      spreadRadius: -8,
-                    ),
-                  ]
-                : const [
-                    BoxShadow(color: Color(0xFFDCEBFF), spreadRadius: 6),
-                    BoxShadow(
-                      color: Color(0x800350E6),
-                      offset: Offset(0, 10),
-                      blurRadius: 20,
-                      spreadRadius: -6,
-                    ),
-                  ],
-          ),
-          child: AnimatedRotation(
-            turns: open ? 135 / 360 : 0,
-            duration: Duration(milliseconds: reduce ? 0 : 350),
-            curve: const Cubic(.3, 1.4, .5, 1),
-            child: const NxIcon('add', color: Colors.white, size: 26),
-          ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: _pulse,
+                  builder: (context, _) {
+                    final progress = _pulse.value;
+                    if (progress == 0 || progress == 1) {
+                      return const SizedBox.shrink();
+                    }
+                    final expansion = Curves.easeOutCubic.transform(progress);
+                    return Transform.scale(
+                      scale: 1.18 + 0.45 * expansion,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: NexisColors.brand.withValues(
+                              alpha: 0.65 * (1 - progress),
+                            ),
+                            width: 2.5,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            ScaleTransition(
+              scale: _scale,
+              child: AnimatedContainer(
+                duration: Duration(milliseconds: reduce ? 0 : 300),
+                curve: Curves.ease,
+                width: 62,
+                height: 62,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: ringColor, width: 5),
+                  color: open ? NexisColors.navy : null,
+                  gradient: open
+                      ? null
+                      : const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [NexisColors.halo, NexisColors.gradientEnd],
+                        ),
+                  boxShadow: open
+                      ? const [
+                          BoxShadow(color: Color(0xFFE3E7EE), spreadRadius: 6),
+                          BoxShadow(
+                            color: Color(0x73021937),
+                            offset: Offset(0, 10),
+                            blurRadius: 20,
+                            spreadRadius: -8,
+                          ),
+                        ]
+                      : const [
+                          BoxShadow(color: Color(0xFFDCEBFF), spreadRadius: 6),
+                          BoxShadow(
+                            color: Color(0x800350E6),
+                            offset: Offset(0, 10),
+                            blurRadius: 20,
+                            spreadRadius: -6,
+                          ),
+                        ],
+                ),
+                child: AnimatedRotation(
+                  turns: open ? 135 / 360 : 0,
+                  duration: Duration(milliseconds: reduce ? 0 : 350),
+                  curve: const Cubic(.3, 1.4, .5, 1),
+                  child: const NxIcon('add', color: Colors.white, size: 26),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -348,20 +487,20 @@ class _PlusButton extends StatelessWidget {
 }
 
 /// « Quel service ? » (maquette validée) : huit services en tuiles sur trois
-/// colonnes, les demandés récemment d'abord, puis « Autre », qui ouvre la
+/// colonnes, les demandés récemment d'abord, puis « Tous les services », qui ouvre la
 /// liste complète. La liste vient du serveur.
 class _ServiceSheet extends StatelessWidget {
   const _ServiceSheet({
     required this.open,
     required this.reduce,
     required this.onPicked,
-    required this.onOther,
+    required this.onAllServices,
   });
 
   final bool open;
   final bool reduce;
-  final void Function(String label) onPicked;
-  final VoidCallback onOther;
+  final ValueChanged<CatalogService> onPicked;
+  final VoidCallback onAllServices;
 
   @override
   Widget build(BuildContext context) {
@@ -407,21 +546,19 @@ class _ServiceSheet extends StatelessWidget {
                     for (final s in shown)
                       _tile(
                         context,
-                        label: s.name,
+                        label: catalogServiceName(s, langOf(context)),
                         icon: catalogTile(
                           s,
                           size: 44,
-                          badge: s.isNew
-                              ? NewBadge(ringColor: _tileBg(context))
-                              : null,
+                          badge: s.isNew ? const NewBadge() : null,
                         ),
-                        onTap: () => onPicked(s.name),
+                        onTap: () => onPicked(s),
                       ),
                     _tile(
                       context,
-                      label: l.otherNeed,
-                      icon: KnownServiceTile(Service.autre, size: 44),
-                      onTap: onOther,
+                      label: l.allServices,
+                      icon: const ServiceTile(glyph: 'search', size: 44),
+                      onTap: onAllServices,
                     ),
                   ],
                 );
@@ -433,9 +570,6 @@ class _ServiceSheet extends StatelessWidget {
     );
   }
 
-  Color _tileBg(BuildContext context) =>
-      isDark(context) ? context.palette.bg : const Color(0xFFF3F5F9);
-
   Widget _tile(
     BuildContext context, {
     required String label,
@@ -444,31 +578,37 @@ class _ServiceSheet extends StatelessWidget {
   }) {
     final p = context.palette;
     return Semantics(
-      button: true,
       label: label,
+      button: true,
+      onTap: onTap,
       excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-          decoration: BoxDecoration(
-            color: _tileBg(context),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            children: [
-              icon,
-              const SizedBox(height: 6),
-              Text(
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: serviceChoiceStyle(
+          context,
+          radius: 16,
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            icon,
+            const SizedBox(height: 4),
+            Flexible(
+              child: Text(
                 label,
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
-                style: body(12.5, weight: FontWeight.w600, color: p.ink),
+                style: body(
+                  12.5,
+                  weight: FontWeight.w600,
+                  color: p.ink,
+                  height: 1.1,
+                ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// Couleurs de la charte Nexis (design/cadrage-design-2026-11-06.md).
 class NexisColors {
-  static const brand = Color(0xFF0350E6);
+  static const brand = Color(0xFF0A63F0);
   static const navy = Color(0xFF021937);
   static const gradientStart = Color(
     0xFF0870EE,

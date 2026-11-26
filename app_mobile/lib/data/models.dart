@@ -35,6 +35,7 @@ class Mission {
     required this.commune,
     required this.status,
     required this.payment,
+    this.catalogService,
     this.amount,
     this.providerName,
     this.quotesCount = 0,
@@ -51,6 +52,7 @@ class Mission {
 
   final int id;
   final Service service;
+  final CatalogService? catalogService;
   final String commune;
   final MissionStatus status;
   final PaymentState payment;
@@ -94,6 +96,7 @@ class Mission {
   }) => Mission(
     id: id,
     service: service,
+    catalogService: catalogService,
     commune: commune,
     status: status ?? this.status,
     payment: payment ?? this.payment,
@@ -386,6 +389,7 @@ class CatalogService {
     required this.id,
     required this.name,
     required this.color,
+    this.translations = const {},
     this.service,
     this.glyph,
     this.isNew = false,
@@ -396,6 +400,7 @@ class CatalogService {
   final String id;
   final String name;
   final int color;
+  final Map<String, String> translations;
 
   /// Service connu de l'app (icône de la police Nexis) ; sinon `glyph`.
   final Service? service;

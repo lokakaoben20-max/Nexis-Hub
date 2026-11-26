@@ -14,6 +14,20 @@ abstract class NexisRepository {
   /// d'option qui fait semblant.
   Set<String> get codeChannels;
 
+  /// Parcours de démonstration, après la vérification fictive du numéro.
+  bool openDemoAccount(String phone);
+
+  DateTime get signupTermsVersion;
+
+  /// Crée et sélectionne le profil fictif seulement si ses CGU sont acceptées.
+  bool registerDemoClient({
+    required String phone,
+    required String firstName,
+    required String lastName,
+    required String commune,
+    required DateTime? acceptedTermsVersion,
+  });
+
   Future<Profile> profile();
   Future<Wallet> wallet();
   Future<List<Mission>> missions();
@@ -26,6 +40,15 @@ abstract class NexisRepository {
 
   /// « Décrire mon besoin » : une demande libre, transmise à l'équipe.
   Future<void> sendFreeRequest(String title, String text);
+
+  List<String> get communes;
+
+  /// Crée une mission en attente de devis pour un service du catalogue.
+  Future<void> requestService({
+    required String serviceId,
+    required String commune,
+    required String description,
+  });
 
   /// Les devis reçus pour une mission, le mieux noté en premier.
   Future<List<Quote>> quotes(int missionId);

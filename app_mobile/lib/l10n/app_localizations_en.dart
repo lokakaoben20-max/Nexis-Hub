@@ -25,6 +25,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get haveAccount => 'I already have an account';
 
   @override
+  String get signInTitle => 'Sign in';
+
+  @override
+  String get noAccountTitle => 'No account found';
+
+  @override
+  String get noAccountHint =>
+      'Check the number you entered or create a profile with this number.';
+
+  @override
+  String get changeLoginNumber => 'Change number';
+
+  @override
   String get yourNumber => 'Your number';
 
   @override
@@ -124,6 +137,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get requestService => 'Request a service';
 
   @override
+  String get firstRequestTitle => 'What do you need help with?';
+
+  @override
   String get whichService => 'Which service?';
 
   @override
@@ -165,6 +181,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get compareQuotes => 'Compare quotes';
+
+  @override
+  String get viewQuotes => 'View quotes';
 
   @override
   String get follow => 'Track';
@@ -807,6 +826,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String eveningHome(String name) {
+    return 'Hello, $name';
+  }
+
+  @override
   String helloHome(String name) {
     return 'Hello, $name';
   }
@@ -892,6 +916,19 @@ class AppLocalizationsEn extends AppLocalizations {
       'Describe your need in your own words, we pass it on to the team.';
 
   @override
+  String get serviceRequestDemo => 'This is a test request.';
+
+  @override
+  String get serviceRequestNoPay => 'There is no charge at this step.';
+
+  @override
+  String get serviceRequestSaved => 'Test request saved';
+
+  @override
+  String get serviceRequestSavedText =>
+      'Find it in My missions under “Waiting for quotes”.';
+
+  @override
   String get describeNeed => 'Describe my need';
 
   @override
@@ -953,4 +990,33 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get securedByNexis => 'Secured by Nexis Hub';
+
+  @override
+  String get signupTitle => 'Let’s get to know you';
+
+  @override
+  String get signupFirstName => 'First name';
+
+  @override
+  String get signupLastName => 'Last name';
+
+  @override
+  String get signupDemoNotice => 'Demo sign-up. Use fictional information.';
+
+  @override
+  String get signupReadTerms => 'Read the terms of use';
+
+  @override
+  String get signupAcceptTerms => 'I’ve read and accept the terms of use';
+
+  @override
+  String get signupCreateProfile => 'Create my profile';
+
+  @override
+  String get signupFailed =>
+      'Your profile could not be created. Check your details and try again.';
+
+  @override
+  String get signupDemoTerms =>
+      'Demo document. Use this screen to try reading and accepting the terms. Profiles, missions and payments in this preview are fictional. Your sign-up details are cleared when the app reloads.';
 }

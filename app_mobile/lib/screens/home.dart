@@ -13,6 +13,9 @@ import 'mission_card.dart';
 
 typedef _HomeData = ({Profile profile, Wallet wallet, List<Mission> missions});
 
+String homeGreeting(AppLocalizations l, String name, DateTime time) =>
+    time.hour < 12 ? l.helloHome(name) : l.eveningHome(name);
+
 /// 1. Accueil client, d'après la maquette validée le 2026-11-22
 /// (design/app-accueil-frontend-design.html) : fond uni, une seule carte de
 /// portefeuille, cinq actions en tuiles, puis les prestations (En cours en
@@ -67,78 +70,157 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return ColoredBox(
       color: pageColor(context),
-      child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(18, top + 12, 18, widget.bottomInset + 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _header(context, data, l),
-            const SizedBox(height: 16),
-            WalletPanel(wallet: data.wallet),
-            const SizedBox(height: 18),
-            Semantics(
-              container: true,
-              label: l.quickActions,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+      child: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(18, top + 12, 18, 0),
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _action('services', l.actionServices, widget.onPickService),
-                  _action(
-                    'deposit',
-                    l.actionDeposit,
-                    () => showComingSoon(context, l.actionDeposit),
-                  ),
-                  _action(
-                    'withdraw',
-                    l.actionWithdraw,
-                    () => showComingSoon(context, l.actionWithdraw),
-                  ),
-                  _action('history', l.actionHistory, () => widget.onTab(2)),
-                  _action(
-                    'more',
-                    l.actionMore,
-                    () => showComingSoon(context, l.actionMore),
+                  _header(context, data, l),
+                  const SizedBox(height: 16),
+                  WalletPanel(wallet: data.wallet),
+                  const SizedBox(height: 18),
+                  Semantics(
+                    container: true,
+                    label: l.quickActions,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _action(
+                          'services',
+                          l.actionServices,
+                          widget.onPickService,
+                        ),
+                        _action(
+                          'deposit',
+                          l.actionDeposit,
+                          () => showComingSoon(context, l.actionDeposit),
+                        ),
+                        _action(
+                          'withdraw',
+                          l.actionWithdraw,
+                          () => showComingSoon(context, l.actionWithdraw),
+                        ),
+                        _action(
+                          'history',
+                          l.actionHistory,
+                          () => widget.onTab(2),
+                        ),
+                        _action(
+                          'more',
+                          l.actionMore,
+                          () => showComingSoon(context, l.actionMore),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 22),
-            UnderlineTabs(
-              labels: [l.tabOngoing, l.tabDone],
-              selected: _tab,
-              badges: {0: ongoing.length},
-              onChanged: (i) => setState(() => _tab = i),
-            ),
-            const SizedBox(height: 12),
-            if (list.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(24),
-                child: Center(
-                  child: Text(l.noMissions, style: body(14, color: p.muted)),
+          ),
+          if (data.missions.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  18,
+                  12,
+                  18,
+                  widget.bottomInset + 12,
                 ),
-              )
-            else
-              for (final mission in list.take(_shown)) ...[
-                MissionCard(mission: mission, showAction: false),
-                const SizedBox(height: 10),
-              ],
-            if (list.length > _shown)
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => widget.onTab(1),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Text(
-                    l.seeMissions(list.length),
-                    textAlign: TextAlign.center,
-                    style: body(
-                      13.5,
-                      weight: FontWeight.w600,
-                      color: isDark(context) ? p.softInk : NexisColors.brand,
+                child: _firstRequest(context, l),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(18, 0, 18, widget.bottomInset + 24),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 22),
+                    UnderlineTabs(
+                      labels: [l.tabOngoing, l.tabDone],
+                      selected: _tab,
+                      badges: {0: ongoing.length},
+                      onChanged: (i) => setState(() => _tab = i),
                     ),
-                  ),
+                    const SizedBox(height: 12),
+                    if (list.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Center(
+                          child: Text(
+                            l.noMissions,
+                            style: body(14, color: p.muted),
+                          ),
+                        ),
+                      )
+                    else
+                      for (final mission in list.take(_shown)) ...[
+                        MissionCard(mission: mission, showAction: false),
+                        const SizedBox(height: 10),
+                      ],
+                    if (list.length > _shown)
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => widget.onTab(1),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: Text(
+                            l.seeMissions(list.length),
+                            textAlign: TextAlign.center,
+                            style: body(
+                              13.5,
+                              weight: FontWeight.w600,
+                              color: isDark(context)
+                                  ? p.softInk
+                                  : NexisColors.brand,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _firstRequest(BuildContext context, AppLocalizations l) {
+    final p = context.palette;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 340),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              l.firstRequestTitle,
+              textAlign: TextAlign.center,
+              style: title(17, color: p.ink),
+            ),
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: widget.onPickService,
+              style: FilledButton.styleFrom(
+                backgroundColor: NexisColors.brand,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(0, 48),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 22,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: Text(l.requestService, textAlign: TextAlign.center),
+            ),
           ],
         ),
       ),
@@ -151,7 +233,7 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         Expanded(
           child: Text(
-            l.helloHome(data.profile.firstName),
+            homeGreeting(l, data.profile.firstName, DateTime.now()),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: title(21, color: p.ink).copyWith(letterSpacing: -.21),

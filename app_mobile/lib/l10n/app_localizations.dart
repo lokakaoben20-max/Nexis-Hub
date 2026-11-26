@@ -130,6 +130,30 @@ abstract class AppLocalizations {
   /// **'J\'ai déjà un compte'**
   String get haveAccount;
 
+  /// No description provided for @signInTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'Connectez-vous'**
+  String get signInTitle;
+
+  /// No description provided for @noAccountTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'Aucun compte trouvé'**
+  String get noAccountTitle;
+
+  /// No description provided for @noAccountHint.
+  ///
+  /// In fr, this message translates to:
+  /// **'Vérifiez le numéro saisi ou créez un profil avec ce numéro.'**
+  String get noAccountHint;
+
+  /// No description provided for @changeLoginNumber.
+  ///
+  /// In fr, this message translates to:
+  /// **'Changer de numéro'**
+  String get changeLoginNumber;
+
   /// No description provided for @yourNumber.
   ///
   /// In fr, this message translates to:
@@ -310,6 +334,12 @@ abstract class AppLocalizations {
   /// **'Demander un service'**
   String get requestService;
 
+  /// No description provided for @firstRequestTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'De quoi avez-vous besoin ?'**
+  String get firstRequestTitle;
+
   /// No description provided for @whichService.
   ///
   /// In fr, this message translates to:
@@ -387,6 +417,12 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'Comparer les devis'**
   String get compareQuotes;
+
+  /// No description provided for @viewQuotes.
+  ///
+  /// In fr, this message translates to:
+  /// **'Voir les devis'**
+  String get viewQuotes;
 
   /// No description provided for @follow.
   ///
@@ -1414,10 +1450,16 @@ abstract class AppLocalizations {
   /// **'Recevoir plutôt par {channel}'**
   String receiveInstead(String channel);
 
+  /// No description provided for @eveningHome.
+  ///
+  /// In fr, this message translates to:
+  /// **'Bonsoir, {name}'**
+  String eveningHome(String name);
+
   /// No description provided for @helloHome.
   ///
   /// In fr, this message translates to:
-  /// **'Mbote, {name}'**
+  /// **'Bonjour, {name}'**
   String helloHome(String name);
 
   /// No description provided for @heldForMissions.
@@ -1552,6 +1594,30 @@ abstract class AppLocalizations {
   /// **'Décrivez votre besoin avec vos mots, nous le transmettons à l\'équipe.'**
   String get cantFindHint;
 
+  /// No description provided for @serviceRequestDemo.
+  ///
+  /// In fr, this message translates to:
+  /// **'Cette demande est une simulation.'**
+  String get serviceRequestDemo;
+
+  /// No description provided for @serviceRequestNoPay.
+  ///
+  /// In fr, this message translates to:
+  /// **'Vous ne payez rien à cette étape.'**
+  String get serviceRequestNoPay;
+
+  /// No description provided for @serviceRequestSaved.
+  ///
+  /// In fr, this message translates to:
+  /// **'Demande de test enregistrée'**
+  String get serviceRequestSaved;
+
+  /// No description provided for @serviceRequestSavedText.
+  ///
+  /// In fr, this message translates to:
+  /// **'Retrouvez-la dans vos missions, sous « En attente de devis ».'**
+  String get serviceRequestSavedText;
+
   /// No description provided for @describeNeed.
   ///
   /// In fr, this message translates to:
@@ -1665,6 +1731,60 @@ abstract class AppLocalizations {
   /// In fr, this message translates to:
   /// **'Sécurisé par Nexis Hub'**
   String get securedByNexis;
+
+  /// No description provided for @signupTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'Faisons connaissance'**
+  String get signupTitle;
+
+  /// No description provided for @signupFirstName.
+  ///
+  /// In fr, this message translates to:
+  /// **'Prénom'**
+  String get signupFirstName;
+
+  /// No description provided for @signupLastName.
+  ///
+  /// In fr, this message translates to:
+  /// **'Nom'**
+  String get signupLastName;
+
+  /// No description provided for @signupDemoNotice.
+  ///
+  /// In fr, this message translates to:
+  /// **'Inscription de démonstration. Utilisez des informations fictives.'**
+  String get signupDemoNotice;
+
+  /// No description provided for @signupReadTerms.
+  ///
+  /// In fr, this message translates to:
+  /// **'Lire les CGU'**
+  String get signupReadTerms;
+
+  /// No description provided for @signupAcceptTerms.
+  ///
+  /// In fr, this message translates to:
+  /// **'J’ai lu et j’accepte les CGU'**
+  String get signupAcceptTerms;
+
+  /// No description provided for @signupCreateProfile.
+  ///
+  /// In fr, this message translates to:
+  /// **'Créer mon profil'**
+  String get signupCreateProfile;
+
+  /// No description provided for @signupFailed.
+  ///
+  /// In fr, this message translates to:
+  /// **'Le profil n’a pas pu être créé. Vérifiez les informations et réessayez.'**
+  String get signupFailed;
+
+  /// No description provided for @signupDemoTerms.
+  ///
+  /// In fr, this message translates to:
+  /// **'Document de démonstration. Cet écran sert à tester la lecture et l’acceptation des conditions. Les profils créés, les missions et les paiements de cet aperçu sont fictifs. Les informations de cette inscription sont effacées au rechargement de l’app.'**
+  String get signupDemoTerms;
 }
 
 class _AppLocalizationsDelegate

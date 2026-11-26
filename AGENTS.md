@@ -90,6 +90,28 @@ architecture V5 backend-driven. Le spec V5 a été défini par Manus (voir `nexi
 ci-dessous) ; la mise en œuvre actuelle doit rester alignée avec cette vision et servir de
 base de travail pour la suite.
 
+## Design des interfaces Nexis Hub
+
+Pour tout travail d'interface dans le projet (application Flutter, Mini App,
+aperçus web et futurs écrans), lire et appliquer le guide
+[Frontend Design d'Anthropic](https://github.com/anthropics/skills/blob/main/skills/frontend-design/SKILL.md).
+Pour les parcours Telegram et WhatsApp, appliquer les mêmes principes de
+hiérarchie, de libellés et de retour après une action, selon les capacités du canal.
+
+- Partir de l'interface réellement déployée et des décisions de design validées
+  par Ben. Conserver l'identité Nexis : bleu vif `#0A63F0` comme couleur principale, monogramme blanc sur l’icône, Unbounded pour les
+  titres et Inter pour le texte, avec une mise en page premium et épurée.
+- Prendre les maquettes validées par Ben comme référence visuelle pour chaque
+  nouvel écran. Réutiliser les composants Nexis, notamment les champs, boutons,
+  pictogrammes et espacements. Comparer le rendu côte à côte avec les écrans
+  validés du même parcours avant de le présenter.
+- Donner la priorité à l'action utile sur chaque écran. Limiter le mouvement
+  aux interactions et aux indications ponctuelles, respecter la réduction des
+  animations et vérifier les états de focus et la lisibilité.
+- Vérifier les écrans modifiés dans un aperçu à largeur de téléphone, avec les
+  langues et les états concernés. Distinguer dans le compte rendu le rendu
+  observé dans l'aperçu des résultats vérifiés uniquement par les tests.
+
 ## Dépôt de référence
 
 - **Ce dépôt (`Nexis-Hub` / `origin`) est le seul dépôt actif au quotidien.** C'est ici que vit

@@ -5,6 +5,10 @@
   "verifiedProvider": "Mosali vérifié",
   "start": "Kobanda",
   "haveAccount": "Nazali na compte",
+  "signInTitle": "Kɔtá na compte na yo",
+  "noAccountTitle": "Compte moko te ezwami",
+  "noAccountHint": "Talá nimero oyo okotisi to salá profil na nimero oyo.",
+  "changeLoginNumber": "Bongolá nimero",
   "yourNumber": "Nimero na yo",
   "yourNumberIntro": "Tokotindela yo code mpo na koyeba ete ezali yo.",
   "receiveCodeBy": "Kozwa code na",
@@ -42,6 +46,7 @@
   "navWallet": "Mbongo",
   "navProfile": "Profil",
   "requestService": "Kosenga mosala",
+  "firstRequestTitle": "Ozali na mposa ya mosala nini ?",
   "whichService": "Mosala nini ?",
   "notInList": "Mposa na ngai ezali na liste te",
   "myMissions": "Misala na ngai",
@@ -55,6 +60,7 @@
   "statusCancelled": "Ebongolami",
   "statusDisputed": "Matata ezali kotalelama",
   "compareQuotes": "Kokokanisa ba devis",
+  "viewQuotes": "Kotala ba devis",
   "follow": "Kolanda",
   "paySecured": "Ebatelami na Nexis Hub",
   "payReleased": "Epesami na mosali",
@@ -254,6 +260,7 @@
       }
     }
   },
+  "eveningHome": "Mbote, {name}",
   "helloHome": "Mbote, {name}",
   "@helloHome": {
     "placeholders": {
@@ -326,6 +333,10 @@
   "noServiceMatches": "Mosala moko te ekokani.",
   "cantFindService": "Ozwi mosala na yo te?",
   "cantFindHint": "Limbola bosengi na yo na maloba na yo, tokopesa yango na ekipi.",
+  "serviceRequestDemo": "Bosengi oyo ezali ya komeka.",
+  "serviceRequestNoPay": "Okofuta eloko te na etape oyo.",
+  "serviceRequestSaved": "Bosengi ya komeka ebombami",
+  "serviceRequestSavedText": "Okokuta yango na Misala na ngai, na kati ya misala oyo ezali kozela devis.",
   "describeNeed": "Limbola bosengi na ngai",
   "describeLead": "Loba na biso oyo osengi na maloba na yo. Ekipi ya Nexis Hub ekotala bosengi na yo mpe ekoluka mosali malamu.",
   "describeTypeLabel": "Mosala ya lolenge nini?",
@@ -351,5 +362,14 @@
       }
     }
   },
-  "securedByNexis": "Ebombami na Nexis Hub"
+  "securedByNexis": "Ebombami na Nexis Hub",
+  "signupTitle": "Tóyebana",
+  "signupFirstName": "Nkombo ya liboso",
+  "signupLastName": "Nkombo ya libota",
+  "signupDemoNotice": "Komikomisa ya komeka. Salelá ba sango ya ndakisa.",
+  "signupReadTerms": "Tángá mibeko ya kosalela app",
+  "signupAcceptTerms": "Natángi mpe nandimi mibeko ya kosalela app",
+  "signupCreateProfile": "Salá profil na ngai",
+  "signupFailed": "Profil esalemi te. Talá sango na yo mpe mekisa lisusu.",
+  "signupDemoTerms": "Mokanda ya komeka. Awa okoki komeka kotánga mpe kondima mibeko. Ba profil, misala mpe mbongo na aperçu oyo ezali ya ndakisa. Sango ya komikomisa elongwaka ntango app efungwami lisusu."
 }

@@ -32,7 +32,7 @@ String foldText(String text) {
   List<CatalogService> highlights,
   List<CatalogService> others,
 })
-catalogSections(List<CatalogService> all) {
+catalogSections(List<CatalogService> all, {String lang = 'fr'}) {
   final recents = all.where((s) => s.lastRequested != null).toList()
     ..sort((a, b) => b.lastRequested!.compareTo(a.lastRequested!));
   final highlights = all
@@ -42,7 +42,11 @@ catalogSections(List<CatalogService> all) {
       all
           .where((s) => s.lastRequested == null && !(s.isNew || s.recommended))
           .toList()
-        ..sort((a, b) => foldText(a.name).compareTo(foldText(b.name)));
+        ..sort(
+          (a, b) =>
+              foldText(catalogServiceName(a, lang))
+                  .compareTo(foldText(catalogServiceName(b, lang))),
+        );
   return (recents: recents, highlights: highlights, others: others);
 }
 
@@ -58,7 +62,9 @@ List<CatalogService> sheetServices(List<CatalogService> all, {int max = 8}) {
 /// « Tous les services » : récents, nouveaux et recommandés, liste
 /// complète, recherche, et la demande libre en bas.
 class AllServicesScreen extends StatefulWidget {
-  const AllServicesScreen({super.key});
+  const AllServicesScreen({super.key, required this.onViewMissions});
+
+  final VoidCallback onViewMissions;
 
   @override
   State<AllServicesScreen> createState() => _AllServicesScreenState();
@@ -77,11 +83,20 @@ class _AllServicesScreenState extends State<AllServicesScreen> {
         child: Loaded<List<CatalogService>>(
           load: AppScope.of(context).repository.serviceCatalog,
           builder: (context, all) {
+            final lang = langOf(context);
             final q = foldText(_query.trim());
             final sections = catalogSections(
               q.isEmpty
                   ? all
-                  : all.where((s) => foldText(s.name).contains(q)).toList(),
+                  : all
+                        .where(
+                          (s) =>
+                              foldText(catalogServiceName(s, lang))
+                                  .contains(q) ||
+                              foldText(s.name).contains(q),
+                        )
+                        .toList(),
+              lang: lang,
             );
             final empty =
                 sections.recents.isEmpty &&
@@ -183,57 +198,61 @@ class _AllServicesScreenState extends State<AllServicesScreen> {
         for (final s in items)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Semantics(
-              button: true,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => showComingSoon(context, s.name),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  decoration: nxCard(context, radius: 18),
-                  child: Row(
-                    children: [
-                      catalogTile(s),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    s.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: body(
-                                      15,
-                                      weight: FontWeight.w600,
-                                      color: p.ink,
-                                    ),
-                                  ),
-                                ),
-                                if (s.isNew) ...[
-                                  const SizedBox(width: 8),
-                                  const NewBadge(),
-                                ],
-                              ],
-                            ),
-                            if (sub(s) != null)
-                              Text(
-                                sub(s)!,
-                                style: body(12.5, color: mutedColor(context)),
-                              ),
-                          ],
-                        ),
-                      ),
-                      NxIcon('chevron', size: 16, color: faintColor(context)),
-                    ],
+            child: OutlinedButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => DescribeNeedScreen.forService(
+                    service: s,
+                    onViewMissions: widget.onViewMissions,
                   ),
                 ),
+              ),
+              style: serviceChoiceStyle(
+                context,
+                radius: 18,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+              ),
+              child: Row(
+                children: [
+                  catalogTile(s),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                catalogServiceName(s, langOf(context)),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: body(
+                                  15,
+                                  weight: FontWeight.w600,
+                                  color: p.ink,
+                                ),
+                              ),
+                            ),
+                            if (s.isNew) ...[
+                              const SizedBox(width: 8),
+                              const NewBadge(),
+                            ],
+                          ],
+                        ),
+                        if (sub(s) != null)
+                          Text(
+                            sub(s)!,
+                            style: body(12.5, color: mutedColor(context)),
+                          ),
+                      ],
+                    ),
+                  ),
+                  NxIcon('chevron', size: 16, color: faintColor(context)),
+                ],
               ),
             ),
           ),
@@ -347,7 +366,16 @@ class _SolidButton extends StatelessWidget {
 /// « Décrire mon besoin » : une demande libre, transmise à l'équipe.
 /// Le serveur reçoit le titre et le texte ; rien n'est payé à cette étape.
 class DescribeNeedScreen extends StatefulWidget {
-  const DescribeNeedScreen({super.key});
+  const DescribeNeedScreen({super.key}) : service = null, onViewMissions = null;
+
+  const DescribeNeedScreen.forService({
+    super.key,
+    required CatalogService this.service,
+    required VoidCallback this.onViewMissions,
+  });
+
+  final CatalogService? service;
+  final VoidCallback? onViewMissions;
 
   @override
   State<DescribeNeedScreen> createState() => _DescribeNeedScreenState();
@@ -363,6 +391,7 @@ class _DescribeNeedScreenState extends State<DescribeNeedScreen> {
   bool _failed = false;
   String _sentTitle = '';
   String _sentText = '';
+  String? _commune;
 
   @override
   void initState() {
@@ -381,18 +410,32 @@ class _DescribeNeedScreenState extends State<DescribeNeedScreen> {
   void _changed() => setState(() => _failed = false);
 
   bool get _ready =>
-      _title.text.trim().length > 2 && _text.text.trim().length > 9;
+      (widget.service != null || _title.text.trim().length > 2) &&
+      _text.text.trim().length > 9;
 
-  Future<void> _send() async {
-    if (!_ready || _sending) return;
-    final title = _title.text.trim();
+  Future<void> _send(String? commune) async {
+    final service = widget.service;
+    if (!_ready || _sending || (service != null && commune == null)) return;
+    final app = AppScope.of(context);
+    final title = service == null
+        ? _title.text.trim()
+        : catalogServiceName(service, langOf(context));
     final text = _text.text.trim();
     setState(() {
       _sending = true;
       _failed = false;
     });
     try {
-      await AppScope.of(context).repository.sendFreeRequest(title, text);
+      if (service == null) {
+        await app.repository.sendFreeRequest(title, text);
+      } else {
+        await app.repository.requestService(
+          serviceId: service.id,
+          commune: commune!,
+          description: text,
+        );
+        app.dataChanged();
+      }
       if (!mounted) return;
       setState(() {
         _sent = true;
@@ -414,36 +457,89 @@ class _DescribeNeedScreenState extends State<DescribeNeedScreen> {
       backgroundColor: pageColor(context),
       resizeToAvoidBottomInset: true,
       body: SafeArea(
-        child: _sent ? _done(context, l, p) : _form(context, l, p),
+        child: _sent
+            ? _done(context, l, p)
+            : widget.service == null
+            ? _form(context, l, p)
+            : Loaded<Profile>(
+                load: AppScope.of(context).repository.profile,
+                builder: (context, profile) =>
+                    _form(context, l, p, profile: profile),
+              ),
       ),
     );
   }
 
-  Widget _form(BuildContext context, AppLocalizations l, NexisPalette p) {
+  Widget _form(
+    BuildContext context,
+    AppLocalizations l,
+    NexisPalette p, {
+    Profile? profile,
+  }) {
+    final service = widget.service;
+    final communes = AppScope.of(context).repository.communes;
+    final defaultCommune = profile?.commune;
+    final commune =
+        _commune ?? (communes.contains(defaultCommune) ? defaultCommune : null);
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 6, 18, 40),
       children: [
-        _FullHeader(title: l.describeNeed),
+        _FullHeader(
+          title: service == null
+              ? l.describeNeed
+              : catalogServiceName(service, langOf(context)),
+        ),
         const SizedBox(height: 14),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2),
           child: Text(
-            l.describeLead,
+            service == null ? l.describeLead : l.serviceRequestDemo,
             style: body(14, color: mutedColor(context), height: 1.5),
           ),
         ),
-        _label(context, l.describeTypeLabel),
-        _field(
-          context,
-          controller: _title,
-          hint: l.describeTypeHint,
-          maxLength: _titleMax,
-        ),
-        _label(context, l.describeTextLabel),
+        if (service == null) ...[
+          _label(context, l.describeTypeLabel),
+          _field(
+            context,
+            controller: _title,
+            hint: l.describeTypeHint,
+            maxLength: _titleMax,
+          ),
+        ] else ...[
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            initialValue: commune,
+            isExpanded: true,
+            decoration: _requestFieldDecoration(context, label: l.commune),
+            dropdownColor: p.surface,
+            borderRadius: BorderRadius.circular(16),
+            style: body(15, weight: FontWeight.w500, color: p.ink),
+            icon: RotatedBox(
+              quarterTurns: 1,
+              child: NxIcon(
+                'chevron',
+                size: 18,
+                color: _sending ? faintColor(context) : p.ink,
+              ),
+            ),
+            items: [
+              for (final name in communes)
+                DropdownMenuItem(value: name, child: Text(name)),
+            ],
+            onChanged: _sending
+                ? null
+                : (value) => setState(() {
+                    _commune = value;
+                    _failed = false;
+                  }),
+          ),
+        ],
+        const SizedBox(height: 16),
         _field(
           context,
           controller: _text,
           hint: l.describeTextHint,
+          label: l.describeTextLabel,
           maxLength: _textMax,
           lines: 4,
         ),
@@ -457,45 +553,49 @@ class _DescribeNeedScreenState extends State<DescribeNeedScreen> {
             ),
           ),
         ),
-        _label(context, l.photos, optional: l.optional),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Semantics(
-            button: true,
-            label: l.addPhoto,
-            excludeSemantics: true,
-            child: GestureDetector(
-              onTap: () => showComingSoon(context, l.addPhoto),
-              child: Container(
-                width: 84,
-                height: 84,
-                decoration: BoxDecoration(
-                  color: isDark(context) ? p.surface : const Color(0xFFF6F9FF),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: const Color(0xFF9DB6E8),
-                    width: 1.5,
-                  ),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    NxIcon('camera', size: 26, color: NexisColors.brand),
-                    const SizedBox(height: 4),
-                    Text(
-                      l.addShort,
-                      style: body(
-                        12,
-                        weight: FontWeight.w600,
-                        color: NexisColors.brand,
-                      ),
+        if (service == null) ...[
+          _label(context, l.photos, optional: l.optional),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Semantics(
+              button: true,
+              label: l.addPhoto,
+              excludeSemantics: true,
+              child: GestureDetector(
+                onTap: () => showComingSoon(context, l.addPhoto),
+                child: Container(
+                  width: 84,
+                  height: 84,
+                  decoration: BoxDecoration(
+                    color: isDark(context)
+                        ? p.surface
+                        : const Color(0xFFF6F9FF),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: const Color(0xFF9DB6E8),
+                      width: 1.5,
                     ),
-                  ],
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      NxIcon('camera', size: 26, color: NexisColors.brand),
+                      const SizedBox(height: 4),
+                      Text(
+                        l.addShort,
+                        style: body(
+                          12,
+                          weight: FontWeight.w600,
+                          color: NexisColors.brand,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
+        ],
         Container(
           margin: const EdgeInsets.only(top: 18, bottom: 14),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -517,7 +617,7 @@ class _DescribeNeedScreenState extends State<DescribeNeedScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  l.describeNoPay,
+                  service == null ? l.describeNoPay : l.serviceRequestNoPay,
                   style: body(
                     13.5,
                     color: isDark(context)
@@ -540,8 +640,8 @@ class _DescribeNeedScreenState extends State<DescribeNeedScreen> {
           ),
         _SendButton(
           label: l.sendRequest,
-          enabled: _ready && !_sending,
-          onTap: _send,
+          enabled: _ready && !_sending && (service == null || commune != null),
+          onTap: () => _send(commune),
         ),
       ],
     );
@@ -570,17 +670,14 @@ class _DescribeNeedScreenState extends State<DescribeNeedScreen> {
     BuildContext context, {
     required TextEditingController controller,
     required String hint,
+    String? label,
     required int maxLength,
     int lines = 1,
   }) {
     final p = context.palette;
-    final ring = isDark(context) ? p.line : const Color(0x1A021937);
-    OutlineInputBorder border(Color c, double w) => OutlineInputBorder(
-      borderRadius: BorderRadius.circular(16),
-      borderSide: BorderSide(color: c, width: w),
-    );
     return TextField(
       controller: controller,
+      readOnly: _sending,
       maxLength: maxLength,
       maxLines: lines == 1 ? 1 : null,
       minLines: lines,
@@ -593,19 +690,31 @@ class _DescribeNeedScreenState extends State<DescribeNeedScreen> {
         required isFocused,
         maxLength,
       }) => null,
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: body(15, color: faintColor(context)),
-        filled: true,
-        fillColor: p.surface,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 14,
-        ),
-        enabledBorder: border(ring, 1),
-        focusedBorder: border(NexisColors.brand, 2),
-        border: border(ring, 1),
-      ),
+      decoration: _requestFieldDecoration(context, label: label, hint: hint),
+    );
+  }
+
+  InputDecoration _requestFieldDecoration(
+    BuildContext context, {
+    String? label,
+    String? hint,
+  }) {
+    final palette = context.palette;
+    final ring = isDark(context) ? palette.line : const Color(0x1A021937);
+    OutlineInputBorder border(Color color, double width) => OutlineInputBorder(
+      borderRadius: BorderRadius.circular(16),
+      borderSide: BorderSide(color: color, width: width),
+    );
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      hintStyle: body(15, color: faintColor(context)),
+      filled: true,
+      fillColor: palette.surface,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      enabledBorder: border(ring, 1),
+      focusedBorder: border(NexisColors.brand, 2),
+      border: border(ring, 1),
     );
   }
 
@@ -633,7 +742,7 @@ class _DescribeNeedScreenState extends State<DescribeNeedScreen> {
         ),
         const SizedBox(height: 18),
         Text(
-          l.requestSent,
+          widget.service == null ? l.requestSent : l.serviceRequestSaved,
           textAlign: TextAlign.center,
           style: title(22, color: p.ink),
         ),
@@ -641,7 +750,9 @@ class _DescribeNeedScreenState extends State<DescribeNeedScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6),
           child: Text(
-            l.requestSentText,
+            widget.service == null
+                ? l.requestSentText
+                : l.serviceRequestSavedText,
             textAlign: TextAlign.center,
             style: body(15, color: mutedColor(context), height: 1.5),
           ),
@@ -664,9 +775,12 @@ class _DescribeNeedScreenState extends State<DescribeNeedScreen> {
         ),
         const SizedBox(height: 22),
         _SendButton(
-          label: l.backHome,
+          label: widget.service == null ? l.backHome : l.myMissions,
           enabled: true,
-          onTap: () => Navigator.of(context).popUntil((r) => r.isFirst),
+          onTap: () {
+            widget.onViewMissions?.call();
+            Navigator.of(context).popUntil((r) => r.isFirst);
+          },
         ),
       ],
     );
@@ -687,41 +801,42 @@ class _SendButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      enabled: enabled,
-      child: GestureDetector(
-        onTap: enabled ? onTap : null,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          height: 54,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            color: enabled ? null : const Color(0xFFCBD3E1),
-            gradient: enabled
-                ? const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFF0870EE), NexisColors.brand],
-                  )
-                : null,
-            boxShadow: enabled
-                ? const [
-                    BoxShadow(
-                      color: Color(0xB30350E6),
-                      offset: Offset(0, 10),
-                      blurRadius: 24,
-                      spreadRadius: -10,
-                    ),
-                  ]
-                : null,
-          ),
-          child: Text(
-            label,
-            style: body(16, weight: FontWeight.w600, color: Colors.white),
-          ),
+    final radius = BorderRadius.circular(16);
+    return AnimatedContainer(
+      duration: Duration(
+        milliseconds: MediaQuery.disableAnimationsOf(context) ? 0 : 200,
+      ),
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        color: enabled ? null : const Color(0xFFCBD3E1),
+        gradient: enabled
+            ? const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF0870EE), NexisColors.brand],
+              )
+            : null,
+        boxShadow: enabled
+            ? const [
+                BoxShadow(
+                  color: Color(0xB30350E6),
+                  offset: Offset(0, 10),
+                  blurRadius: 24,
+                  spreadRadius: -10,
+                ),
+              ]
+            : null,
+      ),
+      child: TextButton(
+        onPressed: enabled ? onTap : null,
+        style: TextButton.styleFrom(
+          minimumSize: const Size.fromHeight(54),
+          shape: RoundedRectangleBorder(borderRadius: radius),
+          foregroundColor: Colors.white,
+          disabledForegroundColor: const Color(0xFF41536E),
+          textStyle: body(16, weight: FontWeight.w600),
         ),
+        child: Text(label, textAlign: TextAlign.center),
       ),
     );
   }
