@@ -131,27 +131,29 @@ def test_full_registration_collects_documents_and_starts_pending(live_backend):
 def test_admin_verify_provider_makes_him_matchable(live_backend):
     live_backend.grant_admin(ADMIN)
     account_id = live_backend.provider(1020, "A Verifier", verified=False, services=["service_plomberie"], communes=["Gombe"])
+    live_backend.sent.clear()
     dummy_bot = DummyBot()
 
     asyncio.run(admin.admin_verify_provider(DummyCallback(ADMIN, data=f"admin_verify_provider_acc_{account_id}", bot=dummy_bot)))
 
     assert live_backend.profile(1020)["provider"]["status"] == "available"
+    assert [chat_id for chat_id, _ in live_backend.sent] == [1020], "le prestataire est notifié par le backend"
     mission_id = live_backend.new_mission(42, service="service_plomberie", commune="Gombe")
     assert live_backend.alerted(mission_id) == [1020], "matchable après approbation"
-    assert [chat_id for chat_id, _ in dummy_bot.messages] == [1020], "le prestataire est notifié"
 
 
 def test_admin_reject_provider_keeps_provider_excluded(live_backend):
     live_backend.grant_admin(ADMIN)
     account_id = live_backend.provider(1030, "A Refuser", verified=False, services=["service_plomberie"], communes=["Gombe"])
+    live_backend.sent.clear()
     dummy_bot = DummyBot()
 
     asyncio.run(admin.admin_reject_provider(DummyCallback(ADMIN, data=f"admin_reject_provider_acc_{account_id}", bot=dummy_bot)))
 
     assert live_backend.profile(1030)["provider"]["status"] == "rejected"
+    assert [chat_id for chat_id, _ in live_backend.sent] == [1030], "le prestataire est prévenu du refus"
     mission_id = live_backend.new_mission(42, service="service_plomberie", commune="Gombe")
     assert live_backend.alerted(mission_id) == []
-    assert dummy_bot.messages
 
 
 def test_an_old_button_with_a_telegram_id_decides_nothing(live_backend):

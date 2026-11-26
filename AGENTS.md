@@ -584,7 +584,7 @@ La référence produit reste [`docs/ARCHITECTURE_WHATSAPP.md`](docs/ARCHITECTURE
 - Le backend résout l'acteur depuis son canal et son identifiant. La clé de service identifie le canal ; les routes WhatsApp sont ouvertes explicitement et les écritures multicanales sont protégées par idempotence.
 - Les routes client WhatsApp sont présentes côté backend, dont `POST /api/whatsapp/client`. Le dépôt n'a pas de service `whatsapp_bot/` ni d'exécution de webhook Meta : l'expérience WhatsApp complète reste à construire.
 - Les tâches périodiques tournent via `python -m backend.app.taches planificateur`; Celery n'est plus utilisé.
-- Les notifications WhatsApp fiables (outbox, statuts Meta, reprises incertaines) restent à construire. Le backend envoie actuellement les notifications Telegram par `backend/app/notify.py`.
+- Notifications : tout message à une autre personne que celle qui agit passe par la table `notifications` (`backend/app/notifications.py`), écrite avec l'événement par `backend/app/evenements.py`. Ne jamais envoyer directement depuis le bot ou le backend : un test l'interdit. Expéditeur Telegram : `backend/app/notify.py` ; expéditeur WhatsApp et statuts Meta : étape 8.
 - Le code ne lit pas `NEXIS_PUBLIC_URL` : `MINI_APP_URL` et `WEBHOOK_URL` restent deux réglages distincts. Le tunnel Cloudflare de test `nexishub.dpdns.org` n'est pas encore exposé comme configuration unique.
 
-Avant de poursuivre WhatsApp : construire et exploiter le service de canal, puis implémenter l'outbox multicanale et la configuration publique commune. Garder cette note et la section d'état au début du fichier synchronisées avec le code.
+Avant de poursuivre WhatsApp : construire et exploiter le service de canal, puis brancher l'expéditeur WhatsApp sur la table `notifications` et la configuration publique commune. Garder cette note et la section d'état au début du fichier synchronisées avec le code.

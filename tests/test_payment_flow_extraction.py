@@ -169,6 +169,7 @@ def _setup_pending_quote(live, currency="USD"):
 
 def test_client_accepte_devis_shows_payment_options_and_notifies_provider(live_backend):
     mission_id, quote_id = _setup_pending_quote(live_backend)
+    live_backend.sent.clear()
 
     bot = DummyBot()
     callback = DummyCallback(telegram_id=100, data=f"quote_accept_{quote_id}", bot=bot)
@@ -177,13 +178,14 @@ def test_client_accepte_devis_shows_payment_options_and_notifies_provider(live_b
 
     assert live_backend.get_quote(quote_id).status == "accepted"
     assert live_backend.mission(mission_id).status == "confirmed"
-    assert len(bot.messages) == 1
-    assert bot.messages[0].chat_id == 200
+    assert bot.messages == [], "le prestataire est prévenu par le backend, pas par le bot"
+    assert [chat_id for chat_id, _ in live_backend.sent] == [200]
     assert "Payer" in callback.message.edited_text or callback.message.edited_text is not None
 
 
 def test_mobile_money_payment_lifecycle_to_release_and_rating(live_backend):
     mission_id, quote_id = _setup_accepted_quote(live_backend)
+    live_backend.sent.clear()
 
     client_bot = DummyBot()
     provider_bot = DummyBot()
@@ -193,7 +195,7 @@ def test_mobile_money_payment_lifecycle_to_release_and_rating(live_backend):
     asyncio.run(payment.paiement_mobile_money_operateur(pay_callback))
     assert live_backend.mission(mission_id).payment_status == "paid_escrow"
     assert "SIM-PAY-" in pay_callback.message.edited_text
-    assert client_bot.messages[0].chat_id == 200
+    assert sorted(chat_id for chat_id, _ in live_backend.sent) == [100, 200], "client et prestataire prévenus du paiement"
 
     # Arrivée : le prestataire la signale (rien ne démarre), le client la
     # confirme (la mission démarre), puis le prestataire termine.
@@ -212,7 +214,7 @@ def test_mobile_money_payment_lifecycle_to_release_and_rating(live_backend):
     final_mission = live_backend.mission(mission_id)
     assert (final_mission.status, final_mission.payment_status) == ("completed", "released")
     assert live_backend.balance(200) == 45.0  # 50 - 10 % de commission
-    assert any("45.00" in sent.text for sent in client_bot.messages if sent.chat_id == 200)
+    assert any("45.00" in text for chat_id, text in live_backend.sent if chat_id == 200)
     assert state.state == payment.RatingFlow.rating
 
     # Notation : une étoile, puis un commentaire (enregistré par le backend).
@@ -275,14 +277,15 @@ def test_paying_twice_charges_once(live_backend):
 
 def test_client_refuse_devis_notifies_provider(live_backend):
     mission_id, quote_id = _setup_pending_quote(live_backend)
+    live_backend.sent.clear()
 
     bot = DummyBot()
     callback = DummyCallback(telegram_id=100, data=f"quote_reject_{quote_id}", bot=bot)
     asyncio.run(payment.client_refuse_devis(callback))
 
     assert live_backend.get_quote(quote_id).status == "rejected"
-    assert len(bot.messages) == 1
-    assert bot.messages[0].chat_id == 200
+    assert bot.messages == []
+    assert [chat_id for chat_id, _ in live_backend.sent] == [200]
 
 
 def test_client_accepte_devis_rejects_a_caller_who_is_not_the_client(live_backend):

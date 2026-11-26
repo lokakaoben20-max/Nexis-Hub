@@ -108,7 +108,13 @@ def live(live_backend, tmp_path, monkeypatch):
     monkeypatch.setenv("FILES_DIR", str(tmp_path / "fichiers"))
     live_backend.grant_admin(ADMIN)
     live_backend.provider(PROVIDER, "Patrick Kabongo", language="ln")
+    live_backend.sent.clear()
     return live_backend
+
+
+def _to_provider(live):
+    """Messages que le backend a envoyés au prestataire."""
+    return [text for chat_id, text in live.sent if chat_id == PROVIDER]
 
 
 def _ask(service_key="service_nettoyage", photos=(), description="3 ans de nettoyage"):
@@ -148,13 +154,14 @@ def test_approval_adds_the_service_and_tells_the_provider_once_in_his_language(l
 
     assert "service_nettoyage" in _services(live)
     assert first.message.edited_text.startswith("✅ Approuvé")
-    assert len(bot.messages) == 1 and bot.messages[0][0] == PROVIDER
-    assert bot.messages[0][1].startswith("✅ <b>Mosala ya sika endimami</b>")
+    assert bot.messages == [], "le bot ne prévient pas le prestataire lui-même"
+    [notice] = _to_provider(live)
+    assert notice.startswith("✅ <b>Mosala ya sika endimami</b>")
 
     again = Callback(f"admin_addition_ok_{addition_id}", bot)
     asyncio.run(admin.admin_answer_addition(again))
     assert again.message.edited_text.startswith("Déjà fait")
-    assert len(bot.messages) == 1, "pas de second message au prestataire"
+    assert len(_to_provider(live)) == 1, "pas de second message au prestataire"
 
     refuse_after = Callback(f"admin_addition_no_{addition_id}", bot)
     asyncio.run(admin.admin_answer_addition(refuse_after))
@@ -170,16 +177,16 @@ def test_a_refusal_with_a_reason_reaches_the_provider(live):
 
     too_long = Message("x" * 501, bot)
     asyncio.run(admin.admin_addition_reason_received(too_long, state))
-    assert state.state is not None and bot.messages == [], "motif trop long : rien n'est décidé"
+    assert state.state is not None and _to_provider(live) == [], "motif trop long : rien n'est décidé"
 
     answer = Message("Photos <floues>", bot)
     asyncio.run(admin.admin_addition_reason_received(answer, state))
     assert state.state is None
     assert answer.answered_texts[-1].startswith("❌ Refusé")
     assert "service_nettoyage" not in _services(live)
-    assert [chat for chat, _ in bot.messages] == [PROVIDER]
-    assert bot.messages[0][1].startswith("<b>Bosengi ya mosala etalami</b>")
-    assert "Ntina : Photos &lt;floues&gt;" in bot.messages[0][1], "motif échappé, dans la langue du prestataire"
+    [notice] = _to_provider(live)
+    assert notice.startswith("<b>Bosengi ya mosala etalami</b>")
+    assert "Ntina : Photos &lt;floues&gt;" in notice, "motif échappé, dans la langue du prestataire"
 
     # Nouvelle demande pour le même service : l'admin voit le refus précédent.
     _ask()
@@ -195,7 +202,7 @@ def test_a_provider_who_cancelled_cannot_be_approved(live):
     callback = Callback(f"admin_addition_ok_{addition_id}", bot)
     asyncio.run(admin.admin_answer_addition(callback))
     assert "annulée par le prestataire" in callback.message.edited_text
-    assert bot.messages == [] and "service_nettoyage" not in _services(live)
+    assert _to_provider(live) == [] and "service_nettoyage" not in _services(live)
 
 
 def test_a_non_admin_sees_nothing_and_decides_nothing(live):
@@ -217,9 +224,12 @@ def test_the_dashboard_counts_the_services_to_review(live):
     assert "Nouveaux services à valider : <b>1</b>" in callback.message.edited_text
 
 
-def test_the_decision_stands_even_if_telegram_cannot_tell_the_provider(live):
+def test_the_decision_never_depends_on_the_bot_reaching_the_provider(live):
+    """Le message au prestataire est écrit avec la décision et part par la
+    boîte d'envoi du backend ; le bot de l'admin n'envoie rien."""
     addition_id = _ask()
     callback = Callback(f"admin_addition_ok_{addition_id}", Bot(fail=True))
     asyncio.run(admin.admin_answer_addition(callback))
-    assert "Prestataire non prévenu" in callback.message.edited_text
+    assert callback.message.edited_text.startswith("✅ Approuvé")
     assert "service_nettoyage" in _services(live)
+    assert len(_to_provider(live)) == 1

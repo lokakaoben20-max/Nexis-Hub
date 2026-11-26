@@ -129,6 +129,7 @@ def test_the_summary_shows_the_landmark_escaped():
 def test_a_point_outside_kinshasa_is_asked_again_without_losing_the_request(live_backend):
     live_backend.client(900, first_name="Cliente")
     live_backend.provider(901)
+    live_backend.sent.clear()
     state = DummyState(data=_mission_request(destination_latitude=0.0, destination_longitude=0.0))
 
     bot = DummyBot()
@@ -140,7 +141,7 @@ def test_a_point_outside_kinshasa_is_asked_again_without_losing_the_request(live
 
     with live_backend.database.SessionLocal() as session:
         assert session.query(BotMission).count() == 0
-    assert bot.messages == [], "aucun prestataire prévenu"
+    assert live_backend.sent == [], "aucun prestataire prévenu"
     assert refused.message.answers[-1][0].startswith(get_message("destination_outside_service_area", "fr"))
     assert state._data["_state"] == mission.MissionRequest.location
     assert state._data["description"] == "Fuite d'eau", "le reste de la demande est gardé"
@@ -155,8 +156,9 @@ def test_a_point_outside_kinshasa_is_asked_again_without_losing_the_request(live
     with live_backend.database.SessionLocal() as session:
         created = session.query(BotMission).one()
         assert (created.destination_latitude, created.destination_longitude) == (-4.3076, 15.3125)
-    assert [message.chat_id for message in bot.messages] == [901]
-    assert "15.3125" not in bot.messages[0].text, "l'alerte ne contient jamais le lieu exact"
+    [(provider_id, alert)] = live_backend.sent
+    assert provider_id == 901
+    assert "15.3125" not in alert, "l'alerte ne contient jamais le lieu exact"
 
 
 def test_the_provider_reads_the_place_only_once_the_mission_is_paid(monkeypatch, live_backend):
@@ -203,18 +205,19 @@ def test_the_paid_provider_keyboards_offer_the_place():
         assert "mission_place_12" in callbacks
 
 
-def test_the_mobile_money_paid_notice_offers_the_place(monkeypatch):
+def test_the_mobile_money_paid_notice_offers_the_place(live_backend):
     """Le backend prévient le prestataire d'un paiement Mobile Money : la
     notification propose « Voir le lieu », sans jamais contenir le lieu."""
-    from backend.app import tasks
+    from backend.app import ledger
 
-    sent = []
-    monkeypatch.setattr(tasks, "send_telegram_message", lambda chat_id, text, reply_markup=None: sent.append((text, reply_markup)))
-    monkeypatch.setattr(tasks, "_language", lambda db, telegram_id: "fr")
-    intent = SimpleNamespace(mission_id=12, currency="USD")
+    mission_id, quote_id = live_backend.accepted_quote(900, 901)
+    live_backend.sent.clear()
+    with live_backend.database.SessionLocal() as session:
+        client_account = ledger.account_id_for(session, ledger.TELEGRAM, 900)
+        ledger.fund_mission(session, mission_id, method="mobile_money", client_account_id=client_account, quote_id=quote_id)
 
-    tasks._notify_provider_paid(None, 901, intent, {"total": 100, "commission": 10, "net": 90})
-
-    text, markup = sent[0]
+    [(provider_id, text)] = live_backend.sent
+    [(_, markup)] = live_backend.markups
+    assert provider_id == 901
     callbacks = [button["callback_data"] for row in markup["inline_keyboard"] for button in row]
-    assert callbacks == ["presence_arrived_12", "presence_code_12", "mission_place_12"]
+    assert callbacks == [f"presence_arrived_{mission_id}", f"presence_code_{mission_id}", f"mission_place_{mission_id}"]

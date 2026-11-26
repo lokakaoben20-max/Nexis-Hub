@@ -36,7 +36,6 @@ from telegram_bot import backend_client, catalogue
 from telegram_bot.backend_client import (
     BackendUnavailable,
     MoneyRefused,
-    get_language,
     money_failure_text,
     decide_dispute,
     decide_payout,
@@ -243,16 +242,8 @@ async def cmd_couper_rouvrir(message: Message):
         await message.answer(f"{label} déjà {state_text} : rien n'a changé.")
         return
     await message.answer(f"{'🟢' if command == 'rouvrir' else '⛔'} {label} {state_text}.")
-    alert = (
-        f"{'🟢' if command == 'rouvrir' else '⛔'} {label} {state_text} par l'admin {message.from_user.id} : "
-        f"{html.escape(reason)}"
-    )
-    for admin_id in await backend_client.admin_telegram_ids():
-        if admin_id != message.from_user.id:
-            try:
-                await message.bot.send_message(admin_id, alert, parse_mode="HTML")
-            except Exception:
-                pass  # un admin injoignable n'empêche pas les autres d'être prévenus
+    # Les autres admins sont prévenus par le backend, avec le changement
+    # (backend/app/interrupteurs.py).
 
 
 @router.callback_query(F.data == "admin_home")
@@ -596,11 +587,7 @@ async def admin_decider_retrait(callback: CallbackQuery):
         await callback.answer(text, show_alert=True)
         return
     await callback.message.edit_text(f"Retrait #{payout_id} : {payout['status']}.")
-    from telegram_bot.dashboard import payout_status_text
-
-    requester = payout["requested_by_telegram_id"]
-    lang = await get_language(requester)
-    await callback.bot.send_message(requester, payout_status_text(payout, lang), parse_mode="HTML")
+    # La personne qui a demandé le retrait est prévenue par le backend.
     await callback.answer("Retrait validé" if approve else "Retrait refusé")
 
 
@@ -786,13 +773,6 @@ async def admin_answer_client_request(callback: CallbackQuery):
         f"{html.escape(request['description'])}",
         parse_mode="HTML",
     )
-    if request.get("client_telegram_id"):
-        lang = request.get("client_language") or "fr"
-        await callback.bot.send_message(
-            request["client_telegram_id"],
-            get_message("client_need_accepted" if accepted else "client_need_rejected", lang, reference=reference),
-            parse_mode="HTML",
-        )
     await callback.answer("Réponse envoyée au client")
 
 
@@ -833,22 +813,16 @@ async def admin_accept_service(callback: CallbackQuery):
         f"Service : <b>{html.escape(request['service_name'])}</b>",
         parse_mode="HTML",
     )
-    await callback.bot.send_message(
-        request["provider_telegram_id"],
-        "✅ <b>Votre proposition de service a été acceptée par Nexis.</b>\n\n"
-        f"Service : <b>{html.escape(request['service_name'])}</b>\n\n"
-        "Merci. Nexis pourra l'ajouter au catalogue des services proposés.",
-        parse_mode="HTML",
-    )
     await callback.answer("Service accepté")
 
 
 PROVIDER_DECISIONS = {
-    # action : (texte pour l'admin, message au prestataire, toast)
-    "verify": ("✅ Prestataire vérifié", "provider_verified_and_active", "Prestataire vérifié"),
-    "reject": ("❌ Prestataire refusé", "provider_registration_rejected", "Prestataire refusé"),
-    "suspend": ("⛔ Prestataire suspendu", "provider_suspended_notice", "Prestataire suspendu"),
-    "unsuspend": ("♻️ Prestataire réactivé", "provider_unsuspended_notice", "Prestataire réactivé"),
+    # action : (texte pour l'admin, toast). Le prestataire est prévenu par le
+    # backend, avec la décision (backend/app/evenements.py).
+    "verify": ("✅ Prestataire vérifié", "Prestataire vérifié"),
+    "reject": ("❌ Prestataire refusé", "Prestataire refusé"),
+    "suspend": ("⛔ Prestataire suspendu", "Prestataire suspendu"),
+    "unsuspend": ("♻️ Prestataire réactivé", "Prestataire réactivé"),
 }
 PROVIDER_REFUSALS = {
     "provider_not_found": "Prestataire introuvable.",
@@ -880,15 +854,12 @@ async def _decide_provider(callback: CallbackQuery, action: str) -> None:
         await callback.answer(money_failure_text(0, error, "fr", "service_unavailable"), show_alert=True)
         return
 
-    admin_text, provider_message, toast = PROVIDER_DECISIONS[action]
+    admin_text, toast = PROVIDER_DECISIONS[action]
     await callback.message.edit_text(
         f"{admin_text} : <b>{html.escape(provider['full_name'])}</b>",
         parse_mode="HTML",
         reply_markup=clavier_admin_menu(),
     )
-    if provider["telegram_id"]:
-        provider_lang = provider["language"]
-        await callback.bot.send_message(provider["telegram_id"], get_message(provider_message, provider_lang), parse_mode="HTML")
     await callback.answer(toast)
 
 
@@ -932,13 +903,6 @@ async def admin_reject_service(callback: CallbackQuery):
         "❌ <b>Service refusé</b>\n\n"
         f"Référence : <b>SRV-{request_id:04d}</b>\n"
         f"Service : <b>{html.escape(request['service_name'])}</b>",
-        parse_mode="HTML",
-    )
-    await callback.bot.send_message(
-        request["provider_telegram_id"],
-        "❌ <b>Votre proposition de service a été examinée.</b>\n\n"
-        f"Service : <b>{html.escape(request['service_name'])}</b>\n\n"
-        "Pour le moment, Nexis ne peut pas prendre en charge ce service.",
         parse_mode="HTML",
     )
     await callback.answer("Service refusé")
@@ -1020,7 +984,7 @@ async def admin_service_additions(callback: CallbackQuery):
         )
 
 
-async def _decide_addition(bot, admin_telegram_id: int, addition_id: int, approve: bool, note: str = "") -> tuple[str, bool]:
+async def _decide_addition(admin_telegram_id: int, addition_id: int, approve: bool, note: str = "") -> tuple[str, bool]:
     """Décision appliquée une seule fois par le backend. Renvoie (texte pour
     l'admin, réessayer) ; le prestataire n'est prévenu que si cette décision
     vient d'être prise (`decided_now`), jamais deux fois."""
@@ -1035,20 +999,6 @@ async def _decide_addition(bot, admin_telegram_id: int, addition_id: int, approv
     label = catalogue.service_label(addition["service_key"])
     if not result.get("decided_now"):
         return f"Déjà fait : {reference} ({label}).", False
-    telegram_id = addition.get("provider_telegram_id")
-    if telegram_id:
-        lang = addition.get("provider_language") or "fr"
-        service = html.escape(catalogue.service_label(addition["service_key"], lang))
-        if approve:
-            text = get_message("service_addition_approved", lang, service=service)
-        elif addition.get("admin_note"):
-            text = get_message("service_addition_rejected_note", lang, service=service, note=html.escape(addition["admin_note"]))
-        else:
-            text = get_message("service_addition_rejected", lang, service=service)
-        try:
-            await bot.send_message(telegram_id, text, parse_mode="HTML")
-        except Exception:
-            return f"{'✅ Approuvé' if approve else '❌ Refusé'} : {reference} ({label}). Prestataire non prévenu (Telegram).", False
     return f"{'✅ Approuvé' if approve else '❌ Refusé'} : {reference} ({label}).", False
 
 
@@ -1059,7 +1009,7 @@ async def admin_answer_addition(callback: CallbackQuery):
         return
     approve = callback.data.startswith("admin_addition_ok_")
     addition_id = int(callback.data.rsplit("_", 1)[1])
-    text, retry = await _decide_addition(callback.bot, callback.from_user.id, addition_id, approve)
+    text, retry = await _decide_addition(callback.from_user.id, addition_id, approve)
     if retry:
         await callback.answer(text, show_alert=True)
         return
@@ -1100,7 +1050,7 @@ async def admin_addition_reason_received(message: Message, state: FSMContext):
         await message.answer(ADDITION_REFUSALS["invalid_admin_note"])
         return
     addition_id = (await state.get_data())["addition_reason_id"]
-    text, retry = await _decide_addition(message.bot, message.from_user.id, addition_id, False, note)
+    text, retry = await _decide_addition(message.from_user.id, addition_id, False, note)
     if not retry:
         await state.clear()
     await message.answer(text)

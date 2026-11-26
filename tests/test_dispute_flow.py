@@ -153,6 +153,7 @@ def test_client_signale_probleme_starts_dispute_fsm(monkeypatch, live_backend):
 
 def test_dispute_freezes_funds_in_the_registry_and_notifies_the_provider(monkeypatch, live_backend):
     mission_id = _paid_mission(live_backend)
+    live_backend.sent.clear()
 
     message, state = _open_dispute(mission_id)
 
@@ -161,7 +162,7 @@ def test_dispute_freezes_funds_in_the_registry_and_notifies_the_provider(monkeyp
     stored = live_backend.mission(mission_id)
     assert stored.dispute_reason == "Travail non terminé"
     assert stored.dispute_deadline
-    assert message.bot.messages[0].chat_id == PROVIDER_ID
+    assert [chat_id for chat_id, _ in live_backend.sent] == [PROVIDER_ID], "prévenu par le backend, avec le litige"
     assert live_backend.disputed_ids() == [mission_id]
 
 
@@ -280,6 +281,7 @@ def _first_decision(live, mission_id):
 def test_admin_refund_is_recorded_then_executed_after_three_days(monkeypatch, live_backend):
     mission_id = _paid_mission(live_backend)
     _open_dispute(mission_id)
+    live_backend.sent.clear()
     callback = DummyCallback(ADMIN_ID, data=f"admin_dispute_refund_{mission_id}")
 
     asyncio.run(admin.admin_litige_rembourser(callback))

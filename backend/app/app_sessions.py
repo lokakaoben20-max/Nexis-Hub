@@ -349,6 +349,7 @@ def sign_out(db: Session, principal: AppPrincipal, *, now: datetime | None = Non
 def _revoke_device(db: Session, device: Device, reason: str, now: datetime) -> None:
     if device.revoked_at is None:
         device.revoked_at, device.revoked_reason = now, reason
+        evenements.device_revoked(db, device.id)
     for session in db.query(AppSession).filter(AppSession.device_id == device.id, AppSession.revoked_at.is_(None)):
         session.revoked_at, session.revoked_reason = now, reason
 

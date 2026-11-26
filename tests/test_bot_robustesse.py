@@ -218,68 +218,71 @@ def test_invalid_provider_name_error_follows_language():
     assert state.state is None
 
 
-PROVIDER = {
-    "account_id": 42,
-    "full_name": "Alice <Plombier>",
-    "phone_number": "+243810000611",
-    "services": ["service_plomberie"],
-    "communes": ["Gombe"],
-}
+def _register_with_documents(live, telegram_id: int, full_name: str = "Alice <Plombier>") -> int:
+    """Inscription d'un prestataire avec ses photos (identifiants Telegram) :
+    le backend écrit le dossier pour chaque admin avec l'inscription."""
+    from backend.app import ledger, profils
+
+    from backend.tests import profils_de_test
+
+    with live.database.SessionLocal() as session:
+        profils_de_test.ensure_catalogue(session)
+        account_id = ledger.account_id_for(session, ledger.TELEGRAM, telegram_id, create=True)
+        profils.register_provider(
+            session, account_id, full_name=full_name, phone_number="+243810000611",
+            services=["service_plomberie"], communes=["Gombe"],
+            id_document_file_id="id_doc", selfie_file_id="selfie", portfolio_file_ids=["p1"],
+        )
+        session.commit()
+        return account_id
 
 
 def test_new_provider_admin_notification_uses_admin_language(live_backend):
     live_backend.client(700, first_name="Admin", language="en")
     live_backend.grant_admin(700)
-    bot = RecordingBot()
+    live_backend.sent.clear()
 
-    asyncio.run(registration._notifier_admin_nouveau_prestataire(Callback(611, bot=bot), PROVIDER, "id_doc", "selfie", ["p1"]))
+    account_id = _register_with_documents(live_backend, 611)
 
-    summary = bot.sent[0][2]
+    to_admin = [text for chat_id, text in live_backend.sent if chat_id == 700]
+    summary = to_admin[0]
     assert summary.startswith("🆕 <b>New provider awaiting approval</b>")
     assert "Alice &lt;Plombier&gt;" in summary, "le nom reste échappé"
-    assert [entry[2] for entry in bot.sent[1:4]] == [
+    assert "Plomberie" in summary or "Plumbing" in summary, "services nommés, pas leurs clés"
+    assert to_admin[1:4] == [
         get_message("admin_new_provider_id_caption", "en"),
         get_message("admin_new_provider_selfie_caption", "en"),
         get_message("admin_new_provider_portfolio_caption", "en"),
     ]
-    assert bot.sent[-1][2] == get_message("admin_new_provider_approve_prompt", "en")
+    assert to_admin[-1] == get_message("admin_new_provider_approve_prompt", "en")
+    buttons = [button["callback_data"] for chat_id, markup in live_backend.markups if chat_id == 700 and markup for button in markup["inline_keyboard"][0]]
+    assert buttons == [f"admin_verify_provider_acc_{account_id}", f"admin_reject_provider_acc_{account_id}"]
 
 
-class FailingFirstBot(RecordingBot):
-    """Telegram refuse tout envoi au premier admin (bot bloqué, par exemple)."""
-
-    def __init__(self, blocked):
-        super().__init__()
-        self.blocked = blocked
-
-    async def send_message(self, chat_id, text, parse_mode=None, reply_markup=None):
-        if chat_id == self.blocked:
-            raise RuntimeError("Forbidden: bot was blocked by the user")
-        await super().send_message(chat_id, text, parse_mode, reply_markup)
-
-
-def test_new_provider_reaches_every_admin_even_if_one_send_fails(live_backend):
+def test_new_provider_reaches_every_admin_with_one_notification_each(live_backend):
+    """Une notification par admin : un envoi refusé pour l'un n'empêche pas
+    les autres (backend/tests/test_notifications.py)."""
     live_backend.grant_admin(701)
     live_backend.grant_admin(702)
-    bot = FailingFirstBot(blocked=701)
+    live_backend.sent.clear()
 
-    asyncio.run(registration._notifier_admin_nouveau_prestataire(Callback(612, bot=bot), PROVIDER, "id_doc", "selfie", []))
+    _register_with_documents(live_backend, 612)
 
-    assert {chat_id for _, chat_id, _ in bot.sent} == {702}
-    assert bot.sent[-1][2] == get_message("admin_new_provider_approve_prompt", "fr")
-
-
-class _UnreachableBackend(RecordingAsyncClient):
-    async def get(self, url, params=None):
-        raise backend_client.httpx.ConnectError("backend injoignable")
+    prompts = [chat_id for chat_id, text in live_backend.sent if text == get_message("admin_new_provider_approve_prompt", "fr")]
+    assert sorted(prompts) == [701, 702]
 
 
-def test_without_backend_answer_no_admin_is_notified():
-    bot = RecordingBot()
+def test_a_new_registration_after_a_refusal_sends_a_new_dossier_once(live_backend):
+    live_backend.grant_admin(703)
+    _register_with_documents(live_backend, 613)
+    live_backend.reject_provider(613)
+    live_backend.sent.clear()
 
-    asyncio.run(registration._notifier_admin_nouveau_prestataire(Callback(613, bot=bot), PROVIDER, "id_doc", "selfie", []))
+    _register_with_documents(live_backend, 613)
+    _register_with_documents(live_backend, 613)  # mise à jour du dossier en attente : pas de nouvel envoi
 
-    assert bot.sent == []
+    prompts = [chat_id for chat_id, text in live_backend.sent if text == get_message("admin_new_provider_approve_prompt", "fr")]
+    assert prompts == [703]
 
 
 # --- Langue : celle du compte, gardée pour l'inscription sinon ---------------
@@ -420,6 +423,11 @@ def test_admin_status_trusts_only_a_clear_backend_answer(monkeypatch, status_cod
     answer = type("Answer", (_AdminAnswer,), {"status_code": status_code, "payload": payload})
     monkeypatch.setattr(backend_client.httpx, "AsyncClient", answer)
     assert asyncio.run(backend_client.admin_status(999)) is expected
+
+
+class _UnreachableBackend(RecordingAsyncClient):
+    async def get(self, url, params=None):
+        raise backend_client.httpx.ConnectError("backend injoignable")
 
 
 def test_admin_status_is_unknown_when_the_backend_is_unreachable(monkeypatch):

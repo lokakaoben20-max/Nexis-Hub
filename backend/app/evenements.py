@@ -36,7 +36,7 @@ from backend.app.models import (
     StoredFile,
     ProviderServiceRequest,
 )
-from backend.app.notifications import admin_text, enqueue, enqueue_admins
+from backend.app.notifications import admin_text, enqueue, enqueue_admins, withdraw
 
 # Heure montrée aux personnes : Kinshasa (UTC+1, sans heure d'été). Les
 # colonnes sont en UTC naïf.
@@ -677,6 +677,12 @@ def new_device(db: Session, device, account_language: str | None = None) -> None
     )
 
 
+def device_revoked(db: Session, device_id: int) -> None:
+    """Téléphone coupé : son alerte « Nouvel appareil » ne part plus si elle
+    attend encore."""
+    withdraw(db, f"new_device:{device_id}")
+
+
 def device_not_me(db: Session, device_id: int, account_id: int) -> None:
     enqueue_admins(
         db,
@@ -702,7 +708,7 @@ def provider_submitted(db: Session, provider: ProviderProfile, submitted_at: dat
         params={
             "nom": provider.full_name or "",
             "telephone": provider.phone_number or "",
-            "services": ", ".join(services),
+            "services": {"$services": services},
             "communes": ", ".join(communes),
         },
     )

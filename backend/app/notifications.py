@@ -51,6 +51,7 @@ destinataire et au format de son canal (`render`). Un paramètre est une
 valeur simple (échappée pour le HTML de Telegram) ou une valeur typée :
 
 - ``{"$service": clé}`` : nom du service dans la langue du destinataire ;
+- ``{"$services": [clés]}`` : plusieurs services, séparés par des virgules ;
 - ``{"$yes_no": bool}`` : Oui / Non ;
 - ``{"$message": clé}`` : un autre texte traduit ;
 - ``{"$html": texte}`` : texte déjà sûr, écrit par le backend (alertes admin) ;
@@ -168,6 +169,8 @@ def _check_param(value) -> None:
         (kind, inner), = value.items()
         if kind in ("$service", "$message", "$html") and isinstance(inner, str):
             return
+        if kind == "$services" and isinstance(inner, list) and all(isinstance(key, str) for key in inner):
+            return
         if kind == "$yes_no" and isinstance(inner, bool):
             return
         if kind == "$trust" and isinstance(inner, dict):
@@ -244,6 +247,18 @@ def enqueue(
     if pending is not None:
         pending.added = True
     return True
+
+
+def withdraw(db: Session, event_key: str) -> int:
+    """Retire les notifications d'un événement qui n'ont pas encore été
+    tentées et ne servent plus (ex. alerte « Nouvel appareil » d'un téléphone
+    déjà coupé). Une notification déjà partie ou peut-être partie reste.
+    Dans la transaction de l'appelant ; rend le nombre retiré."""
+    return (
+        db.query(Notification)
+        .filter(Notification.event_key == event_key, Notification.status == PENDING)
+        .delete(synchronize_session=False)
+    )
 
 
 def admin_account_ids(db: Session) -> list[int]:
@@ -354,6 +369,8 @@ def _param(db: Session, value, lang: str, escape):
         (kind, inner), = value.items()
         if kind == "$service":
             return escape(_service_label(db, inner, lang))
+        if kind == "$services":
+            return escape(", ".join(_service_label(db, key, lang) for key in inner))
         if kind == "$yes_no":
             return get_message("yes" if inner else "no", lang)
         if kind == "$message":

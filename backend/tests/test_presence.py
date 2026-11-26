@@ -10,6 +10,7 @@ from datetime import timedelta
 
 import pytest
 
+from backend.tests import boite_envoi
 from backend.tests.test_main import _as, _register_provider
 from backend.tests.test_mission_destination import _backend, _create, _pay, _quote
 
@@ -21,17 +22,15 @@ ADMIN = 999
 
 
 @pytest.fixture
-def sent(monkeypatch):
-    """Messages Telegram envoyés par le backend : (destinataire, texte, boutons)."""
-    from backend.app import notify, tasks
+def telegram(monkeypatch):
+    """Expéditeur Telegram de test branché sur la boîte d'envoi."""
+    return boite_envoi.record_telegram(monkeypatch)
 
-    messages = []
-    monkeypatch.setattr(notify, "send_telegram_message", lambda chat_id, text, reply_markup=None: messages.append((chat_id, text, reply_markup)) or True)
-    monkeypatch.setattr(
-        notify, "send_telegram_photo", lambda chat_id, file_id, caption, reply_markup=None: messages.append((chat_id, f"[photo {file_id}] {caption}", reply_markup)) or True
-    )
-    monkeypatch.setattr(tasks, "send_telegram_message", lambda chat_id, text, reply_markup=None: messages.append((chat_id, text, reply_markup)))
-    return messages
+
+@pytest.fixture
+def sent(telegram):
+    """Messages Telegram envoyés par le backend : (destinataire, texte, boutons)."""
+    return telegram.sent
 
 
 def _to(messages, chat_id):
@@ -131,12 +130,11 @@ def test_the_question_shows_the_provider_photo_when_there_is_one(backend_db_url,
     assert _to(sent, CLIENT)[0].startswith("[photo selfie-file-id] ")
 
 
-def test_the_question_still_leaves_when_telegram_refuses_the_photo(backend_db_url, monkeypatch, sent):
+def test_the_question_still_leaves_when_telegram_refuses_the_photo(backend_db_url, monkeypatch, telegram, sent):
     test_client, database_module = _backend(monkeypatch, backend_db_url)
-    from backend.app import notify
     from backend.tests.profils_de_test import provider_of
 
-    monkeypatch.setattr(notify, "send_telegram_photo", lambda *args, **kwargs: False)
+    telegram.refuse.add("sendPhoto")
     with test_client:
         mission_id = _paid_mission(test_client, database_module)
         with database_module.SessionLocal() as db:

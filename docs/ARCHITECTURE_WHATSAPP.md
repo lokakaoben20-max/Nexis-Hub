@@ -77,7 +77,7 @@ Missions, devis, transactions, avis et litiges référencent `account_id` au lie
 
 ### Routage des notifications
 
-**Cible non encore implémentée.** Aujourd'hui, `backend/app/notify.py` envoie directement les notifications par Telegram depuis les tâches qui en ont besoin. Il n'existe pas encore de table d'outbox multicanal ni d'expéditeur de notifications WhatsApp. Si cette cible est réalisée, l'exécution périodique pourra s'appuyer sur le planificateur intégré de `backend/app/taches.py` (sans Celery).
+**En place depuis l'étape 3 pour Telegram** (`backend/app/notifications.py`). Tout message à une autre personne que celle qui vient d'agir est une ligne de la table `notifications`, écrite dans la transaction de l'événement par `backend/app/evenements.py` (qui reçoit quoi). Le bot Telegram ne répond plus qu'à la personne qui vient d'agir ; un test (`backend/tests/test_notifications.py`) refuse tout autre envoi direct. L'envoi part juste après la demande HTTP qui a créé la notification, et la tâche `envoi-notifications` de `backend/app/taches.py` repasse chaque minute. L'expéditeur WhatsApp s'enregistre à l'étape 8 ; d'ici là, les notifications d'un client WhatsApp attendent sans compter d'essai.
 
 **Ce qui est garanti, et ce qui ne l'est pas.**
 
@@ -100,7 +100,7 @@ Missions, devis, transactions, avis et litiges référencent `account_id` au lie
 
 - **Service WhatsApp** (`whatsapp_bot/`, processus séparé) : reçoit les webhooks de Meta, vérifie la signature, déduplique, garde l'état de conversation et appelle le backend.
 - **Backend V5** : seule source de vérité. Nouveaux endpoints indexés par `account_id`, authentifiés par clé de service par canal.
-- **Expéditeur de notifications (cible)** : lira l'outbox multicanale et enverra par Telegram ou WhatsApp ; il reste à construire et sera déclenché par le planificateur intégré (pas Celery).
+- **Expéditeur de notifications** (`backend/app/notifications.py`) : lit la table `notifications` et envoie par le canal du destinataire. Telegram : `backend/app/notify.py`. WhatsApp : étape 8.
 - **Bot Telegram et Mini App** : inchangés dans leur rôle, mais appellent les endpoints par `account_id`.
 
 L'état de conversation WhatsApp (étape en cours d'un client) vit dans Redis, déjà en place. Il ne contient aucune donnée d'argent : perdu, le client recommence l'étape.

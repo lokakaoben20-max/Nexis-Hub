@@ -180,12 +180,14 @@ def test_mission_alert_is_sent_in_each_provider_language(live_backend):
     live_backend.client(900, first_name="Cliente")
     live_backend.provider(901, "Prestataire FR", language="fr")
     live_backend.provider(902, "Prestataire EN", language="en")
+    live_backend.sent.clear()
 
     bot = DummyBot()
     callback = DummyCallback(telegram_id=900, data="mission_confirmer", bot=bot)
     asyncio.run(mission.mission_confirmer(callback, DummyState(data=_mission_request())))
 
-    sent_by_provider = {m.chat_id: m.text for m in bot.messages}
+    assert bot.messages == [], "le bot n'écrit qu'au client ; les alertes partent du backend"
+    sent_by_provider = dict(live_backend.sent)
     assert set(sent_by_provider) == {901, 902}, "les deux prestataires matchés doivent être alertés"
     assert "Nouvelle demande" in sent_by_provider[901]
     assert "New request" in sent_by_provider[902], "le prestataire anglophone recevait l'alerte en français"
@@ -195,20 +197,23 @@ def test_confirming_twice_creates_one_mission_and_alerts_the_same_providers(live
     """Double clic ou réponse perdue : la même clé de création, une seule mission."""
     live_backend.client(900, first_name="Cliente")
     live_backend.provider(901)
+    live_backend.sent.clear()
 
     first, second = DummyBot(), DummyBot()
     asyncio.run(mission.mission_confirmer(DummyCallback(900, data="mission_confirmer", bot=first), DummyState(data=_mission_request())))
+    assert [chat_id for chat_id, _ in live_backend.sent] == [901]
     # Entre-temps un autre prestataire est devenu disponible : la liste
     # enregistrée avec la mission fait foi.
     live_backend.provider(903, "Nouveau")
+    live_backend.sent.clear()
     asyncio.run(mission.mission_confirmer(DummyCallback(900, data="mission_confirmer", bot=second), DummyState(data=_mission_request())))
 
     from backend.app.models import BotMission
 
     with live_backend.database.SessionLocal() as session:
         assert session.query(BotMission).count() == 1
-    assert [m.chat_id for m in first.messages] == [901]
-    assert [m.chat_id for m in second.messages] == [901]
+    # Le second essai rend la même mission : aucune nouvelle alerte.
+    assert [chat_id for chat_id, _ in live_backend.sent] == []
 
 
 def test_the_backend_alerts_the_best_available_providers_only(live_backend):
@@ -223,12 +228,13 @@ def test_the_backend_alerts_the_best_available_providers_only(live_backend):
     live_backend.provider(944, "Expert", badge="expert")
     live_backend.provider(945, "Indisponible", badge="partner", status="offline")
     live_backend.provider(946, "En attente", verified=False)
+    live_backend.sent.clear()
 
     bot = DummyBot()
     asyncio.run(mission.mission_confirmer(DummyCallback(900, data="mission_confirmer", bot=bot), DummyState(data=_mission_request())))
 
     assert live_backend.alerted(1) == [942, 943, 944], "note 4.5 (45 points), puis partenaire (30), puis expert (20)"
-    assert sorted(m.chat_id for m in bot.messages) == [942, 943, 944]
+    assert sorted(chat_id for chat_id, _ in live_backend.sent) == [942, 943, 944]
 
 
 def test_mission_is_not_created_while_the_backend_is_down():
@@ -245,6 +251,7 @@ def test_mission_is_not_created_while_the_backend_is_down():
 def test_quote_is_recorded_by_the_backend_and_sent_to_the_client(live_backend):
     live_backend.client(910, first_name="Cliente")
     mission_id = live_backend.new_mission(910, alert=(911,), service="service_plomberie")
+    live_backend.sent.clear()
 
     bot = DummyBot()
     message = DummyMessage(telegram_id=911, text="Disponible demain", bot=bot)
@@ -262,9 +269,8 @@ def test_quote_is_recorded_by_the_backend_and_sent_to_the_client(live_backend):
     with live_backend.database.SessionLocal() as session:
         quote = session.query(BotQuote).one()
     assert (quote.mission_id, quote.provider_telegram_id, quote.amount, quote.status) == (mission_id, 911, 50.0, "pending")
-    assert len(bot.messages) == 1, "le client doit recevoir le devis"
-    assert bot.messages[0].chat_id == 910
-    buttons = [button.callback_data for row in bot.messages[0].kwargs["reply_markup"].inline_keyboard for button in row]
+    assert [chat_id for chat_id, _ in live_backend.sent] == [910], "le client reçoit le devis, par le backend"
+    buttons = [button["callback_data"] for row in live_backend.markups[0][1]["inline_keyboard"] for button in row]
     assert buttons == [f"quote_accept_{quote.id}", f"quote_reject_{quote.id}"]
     assert state.cleared is True
 
@@ -287,6 +293,7 @@ def test_the_quote_shows_the_provider_stats_held_by_the_backend(live_backend):
     live_backend.client(930, first_name="Cliente")
     live_backend.provider(931, "Nom Backend", average_rating=4.8, total_missions=12, success_rate=91, badge="partner")
     mission_id = live_backend.new_mission(930, alert=(931,))
+    live_backend.sent.clear()
 
     bot = DummyBot()
     message = DummyMessage(telegram_id=931, text="Disponible demain", bot=bot)
@@ -297,7 +304,7 @@ def test_the_quote_shows_the_provider_stats_held_by_the_backend(live_backend):
 
     asyncio.run(mission.devis_message_recu(message, state))
 
-    sent = bot.messages[0].text
+    [(_, sent)] = live_backend.sent
     assert "Nom Backend" in sent
     assert "4.8/5" in sent
     assert "12 missions" in sent
@@ -332,6 +339,7 @@ def test_a_video_note_is_kept_with_the_mission_and_sent_to_the_providers(live_ba
     dans le backend avec la mission, et transmise aux prestataires prévenus."""
     live_backend.client(900, first_name="Cliente")
     live_backend.provider(901)
+    live_backend.sent.clear()
 
     state = DummyState(data={**_mission_request(), "description_parts": [], "photo_file_ids": [], "voice_file_ids": []})
     message = DummyMessage(telegram_id=900)
@@ -347,8 +355,9 @@ def test_a_video_note_is_kept_with_the_mission_and_sent_to_the_providers(live_ba
     with live_backend.database.SessionLocal() as session:
         stored = [(media.kind, media.external_id) for media in session.query(MissionMedia).all()]
     assert stored == [("video_note", "video-note-1")]
-    assert [(sent.chat_id, sent.text) for sent in bot.video_notes] == [(901, "video-note-1")]
-    assert get_message("mission_video_note_caption", "fr", mission_id=1) in [sent.text for sent in bot.messages]
+    to_provider = [text for chat_id, text in live_backend.sent if chat_id == 901]
+    # Alerte, note vidéo (sans texte), puis le numéro de mission.
+    assert to_provider[1:] == ["[video_note video-note-1]", get_message("mission_video_note_caption", "fr", mission_id=1)]
 
 
 def test_an_unsupported_message_is_still_refused():
