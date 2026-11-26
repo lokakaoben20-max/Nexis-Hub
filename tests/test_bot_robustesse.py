@@ -250,9 +250,9 @@ def test_new_provider_admin_notification_uses_admin_language(live_backend):
     assert "Alice &lt;Plombier&gt;" in summary, "le nom reste échappé"
     assert "Plomberie" in summary or "Plumbing" in summary, "services nommés, pas leurs clés"
     assert to_admin[1:4] == [
-        get_message("admin_new_provider_id_caption", "en"),
-        get_message("admin_new_provider_selfie_caption", "en"),
-        get_message("admin_new_provider_portfolio_caption", "en"),
+        "[photo id_doc] " + get_message("admin_new_provider_id_caption", "en"),
+        "[photo selfie] " + get_message("admin_new_provider_selfie_caption", "en"),
+        "[photo p1] " + get_message("admin_new_provider_portfolio_caption", "en"),
     ]
     assert to_admin[-1] == get_message("admin_new_provider_approve_prompt", "en")
     buttons = [button["callback_data"] for chat_id, markup in live_backend.markups if chat_id == 700 and markup for button in markup["inline_keyboard"][0]]

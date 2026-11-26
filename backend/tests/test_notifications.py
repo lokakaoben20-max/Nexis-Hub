@@ -362,11 +362,12 @@ def test_two_senders_never_take_the_same_notification(env):
             .with_for_update()
             .all()
         )
+        locked_ids = {row.id for row in locked}
         with database.SessionLocal() as second:
             claimed = notifications._claim(second, NOW, ["telegram"], 10)
         first.rollback()
 
-    assert {notification_id for notification_id, _ in claimed}.isdisjoint({row.id for row in locked})
+    assert {notification_id for notification_id, _ in claimed}.isdisjoint(locked_ids)
     assert len(claimed) == 2
 
 
