@@ -1,6 +1,6 @@
 # Image unique de Nexis Hub : backend, Mini App, bot, tâches planifiées et
 # migrations partagent le même code. Le rôle se choisit au lancement :
-#   docker run <image> backend | miniapp | bot | webhook-setup | migration
+#   docker run <image> backend | miniapp | bot | whatsapp | webhook-setup | migration
 #                      | tache <nom> | planificateur | controle-registre
 # Voir docker/lancer.sh.
 
