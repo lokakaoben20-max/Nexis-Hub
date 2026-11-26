@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // Parcours client d'une mission, repris des écrans Flutter
 // (app_mobile/lib/screens/client) : devis, paiement, attente de
@@ -32,7 +33,7 @@ enum MissionRoute: Hashable {
     static func forCapture(_ capture: String?) -> [MissionRoute]? {
         switch capture {
         case "tracking": return [.tracking(51)]
-        case "quotes": return [.quotes(52)]
+        case "quotes", ShowcaseDemo.capture: return [.quotes(52)]
         case "pay": return [.quotes(52), .pay(mission: 52, quote: 521)]
         case "pending": return [.pending(mission: 52, quote: 521, via: .mpesa)]
         case "confirm": return [.tracking(49), .confirm(49)]
@@ -361,6 +362,8 @@ struct QuotesView: View {
     let missionId: Int
     @State private var mission: Mission?
     @State private var quotes: [Quote] = []
+    @State private var showcases: [Int: ProviderShowcase] = [:]
+    @State private var shown: ShownShowcase?
 
     var body: some View {
         Group {
@@ -375,7 +378,10 @@ struct QuotesView: View {
                                  text: ([mission.commune] + [mission.detail].compactMap { $0 }).joined(separator: ", "))
                         }
                         ForEach(Array(quotes.enumerated()), id: \.element.id) { index, quote in
-                            QuoteCard(quote: quote, best: index == 0 && quotes.count > 1) {
+                            QuoteCard(quote: quote, best: index == 0 && quotes.count > 1,
+                                      onShowcase: showcases[quote.id].map { showcase -> () -> Void in
+                                          { shown = ShownShowcase(quote: quote, showcase: showcase) }
+                                      }) {
                                 flow.push(.pay(mission: mission.id, quote: quote.id))
                             }
                         }
@@ -389,17 +395,39 @@ struct QuotesView: View {
             }
         }
         .flowTitle(app.t("compareQuotes"), subtitle: mission.map(app.place))
+        .sheet(item: $shown) { item in ShowcaseView(quote: item.quote, showcase: item.showcase) }
         .task(id: app.revision) {
             mission = try? await app.repository.mission(missionId)
             quotes = (try? await app.repository.quotes(missionId: missionId)) ?? []
+            var found: [Int: ProviderShowcase] = [:]
+            for quote in quotes {
+                if let showcase = try? await app.repository.providerShowcase(quoteId: quote.id) { found[quote.id] = showcase }
+            }
+            showcases = found
+            if app.capture == ShowcaseDemo.capture, shown == nil, let quote = quotes.first(where: { found[$0.id] != nil }),
+               let showcase = found[quote.id] {
+                shown = ShownShowcase(quote: quote, showcase: showcase)
+            }
         }
     }
+}
+
+private struct ShownShowcase: Identifiable {
+    let quote: Quote
+    let showcase: ProviderShowcase
+    var id: Int { quote.id }
+}
+
+/// Capture de la CI : les réalisations de Prisca, ouvertes depuis les devis.
+enum ShowcaseDemo {
+    static let capture = "showcase"
 }
 
 private struct QuoteCard: View {
     @Environment(AppModel.self) private var app
     let quote: Quote
     let best: Bool
+    var onShowcase: (() -> Void)?
     let onChoose: () -> Void
 
     var body: some View {
@@ -415,6 +443,14 @@ private struct QuoteCard: View {
                         .font(.body(12.5, relativeTo: .caption1))
                         .foregroundStyle(Nexis.muted)
                 }
+            }
+            if let onShowcase {
+                Button(action: onShowcase) {
+                    Label(app.t("showcaseOpen"), systemImage: "photo.on.rectangle")
+                        .font(.body(14, .semibold))
+                        .foregroundStyle(Nexis.accent)
+                }
+                .buttonStyle(.plain)
             }
             if best {
                 Button(action: onChoose) { WideLabel(text: app.t("chooseProvider", ["name": quote.firstName])) }
@@ -439,6 +475,68 @@ private struct QuoteCard: View {
             }
         }
         .padding(.top, best ? 6 : 0)
+    }
+}
+
+/// Les réalisations approuvées par l'équipe, vues par le client. Jamais les
+/// diplômes : seulement « Diplôme vérifié par NexisHub ».
+private struct ShowcaseView: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    let quote: Quote
+    let showcase: ProviderShowcase
+    @State private var catalog: [CatalogService] = []
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    PersonHeader(initials: quote.initials, color: quote.avatarColor, name: quote.providerName,
+                                 rating: quote.rating, reviews: quote.reviews) { EmptyView() }
+                    WrapLayout {
+                        Pill(tone: .secured, systemImage: "checkmark.shield.fill", text: app.t("showcaseChecked"))
+                        if showcase.certificateVerified {
+                            Pill(tone: .ok, systemImage: "checkmark.seal.fill", text: app.t("showcaseCertificate"))
+                        }
+                    }
+                    ForEach(showcase.works, id: \.serviceId) { work in
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 10) {
+                                if let service = catalog.first(where: { $0.id == work.serviceId }) {
+                                    ServiceTile(service, size: 34)
+                                    Text(service.name(app.language)).font(.body(15.5, .bold)).foregroundStyle(Nexis.ink)
+                                }
+                            }
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(Array(work.photos.enumerated()), id: \.offset) { _, data in
+                                        if let image = UIImage(data: data) {
+                                            Image(uiImage: image).resizable().scaledToFill()
+                                                .frame(width: 168, height: 168)
+                                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                                .accessibilityLabel(app.t("showcasePhoto"))
+                                        }
+                                    }
+                                }
+                            }
+                            if !work.note.isEmpty {
+                                Text(work.note).font(.body(14.5)).foregroundStyle(Nexis.ink)
+                            }
+                        }
+                        .nxCard(padding: 14)
+                    }
+                }
+                .flowScreen()
+            }
+            .navigationTitle(app.t("showcaseTitle", ["name": quote.firstName]))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(app.t("close")) { dismiss() }
+                }
+            }
+        }
+        .task { catalog = (try? await app.repository.serviceCatalog()) ?? [] }
     }
 }
 

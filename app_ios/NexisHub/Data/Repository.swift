@@ -52,17 +52,20 @@ protocol NexisRepository: AnyObject {
     /// Demande à devenir prestataire. Le profil reste en vérification jusqu'à
     /// la décision de l'équipe NexisHub. Le recto, le verso et la vidéo ne
     /// servent qu'à cette vérification. Les preuves de réalisations sont
-    /// facultatives (`Portfolio()` si aucune) et vues seulement par l'équipe.
+    /// facultatives (`Portfolio()` si aucune) et revues par l'équipe avant
+    /// d'être montrées aux clients.
     func applyAsProvider(services: [String], communes: [String], identity: IdentityCapture,
                          portfolio: Portfolio, acceptedTermsVersion: Date?) async throws
     /// Les services de la demande prestataire (vide pour un client seulement).
     func providerServices() async throws -> [String]
-    /// Les preuves de réalisations envoyées à l'équipe.
+    /// Les preuves de réalisations envoyées, avec la décision de l'équipe
+    /// pour chaque service.
     func portfolio() async throws -> Portfolio
     /// Une demande de preuves faite par l'équipe, s'il y en a une en cours.
     func portfolioRequest() async throws -> PortfolioRequest?
     /// Remplace les preuves envoyées (prestataire en vérification ou
-    /// vérifié). Répond aussi à la demande de l'équipe, s'il y en a une.
+    /// vérifié). Répond aussi à la demande de l'équipe, s'il y en a une. Un
+    /// service modifié repasse par l'équipe avant d'être remontré.
     func sendPortfolio(_ portfolio: Portfolio) async throws
 
     // --- Client : devis, paiement, suivi, litige ---
@@ -70,6 +73,9 @@ protocol NexisRepository: AnyObject {
     func mission(_ id: Int) async throws -> Mission
     /// Les devis reçus pour une mission, le mieux noté en premier.
     func quotes(missionId: Int) async throws -> [Quote]
+    /// Les réalisations approuvées du prestataire d'un devis (`nil` s'il n'en
+    /// a pas). Jamais ses diplômes : seulement le fait qu'ils sont vérifiés.
+    func providerShowcase(quoteId: Int) async throws -> ProviderShowcase?
     func payAccounts() async throws -> [PayAccount]
     /// Demande le paiement du devis choisi à l'opérateur. Le montant est celui
     /// du devis enregistré sur le serveur, jamais un calcul de l'app.
@@ -405,7 +411,7 @@ final class DemoRepository: NexisRepository {
         try await Task.sleep(for: .seconds(1))
         providerTermsAcceptedAt = .now
         chosenServices = services
-        sentPortfolio = portfolio
+        sentPortfolio = portfolio.resubmitted(over: Portfolio())
         store(Profile(firstName: current.firstName, lastName: current.lastName, phone: current.phone,
                       commune: current.commune, providerStatus: .pending, termsVersion: current.termsVersion))
     }
@@ -421,8 +427,22 @@ final class DemoRepository: NexisRepository {
             throw NexisRefusal(code: "portfolio_invalid")
         }
         try await Task.sleep(for: .seconds(1))
-        sentPortfolio = portfolio
+        sentPortfolio = portfolio.resubmitted(over: sentPortfolio)
         pendingPortfolioRequest = nil
+    }
+
+    /// Démonstration et tests : la décision de l'équipe sur un service.
+    func demoReview(serviceId: String, _ review: ProofReview) {
+        sentPortfolio.works = sentPortfolio.works.map { work in
+            var reviewed = work
+            if work.serviceId == serviceId { reviewed.review = review }
+            return reviewed
+        }
+    }
+
+    /// Démonstration et tests : l'équipe a vérifié les diplômes.
+    func demoVerifyCertificates() {
+        sentPortfolio.certificatesVerified = !sentPortfolio.certificates.isEmpty
     }
 
     /// Démonstration et tests : l'équipe demande des preuves.
@@ -442,6 +462,27 @@ final class DemoRepository: NexisRepository {
     func quotes(missionId: Int) async throws -> [Quote] {
         (quotesByMission[missionId] ?? []).sorted { $0.rating > $1.rating }
     }
+
+    func providerShowcase(quoteId: Int) async throws -> ProviderShowcase? {
+        demoPortfolios[quoteId]?.showcase
+    }
+
+    /// Ce que l'équipe a reçu de Prisca et de Joël : un service approuvé, un
+    /// refusé, un en attente. Seul l'approuvé arrive chez le client ; les
+    /// diplômes ne quittent jamais l'équipe.
+    private lazy var demoPortfolios: [Int: Portfolio] = [
+        521: Portfolio(works: [
+            WorkProof(serviceId: "nettoyage",
+                      photos: ["sparkles", "bubbles.and.sparkles.fill", "sofa.fill"].map { DemoPictures.jpeg(symbol: $0) },
+                      note: "Salon et cuisine après travaux, Limete, 2025", review: .approved),
+            WorkProof(serviceId: "jardinage", photos: [DemoPictures.jpeg(symbol: "leaf.fill")],
+                      note: "", review: .rejected),
+        ], certificates: [DemoPictures.jpeg(symbol: "doc.text.fill")], certificatesVerified: true),
+        522: Portfolio(works: [
+            WorkProof(serviceId: "nettoyage", photos: [DemoPictures.jpeg(symbol: "sparkles")],
+                      note: "", review: .pending),
+        ]),
+    ]
 
     func payAccounts() async throws -> [PayAccount] {
         [

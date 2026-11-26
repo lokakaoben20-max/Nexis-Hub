@@ -20,10 +20,12 @@ import com.nexishub.app.data.NexisRefusal
 import com.nexishub.app.data.Portfolio
 import com.nexishub.app.data.SelfieScript
 import com.nexishub.app.data.Texts
+import com.nexishub.app.data.ProofReview
 import com.nexishub.app.data.WorkProof
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -369,6 +371,7 @@ class AccountTest {
         assertEquals(com.nexishub.app.Capture.BECOME_WRONG_PAGE, com.nexishub.app.Capture.from("become-wrong-page"))
         assertEquals(com.nexishub.app.Capture.BECOME_PORTFOLIO, com.nexishub.app.Capture.from("become-portfolio"))
         assertEquals(com.nexishub.app.Capture.PORTFOLIO, com.nexishub.app.Capture.from("portfolio"))
+        assertEquals(com.nexishub.app.Capture.SHOWCASE, com.nexishub.app.Capture.from("showcase"))
         assertEquals(com.nexishub.app.Capture.TRACKING, com.nexishub.app.Capture.from("tracking"))
     }
 }
@@ -531,5 +534,67 @@ class PortfolioTest {
         // Un service qui n'est pas dans la demande est refusé.
         assertEquals("portfolio_invalid", runCatching { repo.sendPortfolio(Portfolio(listOf(work("coiffure")))) }
             .exceptionOrNull()?.let { (it as NexisRefusal).code })
+    }
+    @Test
+    fun clientsSeeOnlyApprovedWorksAndNeverCertificates() {
+        val portfolio = Portfolio(
+            listOf(work("plomberie", photos = 2, note = "Cuisine").withReview(ProofReview.APPROVED),
+                work("electricite").withReview(ProofReview.REJECTED), work("coiffure")),
+            listOf(byteArrayOf(9)), certificatesVerified = true,
+        )
+        val showcase = portfolio.showcase
+        assertEquals(listOf("plomberie"), showcase?.works?.map { it.serviceId })
+        assertEquals("Cuisine", showcase?.works?.first()?.note)
+        assertEquals(true, showcase?.certificateVerified)
+        // Rien d'approuvé : rien chez le client, même avec un diplôme vérifié.
+        assertNull(Portfolio(listOf(work("plomberie")), listOf(byteArrayOf(9)), certificatesVerified = true).showcase)
+    }
+
+    @Test
+    fun changedWorksGoBackToTheTeam() {
+        val previous = Portfolio(
+            listOf(work("plomberie", photos = 2, note = "Cuisine").withReview(ProofReview.APPROVED),
+                work("electricite").withReview(ProofReview.REJECTED)),
+            listOf(byteArrayOf(9)), certificatesVerified = true,
+        )
+        // Rien de changé : les décisions restent.
+        val same = Portfolio(listOf(work("plomberie", photos = 2, note = "Cuisine"), work("electricite")), listOf(byteArrayOf(9)))
+            .resubmitted(previous)
+        assertEquals(listOf(ProofReview.APPROVED, ProofReview.REJECTED), same.works.map { it.review })
+        assertTrue(same.certificatesVerified)
+        // Une photo ajoutée, une phrase changée, un diplôme changé : tout repasse par l'équipe.
+        val changed = Portfolio(listOf(work("plomberie", photos = 3, note = "Cuisine"), work("electricite", note = "Tableau")), listOf(byteArrayOf(8)))
+            .resubmitted(previous)
+        assertEquals(listOf(ProofReview.PENDING, ProofReview.PENDING), changed.works.map { it.review })
+        assertFalse(changed.certificatesVerified)
+        assertNull(changed.showcase)
+    }
+
+    @Test
+    fun providerSeesTheTeamDecision() = runBlocking {
+        val repo = DemoRepository()
+        assertTrue(repo.registerClient("+243810000003", "Jean", "K", "Limete", repo.signupTermsVersion))
+        val identity = IdentityCapture(IdentityDocument.PASSPORT, byteArrayOf(1), null, byteArrayOf(3), 7, listOf(HeadTurn.LEFT, HeadTurn.RIGHT))
+        // L'app ne peut pas se donner l'accord de l'équipe.
+        val forged = Portfolio(listOf(work("plomberie", photos = 2).withReview(ProofReview.APPROVED)), certificatesVerified = true)
+        repo.applyAsProvider(listOf("plomberie"), listOf("Limete"), identity, forged, repo.providerTermsVersion)
+        assertEquals(ProofReview.PENDING, repo.portfolio().works.first().review)
+        assertFalse(repo.portfolio().certificatesVerified)
+        repo.demoReview("plomberie", ProofReview.APPROVED)
+        assertEquals(ProofReview.APPROVED, repo.portfolio().works.first().review)
+        // Renvoyé sans changement : toujours approuvé.
+        repo.sendPortfolio(Portfolio(listOf(work("plomberie", photos = 2))))
+        assertEquals(ProofReview.APPROVED, repo.portfolio().works.first().review)
+    }
+
+    @Test
+    fun quoteShowsOnlyTheApprovedShowcase() = runBlocking {
+        val repo = DemoRepository()
+        val prisca = repo.providerShowcase(521)
+        assertEquals(listOf("nettoyage"), prisca?.works?.map { it.serviceId })
+        assertEquals(true, prisca?.certificateVerified)
+        // Joël attend encore l'équipe ; Aline n'a rien envoyé.
+        assertNull(repo.providerShowcase(522))
+        assertNull(repo.providerShowcase(523))
     }
 }

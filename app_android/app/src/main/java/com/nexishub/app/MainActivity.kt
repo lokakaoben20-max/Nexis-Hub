@@ -108,6 +108,7 @@ enum class Capture(
     // Écrans de mission (voir MissionRoute.forCapture).
     TRACKING(true, tab = 1),
     QUOTES(true, tab = 1),
+    SHOWCASE(true, tab = 1),
     PAY(true, tab = 1),
     PENDING(true, tab = 1),
     CONFIRM(true, tab = 1),

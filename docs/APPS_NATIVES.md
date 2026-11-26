@@ -123,9 +123,12 @@ et verso puis vidéo du visage, conditions des prestataires ; le profil reste
 
 ### Preuves de réalisations (2026-11-26)
 
-Choix de Ben : **facultatives**, vues **seulement par l'équipe** (jamais par
-les clients), et l'équipe peut en demander plus tard. La galerie est permise
-pour cette étape seulement.
+Choix de Ben : **facultatives**, et l'équipe peut en demander plus tard. La
+galerie est permise pour cette étape seulement. Deuxième choix du même jour
+(« c'est mieux que ces photos soient partagées aussi aux clients ») :
+**l'équipe d'abord**, puis les photos d'un service approuvé et la phrase sont
+montrées aux clients ; les **diplômes restent à l'équipe**, le client voit
+seulement « Diplôme vérifié par NexisHub ».
 
 - « Devenir prestataire » passe à **5 étapes** : services, **vos
   réalisations** (facultatif, « Passer cette étape »), communes, pièce
@@ -142,10 +145,28 @@ pour cette étape seulement.
   revoir, compléter et renvoyer. Si l'équipe a demandé des preuves, l'écran
   le dit (« L'équipe NexisHub vous demande des photos de vos travaux : … »)
   et la ligne du profil aussi.
+- Décision de l'équipe par service (`ProofReview` : en attente, approuvé,
+  refusé), donnée par le serveur et jamais par l'app. « Mes réalisations »
+  l'affiche sur chaque service (« En attente de l'équipe », « Visible par les
+  clients », « Refusé par l'équipe : envoyez d'autres photos ») et
+  « Vérifié par l'équipe » sur les diplômes. Un service dont les photos ou la
+  phrase changent repasse en attente et disparaît des clients jusqu'au nouvel
+  accord ; des diplômes changés ne sont plus vérifiés
+  (`Portfolio.resubmitted(over:)`).
+- Côté client : sur la comparaison des devis, **« Voir ses réalisations »**
+  quand le prestataire a au moins un service approuvé. La feuille montre ces
+  services (photos, phrase), « Photos vérifiées par l'équipe NexisHub » et,
+  si c'est le cas, « Diplôme vérifié par NexisHub ». Ce que voit le client
+  vient de `Portfolio.showcase` (`ProviderShowcase`) : seulement l'approuvé,
+  jamais un diplôme. Testé des deux côtés.
+- Conseil affiché au prestataire : éviter les visages, les adresses et les
+  plaques sur les photos.
 - Dépôt de données : `applyAsProvider(… portfolio:)`, `providerServices()`,
-  `portfolio()`, `portfolioRequest()`, `sendPortfolio(_:)`.
+  `portfolio()`, `portfolioRequest()`, `sendPortfolio(_:)`,
+  `providerShowcase(quoteId:)`.
 - Captures de la CI : `become-portfolio`, `portfolio` (avec une demande de
-  l'équipe), images dessinées.
+  l'équipe et un service déjà visible), `showcase` (réalisations de Prisca
+  depuis les devis), images dessinées. Textes lingala nouveaux à relire.
 
 ### Pièce d'identité et vidéo du visage (2026-11-26)
 

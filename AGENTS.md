@@ -96,9 +96,12 @@ Ceci concerne l'IA **dans Nexis** (assistants, tri, détection), pas les agents 
   juriste et l'accord de Ben.
   Les **preuves de réalisations** (photos de travaux déjà faits, diplômes ou
   attestations) sont la seule partie de « Devenir prestataire » où la galerie est
-  permise (décision de Ben, même jour) : elles sont **facultatives**, vues
-  **seulement par l'équipe** (jamais par les clients), et l'équipe peut en
-  demander plus tard. Aucune IA ne les analyse.
+  permise (décision de Ben, même jour) : elles sont **facultatives**, l'équipe peut en
+  demander plus tard, et aucune IA ne les analyse. Les **photos de travaux** sont
+  montrées aux clients, avec la phrase du prestataire, **seulement après l'accord de
+  l'équipe** (service par service ; un service modifié repasse par l'équipe). Les
+  **diplômes et attestations** restent vus **par l'équipe seulement** : le client voit
+  « Diplôme vérifié par NexisHub », jamais le document.
 
 ## Objectif du projet
 

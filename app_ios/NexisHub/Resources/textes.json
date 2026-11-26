@@ -260,9 +260,9 @@
   "ln": "Misala oyo osalaki"
  },
  "becomeWorksHint": {
-  "en": "Optional: photos of past jobs help the team check your trade.",
-  "fr": "Facultatif : des photos de travaux déjà faits aident l'équipe à vérifier votre métier.",
-  "ln": "Soki olingi : ba foto ya misala osalaki kala esalisaka équipe mpo na kotala mosala na yo."
+  "en": "Optional: photos of past jobs help the team check your trade, then help clients choose you.",
+  "fr": "Facultatif : des photos de travaux déjà faits aident l'équipe à vérifier votre métier, puis les clients à vous choisir.",
+  "ln": "Soki olingi : ba foto ya misala osalaki kala esalisaka équipe mpo na kotala mosala na yo, sima ba client mpo na kopona yo."
  },
  "bestRated": {
   "en": "Top rated",
@@ -931,9 +931,9 @@
   "ln": "Misala na ngai"
  },
  "myWorksSub": {
-  "en": "Photos of your work, seen only by the team",
-  "fr": "Photos de vos travaux, vues par l'équipe seulement",
-  "ln": "Ba foto ya misala na yo, kaka équipe nde ekomona"
+  "en": "Photos of your work, shown to clients once the team approves",
+  "fr": "Photos de vos travaux, montrées aux clients après accord de l'équipe",
+  "ln": "Ba foto ya misala na yo, ba client bakomona yango soki équipe endimi"
  },
  "navHome": {
   "en": "Home",
@@ -1752,6 +1752,31 @@
   "fr": "Afficher les montants",
   "ln": "Komonisa mitango"
  },
+ "showcaseCertificate": {
+  "en": "Diploma checked by NexisHub",
+  "fr": "Diplôme vérifié par NexisHub",
+  "ln": "Diplôme etalami na NexisHub"
+ },
+ "showcaseChecked": {
+  "en": "Photos checked by the NexisHub team",
+  "fr": "Photos vérifiées par l'équipe NexisHub",
+  "ln": "Ba foto etalami na équipe ya NexisHub"
+ },
+ "showcaseOpen": {
+  "en": "See past work",
+  "fr": "Voir ses réalisations",
+  "ln": "Komona misala na ye"
+ },
+ "showcasePhoto": {
+  "en": "Photo of a past job",
+  "fr": "Photo d'un travail déjà fait",
+  "ln": "Foto ya mosala esalamaki"
+ },
+ "showcaseTitle": {
+  "en": "{name}'s past work",
+  "fr": "Réalisations de {name}",
+  "ln": "Misala ya {name}"
+ },
  "signInTitle": {
   "en": "Sign in",
   "fr": "Connectez-vous",
@@ -2018,9 +2043,14 @@
   "ln": "Diplôme to attestation"
  },
  "worksCertificatesSub": {
-  "en": "Optional: INPP, training centre, former employer…",
-  "fr": "Facultatif : INPP, centre de formation, ancien patron…",
-  "ln": "Soki olingi : INPP, centre ya formation, mokonzi ya kala…"
+  "en": "Optional, seen only by the team. Clients only see “Diploma checked by NexisHub”.",
+  "fr": "Facultatif, vu par l'équipe seulement. Les clients voient seulement « Diplôme vérifié par NexisHub ».",
+  "ln": "Soki olingi, kaka équipe nde ekomona. Ba client bakomona kaka « Diplôme etalami na NexisHub »."
+ },
+ "worksCertificatesVerified": {
+  "en": "Checked by the team",
+  "fr": "Vérifié par l'équipe",
+  "ln": "Équipe etali"
  },
  "worksCount": {
   "en": "{count} of {max}",
@@ -2048,9 +2078,9 @@
   "ln": "Foto oyo ekoki kotangama te."
  },
  "worksPrivacy": {
-  "en": "Only the NexisHub team sees these photos, never clients. It may ask you for more later.",
-  "fr": "Seule l'équipe NexisHub voit ces photos, jamais les clients. Elle peut vous en demander plus tard.",
-  "ln": "Kaka équipe ya NexisHub nde ekomona ba foto oyo, ba client te. Ekoki kosenga yo mosusu sima."
+  "en": "The NexisHub team looks at your photos first. Once approved, clients see them with your note. Avoid faces, addresses and number plates.",
+  "fr": "L'équipe NexisHub regarde d'abord vos photos. Après son accord, elles sont montrées aux clients avec votre phrase. Évitez les visages, les adresses et les plaques.",
+  "ln": "Équipe ya NexisHub ekotala liboso ba foto na yo. Soki endimi, ba client bakomona yango elongo na maloba na yo. Kolakisa elongi ya bato te, adresse te, plaque te."
  },
  "worksRemove": {
   "en": "Remove photo",
@@ -2061,6 +2091,21 @@
   "en": "The NexisHub team is asking for photos of your work: {services}.",
   "fr": "L'équipe NexisHub vous demande des photos de vos travaux : {services}.",
   "ln": "Équipe ya NexisHub ezali kosenga yo ba foto ya misala na yo : {services}."
+ },
+ "worksReviewApproved": {
+  "en": "Visible to clients",
+  "fr": "Visible par les clients",
+  "ln": "Ba client bakoki komona"
+ },
+ "worksReviewPending": {
+  "en": "Waiting for the team",
+  "fr": "En attente de l'équipe",
+  "ln": "Ezali kozela équipe"
+ },
+ "worksReviewRejected": {
+  "en": "Declined by the team: send other photos",
+  "fr": "Refusé par l'équipe : envoyez d'autres photos",
+  "ln": "Équipe eboyi : tinda ba foto mosusu"
  },
  "worksSave": {
   "en": "Send to the team",

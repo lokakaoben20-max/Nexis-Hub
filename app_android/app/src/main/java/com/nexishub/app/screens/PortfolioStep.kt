@@ -32,6 +32,10 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MarkEmailUnread
 import androidx.compose.material.icons.rounded.School
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Cancel
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Verified
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -50,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +63,8 @@ import com.nexishub.app.LocalApp
 import com.nexishub.app.data.CatalogService
 import com.nexishub.app.data.Portfolio
 import com.nexishub.app.data.PortfolioRequest
+import com.nexishub.app.data.ProofReview
+import com.nexishub.app.data.samePhotos
 import com.nexishub.app.data.WorkProof
 import com.nexishub.app.ui.FlowScaffold
 import com.nexishub.app.ui.InfoNote
@@ -65,6 +72,8 @@ import com.nexishub.app.ui.LocalPalette
 import com.nexishub.app.ui.Nexis
 import com.nexishub.app.ui.NoteKind
 import com.nexishub.app.ui.OutlineButton
+import com.nexishub.app.ui.Pill
+import com.nexishub.app.ui.PillTone
 import com.nexishub.app.ui.PrimaryButton
 import com.nexishub.app.ui.ServiceTile
 import com.nexishub.app.ui.body
@@ -78,9 +87,11 @@ import java.util.UUID
 import kotlin.math.max
 
 // Preuves de réalisations : étape facultative de « Devenir prestataire » et
-// écran « Mes réalisations » du profil. Vues seulement par l'équipe NexisHub.
-// La galerie est permise ici, et seulement ici : ce sont des travaux déjà
-// faits (la pièce d'identité et la vidéo restent sans galerie).
+// écran « Mes réalisations » du profil. L'équipe NexisHub les revoit, puis les
+// photos d'un service approuvé sont montrées aux clients (« Voir ses
+// réalisations » sur les devis). Les diplômes restent vus par l'équipe
+// seulement. La galerie est permise ici, et seulement ici : ce sont des
+// travaux déjà faits (la pièce d'identité et la vidéo restent sans galerie).
 
 /** Une photo choisie, réduite, prête à être envoyée. */
 class ProofPhoto(val jpeg: ByteArray, val preview: ImageBitmap, val id: String = UUID.randomUUID().toString())
@@ -90,8 +101,22 @@ data class PortfolioDraft(
     val photos: Map<String, List<ProofPhoto>> = emptyMap(),
     val notes: Map<String, String> = emptyMap(),
     val certificates: List<ProofPhoto> = emptyList(),
+    /** Ce qui a été envoyé, avec la décision de l'équipe. */
+    val sent: Portfolio = Portfolio(),
 ) {
     val isEmpty: Boolean get() = photos.values.all { it.isEmpty() } && certificates.isEmpty()
+
+    /** La décision de l'équipe sur un service, tant que ses photos et sa
+     * phrase n'ont pas été changées ici (sinon elles seront revues). */
+    fun review(serviceId: String): ProofReview? {
+        val work = sent.works.firstOrNull { it.serviceId == serviceId } ?: return null
+        val unchanged = samePhotos(photos[serviceId].orEmpty().map { it.jpeg }, work.photos) &&
+            notes[serviceId].orEmpty().trim() == work.note
+        return if (unchanged) work.review else null
+    }
+
+    val certificatesVerified: Boolean
+        get() = sent.certificatesVerified && samePhotos(certificates.map { it.jpeg }, sent.certificates)
 
     /** Les preuves à envoyer, dans l'ordre des services. */
     fun portfolio(services: List<String>): Portfolio = Portfolio(
@@ -107,6 +132,7 @@ data class PortfolioDraft(
                 photos = portfolio.works.associate { work -> work.serviceId to work.photos.mapNotNull(::photo) },
                 notes = portfolio.works.associate { it.serviceId to it.note },
                 certificates = portfolio.certificates.mapNotNull(::photo),
+                sent = portfolio,
             )
         }
     }
@@ -159,7 +185,8 @@ fun PortfolioEditor(services: List<CatalogService>, draft: PortfolioDraft, onCha
     InfoNote(app.t("worksPrivacy"), icon = Icons.Rounded.Lock)
     services.forEach { service ->
         ProofCard(
-            title = service.label(app.language), subtitle = null, maxPhotos = Portfolio.MAX_PHOTOS,
+            title = service.label(app.language), subtitle = null, status = reviewStatus(draft.review(service.id)),
+            maxPhotos = Portfolio.MAX_PHOTOS,
             photos = draft.photos[service.id].orEmpty(),
             onPhotos = { onChange(draft.copy(photos = draft.photos + (service.id to it))) },
             note = draft.notes[service.id].orEmpty(),
@@ -168,7 +195,9 @@ fun PortfolioEditor(services: List<CatalogService>, draft: PortfolioDraft, onCha
         ) { ServiceTile(service, 38.dp) }
     }
     ProofCard(
-        title = app.t("worksCertificates"), subtitle = app.t("worksCertificatesSub"), maxPhotos = Portfolio.MAX_CERTIFICATES,
+        title = app.t("worksCertificates"), subtitle = app.t("worksCertificatesSub"),
+        status = if (draft.certificatesVerified) ProofStatus(PillTone.OK, Icons.Rounded.Verified, app.t("worksCertificatesVerified")) else null,
+        maxPhotos = Portfolio.MAX_CERTIFICATES,
         photos = draft.certificates, onPhotos = { onChange(draft.copy(certificates = it)) },
         note = null, onNote = null, onFailed = { failed = it },
     ) {
@@ -179,11 +208,25 @@ fun PortfolioEditor(services: List<CatalogService>, draft: PortfolioDraft, onCha
     if (failed) Text(app.t("worksPhotoFailed"), style = body(14, color = Nexis.danger))
 }
 
+class ProofStatus(val tone: PillTone, val icon: ImageVector, val text: String)
+
+@Composable
+private fun reviewStatus(review: ProofReview?): ProofStatus? {
+    val app = LocalApp.current
+    return when (review) {
+        ProofReview.PENDING -> ProofStatus(PillTone.WAIT, Icons.Rounded.Schedule, app.t("worksReviewPending"))
+        ProofReview.APPROVED -> ProofStatus(PillTone.OK, Icons.Rounded.Visibility, app.t("worksReviewApproved"))
+        ProofReview.REJECTED -> ProofStatus(PillTone.BAD, Icons.Rounded.Cancel, app.t("worksReviewRejected"))
+        null -> null
+    }
+}
+
 /** Les photos d'un service (ou les attestations), choisies dans la galerie. */
 @Composable
 private fun ProofCard(
     title: String,
     subtitle: String?,
+    status: ProofStatus?,
     maxPhotos: Int,
     photos: List<ProofPhoto>,
     onPhotos: (List<ProofPhoto>) -> Unit,
@@ -218,6 +261,7 @@ private fun ProofCard(
             }
             Text(app.t("worksCount", "count" to photos.size.toString(), "max" to maxPhotos.toString()), style = body(12, FontWeight.SemiBold, p.muted))
         }
+        if (status != null) Pill(status.tone, status.text, status.icon)
         if (photos.isNotEmpty()) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 photos.forEach { photo ->
@@ -278,7 +322,10 @@ fun PortfolioScreen() {
         if (demo) {
             services = catalog.filter { it.id == "plomberie" || it.id == "electricite" }
             request = PortfolioRequest(listOf("electricite"), java.time.LocalDate.now())
-            draft = PortfolioDemo.draft(listOf("plomberie"))
+            // La plomberie a déjà été approuvée : les clients la voient.
+            val demoDraft = PortfolioDemo.draft(listOf("plomberie"))
+            val sent = demoDraft.portfolio(listOf("plomberie"))
+            draft = demoDraft.copy(sent = Portfolio(sent.works.map { it.withReview(ProofReview.APPROVED) }, sent.certificates))
         } else {
             val chosen = attempt { app.repository.providerServices() }.orEmpty()
             services = catalog.filter { it.id in chosen }

@@ -1,5 +1,18 @@
 package com.nexishub.app.screens
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.Verified
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import com.nexishub.app.data.CatalogService
+import com.nexishub.app.data.ProviderShowcase
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -178,7 +191,7 @@ sealed interface MissionRoute {
         /** Écrans ouverts d'emblée pour les captures de la CI. */
         fun forCapture(capture: String?): List<MissionRoute>? = when (capture) {
             "tracking" -> listOf(Tracking(51))
-            "quotes" -> listOf(Quotes(52))
+            "quotes", SHOWCASE_CAPTURE -> listOf(Quotes(52))
             "pay" -> listOf(Quotes(52), Pay(52, 521))
             "pending" -> listOf(Pending(52, 521, MobileOperator.MPESA))
             "confirm" -> listOf(Tracking(49), Confirm(49))
@@ -458,15 +471,26 @@ fun MapSketch(sharing: Boolean, modifier: Modifier = Modifier) {
 // 3. Comparer les devis
 
 @OptIn(ExperimentalLayoutApi::class)
+/** Capture de la CI : les réalisations de Prisca, ouvertes depuis les devis. */
+const val SHOWCASE_CAPTURE = "showcase"
+
 @Composable
 private fun QuotesScreen(missionId: Int) {
     val app = LocalApp.current
     val flow = LocalFlow.current
     var mission by remember { mutableStateOf<Mission?>(null) }
     var quotes by remember { mutableStateOf(emptyList<Quote>()) }
+    var showcases by remember { mutableStateOf(emptyMap<Int, ProviderShowcase>()) }
+    var opened by remember { mutableStateOf<Quote?>(null) }
     LaunchedEffect(app.revision) {
         mission = attempt { app.repository.mission(missionId) }
         quotes = attempt { app.repository.quotes(missionId) }.orEmpty()
+        val found = quotes.mapNotNull { quote -> attempt { app.repository.providerShowcase(quote.id) }?.let { quote.id to it } }.toMap()
+        showcases = found
+        if (app.capture == SHOWCASE_CAPTURE && opened == null) opened = quotes.firstOrNull { it.id in found }
+    }
+    opened?.let { quote ->
+        showcases[quote.id]?.let { ShowcaseSheet(quote, it) { opened = null } }
     }
     val shown = mission ?: return FlowLoading(app.t("compareQuotes"))
     FlowScaffold(app.t("compareQuotes"), onBack = flow::back, subtitle = app.place(shown)) {
@@ -475,14 +499,17 @@ private fun QuotesScreen(missionId: Int) {
             Pill(PillTone.WAIT, listOfNotNull(shown.commune, shown.detail).joinToString(", "), Icons.Rounded.Place)
         }
         quotes.forEachIndexed { index, quote ->
-            QuoteCard(quote, best = index == 0 && quotes.size > 1) { flow.push(MissionRoute.Pay(shown.id, quote.id)) }
+            QuoteCard(
+                quote, best = index == 0 && quotes.size > 1,
+                onShowcase = if (quote.id in showcases) ({ opened = quote }) else null,
+            ) { flow.push(MissionRoute.Pay(shown.id, quote.id)) }
         }
         InfoNote(app.t("securedUntilDone"), icon = Icons.Rounded.VerifiedUser)
     }
 }
 
 @Composable
-private fun QuoteCard(quote: Quote, best: Boolean, onChoose: () -> Unit) {
+private fun QuoteCard(quote: Quote, best: Boolean, onShowcase: (() -> Unit)?, onChoose: () -> Unit) {
     val app = LocalApp.current
     val p = LocalPalette.current
     val shape = RoundedCornerShape(22.dp)
@@ -496,6 +523,12 @@ private fun QuoteCard(quote: Quote, best: Boolean, onChoose: () -> Unit) {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(app.money(quote.price), style = title(16, color = p.ink))
                     Text(app.slot(quote.slot, capital = true), style = body(12, color = p.muted))
+                }
+            }
+            if (onShowcase != null) {
+                TextButton(onClick = onShowcase, contentPadding = PaddingValues(0.dp)) {
+                    Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, tint = p.accent, modifier = Modifier.size(18.dp))
+                    Text(app.t("showcaseOpen"), style = body(14, FontWeight.SemiBold, p.accent), modifier = Modifier.padding(start = 6.dp))
                 }
             }
             val label = app.t("chooseProvider", "name" to quote.firstName)
@@ -517,6 +550,56 @@ private fun QuoteCard(quote: Quote, best: Boolean, onChoose: () -> Unit) {
                 modifier = Modifier.offset(x = 14.dp, y = (-10).dp).background(Nexis.brand, CircleShape)
                     .padding(horizontal = 9.dp, vertical = 3.dp),
             )
+        }
+    }
+}
+
+/** Les réalisations approuvées par l'équipe, vues par le client. Jamais les
+ * diplômes : seulement « Diplôme vérifié par NexisHub ». */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun ShowcaseSheet(quote: Quote, showcase: ProviderShowcase, onDismiss: () -> Unit) {
+    val app = LocalApp.current
+    val p = LocalPalette.current
+    var catalog by remember { mutableStateOf(emptyList<CatalogService>()) }
+    LaunchedEffect(Unit) { catalog = attempt { app.repository.serviceCatalog() }.orEmpty() }
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = p.bg) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(app.t("showcaseTitle", "name" to quote.firstName), style = title(19, color = p.ink), modifier = Modifier.weight(1f))
+                TextButton(onClick = onDismiss) { Text(app.t("close"), style = body(15, FontWeight.SemiBold, p.accent)) }
+            }
+            PersonHeader(quote.initials, quote.avatarColor, quote.providerName, quote.rating, quote.reviews) {}
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Pill(PillTone.SECURED, app.t("showcaseChecked"), Icons.Rounded.VerifiedUser)
+                if (showcase.certificateVerified) Pill(PillTone.OK, app.t("showcaseCertificate"), Icons.Rounded.Verified)
+            }
+            showcase.works.forEach { work ->
+                Column(Modifier.fillMaxWidth().nexisCard(p).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    catalog.firstOrNull { it.id == work.serviceId }?.let { service ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            ServiceTile(service, 34.dp)
+                            Text(service.label(app.language), style = body(15, FontWeight.Bold, p.ink), modifier = Modifier.padding(start = 10.dp))
+                        }
+                    }
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        work.photos.forEach { data ->
+                            val picture = remember(data) { BitmapFactory.decodeByteArray(data, 0, data.size)?.asImageBitmap() }
+                            if (picture != null) {
+                                Image(
+                                    picture, contentDescription = app.t("showcasePhoto"), contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(168.dp).clip(RoundedCornerShape(14.dp)),
+                                )
+                            }
+                        }
+                    }
+                    if (work.note.isNotEmpty()) Text(work.note, style = body(14, color = p.ink))
+                }
+            }
         }
     }
 }

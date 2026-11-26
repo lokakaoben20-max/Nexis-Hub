@@ -3,8 +3,10 @@ import SwiftUI
 import UIKit
 
 // Preuves de réalisations : étape facultative de « Devenir prestataire » et
-// écran « Mes réalisations » du profil. Vues seulement par l'équipe
-// NexisHub. La galerie est permise ici, et seulement ici : ce sont des
+// écran « Mes réalisations » du profil. L'équipe NexisHub les revoit, puis
+// les photos d'un service approuvé sont montrées aux clients (« Voir ses
+// réalisations » sur les devis). Les diplômes restent vus par l'équipe
+// seulement. La galerie est permise ici, et seulement ici : ce sont des
 // travaux déjà faits (la pièce d'identité et la vidéo restent sans galerie).
 
 /// Une photo choisie, réduite, prête à être envoyée.
@@ -37,13 +39,29 @@ struct PortfolioDraft {
     var photos: [String: [ProofPhoto]] = [:]
     var notes: [String: String] = [:]
     var certificates: [ProofPhoto] = []
+    /// Ce qui a été envoyé, avec la décision de l'équipe.
+    var sent = Portfolio()
 
     var isEmpty: Bool { photos.values.allSatisfy(\.isEmpty) && certificates.isEmpty }
 
     init() {}
 
+    /// La décision de l'équipe sur un service, tant que ses photos et sa
+    /// phrase n'ont pas été changées ici (sinon elles seront revues).
+    func review(for serviceId: String) -> ProofReview? {
+        guard let work = sent.works.first(where: { $0.serviceId == serviceId }) else { return nil }
+        let unchanged = (photos[serviceId] ?? []).map(\.jpeg) == work.photos
+            && (notes[serviceId] ?? "").trimmingCharacters(in: .whitespacesAndNewlines) == work.note
+        return unchanged ? work.review : nil
+    }
+
+    var certificatesVerified: Bool {
+        sent.certificatesVerified && certificates.map(\.jpeg) == sent.certificates
+    }
+
     /// Reprend ce qui a déjà été envoyé.
     init(_ portfolio: Portfolio) {
+        sent = portfolio
         for work in portfolio.works {
             photos[work.serviceId] = work.photos.compactMap { data in UIImage(data: data).map { ProofPhoto(jpeg: data, image: $0) } }
             notes[work.serviceId] = work.note
@@ -69,7 +87,8 @@ struct PortfolioEditor: View {
         VStack(alignment: .leading, spacing: 12) {
             InfoNote(text: app.t("worksPrivacy"), systemImage: "lock.shield.fill")
             ForEach(services) { service in
-                ProofCard(title: service.name(app.language), maxPhotos: Portfolio.maxPhotos,
+                ProofCard(title: service.name(app.language), status: status(draft.review(for: service.id)),
+                          maxPhotos: Portfolio.maxPhotos,
                           photos: Binding(get: { draft.photos[service.id] ?? [] }, set: { draft.photos[service.id] = $0 }),
                           note: Binding(get: { draft.notes[service.id] ?? "" }, set: { draft.notes[service.id] = $0 }),
                           failed: $failed) {
@@ -77,6 +96,7 @@ struct PortfolioEditor: View {
                 }
             }
             ProofCard(title: app.t("worksCertificates"), subtitle: app.t("worksCertificatesSub"),
+                      status: draft.certificatesVerified ? ProofStatus(tone: .ok, icon: "checkmark.seal.fill", text: app.t("worksCertificatesVerified")) : nil,
                       maxPhotos: Portfolio.maxCertificates, photos: $draft.certificates, note: nil, failed: $failed) {
                 Image(systemName: "graduationcap").font(.system(size: 18)).foregroundStyle(Nexis.softInk)
                     .frame(width: 38, height: 38)
@@ -88,6 +108,21 @@ struct PortfolioEditor: View {
             }
         }
     }
+
+    private func status(_ review: ProofReview?) -> ProofStatus? {
+        switch review {
+        case .pending: ProofStatus(tone: .wait, icon: "clock", text: app.t("worksReviewPending"))
+        case .approved: ProofStatus(tone: .ok, icon: "eye", text: app.t("worksReviewApproved"))
+        case .rejected: ProofStatus(tone: .bad, icon: "xmark.circle", text: app.t("worksReviewRejected"))
+        case nil: nil
+        }
+    }
+}
+
+struct ProofStatus {
+    let tone: PillTone
+    let icon: String
+    let text: String
 }
 
 /// Les photos d'un service (ou les attestations), choisies dans la galerie.
@@ -95,6 +130,7 @@ private struct ProofCard<Leading: View>: View {
     @Environment(AppModel.self) private var app
     let title: String
     var subtitle: String?
+    var status: ProofStatus?
     let maxPhotos: Int
     @Binding var photos: [ProofPhoto]
     var note: Binding<String>?
@@ -116,6 +152,9 @@ private struct ProofCard<Leading: View>: View {
                 Spacer(minLength: 8)
                 Text(app.t("worksCount", ["count": String(photos.count), "max": String(maxPhotos)]))
                     .font(.body(12.5, .semibold, relativeTo: .caption1)).foregroundStyle(Nexis.muted)
+            }
+            if let status {
+                Pill(tone: status.tone, systemImage: status.icon, text: status.text)
             }
             if !photos.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -228,6 +267,10 @@ struct PortfolioView: View {
             services = catalog.filter { $0.id == "plomberie" || $0.id == "electricite" }
             request = PortfolioRequest(services: ["electricite"], askedAt: .now)
             draft = PortfolioDemo.draft(services: ["plomberie"])
+            // La plomberie a déjà été approuvée : les clients la voient.
+            var sent = draft.portfolio(services: ["plomberie"])
+            sent.works = sent.works.map { var work = $0; work.review = .approved; return work }
+            draft.sent = sent
             return
         }
         let chosen = (try? await app.repository.providerServices()) ?? []

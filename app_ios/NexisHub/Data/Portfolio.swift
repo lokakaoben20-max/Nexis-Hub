@@ -1,10 +1,22 @@
 import Foundation
 
-// Preuves de réalisations du prestataire (décision de Ben, 2026-11-26) :
-// facultatives, vues seulement par l'équipe NexisHub, jamais par les
-// clients. L'équipe peut en demander plus tard. Ici, et seulement ici, la
-// galerie est permise : ce sont des travaux déjà faits. La pièce d'identité
-// et la vidéo restent sans galerie.
+// Preuves de réalisations du prestataire (décisions de Ben, 2026-11-26) :
+// facultatives ; l'équipe NexisHub les revoit d'abord, puis les photos et la
+// phrase d'un service approuvé sont montrées aux clients. Les diplômes et
+// attestations restent vus par l'équipe seulement : le client voit
+// « Diplôme vérifié par NexisHub », jamais le document. L'équipe peut en
+// demander plus tard. Ici, et seulement ici, la galerie est permise : ce sont
+// des travaux déjà faits. La pièce d'identité et la vidéo restent sans galerie.
+
+/// La décision de l'équipe sur les photos d'un service.
+enum ProofReview: String {
+    /// Pas encore revues : seule l'équipe les voit.
+    case pending
+    /// Montrées aux clients.
+    case approved
+    /// Refusées : jamais montrées. De nouvelles photos repassent par l'équipe.
+    case rejected
+}
 
 /// Les photos d'un service, et une phrase pour dire ce qui a été fait.
 struct WorkProof: Equatable {
@@ -12,6 +24,13 @@ struct WorkProof: Equatable {
     /// JPEG réduits, sans métadonnées (ni lieu ni appareil).
     var photos: [Data]
     var note: String
+    /// Donnée par l'équipe (le serveur) ; l'app ne la choisit jamais.
+    var review: ProofReview = .pending
+
+    /// Mêmes photos et même phrase : rien à revoir.
+    func sameContent(as other: WorkProof) -> Bool {
+        serviceId == other.serviceId && photos == other.photos && note == other.note
+    }
 }
 
 struct Portfolio: Equatable {
@@ -22,6 +41,8 @@ struct Portfolio: Equatable {
     var works: [WorkProof] = []
     /// Diplômes ou attestations (INPP, centre de formation, ancien patron…).
     var certificates: [Data] = []
+    /// L'équipe a vérifié les diplômes ; le client voit seulement ce fait.
+    var certificatesVerified = false
 
     var isEmpty: Bool { works.isEmpty && certificates.isEmpty }
 
@@ -43,9 +64,45 @@ struct Portfolio: Equatable {
         Portfolio(works: works.compactMap { work in
             guard !work.photos.isEmpty else { return nil }
             return WorkProof(serviceId: work.serviceId, photos: work.photos,
-                             note: work.note.trimmingCharacters(in: .whitespacesAndNewlines))
-        }, certificates: certificates)
+                             note: work.note.trimmingCharacters(in: .whitespacesAndNewlines), review: work.review)
+        }, certificates: certificates, certificatesVerified: certificatesVerified)
     }
+
+    /// Ce que le serveur garde quand le prestataire renvoie ses preuves : un
+    /// service inchangé garde la décision de l'équipe ; un service nouveau ou
+    /// modifié repasse en attente (il disparaît des clients jusqu'au nouvel
+    /// accord) ; des diplômes changés ne sont plus vérifiés.
+    func resubmitted(over previous: Portfolio) -> Portfolio {
+        Portfolio(works: works.map { work in
+            var kept = work
+            kept.review = previous.works.first { $0.sameContent(as: work) }?.review ?? .pending
+            return kept
+        }, certificates: certificates,
+        certificatesVerified: previous.certificatesVerified && certificates == previous.certificates)
+    }
+
+    /// Ce que voient les clients : seulement les services approuvés par
+    /// l'équipe, et le fait que les diplômes sont vérifiés (jamais le
+    /// document). Rien tant qu'aucun service n'est approuvé.
+    var showcase: ProviderShowcase? {
+        let shown = works.filter { $0.review == .approved && !$0.photos.isEmpty }
+            .map { ShowcaseWork(serviceId: $0.serviceId, photos: $0.photos, note: $0.note) }
+        guard !shown.isEmpty else { return nil }
+        return ProviderShowcase(works: shown, certificateVerified: certificatesVerified)
+    }
+}
+
+/// Un service montré aux clients.
+struct ShowcaseWork: Equatable {
+    let serviceId: String
+    let photos: [Data]
+    let note: String
+}
+
+/// Les réalisations d'un prestataire, telles que les clients les voient.
+struct ProviderShowcase: Equatable {
+    let works: [ShowcaseWork]
+    let certificateVerified: Bool
 }
 
 /// L'équipe demande des preuves pour certains services.

@@ -139,8 +139,11 @@ de protection des données.
 
 ## 5 bis. Preuves de réalisations (décision de Ben, 2026-11-26)
 
-**Facultatives**, vues **seulement par l'équipe** (jamais par les clients),
-l'équipe peut en demander. La galerie est permise ici seulement.
+**Facultatives**, l'équipe peut en demander. La galerie est permise ici
+seulement. **Photos de travaux montrées aux clients après l'accord de
+l'équipe** (deuxième décision de Ben, même jour) ; **diplômes et
+attestations vus par l'équipe seulement** (le client voit « Diplôme vérifié
+par NexisHub »).
 
 - **Envoi** : comme les pièces, en deux temps. `POST
   /api/app/v1/me/work-proof-files` (usages `work_photo` et `certificate`,
@@ -159,9 +162,27 @@ l'équipe peut en demander. La galerie est permise ici seulement.
   par la boîte d'envoi (app, et Telegram ou WhatsApp quand ils seront
   branchés) ; la demande est close par le prochain envoi. Une demande ne
   bloque rien toute seule : c'est l'équipe qui décide.
-- **Lecture** : rôle de l'équipe chargé des prestataires, chaque ouverture
-  inscrite, comme les pièces. **Jamais** exposées par une route publique ni
-  dans le profil vu par un client.
+- **Revue par l'équipe** : colonne `review` sur chaque service
+  (`pending`, `approved`, `rejected`), `reviewed_by`, `reviewed_at`, raison
+  si refus ; `certificates_verified_at` sur le compte. `POST
+  /api/admin/providers/{id}/work-proofs/{service}/review` (accord ou refus,
+  raison inscrite) et `POST …/certificates/verify`. Le prestataire est
+  prévenu par la boîte d'envoi. Au remplacement (`PUT …/work-proofs`), le
+  serveur compare : service identique (mêmes fichiers dans le même ordre,
+  même phrase) → décision gardée ; sinon → `pending`. Diplômes changés →
+  vérification retirée. L'app n'envoie jamais de décision (si elle en
+  envoie une, elle est ignorée).
+- **Lecture par l'équipe** : rôle chargé des prestataires, chaque ouverture
+  inscrite, comme les pièces.
+- **Lecture par un client** : `GET
+  /api/app/v1/quotes/{id}/provider-showcase`, seulement pour un client qui a
+  reçu ce devis. Renvoie les services `approved` (photos par adresses
+  signées de courte durée, phrase) et un booléen « diplôme vérifié » ;
+  **jamais** un fichier `certificate`, ni un service en attente ou refusé,
+  ni une donnée de la pièce d'identité. Photos approuvées servies depuis un
+  stockage séparé des pièces (elles deviennent publiques pour les clients,
+  les pièces jamais). Retrait immédiat si le service repasse en attente, si
+  le prestataire les retire ou si le compte est suspendu.
 - **Aucune IA** ne les analyse (pas de recherche d'image inversée
   automatique) sans nouvelle décision de Ben.
 - **Conservation** (à confirmer par le juriste) : tant que le compte
@@ -180,8 +201,11 @@ blocage légal, relance), migration sur base vide (`alembic upgrade head` puis
 
 Pour les preuves de réalisations : service hors de la demande refusé,
 6 photos refusées, phrase trop longue refusée, remplacement idempotent,
-fichiers remplacés effacés, demande de l'équipe close par l'envoi, aucune
-route de client ne les renvoie.
+fichiers remplacés effacés, demande de l'équipe close par l'envoi ; la route
+du client ne renvoie que l'approuvé (jamais un diplôme, un service en attente
+ou refusé), seulement au client qui a reçu le devis ; un service modifié
+repasse en attente et disparaît du client ; une décision envoyée par l'app
+est ignorée.
 
 ## 7. Décisions attendues de Ben
 

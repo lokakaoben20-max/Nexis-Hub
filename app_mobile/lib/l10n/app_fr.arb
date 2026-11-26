@@ -810,8 +810,8 @@
   "becomeServices": "Quels services proposez-vous ?",
   "becomeServicesHint": "Choisissez-en au moins un.",
   "becomeWorks": "Vos réalisations",
-  "becomeWorksHint": "Facultatif : des photos de travaux déjà faits aident l'équipe à vérifier votre métier.",
-  "worksPrivacy": "Seule l'équipe NexisHub voit ces photos, jamais les clients. Elle peut vous en demander plus tard.",
+  "becomeWorksHint": "Facultatif : des photos de travaux déjà faits aident l'équipe à vérifier votre métier, puis les clients à vous choisir.",
+  "worksPrivacy": "L'équipe NexisHub regarde d'abord vos photos. Après son accord, elles sont montrées aux clients avec votre phrase. Évitez les visages, les adresses et les plaques.",
   "worksAddPhotos": "Ajouter des photos",
   "worksCount": "{count} sur {max}",
   "@worksCount": {
@@ -827,13 +827,13 @@
   "worksNote": "Ce que vous avez fait, où et quand",
   "worksNoteExample": "Ex. : pose d'un chauffe-eau, Limete, 2025",
   "worksCertificates": "Diplôme ou attestation",
-  "worksCertificatesSub": "Facultatif : INPP, centre de formation, ancien patron…",
+  "worksCertificatesSub": "Facultatif, vu par l'équipe seulement. Les clients voient seulement « Diplôme vérifié par NexisHub ».",
   "worksSkip": "Passer cette étape",
   "worksRemove": "Retirer la photo",
   "worksPhotoFailed": "Cette photo n'a pas pu être lue.",
   "worksDemoNote": "Aperçu : les photos restent sur ce téléphone et ne sont envoyées nulle part.",
   "myWorks": "Mes réalisations",
-  "myWorksSub": "Photos de vos travaux, vues par l'équipe seulement",
+  "myWorksSub": "Photos de vos travaux, montrées aux clients après accord de l'équipe",
   "worksAskedShort": "L'équipe vous demande des photos de vos travaux",
   "worksRequested": "L'équipe NexisHub vous demande des photos de vos travaux : {services}.",
   "@worksRequested": {
@@ -845,6 +845,22 @@
   },
   "worksSave": "Envoyer à l'équipe",
   "worksSaved": "C'est envoyé. L'équipe NexisHub les regardera.",
+  "worksReviewPending": "En attente de l'équipe",
+  "worksReviewApproved": "Visible par les clients",
+  "worksReviewRejected": "Refusé par l'équipe : envoyez d'autres photos",
+  "worksCertificatesVerified": "Vérifié par l'équipe",
+  "showcaseOpen": "Voir ses réalisations",
+  "showcaseTitle": "Réalisations de {name}",
+  "@showcaseTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "showcaseChecked": "Photos vérifiées par l'équipe NexisHub",
+  "showcaseCertificate": "Diplôme vérifié par NexisHub",
+  "showcasePhoto": "Photo d'un travail déjà fait",
   "becomeCommunes": "Où travaillez-vous ?",
   "becomeCommunesHint": "Les communes où vous acceptez de vous déplacer.",
   "becomeIdentity": "Vérifions votre identité",

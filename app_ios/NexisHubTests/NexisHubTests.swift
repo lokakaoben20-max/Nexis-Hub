@@ -428,6 +428,76 @@ final class PortfolioTests: XCTestCase {
             XCTAssertEqual(refusal.code, "portfolio_invalid")
         }
     }
+
+    func testClientsSeeOnlyApprovedWorksAndNeverCertificates() {
+        var approved = work("plomberie", photos: 2, note: "Cuisine")
+        approved.review = .approved
+        var rejected = work("electricite")
+        rejected.review = .rejected
+        let portfolio = Portfolio(works: [approved, rejected, work("coiffure")],
+                                  certificates: [Data([9])], certificatesVerified: true)
+        let showcase = portfolio.showcase
+        XCTAssertEqual(showcase?.works.map(\.serviceId), ["plomberie"])
+        XCTAssertEqual(showcase?.works.first?.note, "Cuisine")
+        XCTAssertEqual(showcase?.certificateVerified, true)
+        // Rien d'approuvé : rien chez le client, même avec un diplôme vérifié.
+        XCTAssertNil(Portfolio(works: [work("plomberie")], certificates: [Data([9])], certificatesVerified: true).showcase)
+    }
+
+    func testChangedWorksGoBackToTheTeam() {
+        var approved = work("plomberie", photos: 2, note: "Cuisine")
+        approved.review = .approved
+        var rejected = work("electricite")
+        rejected.review = .rejected
+        let previous = Portfolio(works: [approved, rejected], certificates: [Data([9])], certificatesVerified: true)
+        // Rien de changé : les décisions restent.
+        let same = Portfolio(works: [work("plomberie", photos: 2, note: "Cuisine"), work("electricite")],
+                             certificates: [Data([9])]).resubmitted(over: previous)
+        XCTAssertEqual(same.works.map(\.review), [.approved, .rejected])
+        XCTAssertTrue(same.certificatesVerified)
+        // Une photo ajoutée, une phrase changée, un diplôme changé : tout repasse par l'équipe.
+        let changed = Portfolio(works: [work("plomberie", photos: 3, note: "Cuisine"), work("electricite", note: "Tableau")],
+                                certificates: [Data([8])]).resubmitted(over: previous)
+        XCTAssertEqual(changed.works.map(\.review), [.pending, .pending])
+        XCTAssertFalse(changed.certificatesVerified)
+        XCTAssertNil(changed.showcase)
+    }
+
+    func testProviderSeesTheTeamDecision() async throws {
+        let repo = DemoRepository()
+        XCTAssertTrue(repo.registerClient(phone: "+243810000003", firstName: "Jean", lastName: "K",
+                                          commune: "Limete", acceptedTermsVersion: repo.signupTermsVersion))
+        let identity = IdentityCapture(document: .passport, recto: Data([1]), verso: nil, video: Data([3]),
+                                       videoSeconds: 7, headTurns: [.left, .right])
+        // L'app ne peut pas se donner l'accord de l'équipe.
+        var forged = work("plomberie", photos: 2)
+        forged.review = .approved
+        try await repo.applyAsProvider(services: ["plomberie"], communes: ["Limete"], identity: identity,
+                                       portfolio: Portfolio(works: [forged], certificatesVerified: true),
+                                       acceptedTermsVersion: repo.providerTermsVersion)
+        var sent = try await repo.portfolio()
+        XCTAssertEqual(sent.works.first?.review, .pending)
+        XCTAssertFalse(sent.certificatesVerified)
+        repo.demoReview(serviceId: "plomberie", .approved)
+        sent = try await repo.portfolio()
+        XCTAssertEqual(sent.works.first?.review, .approved)
+        // Renvoyé sans changement : toujours approuvé.
+        try await repo.sendPortfolio(Portfolio(works: [work("plomberie", photos: 2)]))
+        sent = try await repo.portfolio()
+        XCTAssertEqual(sent.works.first?.review, .approved)
+    }
+
+    func testQuoteShowsOnlyTheApprovedShowcase() async throws {
+        let repo = DemoRepository()
+        let prisca = try await repo.providerShowcase(quoteId: 521)
+        XCTAssertEqual(prisca?.works.map(\.serviceId), ["nettoyage"])
+        XCTAssertEqual(prisca?.certificateVerified, true)
+        // Joël attend encore l'équipe ; Aline n'a rien envoyé.
+        let joel = try await repo.providerShowcase(quoteId: 522)
+        XCTAssertNil(joel)
+        let aline = try await repo.providerShowcase(quoteId: 523)
+        XCTAssertNil(aline)
+    }
 }
 
 final class IdentityGuideTests: XCTestCase {
