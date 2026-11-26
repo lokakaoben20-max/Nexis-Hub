@@ -17,3 +17,6 @@ var/
 
 # Aperçu assemblé par apercu/construire.sh
 apercu/public/
+
+# Sauvegarde que Redis écrit quand on le lance en local depuis le dossier du projet
+dump.rdb
