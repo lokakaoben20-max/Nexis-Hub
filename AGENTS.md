@@ -1,5 +1,11 @@
 # Instructions pour les agents IA (Manus, Copilot, Codex, Claude Code, etc.)
 
+## Décisions de Ben en vigueur
+
+Le document `claude/decisions-en-vigueur.md` du projet « Nexis Hub Relais » liste les décisions de Ben en vigueur. **À lire au début de chaque session.** Quand une de ses décisions contredit une autre note de ce fichier, c'est le document qui compte. Une session sans accès à ce projet demande le fichier à Ben. Toute nouvelle décision de Ben s'y ajoute, et l'ancienne y est barrée avec ce qui la remplace.
+
+- **Le nom s'écrit « NexisHub », en un mot** (depuis le 25 novembre 2026). Les mentions « Nexis Hub » plus bas dans ce fichier sont l'ancienne forme : ne pas les suivre pour les textes visibles (exception voulue : VoiceOver et TalkBack lisent « Nexis Hub »).
+
 Ce fichier est le point d'entrée commun pour **tout outil IA** qui travaille sur ce dépôt
 (remplace l'ancien `MANUS_HANDOFF.md`, qui était spécifique à un seul outil — son contenu
 a été fusionné ici).
