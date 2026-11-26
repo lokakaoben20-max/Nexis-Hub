@@ -45,7 +45,8 @@ enum MissionRoute: Hashable {
         case "alerts": return [.notificationSettings]
         case "help": return [.help]
         case "legal": return [.legal]
-        case "become", "become-identity": return [.becomeProvider]
+        case "become": return [.becomeProvider]
+        case let capture? where IdentityDemo.captures.contains(capture): return [.becomeProvider]
         default: return nil
         }
     }
@@ -54,7 +55,8 @@ enum MissionRoute: Hashable {
     static let providerCaptures: Set<String> = ["provider", "request", "job"]
 
     /// Captures qui se font depuis l'onglet Profil.
-    static let profileCaptures: Set<String> = ["info", "devices", "alerts", "help", "legal", "become", "become-identity"]
+    static let profileCaptures: Set<String> = Set(["info", "devices", "alerts", "help", "legal", "become"])
+        .union(IdentityDemo.captures)
 }
 
 /// La pile d'écrans d'un onglet, et ce qu'elle montre par-dessus

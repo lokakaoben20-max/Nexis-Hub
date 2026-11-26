@@ -117,10 +117,57 @@ ce téléphone », définitif), notifications (l'autorisation réelle du
 téléphone et ce que NexisHub envoie), aide et litiges (mes litiges, questions
 fréquentes tirées des règles de `CONCEPTION_ARGENT.md`), conditions
 d'utilisation (versions en vigueur, date d'acceptation, lecture du texte
-publié) et devenir prestataire (services, communes, pièce d'identité et
-photo, conditions des prestataires ; le profil reste « en vérification »
-jusqu'à la décision de l'équipe). Les photos de vérification restent en
-mémoire, réduites ; dans l'aperçu elles ne partent nulle part.
+publié) et devenir prestataire (services, communes, pièce d'identité recto
+et verso puis vidéo du visage, conditions des prestataires ; le profil reste
+« en vérification » jusqu'à la décision de l'équipe).
+
+### Pièce d'identité et vidéo du visage (2026-11-26)
+
+Demande de Ben : la pièce (carte d'électeur, permis…) est prise **recto puis
+verso par un scanner**, et le prestataire se filme au lieu d'envoyer une
+photo. **Jamais de galerie**, ni pour la pièce ni pour la vidéo. L'analyse
+d'image se fait sur le téléphone et **guide seulement la prise** : c'est
+l'équipe NexisHub qui vérifie la personne (exception notée dans `AGENTS.md`).
+
+- **iOS** (`Screens/IdentityStep.swift`, `Design/IdentityCamera.swift`) :
+  caméra arrière (AVFoundation), carte cherchée sur chaque image
+  (`VNDetectRectanglesRequest`, format ID-1). Quand elle reste immobile
+  12 images de suite (`StableCardTracker`), la photo se prend seule, la carte
+  est redressée (`CIPerspectiveCorrection`) et remise à l'endroit.
+- **Android** (`screens/IdentityStep.kt`) : scanner de documents de ML Kit
+  (`setGalleryImportAllowed(false)`, une page, mode de base sans filtres) ;
+  il détecte la carte, la cadre et la prend seul. Après le recto, l'écran dit
+  « Retournez la carte » et rouvre le scanner pour le verso. Le scanner passe
+  par les services Google Play : un téléphone sans eux (certains Huawei) ne
+  peut pas faire cette étape, l'écran le dit.
+- **Recto ou verso** (`CardCheck`, testé des deux côtés) : le recto porte la
+  photo de la personne, donc un visage doit être vu sur la carte (Vision ou
+  ML Kit, dans les quatre sens). Sinon : « C'est le verso. Montrez d'abord le
+  recto… ». Le verso ne doit pas être la même image que le recto (empreinte
+  `dHash` de 64 bits, comparée à l'endroit et retournée) ; sinon : « C'est
+  encore le recto. Retournez la carte. ». Aperçu de chaque face avec
+  « Reprendre ».
+- **Vidéo du visage** (`SelfieScript`, testé des deux côtés) : caméra avant,
+  **sans micro** (iOS : aucune entrée audio ; Android : pas de
+  `withAudioEnabled()`, et `RECORD_AUDIO` retiré du manifeste fusionné). Les
+  consignes viennent l'une après l'autre : visage dans le cercle (début de
+  l'enregistrement), tourner la tête d'un côté puis de l'autre (ordre tiré au
+  sort, envoyé avec la vidéo pour que l'équipe le compare), regarder devant
+  soi (fin). Chaque consigne doit être tenue sur 5 images analysées. Le sens
+  se lit à la position du nez dans l'image non inversée, l'angle de la tête
+  sert pour l'amplitude (20° au moins). Plus de 20 s, ou visage perdu plus de
+  30 images : on recommence. Deux visages : « Une seule personne… ». Vidéo
+  H.264 de 2 Mbit/s, 720p au plus.
+- Tout reste en mémoire jusqu'à l'envoi ; les fichiers temporaires (vidéo,
+  page scannée) sont effacés dès qu'ils sont lus. Dans l'aperçu, rien ne part.
+- Le dépôt de données reçoit `IdentityCapture` (recto, verso, vidéo, durée,
+  ordre des consignes) à la place de `idDocument` / `selfie`.
+- **Sans appareil photo** : le simulateur iOS (et donc Appetize) joue le
+  parcours avec des images dessinées, marqué « Simulateur : démonstration sans
+  appareil photo ». Captures de la CI : `become-identity` (recto),
+  `become-wrong-side`, `become-verso`, `become-selfie`, `become-review`.
+- Conception côté serveur (fichiers, conservation, suppression) : à valider
+  par Ben, la durée de conservation de la vidéo est à voir avec le juriste.
 
 Restent « Bientôt dans l'app » : la messagerie dans l'app (choix de Ben :
 pas de numéro affiché ; elle servira à « Appeler », « Écrire » et « Écrire à
@@ -139,7 +186,7 @@ Les textes des écrans du profil ont été ajoutés aux `.arb` (puis copiés par
 `outils/textes_apps_natives.py`). **Lingala à faire relire** par une
 personne de Kinshasa : `nextStep`, et les clés qui commencent par `info`,
 `devices`, `notif`, `help`, `faq`, `legal` (sauf `legalTerms`,
-`legalPrivacy`), `become` et `providerPending`. Les fichiers
+`legalPrivacy`), `become`, `providerPending`, `scan`, `camera` et `selfie`. Les fichiers
 `app_localizations*.dart` ne contiennent pas encore ces clés : Flutter les
 régénère à la compilation (`generate: true`).
 

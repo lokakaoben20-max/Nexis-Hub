@@ -191,7 +191,8 @@ sealed interface MissionRoute {
             "alerts" -> listOf(NotificationSettings)
             "help" -> listOf(Help)
             "legal" -> listOf(Legal)
-            "become", "become-identity" -> listOf(BecomeProvider)
+            "become" -> listOf(BecomeProvider)
+            in IdentityDemo.codes -> listOf(BecomeProvider)
             else -> null
         }
     }

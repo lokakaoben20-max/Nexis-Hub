@@ -68,10 +68,10 @@ interface NexisRepository {
     suspend fun legalText(key: LegalDocumentKey): LegalText
 
     /** Demande à devenir prestataire. Le profil reste en vérification jusqu'à
-     * la décision de l'équipe NexisHub. Les photos ne servent qu'à cette
-     * vérification. */
+     * la décision de l'équipe NexisHub. Le recto, le verso et la vidéo ne
+     * servent qu'à cette vérification. */
     suspend fun applyAsProvider(
-        services: List<String>, communes: List<String>, idDocument: ByteArray, selfie: ByteArray,
+        services: List<String>, communes: List<String>, identity: IdentityCapture,
         acceptedTermsVersion: LocalDate?,
     )
 
@@ -366,7 +366,7 @@ class DemoRepository(private val now: Instant = Instant.now()) : NexisRepository
         LegalText(key, if (key == LegalDocumentKey.CGU) signupTermsVersion else providerTermsVersion, null)
 
     override suspend fun applyAsProvider(
-        services: List<String>, communes: List<String>, idDocument: ByteArray, selfie: ByteArray,
+        services: List<String>, communes: List<String>, identity: IdentityCapture,
         acceptedTermsVersion: LocalDate?,
     ) {
         val me = profile()
@@ -374,9 +374,9 @@ class DemoRepository(private val now: Instant = Instant.now()) : NexisRepository
         val valid = me.providerStatus == null &&
             services.isNotEmpty() && services.size <= 50 && catalog.containsAll(services) &&
             communes.isNotEmpty() && communes.size <= 50 && this.communes.containsAll(communes) &&
-            idDocument.isNotEmpty() && selfie.isNotEmpty() && acceptedTermsVersion == providerTermsVersion
+            identity.isComplete && acceptedTermsVersion == providerTermsVersion
         if (!valid) throw NexisRefusal("provider_application_invalid")
-        // Aperçu : les photos ne sont gardées nulle part.
+        // Aperçu : le recto, le verso et la vidéo ne sont gardés nulle part.
         kotlinx.coroutines.delay(1_000)
         providerTermsAcceptedAt = LocalDate.now()
         store(me.copy(providerStatus = ProviderStatus.PENDING))

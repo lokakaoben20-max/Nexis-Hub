@@ -1,4 +1,3 @@
-import PhotosUI
 import SwiftUI
 import UIKit
 import UserNotifications
@@ -498,8 +497,7 @@ struct BecomeProviderView: View {
     @State private var catalog: [CatalogService] = []
     @State private var services: Set<String> = []
     @State private var communes: Set<String> = []
-    @State private var idDocument: Data?
-    @State private var selfie: Data?
+    @State private var identity = IdentityDraft()
     @State private var accepted = false
     @State private var readingTerms = false
     @State private var busy = false
@@ -527,14 +525,14 @@ struct BecomeProviderView: View {
         }
         .task { catalog = (try? await app.repository.serviceCatalog()) ?? [] }
         .sheet(isPresented: $readingTerms) { LegalReader(key: .providerTerms) }
-        .onAppear { if app.capture == "become-identity" { step = 3 } }
+        .onAppear { if let capture = app.capture, IdentityDemo.captures.contains(capture) { step = 3 } }
     }
 
     private var stepReady: Bool {
         switch step {
         case 1: return !services.isEmpty
         case 2: return !communes.isEmpty
-        case 3: return idDocument != nil && selfie != nil
+        case 3: return identity.capture != nil
         default: return accepted
         }
     }
@@ -603,12 +601,7 @@ struct BecomeProviderView: View {
     private var identityStep: some View {
         VStack(alignment: .leading, spacing: 12) {
             StepHeading(title: app.t("becomeIdentity"), hint: nil)
-            IdentityPhotoCard(title: app.t("becomeIdDocument"), subtitle: app.t("becomeIdDocumentSub"),
-                              symbol: "person.text.rectangle", data: $idDocument)
-            IdentityPhotoCard(title: app.t("becomeSelfie"), subtitle: app.t("becomeSelfieSub"),
-                              symbol: "person.crop.circle", data: $selfie)
-            InfoNote(text: app.t("becomeIdentityHint"), systemImage: "lock.shield.fill")
-            InfoNote(text: app.t("becomeDemoNote"), kind: .violet)
+            IdentityStep(draft: $identity)
         }
     }
 
@@ -655,13 +648,13 @@ struct BecomeProviderView: View {
     }
 
     private func send() async {
-        guard let idDocument, let selfie else { return }
+        guard let capture = identity.capture else { return }
         busy = true
         failed = false
         do {
             try await app.repository.applyAsProvider(
                 services: catalog.map(\.id).filter(services.contains), communes: communes.sorted(),
-                idDocument: idDocument, selfie: selfie,
+                identity: capture,
                 acceptedTermsVersion: accepted ? app.repository.providerTermsVersion : nil)
             app.dataChanged()
             withAnimation(.snappy) { sent = true }
@@ -733,124 +726,5 @@ private struct ToggleChip: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-}
-
-/// Une photo de vérification : prise avec l'appareil photo ou choisie. Elle
-/// reste en mémoire, réduite, jusqu'à l'envoi.
-private struct IdentityPhotoCard: View {
-    @Environment(AppModel.self) private var app
-    let title: String
-    let subtitle: String
-    let symbol: String
-    @Binding var data: Data?
-    @State private var picked: PhotosPickerItem?
-    @State private var shooting = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Group {
-                    if let data, let image = UIImage(data: data) {
-                        Image(uiImage: image).resizable().scaledToFill()
-                    } else {
-                        Image(systemName: symbol).font(.system(size: 22)).foregroundStyle(Nexis.softInk)
-                    }
-                }
-                .frame(width: 64, height: 64)
-                .background(Nexis.soft)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.body(15.5, .bold)).foregroundStyle(Nexis.ink)
-                    Text(subtitle).font(.body(13, relativeTo: .footnote)).foregroundStyle(Nexis.muted)
-                }
-                Spacer(minLength: 8)
-                if data != nil {
-                    Image(systemName: "checkmark.circle.fill").font(.system(size: 22)).foregroundStyle(Nexis.ok)
-                        .accessibilityHidden(true)
-                }
-            }
-            VStack(spacing: 10) {
-                if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                    Button { shooting = true } label: {
-                        Label(data == nil ? app.t("becomeTakePhoto") : app.t("becomeRetake"), systemImage: "camera")
-                            .font(.body(14.5, .semibold))
-                    }
-                    .buttonStyle(OutlineButtonStyle(tint: Nexis.accent))
-                }
-                PhotosPicker(selection: $picked, matching: .images) {
-                    Label(app.t("becomeChoosePhoto"), systemImage: "photo.on.rectangle")
-                        .font(.body(14.5, .semibold))
-                        .foregroundStyle(Nexis.accent)
-                        .padding(.vertical, 12)
-                        .frame(maxWidth: .infinity)
-                        .background(Nexis.surface, in: Capsule())
-                        .overlay(Capsule().strokeBorder(Color(light: 0xD5DBE5, dark: 0x2D3D5A), lineWidth: 1))
-                }
-            }
-        }
-        .nxCard(padding: 14)
-        .accessibilityElement(children: .contain)
-        .onChange(of: picked) { _, item in
-            guard let item else { return }
-            Task {
-                if let raw = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: raw) {
-                    data = image.reducedJPEG()
-                }
-                picked = nil
-            }
-        }
-        .fullScreenCover(isPresented: $shooting) {
-            CameraPicker { image in data = image.reducedJPEG() }
-                .ignoresSafeArea()
-        }
-    }
-}
-
-private extension UIImage {
-    /// La photo réduite (1 600 points au plus grand côté), en JPEG.
-    func reducedJPEG() -> Data? {
-        let longest = max(size.width, size.height)
-        let scale = longest > 1600 ? 1600 / longest : 1
-        let target = CGSize(width: size.width * scale, height: size.height * scale)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let resized = UIGraphicsImageRenderer(size: target, format: format).image { _ in
-            draw(in: CGRect(origin: .zero, size: target))
-        }
-        return resized.jpegData(compressionQuality: 0.75)
-    }
-}
-
-/// L'appareil photo du système.
-private struct CameraPicker: UIViewControllerRepresentable {
-    let onImage: (UIImage) -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    func makeUIViewController(context: Context) -> UIImagePickerController {
-        let picker = UIImagePickerController()
-        picker.sourceType = .camera
-        picker.delegate = context.coordinator
-        return picker
-    }
-
-    func updateUIViewController(_ controller: UIImagePickerController, context: Context) {}
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    @MainActor
-    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-        let parent: CameraPicker
-
-        init(_ parent: CameraPicker) { self.parent = parent }
-
-        func imagePickerController(_ picker: UIImagePickerController,
-                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
-            if let image = info[.originalImage] as? UIImage { parent.onImage(image) }
-            parent.dismiss()
-        }
-
-        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { parent.dismiss() }
     }
 }

@@ -312,23 +312,145 @@ final class AccountTests: XCTestCase {
         let repo = DemoRepository()
         XCTAssertTrue(repo.registerClient(phone: "+243810000001", firstName: "Esther", lastName: "M",
                                           commune: "Limete", acceptedTermsVersion: repo.signupTermsVersion))
-        let photo = Data([1, 2, 3])
+        let identity = IdentityCapture(recto: Data([1]), verso: Data([2]), video: Data([3]), videoSeconds: 7,
+                                       headTurns: [.right, .left])
         let noTerms = await refusal {
-            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], idDocument: photo,
-                                           selfie: photo, acceptedTermsVersion: nil)
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: identity,
+                                           acceptedTermsVersion: nil)
         }
         XCTAssertEqual(noTerms, "provider_application_invalid")
-        let noPhoto = await refusal {
-            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], idDocument: Data(),
-                                           selfie: photo, acceptedTermsVersion: repo.providerTermsVersion)
+        var noVerso = identity
+        noVerso.verso = Data()
+        let missingVerso = await refusal {
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: noVerso,
+                                           acceptedTermsVersion: repo.providerTermsVersion)
         }
-        XCTAssertEqual(noPhoto, "provider_application_invalid")
-        try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], idDocument: photo,
-                                       selfie: photo, acceptedTermsVersion: repo.providerTermsVersion)
+        XCTAssertEqual(missingVerso, "provider_application_invalid")
+        var noVideo = identity
+        noVideo.video = Data()
+        let missingVideo = await refusal {
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: noVideo,
+                                           acceptedTermsVersion: repo.providerTermsVersion)
+        }
+        XCTAssertEqual(missingVideo, "provider_application_invalid")
+        var oneTurn = identity
+        oneTurn.headTurns = [.left, .left]
+        let missingTurn = await refusal {
+            try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: oneTurn,
+                                           acceptedTermsVersion: repo.providerTermsVersion)
+        }
+        XCTAssertEqual(missingTurn, "provider_application_invalid")
+        try await repo.applyAsProvider(services: ["nettoyage"], communes: ["Limete"], identity: identity,
+                                       acceptedTermsVersion: repo.providerTermsVersion)
         let profile = try await repo.profile()
         XCTAssertEqual(profile.providerStatus, .pending)
         XCTAssertFalse(profile.isProvider)
         let documents = try await repo.legalDocuments()
         XCTAssertEqual(documents.map(\.key), [.cgu, .providerTerms])
+    }
+}
+
+final class IdentityGuideTests: XCTestCase {
+    private func quad(_ dx: CGFloat = 0) -> CardQuad {
+        CardQuad(topLeft: CGPoint(x: 0.1 + dx, y: 0.7), topRight: CGPoint(x: 0.9 + dx, y: 0.7),
+                 bottomRight: CGPoint(x: 0.9 + dx, y: 0.2), bottomLeft: CGPoint(x: 0.1 + dx, y: 0.2))
+    }
+
+    func testCardMustStayStillBeforeThePhoto() {
+        var tracker = StableCardTracker(needed: 4, tolerance: 0.02)
+        XCTAssertFalse(tracker.add(quad()))
+        XCTAssertFalse(tracker.add(quad(0.005)))
+        XCTAssertFalse(tracker.add(quad(0.01)))
+        XCTAssertTrue(tracker.add(quad(0.01)))
+        // La carte bouge : on recommence à compter.
+        XCTAssertFalse(tracker.add(quad(0.2)))
+        XCTAssertFalse(tracker.add(nil))
+        XCTAssertFalse(tracker.isHolding)
+    }
+
+    func testRectoNeedsAFace() {
+        XCTAssertEqual(CardCheck.verdict(expected: .recto, faceFound: true, hashes: [1], rectoHash: nil), .accepted)
+        XCTAssertEqual(CardCheck.verdict(expected: .recto, faceFound: false, hashes: [1], rectoHash: nil), .showRectoFirst)
+    }
+
+    func testVersoMustDifferFromRecto() {
+        let recto: UInt64 = 0xF0F0_F0F0_F0F0_F0F0
+        let same = recto ^ 0b111 // 3 bits d'écart
+        let other: UInt64 = 0x0F0F_0F0F_0F0F_0F0F
+        XCTAssertEqual(CardCheck.verdict(expected: .verso, faceFound: false, hashes: [same], rectoHash: recto), .stillRecto)
+        XCTAssertEqual(CardCheck.verdict(expected: .verso, faceFound: false, hashes: [other], rectoHash: recto), .accepted)
+        // Carte à l'envers : l'une des deux lectures ressemble au recto.
+        XCTAssertEqual(CardCheck.verdict(expected: .verso, faceFound: false, hashes: [other, same], rectoHash: recto), .stillRecto)
+        // Avec un visage visible, un écart moyen suffit à dire « encore le recto ».
+        let medium = recto ^ 0xFFFF // 16 bits d'écart
+        XCTAssertEqual(CardCheck.verdict(expected: .verso, faceFound: true, hashes: [medium], rectoHash: recto), .stillRecto)
+        XCTAssertEqual(CardCheck.verdict(expected: .verso, faceFound: false, hashes: [medium], rectoHash: recto), .accepted)
+    }
+
+    func testDifferenceHash() {
+        let rising = (0..<72).map { UInt8(($0 % 9) * 20) }
+        XCTAssertEqual(ImageHash.dHash(rising), UInt64.max)
+        XCTAssertEqual(ImageHash.dHash(ImageHash.halfTurn(rising)), 0)
+        XCTAssertEqual(ImageHash.distance(0, UInt64.max), 64)
+    }
+
+    func testHeadPoseUsesTheNoseForTheDirection() {
+        // Nez vers la droite de l'image (non inversée) : la personne tourne vers sa gauche.
+        XCTAssertEqual(HeadPose.position(FaceSample(faceCount: 1, turnDegrees: 28, noseOffset: 0.12)), .turned(.left))
+        XCTAssertEqual(HeadPose.position(FaceSample(faceCount: 1, turnDegrees: 28, noseOffset: -0.12)), .turned(.right))
+        XCTAssertEqual(HeadPose.position(FaceSample(faceCount: 1, turnDegrees: 4, noseOffset: 0.01)), .ahead)
+        XCTAssertEqual(HeadPose.position(FaceSample(faceCount: 1, turnDegrees: 15, noseOffset: 0.05)), .between)
+        XCTAssertEqual(HeadPose.position(FaceSample(faceCount: 1, turnDegrees: nil, noseOffset: -0.2)), .turned(.right))
+    }
+
+    private func run(_ script: inout SelfieScript, _ sample: FaceSample, frames: Int, from time: inout TimeInterval) -> [SelfieScript.Event] {
+        (0..<frames).map { _ in time += 0.1; return script.feed(sample, at: time) }
+    }
+
+    func testSelfieStepsComeInOrder() {
+        var script = SelfieScript(turns: [.right, .left])
+        script.holdNeeded = 3
+        var time: TimeInterval = 0
+        let framed = FaceSample(faceCount: 1, turnDegrees: 2, noseOffset: 0)
+        let left = FaceSample(faceCount: 1, turnDegrees: 30, noseOffset: 0.15)
+        let right = FaceSample(faceCount: 1, turnDegrees: 30, noseOffset: -0.15)
+        XCTAssertEqual(script.number, 1)
+        XCTAssertEqual(run(&script, framed, frames: 3, from: &time).last, .startRecording)
+        XCTAssertEqual(script.step, .turn(.right))
+        // Tourner du mauvais côté ne fait pas avancer.
+        XCTAssertFalse(run(&script, left, frames: 5, from: &time).contains(.advanced))
+        XCTAssertEqual(run(&script, right, frames: 3, from: &time).last, .advanced)
+        XCTAssertEqual(script.step, .turn(.left))
+        XCTAssertEqual(run(&script, left, frames: 3, from: &time).last, .advanced)
+        XCTAssertEqual(script.step, .lookAhead)
+        XCTAssertEqual(script.number, 4)
+        XCTAssertEqual(run(&script, framed, frames: 3, from: &time).last, .finished)
+        XCTAssertEqual(script.step, .done)
+        XCTAssertGreaterThan(script.seconds, 0)
+    }
+
+    func testSelfieRestartsWhenTooSlowOrFaceLost() {
+        var script = SelfieScript(turns: [.left, .right])
+        script.holdNeeded = 1
+        script.timeLimit = 5
+        script.lostLimit = 2
+        XCTAssertEqual(script.feed(FaceSample(faceCount: 1, turnDegrees: 0), at: 0), .startRecording)
+        XCTAssertEqual(script.feed(FaceSample(faceCount: 1, turnDegrees: 0), at: 6), .restart)
+        XCTAssertEqual(script.step, .faceIn)
+        XCTAssertEqual(script.feed(FaceSample(faceCount: 1, turnDegrees: 0), at: 7), .startRecording)
+        XCTAssertEqual(script.feed(FaceSample(faceCount: 0), at: 7.1), SelfieScript.Event.none)
+        XCTAssertEqual(script.feed(FaceSample(faceCount: 0), at: 7.2), SelfieScript.Event.none)
+        XCTAssertEqual(script.feed(FaceSample(faceCount: 0), at: 7.3), .restart)
+        // Deux visages : rien n'avance, et l'écran le dit.
+        _ = script.feed(FaceSample(faceCount: 2), at: 8)
+        XCTAssertTrue(script.severalFaces)
+        XCTAssertEqual(script.step, .faceIn)
+    }
+
+    func testFaceMustBeCenteredToStart() {
+        XCTAssertTrue(HeadPose.isFramed(FaceSample(faceCount: 1, turnDegrees: 3)))
+        XCTAssertFalse(HeadPose.isFramed(FaceSample(faceCount: 1, centerX: 0.8, turnDegrees: 3)))
+        XCTAssertFalse(HeadPose.isFramed(FaceSample(faceCount: 1, width: 0.1, turnDegrees: 3)))
+        XCTAssertFalse(HeadPose.isFramed(FaceSample(faceCount: 2, turnDegrees: 3)))
     }
 }

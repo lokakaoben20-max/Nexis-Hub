@@ -1,10 +1,20 @@
 package com.nexishub.app
 
+import com.nexishub.app.data.CardCheck
+import com.nexishub.app.data.CardSide
+import com.nexishub.app.data.CardVerdict
 import com.nexishub.app.data.Currency
 import com.nexishub.app.data.DemoRepository
 import com.nexishub.app.data.DrcPhone
+import com.nexishub.app.data.FaceSample
+import com.nexishub.app.data.HeadPose
+import com.nexishub.app.data.HeadPosition
+import com.nexishub.app.data.HeadTurn
+import com.nexishub.app.data.IdentityCapture
+import com.nexishub.app.data.ImageHash
 import com.nexishub.app.data.MissionStatus
 import com.nexishub.app.data.Money
+import com.nexishub.app.data.SelfieScript
 import com.nexishub.app.data.Texts
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -315,14 +325,18 @@ class AccountTest {
     fun providerApplicationNeedsEveryStep() = runBlocking {
         val repo = DemoRepository()
         assertTrue(repo.registerClient("+243810000001", "Esther", "M", "Limete", repo.signupTermsVersion))
-        val photo = byteArrayOf(1, 2, 3)
-        assertEquals("provider_application_invalid", refusal {
-            repo.applyAsProvider(listOf("nettoyage"), listOf("Limete"), photo, photo, null)
-        })
-        assertEquals("provider_application_invalid", refusal {
-            repo.applyAsProvider(listOf("nettoyage"), listOf("Limete"), ByteArray(0), photo, repo.providerTermsVersion)
-        })
-        repo.applyAsProvider(listOf("nettoyage"), listOf("Limete"), photo, photo, repo.providerTermsVersion)
+        val identity = IdentityCapture(byteArrayOf(1), byteArrayOf(2), byteArrayOf(3), 7, listOf(HeadTurn.RIGHT, HeadTurn.LEFT))
+        fun send(sent: IdentityCapture, terms: java.time.LocalDate?) = refusal {
+            repo.applyAsProvider(listOf("nettoyage"), listOf("Limete"), sent, terms)
+        }
+        assertEquals("provider_application_invalid", send(identity, null))
+        val noVerso = IdentityCapture(identity.recto, ByteArray(0), identity.video, 7, identity.headTurns)
+        assertEquals("provider_application_invalid", send(noVerso, repo.providerTermsVersion))
+        val noVideo = IdentityCapture(identity.recto, identity.verso, ByteArray(0), 7, identity.headTurns)
+        assertEquals("provider_application_invalid", send(noVideo, repo.providerTermsVersion))
+        val oneTurn = IdentityCapture(identity.recto, identity.verso, identity.video, 7, listOf(HeadTurn.LEFT, HeadTurn.LEFT))
+        assertEquals("provider_application_invalid", send(oneTurn, repo.providerTermsVersion))
+        assertEquals(null, send(identity, repo.providerTermsVersion))
         val profile = repo.profile()
         assertEquals(com.nexishub.app.data.ProviderStatus.PENDING, profile.providerStatus)
         assertTrue(!profile.isProvider)
@@ -335,6 +349,98 @@ class AccountTest {
     @Test
     fun captureCodesMatchTheScript() {
         assertEquals(com.nexishub.app.Capture.BECOME_IDENTITY, com.nexishub.app.Capture.from("become-identity"))
+        assertEquals(com.nexishub.app.Capture.BECOME_WRONG_SIDE, com.nexishub.app.Capture.from("become-wrong-side"))
+        assertEquals(com.nexishub.app.Capture.BECOME_VERSO, com.nexishub.app.Capture.from("become-verso"))
+        assertEquals(com.nexishub.app.Capture.BECOME_SELFIE, com.nexishub.app.Capture.from("become-selfie"))
+        assertEquals(com.nexishub.app.Capture.BECOME_REVIEW, com.nexishub.app.Capture.from("become-review"))
         assertEquals(com.nexishub.app.Capture.TRACKING, com.nexishub.app.Capture.from("tracking"))
+    }
+}
+
+class IdentityGuideTest {
+    @Test
+    fun rectoNeedsAFace() {
+        assertEquals(CardVerdict.ACCEPTED, CardCheck.verdict(CardSide.RECTO, true, listOf(1L), null))
+        assertEquals(CardVerdict.SHOW_RECTO_FIRST, CardCheck.verdict(CardSide.RECTO, false, listOf(1L), null))
+    }
+
+    @Test
+    fun versoMustDifferFromRecto() {
+        val recto = 0x0F0F_0F0F_0F0F_0F0FL
+        val same = recto xor 0b111L
+        val other = recto.inv()
+        assertEquals(CardVerdict.STILL_RECTO, CardCheck.verdict(CardSide.VERSO, false, listOf(same), recto))
+        assertEquals(CardVerdict.ACCEPTED, CardCheck.verdict(CardSide.VERSO, false, listOf(other), recto))
+        // Carte à l'envers : l'une des deux lectures ressemble au recto.
+        assertEquals(CardVerdict.STILL_RECTO, CardCheck.verdict(CardSide.VERSO, false, listOf(other, same), recto))
+        // Avec un visage visible, un écart moyen suffit à dire « encore le recto ».
+        val medium = recto xor 0xFFFFL
+        assertEquals(CardVerdict.STILL_RECTO, CardCheck.verdict(CardSide.VERSO, true, listOf(medium), recto))
+        assertEquals(CardVerdict.ACCEPTED, CardCheck.verdict(CardSide.VERSO, false, listOf(medium), recto))
+    }
+
+    @Test
+    fun differenceHash() {
+        val rising = IntArray(72) { (it % 9) * 20 }
+        assertEquals(-1L, ImageHash.dHash(rising))
+        assertEquals(0L, ImageHash.dHash(ImageHash.halfTurn(rising)))
+        assertEquals(64, ImageHash.distance(0L, -1L))
+    }
+
+    @Test
+    fun headPoseUsesTheNoseForTheDirection() {
+        // Nez vers la droite de l'image (non inversée) : la personne tourne vers sa gauche.
+        assertEquals(HeadPosition.Turned(HeadTurn.LEFT), HeadPose.position(FaceSample(1, turnDegrees = 28.0, noseOffset = 0.12)))
+        assertEquals(HeadPosition.Turned(HeadTurn.RIGHT), HeadPose.position(FaceSample(1, turnDegrees = 28.0, noseOffset = -0.12)))
+        assertEquals(HeadPosition.Ahead, HeadPose.position(FaceSample(1, turnDegrees = 4.0, noseOffset = 0.01)))
+        assertEquals(HeadPosition.Between, HeadPose.position(FaceSample(1, turnDegrees = 15.0, noseOffset = 0.05)))
+        assertEquals(HeadPosition.Turned(HeadTurn.RIGHT), HeadPose.position(FaceSample(1, noseOffset = -0.2)))
+    }
+
+    @Test
+    fun selfieStepsComeInOrder() {
+        val script = SelfieScript(listOf(HeadTurn.RIGHT, HeadTurn.LEFT), holdNeeded = 3)
+        var time = 0.0
+        fun run(sample: FaceSample, frames: Int) = (0 until frames).map { time += 0.1; script.feed(sample, time) }
+        val framed = FaceSample(1, turnDegrees = 2.0)
+        val left = FaceSample(1, turnDegrees = 30.0, noseOffset = 0.15)
+        val right = FaceSample(1, turnDegrees = 30.0, noseOffset = -0.15)
+        assertEquals(1, script.number)
+        assertEquals(SelfieScript.Event.START_RECORDING, run(framed, 3).last())
+        assertEquals(SelfieScript.Step.Turn(HeadTurn.RIGHT), script.step)
+        // Tourner du mauvais côté ne fait pas avancer.
+        assertFalse(SelfieScript.Event.ADVANCED in run(left, 5))
+        assertEquals(SelfieScript.Event.ADVANCED, run(right, 3).last())
+        assertEquals(SelfieScript.Event.ADVANCED, run(left, 3).last())
+        assertEquals(SelfieScript.Step.LookAhead, script.step)
+        assertEquals(4, script.number)
+        assertEquals(SelfieScript.Event.FINISHED, run(framed, 3).last())
+        assertEquals(SelfieScript.Step.Done, script.step)
+        assertTrue(script.seconds > 0)
+    }
+
+    @Test
+    fun selfieRestartsWhenTooSlowOrFaceLost() {
+        val script = SelfieScript(listOf(HeadTurn.LEFT, HeadTurn.RIGHT), holdNeeded = 1, timeLimit = 5.0, lostLimit = 2)
+        val framed = FaceSample(1, turnDegrees = 0.0)
+        assertEquals(SelfieScript.Event.START_RECORDING, script.feed(framed, 0.0))
+        assertEquals(SelfieScript.Event.RESTART, script.feed(framed, 6.0))
+        assertEquals(SelfieScript.Step.FaceIn, script.step)
+        assertEquals(SelfieScript.Event.START_RECORDING, script.feed(framed, 7.0))
+        assertEquals(SelfieScript.Event.NONE, script.feed(FaceSample(0), 7.1))
+        assertEquals(SelfieScript.Event.NONE, script.feed(FaceSample(0), 7.2))
+        assertEquals(SelfieScript.Event.RESTART, script.feed(FaceSample(0), 7.3))
+        // Deux visages : rien n'avance, et l'écran le dit.
+        script.feed(FaceSample(2), 8.0)
+        assertTrue(script.severalFaces)
+        assertEquals(SelfieScript.Step.FaceIn, script.step)
+    }
+
+    @Test
+    fun faceMustBeCenteredToStart() {
+        assertTrue(HeadPose.isFramed(FaceSample(1, turnDegrees = 3.0)))
+        assertFalse(HeadPose.isFramed(FaceSample(1, centerX = 0.8, turnDegrees = 3.0)))
+        assertFalse(HeadPose.isFramed(FaceSample(1, width = 0.1, turnDegrees = 3.0)))
+        assertFalse(HeadPose.isFramed(FaceSample(2, turnDegrees = 3.0)))
     }
 }

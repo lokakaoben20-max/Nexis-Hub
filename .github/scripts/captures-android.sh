@@ -18,7 +18,7 @@ shoot() { # nom, apparence (yes = sombre), langue
 for screen in welcome phone code signup home missions wallet profile services; do
   shoot "$screen" no fr
 done
-for screen in tracking quotes pay pending confirm report dispute decision provider request job info devices alerts help legal become become-identity; do
+for screen in tracking quotes pay pending confirm report dispute decision provider request job info devices alerts help legal become become-identity become-wrong-side become-verso become-selfie become-review; do
   shoot "$screen" no fr
 done
 shoot tracking yes fr

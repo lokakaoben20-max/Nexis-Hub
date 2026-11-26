@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Seul dossier que l'appareil photo du système peut écrire : les photos de
-     vérification y passent le temps de les lire, puis sont effacées. -->
-<paths>
-    <cache-path name="photos" path="photos/" />
-</paths>

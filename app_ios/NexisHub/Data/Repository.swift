@@ -50,9 +50,9 @@ protocol NexisRepository: AnyObject {
     func legalDocuments() async throws -> [LegalDocument]
     func legalText(_ key: LegalDocumentKey) async throws -> LegalText
     /// Demande à devenir prestataire. Le profil reste en vérification jusqu'à
-    /// la décision de l'équipe NexisHub. Les photos ne servent qu'à cette
-    /// vérification.
-    func applyAsProvider(services: [String], communes: [String], idDocument: Data, selfie: Data,
+    /// la décision de l'équipe NexisHub. Le recto, le verso et la vidéo ne
+    /// servent qu'à cette vérification.
+    func applyAsProvider(services: [String], communes: [String], identity: IdentityCapture,
                          acceptedTermsVersion: Date?) async throws
 
     // --- Client : devis, paiement, suivi, litige ---
@@ -375,17 +375,17 @@ final class DemoRepository: NexisRepository {
         LegalText(key: key, version: key == .cgu ? signupTermsVersion : providerTermsVersion, text: nil)
     }
 
-    func applyAsProvider(services: [String], communes chosen: [String], idDocument: Data, selfie: Data,
+    func applyAsProvider(services: [String], communes chosen: [String], identity: IdentityCapture,
                          acceptedTermsVersion: Date?) async throws {
         let current = try await profile()
         let catalog = Set(try await serviceCatalog().map(\.id))
         guard current.providerStatus == nil,
               !services.isEmpty, services.count <= 50, Set(services).isSubset(of: catalog),
               !chosen.isEmpty, chosen.count <= 50, Set(chosen).isSubset(of: Set(communes)),
-              !idDocument.isEmpty, !selfie.isEmpty,
+              identity.isComplete,
               acceptedTermsVersion == providerTermsVersion
         else { throw NexisRefusal(code: "provider_application_invalid") }
-        // Aperçu : les photos ne sont gardées nulle part.
+        // Aperçu : le recto, le verso et la vidéo ne sont gardés nulle part.
         try await Task.sleep(for: .seconds(1))
         providerTermsAcceptedAt = .now
         store(Profile(firstName: current.firstName, lastName: current.lastName, phone: current.phone,

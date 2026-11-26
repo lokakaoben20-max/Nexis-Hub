@@ -82,6 +82,18 @@ Ceci concerne l'IA **dans Nexis** (assistants, tri, détection), pas les agents 
   et vérification des règles Meta sur l'IA dans WhatsApp ; 3) en dernier, aide au contrôle
   des pièces d'identité, seulement si l'avocat l'autorise. L'aide à la rédaction des devis
   n'est pas prévue : le prix reste la décision du prestataire.
+- **Exception décidée par Ben le 2026-11-26 : guidage de la prise d'identité, sur le
+  téléphone.** Dans l'étape « Pièce d'identité » de « Devenir prestataire » (apps natives),
+  l'analyse d'image **sur le téléphone** est autorisée dès maintenant pour guider la prise :
+  Vision / VisionKit / AVFoundation sur iOS, CameraX + ML Kit (scanner de documents,
+  visages, angle de la tête) sur Android. Elle sert seulement à cadrer la carte et la
+  photographier toute seule, à dire si la face montrée est le recto ou le verso, et à
+  vérifier que chaque mouvement de tête demandé pendant la vidéo est fait. **Elle ne
+  valide ni ne refuse personne** : c'est l'équipe NexisHub qui vérifie la personne. Jamais
+  de photo ni de vidéo choisie dans la galerie (scanner ML Kit avec
+  `setGalleryImportAllowed(false)`). La règle de confidentialité ci-dessus reste entière :
+  **aucune pièce ni aucun selfie n'est envoyé à un service d'IA extérieur** sans l'avis du
+  juriste et l'accord de Ben.
 
 ## Objectif du projet
 
