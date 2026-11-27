@@ -107,3 +107,11 @@ def provider_without_telegram(db, full_name: str = "Entreprise sans Telegram", *
     profile = profils.verify_provider(db, account.id)
     db.commit()
     return profile
+
+
+def payout_destination(db, account_id: int, phone: str = "+243970000000", operator: str = "airtel") -> int:
+    """Numéro de retrait enregistré par la personne ; utilisable tout de
+    suite si c'est le premier du compte. Renvoie son identifiant."""
+    from backend.app import destinations
+
+    return destinations.add_destination(db, account_id=account_id, operator=operator, phone=phone).id

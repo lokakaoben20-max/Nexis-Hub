@@ -31,6 +31,7 @@ from backend.app.models import (
     MissionMedia,
     PaymentIntent,
     Payout,
+    PayoutDestination,
     ProviderProfile,
     ProviderServiceAddition,
     StoredFile,
@@ -342,6 +343,27 @@ def payout_changed(db: Session, payout: Payout) -> None:
         account_id=payout.account_id,
         message_key=key,
         params={"amount": f"{payout.amount - payout.fee:.2f}", "gross": f"{payout.amount:.2f}", "currency": payout.currency},
+    )
+
+
+OPERATOR_NAMES = {"mpesa": "M-Pesa", "airtel": "Airtel Money", "orange": "Orange Money"}
+
+
+def payout_destination_added(db: Session, destination: PayoutDestination) -> None:
+    """Numéro de retrait ajouté : la personne est toujours prévenue. Si ce
+    n'est pas elle, elle a le délai de sécurité pour réagir."""
+    params = {
+        "operateur": OPERATOR_NAMES.get(destination.operator, destination.operator),
+        "numero": destination.phone,
+    }
+    if destination.usable_after is not None:
+        params["date"] = kinshasa_time(destination.usable_after)
+    enqueue(
+        db,
+        event_key=f"payout_destination_added:{destination.id}",
+        account_id=destination.account_id,
+        message_key="payout_destination_added_delayed" if destination.usable_after else "payout_destination_added",
+        params=params,
     )
 
 

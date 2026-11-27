@@ -1115,7 +1115,17 @@ def test_payout_endpoints_hold_then_pay_after_admin_approval(tmp_path, monkeypat
 
     with _authed_client(backend_main) as test_client:
         _complete_mission_flow(test_client)  # le prestataire 7 gagne 90 USD
-        payout = {"amount": 50.0, "currency": "USD", "phone": "+243970000000", "operator": "airtel"}
+        number = {"phone": "+243970000000", "operator": "airtel"}
+        added = test_client.post("/api/bot/payout-destinations", json=number, headers=_as(7)).json()["destination"]
+        assert (added["status"], added["usable_after"]) == ("active", None), "premier numéro : utilisable tout de suite"
+        again = test_client.post("/api/bot/payout-destinations", json=number, headers=_as(7)).json()["destination"]
+        assert again["id"] == added["id"], "double envoi : le même numéro"
+        other = test_client.post(
+            "/api/bot/payout-destinations", json={"phone": "+243970000009", "operator": "airtel"}, headers=_as(7)
+        )
+        assert (other.status_code, other.json()["detail"]) == (403, {"code": "destination_change_in_app"})
+        assert [d["id"] for d in test_client.get("/api/bot/payout-destinations", headers=_as(7)).json()["destinations"]] == [added["id"]]
+        payout = {"amount": 50.0, "currency": "USD", "destination_id": added["id"]}
 
         requested = test_client.post("/api/bot/payouts", json=payout, headers=_as(7)).json()["payout"]
         assert requested["status"] == "awaiting_approval"
@@ -1130,6 +1140,10 @@ def test_payout_endpoints_hold_then_pay_after_admin_approval(tmp_path, monkeypat
 
         approved = test_client.post(f"/api/bot/payouts/{requested['id']}/approve", json={}, headers=_as(1))
         assert approved.json()["payout"]["status"] == "succeeded"
+        assert (approved.json()["payout"]["phone"], approved.json()["payout"]["destination_id"]) == ("+243970000000", added["id"])
+
+        stranger = test_client.post("/api/bot/payouts", json={**payout, "amount": 5.0}, headers=_as(42))
+        assert stranger.json()["detail"] == {"code": "destination_not_found"}, "le numéro d'un autre compte n'existe pas pour lui"
 
         too_much = test_client.post("/api/bot/payouts", json={**payout, "amount": 100.0}, headers=_as(7))
         assert too_much.status_code == 409

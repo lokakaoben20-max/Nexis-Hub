@@ -424,6 +424,7 @@ def clavier_operateurs(prefix: str, detected: str | None, lang: str = "fr"):
 def clavier_wallet(back_callback: str, lang: str = "fr"):
     builder = InlineKeyboardBuilder()
     builder.button(text=get_message("button_withdraw", lang), callback_data="wallet_withdraw")
+    builder.button(text=get_message("button_my_destinations", lang), callback_data="wallet_numbers")
     builder.button(text=button_label("back", lang), callback_data=back_callback)
     builder.adjust(1)
     return builder.as_markup()
@@ -434,6 +435,37 @@ def clavier_devises_retrait(lang: str = "fr"):
     builder.button(text="USD", callback_data="wd_cur_USD")
     builder.button(text="CDF", callback_data="wd_cur_CDF")
     builder.adjust(2)
+    return builder.as_markup()
+
+
+def clavier_destinations_retrait(destinations: list[dict], can_add: bool = False, lang: str = "fr"):
+    """Numéros enregistrés vers lesquels retirer maintenant ; l'ajout
+    seulement pour le tout premier numéro (les changements : dans l'app)."""
+    builder = InlineKeyboardBuilder()
+    for destination in destinations:
+        label = OPERATOR_LABELS.get(destination["operator"], destination["operator"])
+        builder.button(text=f"{label} {destination['phone']}", callback_data=f"wd_dest_{destination['id']}")
+    if can_add:
+        builder.button(text=get_message("button_add_destination", lang), callback_data="wd_dest_add")
+    builder.button(text=button_label("back", lang), callback_data="profil_client")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_mes_numeros(can_add: bool, lang: str = "fr"):
+    """Écran « Mes numéros » du bot : ajout du tout premier numéro seulement."""
+    builder = InlineKeyboardBuilder()
+    if can_add:
+        builder.button(text=get_message("button_add_destination", lang), callback_data="wd_dest_add")
+    builder.button(text=button_label("back", lang), callback_data="profil_client")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def clavier_numero_profil(phone: str, lang: str = "fr"):
+    builder = InlineKeyboardBuilder()
+    builder.button(text=get_message("button_use_my_number", lang, phone=phone), callback_data="wd_dest_profile_phone")
+    builder.adjust(1)
     return builder.as_markup()
 
 

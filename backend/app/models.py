@@ -492,6 +492,53 @@ class PaymentIntent(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+PAYOUT_DESTINATION_STATUSES = ("active", "removed")
+PAYOUT_DESTINATION_KINDS = ("mobile_money",)
+
+
+class PayoutDestination(Base):
+    """Numéro (plus tard carte ou compte bancaire) que la personne a
+    enregistré pour recevoir ses retraits.
+
+    La personne gère elle-même ses numéros (jusqu'à
+    `destinations.MAX_ACTIVE_DESTINATIONS`) : aucun contrôle du nom du
+    titulaire, peu fiable en RDC. Un retrait ne part que vers l'un d'eux, sorti
+    de son délai de sécurité (`usable_after`). Voir `backend/app/destinations.py`."""
+
+    __tablename__ = "payout_destinations"
+    __table_args__ = (
+        CheckConstraint(_in("status", PAYOUT_DESTINATION_STATUSES), name="ck_payout_destinations_status"),
+        CheckConstraint(_in("kind", PAYOUT_DESTINATION_KINDS), name="ck_payout_destinations_kind"),
+        # Un numéro retiré a toujours sa date de retrait, un numéro actif n'en a pas.
+        CheckConstraint(
+            "(status = 'active' AND removed_at IS NULL) OR (status = 'removed' AND removed_at IS NOT NULL)",
+            name="ck_payout_destinations_removed",
+        ),
+        # Un même numéro n'est actif qu'une fois par compte.
+        Index(
+            "uq_payout_destinations_active",
+            "account_id",
+            "operator",
+            "phone",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+            sqlite_where=text("status = 'active'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(20), default="mobile_money")
+    operator: Mapped[str] = mapped_column(String(20))
+    phone: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(20), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # Aucun retrait vers ce numéro avant cette heure (vide : tout de suite).
+    # Fixé à l'ajout, jamais repoussé ni avancé ensuite.
+    usable_after: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class Payout(Base):
     """Retrait d'un wallet vers le Mobile Money (CONCEPTION_MOBILE_MONEY.md).
 
@@ -514,6 +561,10 @@ class Payout(Base):
     requested_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     gateway: Mapped[str] = mapped_column(String(30))
     gateway_reference: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Numéro enregistré choisi (vide pour les retraits d'avant les numéros
+    # enregistrés). Opérateur et numéro en sont recopiés à la demande : le
+    # retrait part vers le numéro choisi, même s'il est retiré ensuite.
+    destination_id: Mapped[int | None] = mapped_column(ForeignKey("payout_destinations.id"), nullable=True, index=True)
     operator: Mapped[str] = mapped_column(String(20))
     phone: Mapped[str] = mapped_column(String(32))
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))

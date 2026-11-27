@@ -12,6 +12,7 @@ missions : backend injoignable, l'écran le dit (aucune copie locale).
 """
 
 import html
+from datetime import datetime, timezone
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -30,19 +31,25 @@ from telegram_bot import backend_client, catalogue
 from telegram_bot.backend_client import (
     BackendUnavailable,
     MoneyRefused,
+    add_payout_destination,
     detect_operator,
     fetch_wallets,
     get_language,
+    list_payout_destinations,
     normalize_phone,
     money_failure_text,
     request_payout,
     wallet_balance,
 )
 from telegram_bot.keyboards import (
+    OPERATOR_LABELS,
     SERVICES,
     _rich_cell,
     clavier_client,
+    clavier_destinations_retrait,
     clavier_devises_retrait,
+    clavier_mes_numeros,
+    clavier_numero_profil,
     clavier_operateurs,
     clavier_prestataire,
     clavier_services_actions,
@@ -54,6 +61,11 @@ router = Router()
 
 class WithdrawFlow(StatesGroup):
     amount = State()
+    destination = State()
+
+
+class DestinationFlow(StatesGroup):
+    phone = State()
     operator = State()
 
 
@@ -443,8 +455,9 @@ async def afficher_aide_client(callback: CallbackQuery):
 
 # --- Retrait vers Mobile Money (CONCEPTION_MOBILE_MONEY.md) ------------------------
 # Le backend bloque le montant, puis l'envoie quand l'admin l'a validé (ou
-# tout de suite sous le plafond d'automatisation). Le numéro est celui du
-# profil : prestataire s'il en a un, sinon client.
+# tout de suite sous le plafond d'automatisation). Le numéro est un de ceux
+# que la personne a enregistrés (`backend/app/destinations.py`) : le bot
+# n'enregistre que le tout premier, les changements se font dans l'app.
 
 
 async def _withdraw_language(telegram_id: int) -> str:
@@ -452,9 +465,9 @@ async def _withdraw_language(telegram_id: int) -> str:
 
 
 async def _profile_phone(telegram_id: int) -> str | None:
-    """Numéro du profil (prestataire s'il en a un, sinon client), lu dans le
-    backend ; None s'il n'y en a pas. `BackendUnavailable` si le backend ne
-    répond pas."""
+    """Numéro du profil (prestataire s'il en a un, sinon client), proposé
+    pour le premier numéro de retrait ; None s'il n'y en a pas.
+    `BackendUnavailable` si le backend ne répond pas."""
     try:
         me = await backend_client.fetch_me(telegram_id)
     except MoneyRefused as error:
@@ -509,34 +522,62 @@ async def retrait_montant_recu(message: Message, state: FSMContext):
     if amount <= 0:
         await message.answer(get_message("withdraw_invalid_amount", lang), parse_mode="HTML")
         return
+    await state.update_data(withdraw_amount=amount)
+    await _show_destinations(message, state, lang, message.from_user.id)
+
+
+def _usable_now(destination: dict) -> bool:
+    usable_after = destination.get("usable_after")
+    return usable_after is None or datetime.fromisoformat(usable_after) <= datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _destination_label(destination: dict) -> str:
+    return f"{OPERATOR_LABELS.get(destination['operator'], destination['operator'])} {destination['phone']}"
+
+
+async def _show_destinations(message: Message, state: FSMContext, lang: str, telegram_id: int) -> None:
+    """Numéros enregistrés de la personne : le retrait part vers l'un d'eux,
+    jamais vers un numéro tapé pour ce seul retrait (le backend le refuserait).
+    Un numéro encore dans son délai de sécurité est montré, sans bouton."""
     try:
-        phone = await _profile_phone(message.from_user.id)
-    except BackendUnavailable:
+        destinations = await list_payout_destinations(telegram_id)
+    except (BackendUnavailable, MoneyRefused):
         # Montant gardé : la personne le renvoie quand le service répond.
         await message.answer(get_message("service_unavailable", lang))
         return
-    if phone is None:
-        await state.clear()
-        await message.answer(get_message("money_error_invalid_phone", lang), parse_mode="HTML")
-        return
+    usable = [destination for destination in destinations if _usable_now(destination)]
+    waiting = [destination for destination in destinations if not _usable_now(destination)]
     data = await state.get_data()
-    await state.update_data(withdraw_amount=amount, withdraw_phone=phone)
-    await state.set_state(WithdrawFlow.operator)
+    if usable:
+        text = get_message(
+            "withdraw_choose_destination", lang, amount=f"{data['withdraw_amount']:.2f}", currency=data["withdraw_currency"]
+        )
+    else:
+        text = get_message("withdraw_no_destination", lang)
+    if waiting:
+        text += get_message(
+            "withdraw_destinations_waiting", lang, list=", ".join(html.escape(_destination_label(d)) for d in waiting)
+        )
+    if destinations:
+        text += get_message("destinations_change_in_app", lang)
+    await state.set_state(WithdrawFlow.destination)
     await message.answer(
-        get_message("withdraw_choose_operator", lang, amount=f"{amount:.2f}", currency=data["withdraw_currency"], phone=phone),
-        parse_mode="HTML",
-        reply_markup=clavier_operateurs("wd_op", detect_operator(phone), lang),
+        text, parse_mode="HTML", reply_markup=clavier_destinations_retrait(usable, can_add=not destinations, lang=lang)
     )
 
 
-@router.callback_query(WithdrawFlow.operator, F.data.startswith("wd_op_"))
-async def retrait_operateur_recu(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(WithdrawFlow.destination, F.data.startswith("wd_dest_") & (F.data != "wd_dest_add"))
+async def retrait_destination_choisie(callback: CallbackQuery, state: FSMContext):
     lang = await _withdraw_language(callback.from_user.id)
     data = await state.get_data()
     try:
+        destination_id = int(callback.data.removeprefix("wd_dest_"))
+    except ValueError:
+        await callback.answer()
+        return
+    try:
         payout = await request_payout(
-            callback.from_user.id, data["withdraw_amount"], data["withdraw_currency"], data["withdraw_phone"],
-            callback.data.removeprefix("wd_op_"),
+            callback.from_user.id, data["withdraw_amount"], data["withdraw_currency"], destination_id
         )
     except BackendUnavailable:
         # On garde la saisie : la personne réessaie le même bouton.
@@ -551,3 +592,123 @@ async def retrait_operateur_recu(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text(payout_status_text(payout, lang), parse_mode="HTML")
     await callback.answer()
+
+
+# --- Numéros de retrait -------------------------------------------------------------
+# Le bot n'enregistre que le tout premier numéro (depuis le portefeuille ou
+# pendant un retrait). Ajouter un autre numéro ou en retirer un est une action
+# de sécurité, faite dans l'application : le backend la refuse depuis le bot
+# (`destination_change_in_app`), le bouton caché n'est qu'un confort.
+
+
+async def _show_my_numbers(message: Message, lang: str, telegram_id: int, edit: bool) -> None:
+    try:
+        destinations = await list_payout_destinations(telegram_id)
+    except (BackendUnavailable, MoneyRefused):
+        await message.answer(get_message("service_unavailable", lang))
+        return
+    if destinations:
+        lines = []
+        for destination in destinations:
+            line = html.escape(_destination_label(destination))
+            if not _usable_now(destination):
+                line += " " + get_message("destination_waiting_mark", lang)
+            lines.append(f"• {line}")
+        text = get_message("my_destinations", lang, list="\n".join(lines))
+    else:
+        text = get_message("my_destinations_empty", lang)
+    markup = clavier_mes_numeros(can_add=not destinations, lang=lang)
+    if edit:
+        await message.edit_text(text, parse_mode="HTML", reply_markup=markup)
+    else:
+        await message.answer(text, parse_mode="HTML", reply_markup=markup)
+
+
+@router.callback_query(F.data == "wallet_numbers")
+async def afficher_mes_numeros(callback: CallbackQuery, state: FSMContext):
+    lang = await _withdraw_language(callback.from_user.id)
+    await state.clear()
+    await _show_my_numbers(callback.message, lang, callback.from_user.id, edit=True)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "wd_dest_add")
+async def destination_demander_numero(callback: CallbackQuery, state: FSMContext):
+    lang = await _withdraw_language(callback.from_user.id)
+    try:
+        phone = await _profile_phone(callback.from_user.id)
+    except BackendUnavailable:
+        phone = None
+    # Ajout pendant un retrait : le montant reste dans l'état, le retrait
+    # reprend juste après l'ajout.
+    await state.set_state(DestinationFlow.phone)
+    await state.update_data(destination_profile_phone=phone)
+    await callback.message.edit_text(
+        get_message("destination_ask_phone", lang),
+        parse_mode="HTML",
+        reply_markup=clavier_numero_profil(phone, lang) if phone else None,
+    )
+    await callback.answer()
+
+
+async def _ask_operator(message: Message, state: FSMContext, phone: str, lang: str) -> None:
+    await state.update_data(destination_phone=phone)
+    await state.set_state(DestinationFlow.operator)
+    await message.answer(
+        get_message("destination_choose_operator", lang, phone=phone),
+        parse_mode="HTML",
+        reply_markup=clavier_operateurs("wd_dop", detect_operator(phone), lang),
+    )
+
+
+@router.callback_query(DestinationFlow.phone, F.data == "wd_dest_profile_phone")
+async def destination_numero_du_profil(callback: CallbackQuery, state: FSMContext):
+    lang = await _withdraw_language(callback.from_user.id)
+    phone = (await state.get_data()).get("destination_profile_phone")
+    if phone is None:
+        await callback.answer()
+        return
+    await _ask_operator(callback.message, state, phone, lang)
+    await callback.answer()
+
+
+@router.message(DestinationFlow.phone)
+async def destination_numero_recu(message: Message, state: FSMContext):
+    lang = await _withdraw_language(message.from_user.id)
+    phone = normalize_phone(message.text)
+    if phone is None:
+        await message.answer(get_message("money_error_invalid_phone", lang), parse_mode="HTML")
+        return
+    await _ask_operator(message, state, phone, lang)
+
+
+@router.callback_query(DestinationFlow.operator, F.data.startswith("wd_dop_"))
+async def destination_operateur_recu(callback: CallbackQuery, state: FSMContext):
+    lang = await _withdraw_language(callback.from_user.id)
+    data = await state.get_data()
+    try:
+        await add_payout_destination(
+            callback.from_user.id, data["destination_phone"], callback.data.removeprefix("wd_dop_")
+        )
+    except BackendUnavailable:
+        # Saisie gardée : la personne réessaie le même bouton.
+        await callback.answer(get_message("service_unavailable", lang), show_alert=True)
+        return
+    except MoneyRefused as error:
+        key = f"money_error_{error.code}"
+        await state.clear()
+        await callback.message.edit_text(
+            get_message(key if key in MESSAGES["fr"] else "money_error_generic", lang), parse_mode="HTML"
+        )
+        await callback.answer()
+        return
+    # Le détail (et l'avertissement « ce n'est pas vous ? ») arrive par la
+    # notification du backend, une seule fois.
+    await callback.message.edit_text(get_message("destination_sent", lang), parse_mode="HTML")
+    await callback.answer()
+    if "withdraw_amount" in data:
+        # Ajouté pendant un retrait : on reprend le choix du numéro.
+        await _show_destinations(callback.message, state, lang, callback.from_user.id)
+    else:
+        await state.clear()
+        await _show_my_numbers(callback.message, lang, callback.from_user.id, edit=False)

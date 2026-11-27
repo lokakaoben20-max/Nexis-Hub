@@ -21,6 +21,7 @@ from backend.app import (
     app_sessions,
     conditions,
     crud,
+    destinations,
     evenements,
     fichiers,
     idempotency,
@@ -37,7 +38,7 @@ from backend.app import (
     transactions,
 )
 from backend.app.database import SessionLocal
-from backend.app.models import BotMission, BotQuote, ChannelIdentity, BotReview, PaymentIntent, Payout, ProviderProfile, ProviderServiceRequest, StoredFile
+from backend.app.models import BotMission, BotQuote, ChannelIdentity, BotReview, PaymentIntent, Payout, PayoutDestination, ProviderProfile, ProviderServiceRequest, StoredFile
 
 load_dotenv()
 
@@ -454,8 +455,14 @@ class PaymentIntentPayload(BaseModel):
 class PayoutPayload(BaseModel):
     amount: float
     currency: str
-    phone: str
-    operator: str
+    # Numéro enregistré du compte (`/api/bot/payout-destinations`) : un
+    # retrait ne prend jamais un numéro saisi pour lui seul.
+    destination_id: int
+
+
+class PayoutDestinationPayload(BaseModel):
+    operator: str = Field(max_length=20)
+    phone: str = Field(max_length=32)
 
 
 class PayoutDecisionPayload(BaseModel):
@@ -1483,9 +1490,22 @@ def _intent_to_dict(intent: PaymentIntent) -> dict:
     }
 
 
+def _destination_to_dict(destination: PayoutDestination) -> dict:
+    return {
+        "id": destination.id,
+        "account_id": destination.account_id,
+        "kind": destination.kind,
+        "operator": destination.operator,
+        "phone": destination.phone,
+        "status": destination.status,
+        "usable_after": destination.usable_after.isoformat() if destination.usable_after else None,
+    }
+
+
 def _payout_to_dict(payout: Payout) -> dict:
     return {
         "id": payout.id,
+        "destination_id": payout.destination_id,
         "reference": payout.reference,
         "status": payout.status,
         "requested_by_telegram_id": payout.requested_by_telegram_id,
@@ -1588,8 +1608,44 @@ def request_payout(payload: PayoutPayload, actor: Actor = Depends(current_actor)
             account_id=_actor_account(db, actor, missing="insufficient_balance", http_status=409),
             amount=payload.amount,
             currency=payload.currency,
-            phone=payload.phone,
+            destination_id=payload.destination_id,
+        )
+    )
+
+
+def _destination_call(operation):
+    with SessionLocal() as db:
+        try:
+            destination = operation(db)
+        except ledger.MoneyError as error:
+            db.rollback()
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+        return {"status": "ok", "destination": _destination_to_dict(destination)}
+
+
+@router.get("/api/bot/payout-destinations")
+@terms_exempt
+def list_payout_destinations(actor: Actor = Depends(current_actor)):
+    """Numéros de retrait enregistrés par la personne."""
+    with SessionLocal() as db:
+        account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
+        found = destinations.active_destinations(db, account_id) if account_id is not None else []
+        return {"status": "ok", "destinations": [_destination_to_dict(destination) for destination in found]}
+
+
+@router.post("/api/bot/payout-destinations")
+@terms_exempt
+def add_payout_destination(payload: PayoutDestinationPayload, actor: Actor = Depends(current_actor)):
+    """Le tout premier numéro de retrait seulement : ajouter un autre numéro
+    ou en retirer un se fait dans l'application (`destination_change_in_app`)."""
+    return _destination_call(
+        lambda db: destinations.add_destination(
+            db,
+            # Sans compte, il n'y a pas d'argent à retirer.
+            account_id=_actor_account(db, actor, missing="insufficient_balance", http_status=409),
             operator=payload.operator,
+            phone=payload.phone,
+            first_only=True,
         )
     )
 
