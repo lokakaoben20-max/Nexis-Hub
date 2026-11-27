@@ -4,7 +4,7 @@ deux exécutions simultanées sont dans `taches.py`."""
 import logging
 from datetime import datetime, timedelta
 
-from backend.app import app_sessions, crud, evenements, idempotency, ledger, mobile_money, notifications, reconciliation
+from backend.app import app_auth, app_sessions, crud, evenements, idempotency, ledger, mobile_money, notifications, reconciliation
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, Payout
 
@@ -249,6 +249,16 @@ def purge_request_nonces() -> int:
     db = SessionLocal()
     try:
         return app_sessions.purge_request_nonces(db)
+    finally:
+        db.close()
+
+
+def purge_login_failures() -> int:
+    """Efface les codes de connexion faux de plus d'une heure (le blocage
+    d'un numéro n'en lit que 25 minutes)."""
+    db = SessionLocal()
+    try:
+        return app_auth.purge_login_failures(db)
     finally:
         db.close()
 

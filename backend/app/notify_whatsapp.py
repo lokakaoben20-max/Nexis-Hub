@@ -306,6 +306,27 @@ def _outcome(response: httpx.Response, *, template: bool) -> notifications.Outco
     return notifications.Outcome("refused", error=error)
 
 
+# --- Code de connexion de l'app ------------------------------------------------------
+
+
+def send_login_code(bsuid: str, code: str, lang: str) -> notifications.Outcome:
+    """Code de connexion de l'app, en réponse au message que la personne
+    vient d'envoyer depuis le lien de l'app (fenêtre ouverte : message libre,
+    sans modèle). Envoyé par le backend, hors de la table `notifications` et
+    hors de la réponse rendue au service : le code n'est écrit nulle part en
+    clair, ni en base ni dans un journal. Il part à l'identité WhatsApp
+    (BSUID) qui vient d'écrire, jamais à un numéro."""
+
+    body = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "recipient": bsuid,
+        "type": "text",
+        "text": {"body": whatsapp_text(get_message("app_login_code", lang, code=code)), "preview_url": False},
+    }
+    return WhatsAppTransport()._post(body, template=False)
+
+
 # --- Statuts relayés par le service WhatsApp -------------------------------------------
 
 

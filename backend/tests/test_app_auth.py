@@ -50,7 +50,7 @@ def challenge(db, phone=PHONE, device=DEVICE, now=NOW, **kwargs):
 
 def telegram_code(db, created, telegram_id=601, phone=PHONE, now=NOW):
     return app_auth.issue_code_for_telegram_contact(
-        db, start_token=created.telegram_start_token, telegram_id=telegram_id, contact_phone=phone, now=now
+        db, start_token=created.start_token, telegram_id=telegram_id, contact_phone=phone, now=now
     )
 
 
@@ -105,7 +105,10 @@ def test_without_a_strong_hmac_key_no_challenge_is_created(db, monkeypatch):
     assert db.query(models.LoginChallenge).count() == 0
 
 
-def test_whatsapp_codes_are_refused_until_the_whatsapp_sender_exists(db):
+def test_whatsapp_codes_are_refused_until_the_whatsapp_sender_exists(db, monkeypatch):
+    """Sans expéditeur WhatsApp configuré (test_app_auth_whatsapp.py : avec)."""
+    for name in ("WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_CALLBACK_KEY"):
+        monkeypatch.delenv(name, raising=False)
     refused(
         "delivery_unavailable",
         app_auth.create_challenge,
@@ -131,10 +134,10 @@ def test_an_unknown_number_gives_a_signup_challenge_with_a_start_link(db):
 
     row = stored(db, created)
     assert (row.purpose, row.account_id, row.code_hash) == ("signup", None, None)
-    assert created.telegram_start_token and len(created.telegram_start_token) == 32
-    assert row.telegram_start_hash != created.telegram_start_token  # jamais en clair
+    assert created.start_token and len(created.start_token) == 32
+    assert row.telegram_start_hash != created.start_token  # jamais en clair
     assert created.expires_at == NOW + timedelta(minutes=10)
-    assert len(app_auth.telegram_start_payload(created.telegram_start_token)) <= 64
+    assert len(app_auth.telegram_start_payload(created.start_token)) <= 64
 
 
 def test_a_proven_number_gives_a_login_challenge_for_its_account(db):
@@ -476,7 +479,7 @@ def test_the_bot_route_returns_the_code_for_the_sender(backend):
 
     response = client.post(
         "/api/bot/app-login/telegram-contact",
-        json={"start_token": created.telegram_start_token, "phone": PHONE},
+        json={"start_token": created.start_token, "phone": PHONE},
         headers=_as(601),
     )
 

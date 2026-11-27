@@ -21,6 +21,8 @@ from backend.app import app_auth, app_sessions, ledger, models
 from backend.tests import profils_de_test
 
 NOW = datetime(2026, 11, 7, 8, 0, 0)
+# Une nouvelle demande pour le même numéro attend 60 s.
+LATER = NOW + timedelta(minutes=1)
 PHONE = "+243810000001"
 
 
@@ -66,7 +68,7 @@ def code_for(db, phone, telegram_id=601, number=PHONE, now=NOW):
         db, phone=number, delivery="telegram", device_key_thumbprint=phone.thumbprint, now=now
     )
     issued = app_auth.issue_code_for_telegram_contact(
-        db, start_token=created.telegram_start_token, telegram_id=telegram_id, contact_phone=number, now=now
+        db, start_token=created.start_token, telegram_id=telegram_id, contact_phone=number, now=now
     )
     return created.public_id, issued.code
 
@@ -184,7 +186,7 @@ def test_a_signature_made_for_another_challenge_is_refused(db):
     phone = Phone()
     public_id, code = code_for(db, phone)
 
-    refused("invalid_signature", sign_in, db, phone, signature=phone.sign(app_sessions.login_message("autre")))
+    refused("invalid_signature", sign_in, db, phone, now=LATER, signature=phone.sign(app_sessions.login_message("autre")))
 
 
 def test_a_code_cannot_be_used_with_a_key_other_than_the_one_that_asked(db):
@@ -211,7 +213,7 @@ def test_a_wrong_code_creates_no_device(db):
     public_id, code = code_for(db, phone)
     wrong = f"{(int(code) + 1) % 1_000_000:06d}"
 
-    refused("invalid_code", sign_in, db, phone, challenge_public_id=public_id, code=wrong,
+    refused("invalid_code", sign_in, db, phone, now=LATER, challenge_public_id=public_id, code=wrong,
             signature=phone.sign(app_sessions.login_message(public_id)))
 
     assert db.query(models.Device).count() == 0

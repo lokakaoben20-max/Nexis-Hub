@@ -31,6 +31,7 @@ reste recommence à l'étape utile.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from messages import get_message
@@ -104,10 +105,31 @@ class Conversation:
         sans rien garder à rejouer."""
         if message.kind == meta.IGNORED:
             return Outcome(state=state)
+        login = _app_login_message(message)
+        if login is not None:
+            return await self._app_login(message, state, *login)
         profile = await self.backend.profile(message.bsuid)
         if profile.get("client"):
             return await self._client(message, state, profile)
         return await self._signup(message, state, profile)
+
+    # --- Connexion à l'application ------------------------------------------------
+
+    async def _app_login(self, message: meta.Incoming, state: dict, start: str, lang: str) -> Outcome:
+        """Message envoyé depuis le lien de l'app : le backend vérifie le
+        jeton, l'identité qui écrit et son numéro (donné par Meta), puis
+        envoie lui-même le code. Rien de plus à dire si tout va bien ; la
+        conversation en cours reste où elle était."""
+        try:
+            answer = await self.backend.app_login(
+                message.bsuid, message.message_id, start_token=start, phone=message.phone, language=lang
+            )
+        except Refused as refusal:
+            key = APP_LOGIN_REFUSALS.get(refusal.code, "app_login_unavailable")
+            return Outcome([meta.Text(text(key, lang))], state)
+        if answer.get("sent") is False:
+            return Outcome([meta.Text(text("app_login_unavailable", lang))], state)
+        return Outcome([], state)
 
     # --- Inscription -------------------------------------------------------------
 
@@ -293,6 +315,34 @@ class Conversation:
             return Outcome([meta.Text(text("terms_unavailable", lang))], {})
         logger.warning("Refus du backend non prévu ici : %s", refusal.code)
         return Outcome([meta.Text(text("wa_error", lang))], state)
+
+
+# Jeton du lien de l'app, dans le message déjà écrit (`app_` + 32 caractères,
+# backend/app/app_auth.py). Seul le message préparé, tel quel, compte : un
+# jeton glissé dans un autre texte (lien piégé) n'est pas une connexion.
+_APP_LOGIN_START = re.compile(r"(?<![A-Za-z0-9_-])app_([A-Za-z0-9_-]{32})(?![A-Za-z0-9_-])")
+APP_LOGIN_REFUSALS = {
+    "link_invalid": "app_login_link_invalid",
+    "phone_mismatch": "app_login_phone_mismatch",
+    "phone_conflict": "app_login_phone_conflict",
+    "phone_hidden": "app_login_phone_hidden",
+    "too_many_attempts": "app_login_locked",
+}
+
+
+def _app_login_message(message: meta.Incoming) -> tuple[str, str] | None:
+    """(jeton, langue) si le message est exactement celui que l'app a préparé,
+    dans l'une des trois langues."""
+    if message.kind != meta.TEXT or not message.text:
+        return None
+    body = message.text.strip()
+    found = _APP_LOGIN_START.search(body)
+    if found is None:
+        return None
+    for lang in LANGUAGES:
+        if body == get_message("wa_app_login_prefill", lang, start=found.group(0)):
+            return found.group(1), lang
+    return None
 
 
 def _language(value) -> str:
