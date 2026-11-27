@@ -12,7 +12,7 @@ a été fusionné ici).
 
 ## État actuel
 
-- Le dépôt à jour est la branche d'intégration `feature/mobile-money` (HEAD du 2026-11-20 : `fed4a85a`). Les branches de travail doivent partir de cette base, pas de `main`, `develop/nexis-unification` ou `agent/frontend-ux`.
+- Le dépôt à jour est la branche d'intégration `feature/mobile-money` (la branche avance à chaque PR fusionnée : toujours lire son HEAD réel avec `git log`). Les branches de travail doivent partir de cette base, pas de `main`, `develop/nexis-unification` ou `agent/frontend-ux`.
 - Le backend V5 est la source de vérité métier et financière dans PostgreSQL. `db.py` a été supprimé le 2026-11-14.
 - Le bot et la Mini App utilisent Redis pour les états de conversation. Le dépôt fournit Postgres 17 et Redis 7 dans `docker-compose.yml`.
 - Les migrations du backend sont gérées par Alembic. Toujours exécuter `python -m alembic upgrade head` avant de lancer le backend.
@@ -159,6 +159,7 @@ hiérarchie, de libellés et de retour après une action, selon les capacités d
 - Ne crée pas de branche ou de worktree "de service" sans nom explicite validé par l'utilisateur
   (évite les noms auto-générés type `xxx-xxx-xxx`).
 - Ne pousse jamais directement sur `main`. Travaille sur une branche (`feature/...`), ouvre une PR.
+- **Commits : pas de ligne `Co-Authored-By` ni de nom de modèle** (décision de Ben, 2026-11-27). Les commits restent au seul nom de Ben. Cela vaut aussi pour les descriptions de PR et les commentaires de code.
 
 ## Profils : le backend est la seule mémoire (chantier profils terminé le 2026-11-14)
 
