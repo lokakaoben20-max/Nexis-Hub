@@ -142,6 +142,36 @@ class Backend:
     async def payment_intent(self, bsuid: str, intent_id: int) -> dict:
         return await self._call("GET", f"/api/bot/payment-intents/{intent_id}", bsuid)
 
+    # --- Suivi d'une demande payée (étape 7) ---------------------------------------
+
+    async def presence(self, bsuid: str, mission_id: int) -> dict:
+        """État de l'arrivée ; le code de présence n'est donné qu'au client."""
+        return await self._call("GET", f"/api/bot/missions/{mission_id}/presence", bsuid)
+
+    async def presence_confirm(self, bsuid: str, key: str, mission_id: int) -> dict:
+        return await self._call("POST", f"/api/bot/missions/{mission_id}/presence/confirm", bsuid, key=key)
+
+    async def presence_not_yet(self, bsuid: str, key: str, mission_id: int) -> dict:
+        return await self._call("POST", f"/api/bot/missions/{mission_id}/presence/not-yet", bsuid, key=key)
+
+    async def presence_wrong_person(self, bsuid: str, key: str, mission_id: int) -> dict:
+        """Gèle l'argent : un litige est ouvert."""
+        return await self._call("POST", f"/api/bot/missions/{mission_id}/presence/wrong-person", bsuid, key=key)
+
+    async def confirm_completion(self, bsuid: str, key: str, mission_id: int) -> dict:
+        """Paie le prestataire, une seule fois."""
+        return await self._call("POST", f"/api/bot/missions/{mission_id}/confirm", bsuid, key=key)
+
+    async def open_dispute(self, bsuid: str, key: str, mission_id: int, *, reason: str) -> dict:
+        return await self._call("POST", f"/api/bot/missions/{mission_id}/dispute", bsuid, body={"reason": reason}, key=key)
+
+    async def review(self, bsuid: str, key: str, mission_id: int, *, rating: int, comment: str | None) -> dict:
+        body = {"mission_id": mission_id, "rating": rating, "comment": comment}
+        return await self._call("POST", "/api/bot/reviews", bsuid, body=body, key=key)
+
+    async def wallet_history(self, bsuid: str, limit: int = 5) -> dict:
+        return await self._call("GET", f"/api/me/wallet/history?limit={limit}", bsuid)
+
 
 def _is_refusal(answer) -> bool:
     """Un refus métier peut porter un code 5xx (ex. 503 `terms_unavailable`) :

@@ -36,7 +36,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from backend.app import evenements, ledger
+from backend.app import evenements, ledger, transactions
 from backend.app.models import BotMission, MissionPresence
 
 logger = logging.getLogger(__name__)
@@ -148,7 +148,7 @@ def confirm_by_client(db: Session, mission_id: int, client_account_id: int) -> P
     _confirm(db, mission, presence, "client")
     # Le client voit la réponse dans son canal ; le prestataire est prévenu.
     evenements.presence_confirmed(db, mission, tell_client=False, tell_provider=True)
-    db.commit()
+    transactions.commit(db)
     return PresenceResult(mission, presence, changed=True, events=["confirmed"])
 
 
@@ -202,7 +202,7 @@ def answer_not_yet(db: Session, mission_id: int, client_account_id: int) -> Pres
     presence.not_yet_at = _utcnow()
     if first_answer:
         evenements.presence_not_yet(db, mission, presence.not_yet_at)
-    db.commit()
+    transactions.commit(db)
     return PresenceResult(mission, presence, changed=first_answer, events=["not_yet"] if first_answer else [])
 
 
@@ -221,7 +221,7 @@ def report_wrong_person(db: Session, mission_id: int, client_account_id: int) ->
     # (payée, pas réglée, état permis) ; un refus annule tout.
     evenements.presence_wrong_person(db, mission)
     mission = ledger.open_dispute(db, mission_id, client_account_id, WRONG_PERSON_REASON, notify_provider=False)
-    db.commit()
+    transactions.commit(db)
     return PresenceResult(mission, db.get(MissionPresence, mission_id), changed=True, events=["wrong_person"])
 
 

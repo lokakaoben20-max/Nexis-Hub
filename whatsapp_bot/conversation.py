@@ -19,7 +19,8 @@ Parcours d'une personne inconnue :
 Un client inscrit voit le menu (liste). « Nouvelle demande » crée une
 mission pas à pas (demande.py, étape 5) ; « Mes demandes » montre les
 demandes et leurs devis, à accepter ou refuser (devis.py, étape 6). Le
-paiement suit (étape 6, seconde partie) ; « Mon solde » arrive à l'étape 7.
+paiement suit (étape 6, seconde partie), puis le suivi d'une demande payée
+et « Mon solde » (suivi.py, étape 7).
 
 Un bouton d'une ancienne conversation (étape oubliée après 24 h, ou Redis
 vidé) n'est jamais rejeté en silence : la langue choisie est reprise, le
@@ -32,7 +33,7 @@ import logging
 from dataclasses import dataclass, field
 
 from messages import get_message
-from whatsapp_bot import demande, devis, meta, paiement
+from whatsapp_bot import demande, devis, meta, paiement, suivi
 from whatsapp_bot.backend import Backend, Refused
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,7 @@ TERMS_ACCEPT = "terms:accept"
 TERMS_DECLINE = "terms:decline"
 MENU_NEW_REQUEST = "menu:new_request"
 MENU_MISSIONS = "menu:missions"
+MENU_WALLET = "menu:wallet"
 MENU_LANGUAGE = "menu:language"
 MENU_PROVIDER = "menu:provider"
 MENU_HELP = "menu:help"
@@ -93,6 +95,7 @@ class Conversation:
         self.missions = demande.MissionFlow(self)
         self.quotes = devis.QuotesFlow(self)
         self.payments = paiement.PaymentFlow(self)
+        self.follow = suivi.FollowFlow(self)
 
     async def handle(self, message: meta.Incoming, state: dict) -> Outcome:
         """Peut lever `BackendUnavailable` : l'appelant prévient la personne,
@@ -193,6 +196,8 @@ class Conversation:
             return Outcome(*await self.missions.start(message, lang))
         if choice == MENU_MISSIONS:
             return Outcome(*await self.quotes.missions(message, lang, name))
+        if choice == MENU_WALLET:
+            return Outcome(*await self.follow.wallet(message, lang, name))
         if choice == MENU_LANGUAGE:
             return Outcome([_language_buttons(text("wa_choose_language", lang))], {"step": STEP_CHANGE_LANGUAGE})
         if choice == MENU_PROVIDER:
@@ -203,6 +208,10 @@ class Conversation:
             # Un appui de paiement : comme un devis, il laisse la demande en
             # cours de saisie.
             return Outcome(*await self.payments.handle(message, lang, name))
+        if suivi.handles(choice, state):
+            # Suivi d'une demande payée (arrivée, fin, problème, avis) :
+            # depuis « Mes demandes » ou une notification.
+            return Outcome(*await self.follow.handle(message, state, lang, name))
         if devis.handles(choice, state):
             # Une demande, ou un devis (depuis « Mes demandes » ou une
             # notification) : la demande en cours de saisie, s'il y en a
@@ -224,6 +233,7 @@ class Conversation:
         rows = (
             (MENU_NEW_REQUEST, text("wa_menu_new_request", lang), text("wa_menu_new_request_hint", lang)),
             (MENU_MISSIONS, text("wa_menu_missions", lang), text("wa_menu_missions_hint", lang)),
+            (MENU_WALLET, text("wa_menu_wallet", lang), text("wa_menu_wallet_hint", lang)),
             (MENU_LANGUAGE, text("wa_menu_language", lang), text("wa_menu_language_hint", lang)),
             (MENU_PROVIDER, text("wa_menu_provider", lang), text("wa_menu_provider_hint", lang)),
             (MENU_HELP, text("wa_menu_help", lang), text("wa_menu_help_hint", lang)),

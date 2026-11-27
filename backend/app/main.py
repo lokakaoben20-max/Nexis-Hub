@@ -31,6 +31,7 @@ from backend.app import (
     profils,
     sante,
     service_keys,
+    transactions,
 )
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, BotQuote, BotReview, PaymentIntent, Payout, ProviderProfile, ProviderServiceRequest, StoredFile
@@ -313,7 +314,10 @@ def _run_idempotent(
         key = idempotency.check_key(key, required=actor.channel != ledger.TELEGRAM)
     except idempotency.IdempotencyError as error:
         raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
-    with SessionLocal() as db:
+    with SessionLocal() as db, transactions.deferring(db):
+        # Les règles écrites pour valider elles-mêmes (registre, arrivée,
+        # avis) n'écrivent ici que dans la transaction : une seule validation,
+        # avec la clé (backend/app/transactions.py).
         if key is None:
             result = action(db)
             db.commit()
@@ -1028,27 +1032,54 @@ def create_quote(payload: QuoteCreatePayload, actor: Actor = Depends(current_act
         return {"status": "ok", "quote": _quote_to_dict(quote, db), "mission": _mission_to_dict(db.get(BotMission, quote.mission_id))}
 
 
+# Refus d'un avis : texte pour Telegram (inchangé), code stable pour les
+# autres canaux.
+_REVIEW_REFUSALS = (
+    ("introuvable", "mission_not_found"),
+    ("associé", "not_mission_client"),
+    ("Aucun prestataire", "no_provider"),
+    ("1 et 5", "invalid_rating"),
+    ("déjà été évaluée", "already_reviewed"),
+)
+
+
 @router.post("/api/bot/reviews")
 @terms_exempt
-def create_review(payload: ReviewCreatePayload, actor: Actor = Depends(current_actor)):
-    with SessionLocal() as db:
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+@idempotent
+def create_review(
+    payload: ReviewCreatePayload,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    """Avis du client de la mission sur son prestataire, une fois par mission."""
+
+    def action(db) -> dict:
         try:
             review = crud.create_review(
                 db,
                 mission_id=payload.mission_id,
-                client_telegram_id=actor.telegram_id,
+                client_account_id=ledger.account_id_for(db, actor.channel, actor.external_id),
                 rating=payload.rating,
                 comment=payload.comment,
+                client_telegram_id=actor.telegram_id if actor.channel == ledger.TELEGRAM else None,
             )
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"status": "ok", "review": _review_to_dict(review)}
+            if actor.channel == ledger.TELEGRAM:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            code = next((code for words, code in _REVIEW_REFUSALS if words in str(exc)), "invalid_review")
+            raise HTTPException(status_code=400, detail={"code": code}) from exc
+        return jsonable_encoder(_for_channel(actor, {"status": "ok", "review": _review_to_dict(review)}))
+
+    return _run_idempotent(request, response, actor, idempotency_key, payload.model_dump(), action)
 
 
 # Identifiants Telegram : jamais montrés à un acteur d'un autre canal (un
 # client WhatsApp n'a rien à faire du Telegram d'un prestataire).
 _TELEGRAM_FIELDS = frozenset(
-    {"telegram_id", "provider_telegram_id", "alerted_provider_telegram_ids", "requested_by_telegram_id"}
+    {"telegram_id", "provider_telegram_id", "alerted_provider_telegram_ids", "requested_by_telegram_id", "client_telegram_id"}
 )
 
 
@@ -1127,6 +1158,9 @@ def list_mission_quotes(mission_id: int, actor: Actor = Depends(current_actor)):
                 "status": "ok",
                 "mission": _mission_to_dict(mission),
                 "quotes": [_quote_to_dict(quote, db) for quote in crud.mission_quotes(db, mission_id)],
+                # L'avis du client, s'il en a laissé un : « Noter » n'est
+                # proposé qu'une fois.
+                "review": _review_to_dict(review) if (review := crud.mission_review(db, mission_id)) else None,
             },
         )
 
@@ -1637,26 +1671,89 @@ def confirm_presence_by_code(
     )
 
 
+def _client_money_action(request: Request, response: Response, actor: Actor, key: str | None, body: dict, operation, view):
+    """Action du client sur sa mission (arrivée, fin, litige), au nom de
+    l'acteur. La décision, ses notifications et la clé d'idempotence
+    (WhatsApp) sont validées ensemble ; rejouée, elle rend la même réponse.
+    Refus : code stable et état de la mission, jamais à qui n'en est pas le
+    client."""
+
+    def action(db) -> dict:
+        try:
+            result = operation(db)
+        except ledger.MoneyError as error:
+            raise _for_channel_refusal(actor, _money_refusal(db, error)) from error
+        return jsonable_encoder(_for_channel(actor, view(db, result)))
+
+    return _run_idempotent(request, response, actor, key, body, action)
+
+
+def _client_presence_view(db, result) -> dict:
+    mission = db.get(BotMission, result.mission.mission_id)
+    return {
+        **_money_response(db, mission),
+        "presence": presence.presence_state(db, mission, "client"),
+        "client_asked": result.client_asked,
+    }
+
+
 @router.post("/api/bot/missions/{mission_id}/presence/confirm")
 @terms_exempt
-def confirm_presence_by_client(mission_id: int, actor: Actor = Depends(current_actor)):
-    return _presence_call(lambda db: presence.confirm_by_client(db, mission_id, _client_account(db, actor)), "client")
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+@idempotent
+def confirm_presence_by_client(
+    mission_id: int,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    return _client_money_action(
+        request, response, actor, idempotency_key, {},
+        lambda db: presence.confirm_by_client(db, mission_id, _client_account(db, actor)),
+        _client_presence_view,
+    )  # fmt: skip
 
 
 @router.post("/api/bot/missions/{mission_id}/presence/not-yet")
 @terms_exempt
-def presence_not_yet(mission_id: int, actor: Actor = Depends(current_actor)):
-    return _presence_call(lambda db: presence.answer_not_yet(db, mission_id, _client_account(db, actor)), "client")
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+@idempotent
+def presence_not_yet(
+    mission_id: int,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    return _client_money_action(
+        request, response, actor, idempotency_key, {},
+        lambda db: presence.answer_not_yet(db, mission_id, _client_account(db, actor)),
+        _client_presence_view,
+    )  # fmt: skip
 
 
 @router.post("/api/bot/missions/{mission_id}/presence/wrong-person")
 @terms_exempt
-def presence_wrong_person(mission_id: int, actor: Actor = Depends(current_actor)):
-    return _presence_call(lambda db: presence.report_wrong_person(db, mission_id, _client_account(db, actor)), "client")
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+@idempotent
+def presence_wrong_person(
+    mission_id: int,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    return _client_money_action(
+        request, response, actor, idempotency_key, {},
+        lambda db: presence.report_wrong_person(db, mission_id, _client_account(db, actor)),
+        _client_presence_view,
+    )  # fmt: skip
 
 
 @router.get("/api/bot/missions/{mission_id}/presence")
 @terms_exempt
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
 def get_presence(mission_id: int, actor: Actor = Depends(current_actor)):
     """État de l'arrivée. Le code de présence n'est donné qu'au client de la
     mission ; pour qui n'est ni client, ni prestataire choisi, ni admin : 404,
@@ -1687,20 +1784,43 @@ def finish_mission(mission_id: int, actor: Actor = Depends(current_actor)):
 
 @router.post("/api/bot/missions/{mission_id}/confirm")
 @terms_exempt
-def confirm_mission(mission_id: int, actor: Actor = Depends(current_actor)):
-    return _money_call(
-        lambda db: ledger.confirm_completion(db, mission_id, _actor_account(db, actor, missing="not_mission_client", http_status=403))
-    )
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+@idempotent
+def confirm_mission(
+    mission_id: int,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    """Le client confirme la fin : le prestataire est payé, une seule fois
+    (la libération est une phase unique du registre)."""
+    return _client_money_action(
+        request, response, actor, idempotency_key, {},
+        lambda db: ledger.confirm_completion(db, mission_id, _client_account(db, actor)),
+        _money_response,
+    )  # fmt: skip
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute")
 @terms_exempt
-def open_dispute(mission_id: int, payload: DisputeOpenPayload, actor: Actor = Depends(current_actor)):
-    return _money_call(
-        lambda db: ledger.open_dispute(
-            db, mission_id, _actor_account(db, actor, missing="not_mission_client", http_status=403), payload.reason
-        )
-    )
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+@idempotent
+def open_dispute(
+    mission_id: int,
+    payload: DisputeOpenPayload,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    """Le client signale un problème : les fonds sont gelés jusqu'à la
+    décision de l'équipe."""
+    return _client_money_action(
+        request, response, actor, idempotency_key, payload.model_dump(),
+        lambda db: ledger.open_dispute(db, mission_id, _client_account(db, actor), payload.reason),
+        _money_response,
+    )  # fmt: skip
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute/decide")
@@ -1942,6 +2062,7 @@ def get_my_wallet(actor: Actor = Depends(current_actor)):
 
 @router.get("/api/me/wallet/history")
 @terms_exempt
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
 def get_my_wallet_history(limit: int = 20, actor: Actor = Depends(current_actor)):
     """Derniers mouvements du wallet de l'acteur, et de lui seul."""
     with SessionLocal() as db:
