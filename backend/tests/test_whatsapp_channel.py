@@ -54,6 +54,10 @@ WHATSAPP_ROUTES = {
     ("POST", "/api/bot/missions/{mission_id}/dispute"),
     ("POST", "/api/bot/reviews"),
     ("GET", "/api/me/wallet/history"),
+    # Litige du client (étape 7b) : contester la décision, proposer un
+    # accord ; parité : test_whatsapp_litiges.py.
+    ("POST", "/api/bot/missions/{mission_id}/dispute/contest"),
+    ("POST", "/api/bot/missions/{mission_id}/dispute/offers"),
 }
 
 # Actions de prestataire : jamais depuis WhatsApp, refus explicite.

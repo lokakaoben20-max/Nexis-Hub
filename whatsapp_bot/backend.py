@@ -169,6 +169,18 @@ class Backend:
         body = {"mission_id": mission_id, "rating": rating, "comment": comment}
         return await self._call("POST", "/api/bot/reviews", bsuid, body=body, key=key)
 
+    # --- Litige (étape 7b) ------------------------------------------------------------
+
+    async def contest_dispute(self, bsuid: str, key: str, mission_id: int, *, reason: str) -> dict:
+        """Conteste la première décision de NexisHub, une fois, avant son exécution."""
+        return await self._call("POST", f"/api/bot/missions/{mission_id}/dispute/contest", bsuid, body={"reason": reason}, key=key)
+
+    async def propose_settlement(self, bsuid: str, key: str, mission_id: int, *, kind: str, percentage: int | None) -> dict:
+        """Proposition d'accord au prestataire ; les montants sont calculés
+        et figés par le backend."""
+        body = {"kind": kind, "provider_percentage": percentage}
+        return await self._call("POST", f"/api/bot/missions/{mission_id}/dispute/offers", bsuid, body=body, key=key)
+
     async def wallet_history(self, bsuid: str, limit: int = 5) -> dict:
         return await self._call("GET", f"/api/me/wallet/history?limit={limit}", bsuid)
 

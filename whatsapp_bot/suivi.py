@@ -73,7 +73,7 @@ class FollowFlow:
 
     # --- Dans « Mes demandes » -----------------------------------------------------
 
-    async def cards(self, bsuid: str, mission: dict, review: dict | None, lang: str) -> list:
+    async def cards(self, bsuid: str, mission: dict, review: dict | None, lang: str, money: dict | None = None) -> list:
         """Ce que le client peut faire maintenant, selon l'état de sa
         demande (lu au backend, jamais deviné)."""
         mission_id = mission["mission_id"]
@@ -88,7 +88,8 @@ class FollowFlow:
         if status == "completed" and review is None and mission.get("payment_status") == "released":
             return [meta.Buttons(body=text("wa_rate_offer", lang), buttons=((f"{RATE}{mission_id}", text("wa_btn_rate", lang)),))]
         if status == "disputed":
-            return [meta.Text(text("wa_follow_disputed", lang, reference=reference(mission_id)))]
+            # Décision à contester, accord à proposer (litige.py).
+            return self.conversation.disputes.cards(mission, money or {}, lang)
         return []
 
     def _presence_cards(self, mission_id: int, presence: dict, lang: str) -> list:

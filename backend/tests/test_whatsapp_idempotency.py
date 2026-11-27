@@ -188,6 +188,8 @@ def test_every_write_open_to_whatsapp_is_idempotent(backend):
         ("POST", "/api/bot/missions"),
         ("POST", "/api/bot/missions/{mission_id}/confirm"),
         ("POST", "/api/bot/missions/{mission_id}/dispute"),
+        ("POST", "/api/bot/missions/{mission_id}/dispute/contest"),
+        ("POST", "/api/bot/missions/{mission_id}/dispute/offers"),
         ("POST", "/api/bot/missions/{mission_id}/fund"),
         ("POST", "/api/bot/missions/{mission_id}/payment-intents"),
         ("POST", "/api/bot/missions/{mission_id}/presence/confirm"),

@@ -119,7 +119,7 @@ def test_not_this_person_asks_first_then_freezes_the_money(bench):
             assert _mission(bench.main).status == "disputed"
             assert _settlements(bench.main, mission_id) == []
             shown = await _view(bench, mission_id)
-            assert any(message.text.startswith("⚖️") for message in shown if message.kind == "text")
+            assert any(message.text.startswith("⚖️") for message in shown if message.kind in ("text", "button"))
             late = await bench.tap(f"{suivi.DONE_OK}{mission_id}")
             assert late[0].text == get_message("wa_follow_changed", "fr")
             assert _settlements(bench.main, mission_id) == []

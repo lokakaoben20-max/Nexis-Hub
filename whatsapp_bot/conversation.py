@@ -20,7 +20,8 @@ Un client inscrit voit le menu (liste). « Nouvelle demande » crée une
 mission pas à pas (demande.py, étape 5) ; « Mes demandes » montre les
 demandes et leurs devis, à accepter ou refuser (devis.py, étape 6). Le
 paiement suit (étape 6, seconde partie), puis le suivi d'une demande payée
-et « Mon solde » (suivi.py, étape 7).
+et « Mon solde » (suivi.py, étape 7), puis le litige : contester la décision,
+proposer un accord (litige.py, étape 7b).
 
 Un bouton d'une ancienne conversation (étape oubliée après 24 h, ou Redis
 vidé) n'est jamais rejeté en silence : la langue choisie est reprise, le
@@ -33,7 +34,7 @@ import logging
 from dataclasses import dataclass, field
 
 from messages import get_message
-from whatsapp_bot import demande, devis, meta, paiement, suivi
+from whatsapp_bot import demande, devis, litige, meta, paiement, suivi
 from whatsapp_bot.backend import Backend, Refused
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,7 @@ class Conversation:
         self.quotes = devis.QuotesFlow(self)
         self.payments = paiement.PaymentFlow(self)
         self.follow = suivi.FollowFlow(self)
+        self.disputes = litige.DisputeFlow(self)
 
     async def handle(self, message: meta.Incoming, state: dict) -> Outcome:
         """Peut lever `BackendUnavailable` : l'appelant prévient la personne,
@@ -208,6 +210,9 @@ class Conversation:
             # Un appui de paiement : comme un devis, il laisse la demande en
             # cours de saisie.
             return Outcome(*await self.payments.handle(message, lang, name))
+        if litige.handles(choice, state):
+            # Litige : contester la décision, proposer un accord.
+            return Outcome(*await self.disputes.handle(message, state, lang, name))
         if suivi.handles(choice, state):
             # Suivi d'une demande payée (arrivée, fin, problème, avis) :
             # depuis « Mes demandes » ou une notification.
