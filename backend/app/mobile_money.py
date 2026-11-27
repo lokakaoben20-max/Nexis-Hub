@@ -109,8 +109,7 @@ def create_intent(
     amount = ledger.payment_amounts(terms["amount"], terms["urgent"])["total"]
     if terms["provider_account_id"] == client_account_id:
         raise MoneyError("provider_is_client", mission=mission)
-    if ledger.telegram_id_of(db, terms["provider_account_id"]) is None:
-        raise MoneyError("provider_not_found", 404, mission)
+    ledger.require_provider_profile(db, mission, terms["provider_account_id"])
     if ledger.mission_operation(db, mission_id, ledger.FUNDING) is not None:
         raise MoneyError("already_paid", mission=mission)
     if mission.status not in ledger.FUNDABLE_STATUSES or mission.payment_status not in (None, "unpaid"):

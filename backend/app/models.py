@@ -25,11 +25,11 @@ class BotMission(Base):
             " OR (destination_latitude IS NOT NULL AND destination_longitude IS NOT NULL AND destination_landmark IS NOT NULL)",
             name="ck_bot_missions_destination_complete",
         ),
-        # Le client d'une mission est toujours connu : son compte Nexis (tout
-        # canal), ou au moins son Telegram pour les missions d'avant les comptes.
+        # Un prestataire nommé par son Telegram (colonne d'affichage du bot)
+        # a toujours son compte : c'est le compte que le règlement crédite.
         CheckConstraint(
-            "telegram_id IS NOT NULL OR client_account_id IS NOT NULL",
-            name="ck_bot_missions_client_known",
+            "provider_telegram_id IS NULL OR provider_account_id IS NOT NULL",
+            name="ck_bot_missions_provider_account",
         ),
     )
 
@@ -39,6 +39,9 @@ class BotMission(Base):
     # Telegram du client, pour un client Telegram seulement : un client
     # WhatsApp n'en a pas. Le client est `client_account_id`.
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    # Telegram du prestataire, pour l'affichage du bot Telegram seulement : un
+    # prestataire peut ne pas avoir de Telegram (entreprise, app). Le
+    # prestataire est `provider_account_id`.
     provider_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     service: Mapped[str] = mapped_column(String(255))
     commune: Mapped[str] = mapped_column(String(255))
@@ -70,10 +73,10 @@ class BotMission(Base):
     release_after: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     # Devis accepté (bot_quotes.id) sur lequel la mission a été payée.
     accepted_quote_ref: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Comptes Nexis (indépendants du canal) du client et du prestataire, fixés
-    # au paiement : le règlement crédite ces comptes, quel que soit le canal
-    # (Telegram aujourd'hui, WhatsApp ou l'app demain).
-    client_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
+    # Comptes Nexis (indépendants du canal) du client et du prestataire : le
+    # client dès la création, le prestataire au choix du devis. Le règlement
+    # crédite ces comptes, quel que soit le canal.
+    client_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
     provider_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     # Mise à jour à chaque changement de `status` (voir crud._touch_status) — sert
@@ -160,8 +163,10 @@ class BotQuote(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     mission_id: Mapped[int] = mapped_column(ForeignKey("bot_missions.mission_id"), index=True)
-    provider_telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
-    provider_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    # Le prestataire du devis est son compte. Son Telegram n'est gardé que
+    # pour l'affichage du bot Telegram, quand il en a un.
+    provider_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    provider_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False, index=True)
     amount: Mapped[float] = mapped_column(Float)
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     delay_hours: Mapped[int] = mapped_column(Integer)
@@ -193,21 +198,15 @@ class BotTransaction(Base):
 
 class BotReview(Base):
     __tablename__ = "bot_reviews"
-    __table_args__ = (
-        CheckConstraint(
-            "client_telegram_id IS NOT NULL OR client_account_id IS NOT NULL",
-            name="ck_bot_reviews_client_known",
-        ),
-    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     mission_id: Mapped[int] = mapped_column(ForeignKey("bot_missions.mission_id"), unique=True, index=True)
-    # Un client WhatsApp n'a pas de Telegram : l'auteur est toujours connu
-    # par son compte (ou, avant les comptes, par son Telegram).
+    # L'auteur et le prestataire noté sont leurs comptes. Les colonnes
+    # Telegram ne servent qu'à l'affichage du bot Telegram, quand il y en a un.
     client_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
-    provider_telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
-    client_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
-    provider_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
+    provider_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    client_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False, index=True)
+    provider_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False, index=True)
     rating: Mapped[int] = mapped_column(Integer)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

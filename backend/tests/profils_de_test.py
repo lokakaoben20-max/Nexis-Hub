@@ -92,3 +92,18 @@ def provider_of(db, telegram_id: int):
 
 def client_of(db, telegram_id: int):
     return profils.client_profile(db, ledger.account_id_for(db, ledger.TELEGRAM, telegram_id))
+
+
+def provider_without_telegram(db, full_name: str = "Entreprise sans Telegram", **options):
+    """Prestataire vérifié dont le compte n'a aucune identité Telegram (une
+    entreprise, un utilisateur de l'app) : il est désigné par son compte."""
+    ensure_catalogue(db)
+    account = ledger.NexisAccount()
+    db.add(account)
+    db.flush()
+    services = options.pop("services", ("service_plomberie",))
+    communes = options.pop("communes", ("Gombe",))
+    profils.register_provider(db, account.id, full_name=full_name, phone_number=None, services=list(services), communes=list(communes))
+    profile = profils.verify_provider(db, account.id)
+    db.commit()
+    return profile

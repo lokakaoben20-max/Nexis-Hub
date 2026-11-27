@@ -30,8 +30,10 @@ def _whatsapp_mission(backend):
 def _review(connection, mission_id, *, telegram_id=None, with_account=True):
     connection.execute(
         text(
-            "INSERT INTO bot_reviews (mission_id, client_telegram_id, provider_telegram_id, client_account_id, rating,"
-            " created_at) SELECT mission_id, :telegram_id, 7, CASE WHEN :with_account THEN client_account_id END, 5,"
+            # Prestataire : un compte existant quelconque (seul l'auteur est en cause ici).
+            "INSERT INTO bot_reviews (mission_id, client_telegram_id, provider_telegram_id, client_account_id,"
+            " provider_account_id, rating, created_at) SELECT mission_id, :telegram_id, 7,"
+            " CASE WHEN :with_account THEN client_account_id END, client_account_id, 5,"
             " now() FROM bot_missions WHERE mission_id = :mission_id"
         ),
         {"mission_id": mission_id, "telegram_id": telegram_id, "with_account": with_account},
@@ -40,7 +42,7 @@ def _review(connection, mission_id, *, telegram_id=None, with_account=True):
 
 def test_a_review_always_names_its_author(backend, engine):
     mission_id = _whatsapp_mission(backend)
-    with pytest.raises(IntegrityError, match="ck_bot_reviews_client_known"):
+    with pytest.raises(IntegrityError, match="client_account_id"):
         with engine.begin() as connection:
             _review(connection, mission_id, with_account=False)
     with engine.begin() as connection:
