@@ -294,6 +294,10 @@ class ChannelIdentity(Base):
     # l'expéditeur : une identité créée depuis un message reçu est vérifiée.
     verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # WhatsApp : heure (UTC) du dernier message reçu de la personne, d'après
+    # Meta. Ouvre la fenêtre de 24 h où un message libre est permis ; en
+    # dehors, seul un modèle validé par Meta part (backend/app/notify_whatsapp.py).
+    last_inbound_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class MoneyOperation(Base):
@@ -1143,3 +1147,7 @@ class Notification(Base):
     # Identifiant du message chez Telegram ou Meta (`wamid`), une fois accepté.
     provider_message_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # WhatsApp : Meta a refusé le message libre (fenêtre de 24 h fermée,
+    # erreur 131047, connue par le webhook de statut) : le prochain envoi est
+    # un modèle validé.
+    template_required: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))

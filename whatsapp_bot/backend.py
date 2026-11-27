@@ -13,6 +13,9 @@ n'est gardé pour être rejoué plus tard.
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 import httpx
 
 TIMEOUT_SECONDS = 10.0
@@ -184,6 +187,29 @@ class Backend:
     async def wallet_history(self, bsuid: str, limit: int = 5) -> dict:
         return await self._call("GET", f"/api/me/wallet/history?limit={limit}", bsuid)
 
+    # --- Notifications (étape 8) -------------------------------------------------------
+
+    async def seen(self, bsuid: str, message_id: str, timestamp: int) -> dict:
+        """La personne vient d'écrire : ouvre la fenêtre de 24 h des messages
+        libres. Clé propre à cette route (le wamid sert déjà à l'action)."""
+        return await self._call("POST", "/api/whatsapp/seen", bsuid, body={"timestamp": timestamp}, key=f"{message_id}:seen")
+
+    async def notification_status(self, status) -> dict:
+        """Statut Meta d'une notification envoyée par le backend."""
+        body = {"message_id": status.message_id, "status": status.status, "callback": status.callback, "error_code": status.error_code}
+        return await self._call("POST", "/api/whatsapp/statuses", None, body=body, key=_digest_key("st", body))
+
+    async def account_event(self, event) -> dict:
+        """Événement du compte WhatsApp (modèle, qualité du numéro...) : alerte à l'équipe."""
+        body = {"field": event.field, "value": event.value, "time": event.time}
+        return await self._call("POST", "/api/whatsapp/meta-events", None, body=body, key=_digest_key("ev", body))
+
+
+def _digest_key(prefix: str, body: dict) -> str:
+    """Clé d'idempotence tirée du contenu : le même webhook relayé deux fois
+    ne fait rien de plus."""
+    canonical = json.dumps(body, sort_keys=True, ensure_ascii=False)
+    return f"{prefix}:{hashlib.sha256(canonical.encode()).hexdigest()[:48]}"
 
 def _is_refusal(answer) -> bool:
     """Un refus métier peut porter un code 5xx (ex. 503 `terms_unavailable`) :

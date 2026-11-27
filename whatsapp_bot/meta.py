@@ -57,6 +57,45 @@ class Incoming:
     choice: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+    # Heure du message chez Meta (secondes UTC) : ouvre la fenêtre de 24 h.
+    timestamp: int | None = None
+
+
+# Statuts d'envoi relayés au backend : ceux des notifications qu'il a
+# envoyées, reconnues à leur `biz_opaque_callback_data`
+# (backend/app/notify_whatsapp.py). `read` n'apprend rien de plus que
+# `delivered`.
+NOTIFICATION_CALLBACK_PREFIX = "nexis:"
+RELAYED_STATUSES = ("sent", "delivered", "failed")
+# Événements du compte relayés à l'équipe (backend/app/notify_whatsapp.py,
+# META_EVENT_FIELDS).
+ACCOUNT_EVENT_FIELDS = (
+    "message_template_status_update",
+    "message_template_quality_update",
+    "template_category_update",
+    "phone_number_quality_update",
+    "account_update",
+    "account_alerts",
+    "business_capability_update",
+)
+
+
+@dataclass(frozen=True)
+class Status:
+    """Statut d'un message envoyé par l'expéditeur de notifications."""
+
+    message_id: str
+    status: str
+    callback: str
+    error_code: int | None = None
+
+
+@dataclass(frozen=True)
+class AccountEvent:
+    field: str
+    value: dict
+    # `entry.time` : heure de l'événement chez Meta.
+    time: int | None = None
 
 
 @dataclass(frozen=True)
@@ -64,7 +103,8 @@ class Batch:
     """Ce qu'un webhook contient pour notre numéro."""
 
     messages: list[Incoming] = field(default_factory=list)
-    statuses: int = 0
+    statuses: list[Status] = field(default_factory=list)
+    events: list[AccountEvent] = field(default_factory=list)
     # Messages sans identité exploitable (aucun BSUID) : comptés, jamais traités.
     unidentified: int = 0
 
@@ -75,21 +115,34 @@ def _phone(value) -> str | None:
 
 
 def parse_webhook(payload: dict, phone_number_id: str) -> Batch:
-    """Messages adressés à notre numéro, dans l'ordre. Ce qui vient d'un
-    autre numéro de l'entreprise ou d'un autre type de compte est ignoré."""
+    """Messages adressés à notre numéro, dans l'ordre, statuts des
+    notifications et événements du compte. Ce qui vient d'un autre numéro de
+    l'entreprise ou d'un autre type de compte est ignoré."""
     messages: list[Incoming] = []
-    statuses = 0
+    statuses: list[Status] = []
+    events: list[AccountEvent] = []
     unidentified = 0
     if not isinstance(payload, dict) or payload.get("object") != "whatsapp_business_account":
         return Batch()
     for entry in payload.get("entry") or []:
+        stamp = (entry or {}).get("time")
+        entry_time = stamp if isinstance(stamp, int) and stamp >= 0 else None
         for change in (entry or {}).get("changes") or []:
-            if (change or {}).get("field") != "messages":
+            name = (change or {}).get("field")
+            value = (change or {}).get("value") or {}
+            if not isinstance(value, dict):
                 continue
-            value = change.get("value") or {}
+            if name in ACCOUNT_EVENT_FIELDS:
+                events.append(AccountEvent(field=name, value=value, time=entry_time))
+                continue
+            if name != "messages":
+                continue
             if str((value.get("metadata") or {}).get("phone_number_id")) != str(phone_number_id):
                 continue
-            statuses += len(value.get("statuses") or [])
+            for raw in value.get("statuses") or []:
+                status = _status(raw)
+                if status is not None:
+                    statuses.append(status)
             contacts = value.get("contacts") or []
             for raw in value.get("messages") or []:
                 incoming = _message(raw, contacts)
@@ -97,7 +150,23 @@ def parse_webhook(payload: dict, phone_number_id: str) -> Batch:
                     unidentified += 1
                 else:
                     messages.append(incoming)
-    return Batch(messages=messages, statuses=statuses, unidentified=unidentified)
+    return Batch(messages=messages, statuses=statuses, events=events, unidentified=unidentified)
+
+
+def _status(raw) -> Status | None:
+    if not isinstance(raw, dict):
+        return None
+    callback = str(raw.get("biz_opaque_callback_data") or "")
+    status = raw.get("status")
+    message_id = str(raw.get("id") or "")
+    if not callback.startswith(NOTIFICATION_CALLBACK_PREFIX) or status not in RELAYED_STATUSES or not message_id:
+        return None
+    code = None
+    for error in raw.get("errors") or []:
+        if isinstance(error, dict) and isinstance(error.get("code"), int):
+            code = error["code"]
+            break
+    return Status(message_id=message_id[:200], status=status, callback=callback[:512], error_code=code)
 
 
 def _contact_for(raw: dict, contacts: list) -> dict:
@@ -121,7 +190,8 @@ def _message(raw: dict, contacts: list) -> Incoming | None:
         return None
     phone = _phone(raw.get("from") or contact.get("wa_id"))
     kind = raw.get("type")
-    base = {"message_id": message_id, "bsuid": bsuid, "phone": phone}
+    stamp = str(raw.get("timestamp") or "")
+    base = {"message_id": message_id, "bsuid": bsuid, "phone": phone, "timestamp": int(stamp) if stamp.isdigit() else None}
     if kind == "text":
         return Incoming(kind=TEXT, text=str((raw.get("text") or {}).get("body") or ""), **base)
     if kind == "interactive":

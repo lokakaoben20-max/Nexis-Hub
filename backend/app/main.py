@@ -1,13 +1,15 @@
+import json
 import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Annotated
+from datetime import datetime, timezone
+from typing import Annotated, Literal
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
@@ -26,6 +28,7 @@ from backend.app import (
     ledger,
     mobile_money,
     notifications,
+    notify_whatsapp,
     payment_gateway,
     presence,
     profils,
@@ -34,7 +37,7 @@ from backend.app import (
     transactions,
 )
 from backend.app.database import SessionLocal
-from backend.app.models import BotMission, BotQuote, BotReview, PaymentIntent, Payout, ProviderProfile, ProviderServiceRequest, StoredFile
+from backend.app.models import BotMission, BotQuote, ChannelIdentity, BotReview, PaymentIntent, Payout, ProviderProfile, ProviderServiceRequest, StoredFile
 
 load_dotenv()
 
@@ -897,6 +900,131 @@ def register_whatsapp_client(
         }
 
     return _run_idempotent(request, response, actor, idempotency_key, payload.model_dump(mode="json"), action)
+
+
+class WhatsAppSeenPayload(BaseModel):
+    """Heure du message reçu, donnée par Meta (secondes depuis 1970, UTC)."""
+
+    timestamp: int = Field(ge=0, le=10**11)
+
+
+@router.post("/api/whatsapp/seen")
+@terms_exempt
+@open_to(ledger.WHATSAPP)
+@idempotent
+def whatsapp_seen(
+    payload: WhatsAppSeenPayload,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    """La personne vient d'écrire sur WhatsApp : la fenêtre de 24 h où un
+    message libre est permis s'ouvre (`channel_identities.last_inbound_at`).
+    Jamais dans le futur, jamais en arrière : un message rejoué ou arrivé en
+    retard ne change rien. Personne pas encore inscrite : rien à noter."""
+
+    def action(db) -> dict:
+        identity = (
+            db.query(ChannelIdentity)
+            .filter(ChannelIdentity.channel == ledger.WHATSAPP, ChannelIdentity.external_id == actor.external_id)
+            .with_for_update()
+            .one_or_none()
+        )
+        if identity is None:
+            return {"status": "ok", "known": False}
+        now = datetime.utcnow()
+        seen = min(datetime.fromtimestamp(payload.timestamp, timezone.utc).replace(tzinfo=None), now)
+        if identity.last_inbound_at is None or seen > identity.last_inbound_at:
+            identity.last_inbound_at = seen
+        db.flush()
+        return {"status": "ok", "known": True}
+
+    return _run_idempotent(request, response, actor, idempotency_key, payload.model_dump(mode="json"), action)
+
+
+# Les webhooks de Meta qui ne viennent pas d'une personne (statuts d'envoi,
+# événements du compte) arrivent au nom du service WhatsApp lui-même.
+META_ACTOR = Actor(channel=ledger.WHATSAPP, external_id="meta")
+
+
+class WhatsAppStatusPayload(BaseModel):
+    message_id: str = Field(min_length=1, max_length=200)
+    status: Literal["sent", "delivered", "read", "failed"]
+    # `biz_opaque_callback_data` de l'envoi (notify_whatsapp.callback_data).
+    callback: str = Field(min_length=1, max_length=512)
+    error_code: int | None = None
+
+
+@router.post("/api/whatsapp/statuses")
+@terms_exempt
+@open_to(ledger.WHATSAPP)
+@idempotent
+def whatsapp_status(
+    payload: WhatsAppStatusPayload,
+    request: Request,
+    response: Response,
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    """Statut d'un message envoyé par l'expéditeur WhatsApp, relayé par le
+    service : règle un envoi incertain sans renvoi, passe en échec un message
+    que Meta n'a pas remis, ou le renvoie en modèle si la fenêtre de 24 h
+    était fermée (`notify_whatsapp.apply_status`)."""
+
+    def action(db) -> dict:
+        result = notify_whatsapp.apply_status(
+            db,
+            callback=payload.callback,
+            message_id=payload.message_id,
+            status=payload.status,
+            error_code=payload.error_code,
+            now=datetime.utcnow(),
+        )
+        db.flush()
+        if result == "template":
+            notifications.send_after_request()
+        return {"status": "ok", "result": result}
+
+    return _run_idempotent(request, response, META_ACTOR, idempotency_key, payload.model_dump(mode="json"), action)
+
+
+MAX_META_EVENT_BYTES = 8000
+
+
+class WhatsAppMetaEventPayload(BaseModel):
+    field: Literal[tuple(notify_whatsapp.META_EVENT_FIELDS)]
+    value: dict
+    # `entry.time` du webhook : distingue deux événements identiques.
+    time: int | None = Field(default=None, ge=0, le=10**11)
+
+    @field_validator("value")
+    @classmethod
+    def _bounded(cls, value: dict) -> dict:
+        if len(json.dumps(value, ensure_ascii=False)) > MAX_META_EVENT_BYTES:
+            raise ValueError("événement Meta trop long")
+        return value
+
+
+@router.post("/api/whatsapp/meta-events")
+@terms_exempt
+@open_to(ledger.WHATSAPP)
+@idempotent
+def whatsapp_meta_event(
+    payload: WhatsAppMetaEventPayload,
+    request: Request,
+    response: Response,
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    """Événement du compte WhatsApp chez Meta (modèle approuvé, refusé ou en
+    pause, qualité du numéro, restriction du compte) : alerte à l'équipe.
+    Une alerte par événement, même relayé deux fois."""
+
+    def action(db) -> dict:
+        notify_whatsapp.alert_meta_event(db, payload.field, payload.value, sent_at=payload.time, now=datetime.utcnow())
+        db.flush()
+        return {"status": "ok"}
+
+    return _run_idempotent(request, response, META_ACTOR, idempotency_key, payload.model_dump(mode="json"), action)
 
 
 class AppLoginTelegramContactPayload(BaseModel):

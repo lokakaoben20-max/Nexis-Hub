@@ -58,6 +58,11 @@ WHATSAPP_ROUTES = {
     # accord ; parité : test_whatsapp_litiges.py.
     ("POST", "/api/bot/missions/{mission_id}/dispute/contest"),
     ("POST", "/api/bot/missions/{mission_id}/dispute/offers"),
+    # Notifications (étape 8) : fenêtre de 24 h, statuts de Meta, événements
+    # du compte ; test_whatsapp_notifications.py.
+    ("POST", "/api/whatsapp/seen"),
+    ("POST", "/api/whatsapp/statuses"),
+    ("POST", "/api/whatsapp/meta-events"),
 }
 
 # Actions de prestataire : jamais depuis WhatsApp, refus explicite.
@@ -256,10 +261,10 @@ def test_every_route_not_opened_is_refused_to_the_whatsapp_service(client, backe
     assert checked >= 40
 
 
-def test_the_telegram_bot_keeps_every_route_except_the_whatsapp_registration(client, backend):
+def test_the_telegram_bot_keeps_every_route_except_the_whatsapp_service_routes(client, backend):
     for method, path, _endpoint in api_routes(backend):
         response = client.request(method, concrete(path), headers=as_telegram(), json={})
-        if (method, path) == ("POST", "/api/whatsapp/client"):
+        if path.startswith("/api/whatsapp/"):
             assert response.status_code == 403
             assert response.json()["detail"]["code"] == "channel_forbidden"
         else:

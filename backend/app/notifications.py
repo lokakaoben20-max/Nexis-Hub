@@ -26,9 +26,16 @@ l'événement et l'envoi perdait le message, en silence. Ici :
   ou expéditeur arrêté pendant l'envoi). On ne sait pas si le message est
   arrivé : **une seule** nouvelle tentative, après 15 minutes. Sur WhatsApp,
   un statut de Meta qui porte l'identifiant de la notification
-  (`biz_opaque_callback_data`, étape 8) la passe à `sent` sans renvoi ;
+  (`biz_opaque_callback_data`, backend/app/notify_whatsapp.py) la passe à
+  `sent` sans renvoi ;
 - `failed` : refus explicite du fournisseur (personne qui a bloqué le bot,
   numéro invalide), 3 échecs, ou seconde incertitude. L'admin est prévenu.
+
+WhatsApp seulement : Meta accepte d'abord un message (wamid), puis peut dire
+plus tard, par un statut, qu'il ne l'a pas remis. `sent` peut donc encore
+devenir `failed` (alerte admin), ou redevenir `pending` avec
+`template_required` quand le refus est la fenêtre de 24 h fermée : rien n'est
+arrivé, le modèle validé part à la place.
 
 Un doublon à l'arrivée reste possible dans le cas rare d'une incertitude
 suivie d'un renvoi ; il est sans conséquence : les textes nomment la mission
@@ -41,8 +48,7 @@ Canal
 Celui du destinataire, choisi à la création (`recipient_channel`), jamais
 celui de l'événement : un client WhatsApp reçoit sur WhatsApp le devis d'un
 prestataire Telegram. Un canal dont l'expéditeur n'est pas configuré (jeton
-absent, ou WhatsApp avant l'étape 8) n'est pas tenté : ses notifications
-attendent, sans compter d'essai.
+absent) n'est pas tenté : ses notifications attendent, sans compter d'essai.
 
 Contenu
 -------
@@ -192,6 +198,15 @@ _REQUEST = contextvars.ContextVar("nexis_notifications_request", default=None)
 def begin_request() -> tuple[_Pending, contextvars.Token]:
     pending = _Pending()
     return pending, _REQUEST.set(pending)
+
+
+def send_after_request() -> None:
+    """Une notification redevient à envoyer pendant cette demande HTTP
+    (statut WhatsApp qui la renvoie en modèle) : l'expéditeur passe juste
+    après la réponse."""
+    pending = _REQUEST.get()
+    if pending is not None:
+        pending.added = True
 
 
 def end_request(token: contextvars.Token) -> None:
@@ -412,7 +427,10 @@ class Outcome:
     - `uncertain` : requête partie, réponse perdue ;
     - `refused` : refus définitif (personne qui a bloqué le bot...) ;
     - `unconfigured` : l'expéditeur ne peut rien envoyer (jeton absent ou
-      refusé) : la notification attend, sans compter d'essai."""
+      refusé, modèle WhatsApp en pause) : la notification attend, sans
+      compter d'essai ;
+    - `needs_template` (WhatsApp) : message libre refusé, fenêtre de 24 h
+      fermée ; rien n'est parti, le modèle validé part tout de suite."""
 
     kind: str
     message_id: str | None = None
@@ -440,9 +458,10 @@ def transport_for(channel: str) -> Transport | None:
 
 
 def _ready_channels() -> list[str]:
-    # Expéditeurs connus : Telegram (backend/app/notify.py). Importé ici pour
-    # que tout processus qui envoie l'ait enregistré.
-    from backend.app import notify  # noqa: F401
+    # Expéditeurs connus : Telegram (backend/app/notify.py), WhatsApp
+    # (backend/app/notify_whatsapp.py). Importés ici pour que tout processus
+    # qui envoie les ait enregistrés.
+    from backend.app import notify, notify_whatsapp  # noqa: F401
 
     return [channel for channel, transport in _TRANSPORTS.items() if transport.configured()]
 
@@ -536,6 +555,9 @@ def _apply(db: Session, notification: Notification, outcome: Outcome, now: datet
     elif outcome.kind == "refused":
         _note_failed(db, notification, outcome.error or "refused", now)
         report.failed += 1
+    elif outcome.kind == "needs_template":
+        require_template(notification, outcome.error or "needs_template", now)
+        report.retried += 1
     elif outcome.kind == "unconfigured":
         # Personne n'est en faute : on rend l'essai et on attend.
         notification.status = UNCERTAIN if notification.uncertain_count else PENDING
@@ -553,6 +575,47 @@ def _apply(db: Session, notification: Notification, outcome: Outcome, now: datet
         notification.next_attempt_at = now + delay
         notification.last_error = (outcome.error or "retry")[:200]
         report.retried += 1
+
+
+# --- Statuts tardifs du fournisseur (WhatsApp) -------------------------------------
+
+
+def require_template(notification: Notification, error: str, now: datetime) -> None:
+    """Message libre refusé parce que la fenêtre de 24 h est fermée : rien
+    n'est arrivé chez la personne. La notification repart tout de suite, en
+    modèle validé."""
+    notification.template_required = True
+    notification.status = PENDING
+    notification.sent_at = None
+    notification.provider_message_id = None
+    notification.next_attempt_at = now
+    notification.last_error = error[:200]
+
+
+def confirm_delivery(db: Session, notification: Notification, message_id: str, now: datetime) -> bool:
+    """Le fournisseur dit avoir pris ou remis le message : un envoi en cours
+    ou incertain devient `sent`, sans renvoi. Rend True si l'état a changé."""
+    if notification.status in (SENDING, UNCERTAIN):
+        mark_sent(db, notification, message_id, now)
+        return True
+    if notification.status == SENT and not notification.provider_message_id:
+        notification.provider_message_id = message_id[:200]
+        return True
+    return False
+
+
+def delivery_failed(db: Session, notification: Notification, error: str, now: datetime, *, window_closed: bool) -> bool:
+    """Le fournisseur dit, après coup, qu'il n'a pas remis le message.
+    Fenêtre fermée pour un message libre : on repart en modèle. Sinon :
+    échec, l'admin est prévenu. Rend True si l'état a changé."""
+    if notification.status not in (SENDING, UNCERTAIN, SENT):
+        return False
+    if window_closed and not notification.template_required:
+        require_template(notification, error, now)
+        return True
+    notification.sent_at = None
+    _note_failed(db, notification, error, now)
+    return True
 
 
 def send_due(db: Session | None = None, *, now: datetime | None = None, limit: int = BATCH_SIZE) -> Report:
