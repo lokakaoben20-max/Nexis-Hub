@@ -2,7 +2,7 @@
 
 ## Décisions de Ben en vigueur
 
-Le document `claude/decisions-en-vigueur.md` du projet « Nexis Hub Relais » liste les décisions de Ben en vigueur. **À lire au début de chaque session.** Quand une de ses décisions contredit une autre note de ce fichier, c'est le document qui compte. Une session sans accès à ce projet demande le fichier à Ben. Toute nouvelle décision de Ben s'y ajoute, et l'ancienne y est barrée avec ce qui la remplace.
+Le document `claude/decisions-en-vigueur.md` liste les décisions de Ben en vigueur (détail dans `claude/journal-relais.md`). Il se trouve dans le projet « Nexis Hub Relais » et, en copie, dans le dépôt **privé** `lokakaoben20-max/nexis-hub-docs`, branche `claude/relais-docs`. **Ne jamais copier ces fichiers dans ce dépôt, qui est public.** **À lire au début de chaque session.** Quand une de ses décisions contredit une autre note de ce fichier, c'est le document qui compte. Une session sans accès à ce projet demande le fichier à Ben. Toute nouvelle décision de Ben s'y ajoute, et l'ancienne y est barrée avec ce qui la remplace.
 
 - **Le nom s'écrit « NexisHub », en un mot** (depuis le 25 novembre 2026). Les mentions « Nexis Hub » plus bas dans ce fichier sont l'ancienne forme : ne pas les suivre pour les textes visibles (exception voulue : VoiceOver et TalkBack lisent « Nexis Hub »).
 
