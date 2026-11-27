@@ -60,7 +60,9 @@ jobs:
   tests:
     name: Tests (${{ matrix.base }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # La suite sur Postgres (une base neuve par test) prenait déjà 18 min sur
+    # 20 au 27/11/2026 : marge portée à 30 min. Accélérer la suite reste à faire.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
