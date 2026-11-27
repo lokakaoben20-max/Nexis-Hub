@@ -1029,7 +1029,7 @@ def contest_dispute_decision(
     mission.dispute_deadline = now + DISPUTE_REVIEW_DELAY
     mission.dispute_overdue_alerted_at = None
     _events().dispute_contested(db, mission, first)
-    db.commit()
+    transactions.commit(db)
     return db.get(BotMission, mission_id)
 
 
@@ -1215,19 +1215,20 @@ def propose_dispute_settlement(
         expires_at=now + SETTLEMENT_OFFER_DELAY,
         **amounts,
     )
-    db.add(offer)
     try:
-        db.flush()
-        _events().settlement_offer(db, offer, "proposed")
-        db.commit()
+        # Point de sauvegarde : un échec n'annule que cette proposition, pas
+        # la transaction de l'appelant (clé d'idempotence comprise).
+        with db.begin_nested():
+            db.add(offer)
     except IntegrityError:
         # Proposition enregistrée au même instant par une autre demande.
-        db.rollback()
         mission = db.get(BotMission, mission_id)
         stored = pending_settlement_offer(db, mission_id)
         if stored is not None and _same_offer(stored, kind, percentage):
             return mission
         raise MoneyError("offer_pending", mission=mission) from None
+    _events().settlement_offer(db, offer, "proposed")
+    transactions.commit(db)
     return db.get(BotMission, mission_id)
 
 

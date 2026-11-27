@@ -136,7 +136,7 @@ class QuotesFlow:
             if not open_quotes and mission.get("status") in ("pending", "quoted"):
                 messages.append(meta.Text(text("wa_no_quotes_yet", lang)))
         # Demande payée : arrivée, fin, problème, avis (suivi.py).
-        messages += await self.conversation.follow.cards(message.bsuid, mission, answer.get("review"), lang)
+        messages += await self.conversation.follow.cards(message.bsuid, mission, answer.get("review"), lang, answer.get("money") or {})
         messages.append(self.conversation._menu(lang, name))
         return messages, {}
 

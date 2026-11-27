@@ -1161,6 +1161,9 @@ def list_mission_quotes(mission_id: int, actor: Actor = Depends(current_actor)):
                 # L'avis du client, s'il en a laissé un : « Noter » n'est
                 # proposé qu'une fois.
                 "review": _review_to_dict(review) if (review := crud.mission_review(db, mission_id)) else None,
+                # Paiement, décisions et propositions d'accord : ce que le
+                # client peut encore faire pendant un litige.
+                "money": ledger.mission_money_state(db, mission_id),
             },
         )
 
@@ -1201,7 +1204,7 @@ def _money_response(db, mission: BotMission) -> dict:
     }
 
 
-_NOT_YOURS = frozenset({"not_mission_client", "not_mission_provider", "mission_not_found"})
+_NOT_YOURS = frozenset({"not_mission_client", "not_mission_provider", "not_mission_party", "mission_not_found"})
 
 
 def _money_refusal(db, error: ledger.MoneyError) -> HTTPException:
@@ -1847,30 +1850,53 @@ def decide_dispute(mission_id: int, payload: DisputeDecidePayload, actor: Actor 
 
 @router.post("/api/bot/missions/{mission_id}/dispute/contest")
 @terms_exempt
-def contest_dispute(mission_id: int, payload: DisputeContestPayload, actor: Actor = Depends(current_actor)):
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+@idempotent
+def contest_dispute(
+    mission_id: int,
+    payload: DisputeContestPayload,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
     """Le client ou le prestataire conteste la première décision, avant son
-    exécution. L'autre partie et l'admin sont prévenus une fois."""
-    return _money_call(
+    exécution. L'autre partie et l'admin sont prévenus une fois. Sur
+    WhatsApp, seul le client peut écrire (les prestataires n'y sont pas)."""
+    return _client_money_action(
+        request, response, actor, idempotency_key, payload.model_dump(),
         lambda db: ledger.contest_dispute_decision(
             db, mission_id, _actor_account(db, actor, missing="not_mission_party", http_status=403), payload.reason
-        )
-    )
+        ),
+        _money_response,
+    )  # fmt: skip
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute/offers")
 @terms_exempt
-def propose_dispute_settlement(mission_id: int, payload: DisputeOfferPayload, actor: Actor = Depends(current_actor)):
+@open_to(ledger.TELEGRAM, ledger.WHATSAPP)
+@idempotent
+def propose_dispute_settlement(
+    mission_id: int,
+    payload: DisputeOfferPayload,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
     """Le client propose un accord amiable (ledger.propose_dispute_settlement).
     Le prestataire est prévenu une fois, avec les boutons pour répondre."""
-    return _money_call(
+    return _client_money_action(
+        request, response, actor, idempotency_key, payload.model_dump(),
         lambda db: ledger.propose_dispute_settlement(
             db,
             mission_id,
-            _actor_account(db, actor, missing="not_mission_client", http_status=403),
+            _client_account(db, actor),
             kind=payload.kind,
             provider_percentage=payload.provider_percentage,
-        )
-    )
+        ),
+        _money_response,
+    )  # fmt: skip
 
 
 @router.post("/api/bot/missions/{mission_id}/dispute/offers/{offer_id}/accept")
