@@ -705,6 +705,19 @@ class LoginChallenge(Base):
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class LoginFailure(Base):
+    """Un code faux, pour le numéro de la demande, quel que soit le canal :
+    5 codes faux en 10 minutes bloquent ce numéro 15 minutes
+    (`backend/app/app_auth.py`). Ajout seul ; ni code ni appareil."""
+
+    __tablename__ = "login_failures"
+    __table_args__ = (Index("ix_login_failures_phone_failed", "phone_e164", "failed_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    phone_e164: Mapped[str] = mapped_column(String(32))
+    failed_at: Mapped[datetime] = mapped_column(DateTime)
+
+
 class RequestNonce(Base):
     """Nonce d'une demande signée par un appareil : la base refuse de voir
     deux fois le même, même sous demandes simultanées (anti-rejeu)."""

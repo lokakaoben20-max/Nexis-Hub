@@ -19,6 +19,9 @@ import json
 import httpx
 
 TIMEOUT_SECONDS = 10.0
+# Connexion à l'app : le backend envoie le code à Meta avant de répondre
+# (jusqu'à 15 s chez lui).
+APP_LOGIN_TIMEOUT_SECONDS = 25.0
 
 
 class BackendUnavailable(Exception):
@@ -47,9 +50,18 @@ class Backend:
             headers["Idempotency-Key"] = idempotency_key
         return headers
 
-    async def _call(self, method: str, path: str, bsuid: str | None, *, body: dict | None = None, key: str | None = None) -> dict:
+    async def _call(
+        self,
+        method: str,
+        path: str,
+        bsuid: str | None,
+        *,
+        body: dict | None = None,
+        key: str | None = None,
+        timeout: float = TIMEOUT_SECONDS,
+    ) -> dict:
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT_SECONDS, transport=self._transport) as client:
+            async with httpx.AsyncClient(timeout=timeout, transport=self._transport) as client:
                 response = await client.request(
                     method, f"{self._base_url}{path}", json=body, headers=self._headers(bsuid, key)
                 )
@@ -87,6 +99,16 @@ class Backend:
         if phone:
             body["phone"] = phone
         return await self._call("POST", "/api/whatsapp/client", bsuid, body=body, key=key)
+
+    async def app_login(self, bsuid: str, key: str, *, start_token: str, phone: str | None, language: str) -> dict:
+        """Connexion à l'app : le backend envoie lui-même le code à `bsuid`
+        (jamais dans cette réponse)."""
+        body = {"start_token": start_token, "language": language}
+        if phone:
+            body["phone"] = phone
+        return await self._call(
+            "POST", "/api/whatsapp/app-login", bsuid, body=body, key=key, timeout=APP_LOGIN_TIMEOUT_SECONDS
+        )
 
     async def accept_terms(self, bsuid: str, key: str, *, role: str, documents: list[dict]) -> dict:
         body = {"role": role, "surface": "whatsapp", "documents": documents}

@@ -1048,6 +1048,64 @@ def app_login_telegram_contact(payload: AppLoginTelegramContactPayload, actor: A
         return {"status": "ok", "code": issued.code, "expires_at": issued.expires_at.isoformat()}
 
 
+class AppLoginWhatsAppPayload(BaseModel):
+    start_token: str = Field(min_length=1, max_length=64)
+    # Numéro que Meta donne avec le message (`wa_id`), absent s'il est masqué.
+    phone: str | None = Field(default=None, max_length=32)
+    language: Literal["fr", "ln", "en"] = "fr"
+
+
+@router.post("/api/whatsapp/app-login")
+@terms_exempt
+@open_to(ledger.WHATSAPP)
+@idempotent
+def app_login_whatsapp(
+    payload: AppLoginWhatsAppPayload,
+    request: Request,
+    response: Response,
+    actor: Actor = Depends(current_actor),
+    idempotency_key: str | None = Header(default=None, alias=idempotency.HEADER),
+):
+    """Connexion à l'application par WhatsApp : la personne a envoyé au bot
+    le message préparé par le lien de l'app. Le code est envoyé par le
+    backend à l'identité qui écrit, après la validation : il n'est jamais
+    dans la réponse au service, ni dans la réponse gardée pour un message
+    rejoué (qui ne renvoie rien). Voir `app_auth`."""
+    issued: list[app_auth.IssuedCode] = []
+
+    def action(db) -> dict:
+        try:
+            issued.append(
+                app_auth.issue_code_for_whatsapp(
+                    db, start_token=payload.start_token, bsuid=actor.external_id, phone=payload.phone
+                )
+            )
+        except app_auth.AuthError as error:
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+        return {"status": "ok", "expires_at": issued[0].expires_at.isoformat()}
+
+    try:
+        result = _run_idempotent(request, response, actor, idempotency_key, payload.model_dump(mode="json"), action)
+    except HTTPException as error:
+        # La transaction de la clé est annulée : la trace d'une tentative sur
+        # un numéro (autre numéro, numéro d'un autre compte) est écrite à part.
+        code = error.detail.get("code") if isinstance(error.detail, dict) else None
+        if code in ("phone_mismatch", "phone_conflict"):
+            with SessionLocal() as db:
+                account_id = ledger.account_id_for(db, ledger.WHATSAPP, actor.external_id)
+                app_auth.record_event(db, "whatsapp_contact", code, account_id=account_id)
+                db.commit()
+        raise
+    if issued and response.headers.get("Idempotent-Replayed") != "true":
+        outcome = notify_whatsapp.send_login_code(actor.external_id, issued[0].code, payload.language)
+        with SessionLocal() as db:
+            account_id = ledger.account_id_for(db, ledger.WHATSAPP, actor.external_id)
+            app_auth.record_event(db, "code_issued", f"wa_{outcome.kind}"[:20], account_id=account_id)
+            db.commit()
+        return {**result, "sent": outcome.kind == "sent"}
+    return result
+
+
 @router.post("/api/bot/app-devices/{device_id}/not-me")
 @terms_exempt
 def app_device_not_me(device_id: int, actor: Actor = Depends(current_actor)):

@@ -63,6 +63,9 @@ WHATSAPP_ROUTES = {
     ("POST", "/api/whatsapp/seen"),
     ("POST", "/api/whatsapp/statuses"),
     ("POST", "/api/whatsapp/meta-events"),
+    # Connexion à l'application par WhatsApp (étape 8) ;
+    # test_app_auth_whatsapp.py.
+    ("POST", "/api/whatsapp/app-login"),
 }
 
 # Actions de prestataire : jamais depuis WhatsApp, refus explicite.

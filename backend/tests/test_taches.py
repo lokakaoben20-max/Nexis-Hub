@@ -40,6 +40,7 @@ def test_le_calendrier_reprend_les_frequences_de_celery(taches):
         "envoi-notifications": "*/1 * * * *",
         "purge-nonces": "30 * * * *",
         "purge-cles-idempotence": "15 3 * * *",
+        "purge-echecs-connexion": "45 * * * *",
     }
 
 

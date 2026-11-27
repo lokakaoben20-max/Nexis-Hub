@@ -10,7 +10,8 @@ réponse ne contient d'identifiant Telegram.
 """
 
 import importlib
-from datetime import datetime
+import itertools
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -33,6 +34,12 @@ def env(monkeypatch, backend_db_url):
     monkeypatch.setenv("APP_CODE_HMAC_KEY", "test-hmac-key-not-a-secret-0123456789abcdef")
     monkeypatch.setenv("NEXIS_BOT_USERNAME", "@NexisHubTestBot")
     monkeypatch.delenv("NEXIS_APP_MIN_VERSION", raising=False)
+    for name in ("WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID", "WHATSAPP_CALLBACK_KEY", app_auth.WHATSAPP_NUMBER_ENV):
+        monkeypatch.delenv(name, raising=False)
+    # Horloge des demandes de code : 61 s de plus à chaque lecture, pour que
+    # deux connexions de suite du même numéro respectent le renvoi après 60 s.
+    start, ticks = datetime.utcnow(), itertools.count(1)
+    monkeypatch.setattr(app_auth, "_utcnow", lambda: start + timedelta(seconds=61 * next(ticks)))
     database = importlib.reload(importlib.import_module("backend.app.database"))
     importlib.reload(importlib.import_module("backend.app.models"))
     public = importlib.reload(importlib.import_module("backend.app.public"))
@@ -202,7 +209,7 @@ def test_a_wrong_code_gives_no_session(client, env, alerts):
     assert alerts() == []
 
 
-def test_whatsapp_codes_are_not_offered_yet(client):
+def test_whatsapp_codes_are_refused_while_whatsapp_is_not_configured(client):
     phone = Phone()
 
     response = client.post(
@@ -424,3 +431,50 @@ def test_the_app_reads_the_texts_and_re_accepts_for_a_role_it_has(client, env, a
 
 def test_the_app_needs_a_session_for_my_terms(client, env):
     assert client.get(f"{API}/me/terms", headers=VERSION).status_code == 401
+
+
+def test_a_whatsapp_login_goes_through_the_public_api_end_to_end(client, env, monkeypatch):
+    """Parcours complet par WhatsApp : le canal est proposé, la réponse donne
+    un lien wa.me avec un message déjà écrit (jeton, jamais de code) ; le
+    service WhatsApp transmet ce message ; le code juste et la signature du
+    téléphone ouvrent la session du compte créé pour cette identité."""
+    from urllib.parse import parse_qs, urlparse
+
+    monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "test-access-token-not-a-secret")
+    monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", "100000000000001")
+    monkeypatch.setenv("WHATSAPP_CALLBACK_KEY", "test-callback-key-not-a-secret-0000000001")
+    monkeypatch.setenv(app_auth.WHATSAPP_NUMBER_ENV, "+243990000000")
+    database, _ = env
+    phone = Phone()
+
+    assert client.get(f"{API}/config").json()["channels"] == ["telegram", "whatsapp"]
+    challenge = client.post(
+        f"{API}/auth/challenges",
+        json={"phone": PHONE, "channel": "whatsapp", "public_key": _public_key(phone), "language": "en"},
+        headers=VERSION,
+    )
+    assert challenge.status_code == 200, challenge.text
+    body = challenge.json()
+    assert "telegram_link" not in body
+    link = urlparse(body["whatsapp_link"])
+    assert (link.scheme, link.netloc, link.path) == ("https", "wa.me", "/243990000000")
+    (prefill,) = parse_qs(link.query)["text"]
+    assert prefill.startswith("Sign in to the NexisHub app: app_")
+    start = prefill.rsplit("app_", 1)[1]
+
+    with database.SessionLocal() as session:
+        issued = app_auth.issue_code_for_whatsapp(session, start_token=start, bsuid="CD.7000000000000000007", phone=PHONE)
+    public_id = body["public_id"]
+    response = client.post(
+        f"{API}/auth/challenges/{public_id}/verify",
+        json={
+            "code": issued.code,
+            "public_key": _public_key(phone),
+            "signature": phone.sign(app_sessions.login_message(public_id)),
+            "platform": "android",
+            "label": "Samsung A54",
+        },
+        headers=VERSION,
+    )
+    assert response.status_code == 200, response.text
+    assert client.get(f"{API}/me", headers=bearer(response.json())).status_code == 200

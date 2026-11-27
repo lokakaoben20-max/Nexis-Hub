@@ -23,7 +23,8 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -33,6 +34,7 @@ from backend.app import app_auth, app_sessions, conditions, crud, ledger, profil
 from backend.app.app_auth import AuthError
 from backend.app.database import SessionLocal
 from backend.app.models import BotMission, NexisAccount
+from messages import get_message
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +154,8 @@ class ChallengePayload(BaseModel):
     phone: str = Field(max_length=32)
     channel: str = Field(default="telegram", max_length=12)
     public_key: str = Field(max_length=512)
+    # Langue de l'app : celle du message déjà écrit dans WhatsApp.
+    language: Literal["fr", "ln", "en"] = "fr"
 
 
 class VerifyPayload(BaseModel):
@@ -178,13 +182,14 @@ def config() -> dict[str, Any]:
     """Sans version exigée : l'app affiche « mise à jour requise » grâce à ça."""
     return {
         "min_version": os.getenv(MIN_VERSION_ENV, "").strip() or DEFAULT_MIN_VERSION,
-        "channels": list(app_auth.AVAILABLE_DELIVERIES),
+        "channels": list(app_auth.available_deliveries()),
     }
 
 
 @router.post("/auth/challenges")
 def create_challenge(payload: ChallengePayload, request: Request) -> dict[str, Any]:
-    """Demande un code. La réponse est la même, que le numéro soit connu ou non."""
+    """Demande un code. La réponse est la même, que le numéro soit connu ou
+    non : un lien qui ouvre le bot choisi, où la personne reçoit son code."""
     if payload.channel not in ("telegram", "whatsapp"):
         raise AuthError("invalid_delivery")
     _, thumbprint = app_sessions.load_public_key(payload.public_key)
@@ -204,9 +209,13 @@ def create_challenge(payload: ChallengePayload, request: Request) -> dict[str, A
         "channel": created.delivery,
         "expires_at": _iso(created.expires_at),
     }
-    if created.telegram_start_token:
-        start = app_auth.telegram_start_payload(created.telegram_start_token)
+    start = app_auth.telegram_start_payload(created.start_token)
+    if created.delivery == "telegram":
         body["telegram_link"] = f"https://t.me/{bot}?start={start}"
+    else:
+        # Message déjà écrit dans WhatsApp : la personne n'a qu'à l'envoyer.
+        prefill = get_message("wa_app_login_prefill", payload.language, start=start)
+        body["whatsapp_link"] = f"https://wa.me/{app_auth.whatsapp_number()}?text={quote(prefill)}"
     return body
 
 

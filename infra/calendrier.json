@@ -10,5 +10,6 @@
   "analytics-quotidiennes": "0 8 * * *",
   "purge-nonces": "30 * * * *",
   "purge-cles-idempotence": "15 3 * * *",
+  "purge-echecs-connexion": "45 * * * *",
   "envoi-notifications": "*/1 * * * *"
 }
