@@ -373,27 +373,39 @@ struct ChoiceRow<Leading: View>: View {
     }
 }
 
-/// Pastille de l'opérateur : une lettre en attendant l'accord des
-/// opérateurs pour leurs logos.
+/// Le logo de l'opérateur sur un fond blanc (logos repris tels quels, sans
+/// les redessiner). Africell : une lettre en attendant son logo.
 struct OperatorBadge: View {
     let mobileOperator: MobileOperator
 
-    private var look: (letter: String, color: UInt32) {
+    private var logo: String? {
         switch mobileOperator {
-        case .mpesa: return ("M", 0xE60000)
-        case .orange: return ("O", 0xFF7900)
-        case .airtel: return ("A", 0xED1C24)
-        case .africell: return ("Af", 0x7B2D8E)
+        case .mpesa: return "OpMpesa"
+        case .orange: return "OpOrange"
+        case .airtel: return "OpAirtel"
+        case .africell: return nil
         }
     }
 
     var body: some View {
-        Text(look.letter)
-            .font(.body(14, .heavy))
-            .foregroundStyle(.white)
-            .frame(width: 40, height: 40)
-            .background(Color(hex: look.color), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .accessibilityHidden(true)
+        Group {
+            if let logo {
+                Image(logo)
+                    .resizable().scaledToFit()
+                    .padding(6)
+                    .frame(width: 58, height: 40)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Nexis.line, lineWidth: 0.5))
+            } else {
+                Text("Af")
+                    .font(.body(14, .heavy))
+                    .foregroundStyle(.white)
+                    .frame(width: 58, height: 40)
+                    .background(Color(hex: 0x7B2D8E), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 
