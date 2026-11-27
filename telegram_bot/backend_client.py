@@ -328,9 +328,21 @@ async def set_money_switch(admin_telegram_id: int, name: str, open: bool, reason
     return await _payout_call("POST", f"/api/bot/admin/money-switches/{name}", admin_telegram_id, payload, keys=("switches",))
 
 
-async def request_payout(telegram_id: int, amount: float, currency: str, phone: str, operator: str) -> dict:
-    payload = {"amount": amount, "currency": currency, "phone": phone, "operator": operator}
+async def request_payout(telegram_id: int, amount: float, currency: str, destination_id: int) -> dict:
+    """Retrait vers un des numéros enregistrés par la personne."""
+    payload = {"amount": amount, "currency": currency, "destination_id": destination_id}
     return (await _payout_call("POST", "/api/bot/payouts", telegram_id, payload))["payout"]
+
+
+async def list_payout_destinations(telegram_id: int) -> list[dict]:
+    """Numéros de retrait enregistrés par la personne."""
+    return (await _payout_call("GET", "/api/bot/payout-destinations", telegram_id, keys=("destinations",)))["destinations"]
+
+
+async def add_payout_destination(telegram_id: int, phone: str, operator: str) -> dict:
+    """Premier numéro de retrait (les changements se font dans l'app)."""
+    payload = {"phone": phone, "operator": operator}
+    return (await _payout_call("POST", "/api/bot/payout-destinations", telegram_id, payload, keys=("destination",)))["destination"]
 
 
 async def list_payouts_awaiting_approval(admin_telegram_id: int) -> list[dict]:

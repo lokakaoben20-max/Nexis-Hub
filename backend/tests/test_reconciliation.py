@@ -92,7 +92,13 @@ def complete(db, mission_id):
 
 
 def withdraw(db, amount=20.0):
-    return mobile_money.request_payout(db, account_id=acc(db, PROVIDER_ID), amount=amount, currency="USD", phone=PHONE, operator="airtel")
+    from backend.app import destinations
+    from backend.tests import profils_de_test
+
+    account_id = acc(db, PROVIDER_ID)
+    saved = [d.id for d in destinations.active_destinations(db, account_id)]
+    destination_id = saved[0] if saved else profils_de_test.payout_destination(db, account_id, phone=PHONE)
+    return mobile_money.request_payout(db, account_id=account_id, amount=amount, currency="USD", destination_id=destination_id)
 
 
 def codes(report):

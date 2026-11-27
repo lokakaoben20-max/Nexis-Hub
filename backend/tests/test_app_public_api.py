@@ -478,3 +478,83 @@ def test_a_whatsapp_login_goes_through_the_public_api_end_to_end(client, env, mo
     )
     assert response.status_code == 200, response.text
     assert client.get(f"{API}/me", headers=bearer(response.json())).status_code == 200
+
+
+# --- Numéros de retrait : seulement dans l'app, par demande signée ------------------
+
+
+def signed_post(client, tokens, phone, path, body=b"", *, nonce):
+    timestamp = str(int((datetime.utcnow() - app_sessions._EPOCH).total_seconds()))
+    message = app_sessions.request_message(
+        method="POST", path=path, body=body, timestamp=timestamp, nonce=nonce, access_token=tokens["access_token"]
+    )
+    headers = {
+        **bearer(tokens),
+        "Content-Type": "application/json",
+        "X-Request-Timestamp": timestamp,
+        "X-Request-Nonce": nonce,
+        "X-Request-Signature": phone.sign(message),
+    }
+    return client.post(path, content=body, headers=headers)
+
+
+def attest(database, tokens):
+    """Téléphone vérifié par Google ou Apple (l'app le fera pour de vrai)."""
+    from backend.app import models
+
+    with database.SessionLocal() as session:
+        session.get(models.Device, tokens["device_id"]).attestation = "verified"
+        session.commit()
+
+
+NUMBERS = f"{API}/me/payout-destinations"
+AIRTEL = b'{"operator": "airtel", "phone": "+243970000001"}'
+
+
+def test_a_withdrawal_number_is_added_and_removed_by_a_signed_request_of_a_verified_phone(client, env, alerts):
+    database, _ = env
+    phone = Phone()
+    tokens = login(client, database, phone)
+    attest(database, tokens)
+
+    added = signed_post(client, tokens, phone, NUMBERS, AIRTEL, nonce="nonce-add-number-0123456789ab")
+    assert added.status_code == 200, added.text
+    destination = added.json()["destination"]
+    assert (destination["phone"], destination["usable_after"]) == ("+243970000001", None)
+    replay = signed_post(client, tokens, phone, NUMBERS, AIRTEL, nonce="nonce-add-number-0123456789ab")
+    assert replay.status_code == 409
+
+    listing = client.get(NUMBERS, headers=bearer(tokens)).json()
+    assert ([d["id"] for d in listing["destinations"]], listing["max"]) == ([destination["id"]], 4)
+
+    second = signed_post(
+        client, tokens, phone, NUMBERS, b'{"operator": "orange", "phone": "+243890000002"}', nonce="nonce-add-number-second-01234"
+    )
+    assert second.json()["destination"]["usable_after"] is not None, "numéro de plus : 72 h d'attente"
+
+    removed = signed_post(
+        client, tokens, phone, f"{NUMBERS}/{destination['id']}/remove", nonce="nonce-remove-number-0123456789"
+    )
+    assert removed.json() == {"status": "ok", "removed": destination["id"]}
+    assert [d["phone"] for d in client.get(NUMBERS, headers=bearer(tokens)).json()["destinations"]] == ["+243890000002"]
+
+
+def test_an_unsigned_or_unverified_phone_cannot_change_withdrawal_numbers(client, env, alerts):
+    database, _ = env
+    phone = Phone()
+    tokens = login(client, database, phone)
+
+    unsigned = client.post(NUMBERS, content=AIRTEL, headers={**bearer(tokens), "Content-Type": "application/json"})
+    assert unsigned.json()["detail"] == {"code": "invalid_timestamp"}
+    unverified = signed_post(client, tokens, phone, NUMBERS, AIRTEL, nonce="nonce-unverified-0123456789ab")
+    assert (unverified.status_code, unverified.json()["detail"]) == (403, {"code": "device_not_attested"})
+    assert client.get(NUMBERS, headers=bearer(tokens)).json()["destinations"] == []
+
+
+def test_the_bot_api_cannot_remove_a_withdrawal_number(monkeypatch, backend_db_url):
+    """Le bot enregistre le tout premier numéro (`first_only`), rien d'autre :
+    aucune route du bot ne retire un numéro."""
+    monkeypatch.setenv("DATABASE_URL", backend_db_url)
+    main = importlib.reload(importlib.import_module("backend.app.main"))
+    paths = {(method, route.path) for route in main.router.routes for method in getattr(route, "methods", ())}
+    assert {path for _, path in paths if "payout-destinations" in path} == {"/api/bot/payout-destinations"}

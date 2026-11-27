@@ -27,13 +27,14 @@ from typing import Any, Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
-from backend.app import app_auth, app_sessions, conditions, crud, ledger, profils
+from backend.app import app_auth, app_sessions, conditions, crud, destinations, ledger, profils
 from backend.app.app_auth import AuthError
 from backend.app.database import SessionLocal
-from backend.app.models import BotMission, NexisAccount
+from backend.app.models import BotMission, NexisAccount, PayoutDestination
 from messages import get_message
 
 logger = logging.getLogger(__name__)
@@ -328,6 +329,108 @@ def my_wallet(authorization: str | None = Header(default=None)) -> dict[str, Any
         "wallet_balance_usd": float(balances["USD"]),
         "wallet_balance_cdf": float(balances["CDF"]),
     }
+
+
+# --- Numéros de retrait (backend/app/destinations.py) ----------------------------
+# Ajouter ou retirer un numéro de retrait est une action de sécurité : elle se
+# fait ici seulement, jamais dans un bot. Demande signée par la clé du
+# téléphone (que l'app ne libère qu'après son code, Face ID ou empreinte), et
+# téléphone autorisé à faire sortir de l'argent (`verify_money_request` :
+# vérifié par Google ou Apple, délai de 72 h d'un nouvel appareil écoulé).
+
+
+class DestinationPayload(BaseModel):
+    operator: str = Field(max_length=20)
+    phone: str = Field(max_length=32)
+
+
+def _destination(destination: PayoutDestination) -> dict[str, Any]:
+    return {
+        "id": destination.id,
+        "kind": destination.kind,
+        "operator": destination.operator,
+        "phone": destination.phone,
+        "usable_after": _iso(destination.usable_after),
+    }
+
+
+def _signed_destination_change(request: Request, body: bytes, headers: dict, change) -> dict[str, Any]:
+    """Vérifie la demande signée puis fait le changement, dans une session."""
+    with SessionLocal() as db:
+        principal = app_sessions.verify_money_request(
+            db,
+            access_token=_bearer(headers["authorization"]),
+            method=request.method,
+            path=request.url.path,
+            body=body,
+            timestamp=headers["timestamp"],
+            nonce=headers["nonce"],
+            signature=headers["signature"],
+        )
+        try:
+            return change(db, principal.account_id)
+        except ledger.MoneyError as error:
+            db.rollback()
+            raise HTTPException(status_code=error.http_status, detail={"code": error.code}) from error
+
+
+def _signature_headers(authorization, timestamp, nonce, signature) -> dict:
+    return {"authorization": authorization, "timestamp": timestamp, "nonce": nonce, "signature": signature}
+
+
+@router.get("/me/payout-destinations")
+def my_payout_destinations(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    with SessionLocal() as db:
+        principal = _session(db, authorization)
+        found = destinations.active_destinations(db, principal.account_id)
+        return {
+            "destinations": [_destination(destination) for destination in found],
+            "max": destinations.MAX_ACTIVE_DESTINATIONS,
+        }
+
+
+@router.post("/me/payout-destinations")
+async def add_my_payout_destination(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    x_request_timestamp: str | None = Header(default=None),
+    x_request_nonce: str | None = Header(default=None),
+    x_request_signature: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Corps lu tel quel : la signature porte sur ces octets exacts."""
+    body = await request.body()
+    try:
+        payload = DestinationPayload.model_validate_json(body or b"{}")
+    except ValidationError as error:
+        raise HTTPException(status_code=422, detail={"code": "invalid_request"}) from error
+    headers = _signature_headers(authorization, x_request_timestamp, x_request_nonce, x_request_signature)
+
+    def add(db, account_id):
+        destination = destinations.add_destination(
+            db, account_id=account_id, operator=payload.operator, phone=payload.phone
+        )
+        return {"destination": _destination(destination)}
+
+    return await run_in_threadpool(_signed_destination_change, request, body, headers, add)
+
+
+@router.post("/me/payout-destinations/{destination_id}/remove")
+def remove_my_payout_destination(
+    destination_id: int,
+    request: Request,
+    authorization: str | None = Header(default=None),
+    x_request_timestamp: str | None = Header(default=None),
+    x_request_nonce: str | None = Header(default=None),
+    x_request_signature: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Sans corps : la signature porte l'empreinte du corps vide."""
+    headers = _signature_headers(authorization, x_request_timestamp, x_request_nonce, x_request_signature)
+
+    def remove(db, account_id):
+        destinations.remove_destination(db, account_id=account_id, destination_id=destination_id)
+        return {"status": "ok", "removed": destination_id}
+
+    return _signed_destination_change(request, b"", headers, remove)
 
 
 @router.get("/me/missions")

@@ -20,7 +20,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app import evenements, interrupteurs, ledger
+from backend.app import destinations, evenements, interrupteurs, ledger
 from backend.app.ledger import CENT, ZERO, MoneyError, to_money
 from backend.app.models import NexisAccount, PaymentIntent, Payout
 from backend.app.payment_gateway import FAILED, NOT_FOUND, PENDING, SUCCEEDED, GatewayUnavailable, get_gateway
@@ -67,7 +67,7 @@ def payout_fee(amount: Decimal, currency: str) -> Decimal:
     return ((amount * rate).quantize(CENT, rounding=ROUND_HALF_UP) + fixed)
 
 
-def _check_phone_and_operator(phone: str, operator: str) -> None:
+def check_phone_and_operator(phone: str, operator: str) -> None:
     if operator not in OPERATORS:
         raise MoneyError("invalid_operator", 400)
     if not PHONE_RE.match(phone or ""):
@@ -102,7 +102,7 @@ def create_intent(
     l'agrégateur (la clé d'idempotence du message WhatsApp, qui désigne alors
     cette intention). Appelée aussi quand l'intention ouverte existait déjà."""
     remember = also or (lambda intent: None)
-    _check_phone_and_operator(phone, operator)
+    check_phone_and_operator(phone, operator)
     terms = ledger.funding_terms(db, mission_id, quote_id, client_account_id)
     mission = terms["mission"]
     currency = terms["currency"]
@@ -412,11 +412,11 @@ def _resolve_mismatch(db: Session, intent_id: int, admin_telegram_id: int, decis
 # --- Retraits ---------------------------------------------------------------------
 
 
-def request_payout(db: Session, *, account_id: int, amount, currency: str, phone: str, operator: str) -> Payout:
-    """Bloque le montant et crée le retrait. Il part tout de suite seulement
-    s'il ne demande aucune vérification (sous le plafond, aucun fonds de
-    remboursement) ; sinon il attend l'admin."""
-    _check_phone_and_operator(phone, operator)
+def request_payout(db: Session, *, account_id: int, amount, currency: str, destination_id: int) -> Payout:
+    """Bloque le montant et crée le retrait vers un numéro enregistré du
+    compte (`destinations.usable_destination`). Il part tout de suite
+    seulement s'il ne demande aucune vérification (sous le plafond, aucun
+    fonds de remboursement) ; sinon il attend l'admin."""
     if not interrupteurs.is_open(db, interrupteurs.PAYOUTS):
         # Versements coupés : rien n'est bloqué ni demandé.
         raise MoneyError("payouts_paused", 503)
@@ -434,6 +434,7 @@ def request_payout(db: Session, *, account_id: int, amount, currency: str, phone
     # retraits simultanés lisent la même part « sans vérification » et
     # sortent ensemble l'argent d'un remboursement sans validation.
     db.get(NexisAccount, account_id, with_for_update=True)
+    destination = destinations.usable_destination(db, account_id=account_id, destination_id=destination_id)
     review = None
     if amount > ledger.withdrawable_without_review(db, account_id, currency):
         review = "refund_funds"
@@ -446,8 +447,9 @@ def request_payout(db: Session, *, account_id: int, amount, currency: str, phone
         # Identité de canal du demandeur, pour l'audit et les messages Telegram.
         requested_by_telegram_id=ledger.telegram_id_of(db, account_id),
         gateway=get_gateway().name,
-        operator=operator,
-        phone=phone,
+        destination_id=destination.id,
+        operator=destination.operator,
+        phone=destination.phone,
         amount=amount,
         fee=fee,
         currency=currency,

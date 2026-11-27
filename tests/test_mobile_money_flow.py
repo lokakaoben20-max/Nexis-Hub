@@ -95,6 +95,20 @@ def _earned(live_backend):
     asyncio.run(payment.client_confirme_presence(DummyCallback(CLIENT_ID, data=f"presence_yes_{mission_id}")))
     asyncio.run(payment.prestataire_termine_mission(DummyCallback(PROVIDER_ID, data=f"mission_finish_{mission_id}")))
     asyncio.run(payment.client_confirme_mission_terminee(DummyCallback(CLIENT_ID, data=f"client_confirm_done_{mission_id}"), DummyState()))
+    _add_number()
+
+
+PAYOUT_NUMBER = "+243890000200"
+
+
+def _add_number(phone_text="0890000200", state=None):
+    """Ajout d'un numéro de retrait par le bot : numéro puis opérateur."""
+    state = state or DummyState()
+    asyncio.run(dashboard.destination_demander_numero(DummyCallback(PROVIDER_ID, data="wd_dest_add"), state))
+    asyncio.run(dashboard.destination_numero_recu(DummyMessage(PROVIDER_ID, text=phone_text), state))
+    done = DummyCallback(PROVIDER_ID, data="wd_dop_orange")
+    asyncio.run(dashboard.destination_operateur_recu(done, state))
+    return done, state
 
 
 def _withdraw(amount_text="50"):
@@ -103,8 +117,8 @@ def _withdraw(amount_text="50"):
     asyncio.run(dashboard.retrait_demander_montant(DummyCallback(PROVIDER_ID, data="wd_cur_USD"), state))
     message = DummyMessage(PROVIDER_ID, text=amount_text)
     asyncio.run(dashboard.retrait_montant_recu(message, state))
-    final = DummyCallback(PROVIDER_ID, data="wd_op_orange")
-    asyncio.run(dashboard.retrait_operateur_recu(final, state))
+    final = DummyCallback(PROVIDER_ID, data="wd_dest_1")
+    asyncio.run(dashboard.retrait_destination_choisie(final, state))
     return message, final, state
 
 
@@ -331,3 +345,47 @@ def test_a_client_is_told_payments_are_paused_and_nothing_is_charged(monkeypatch
     asyncio.run(payment.paiement_mobile_money_operateur(callback))
 
     assert callback.answered == get_message("money_error_payments_paused", "fr")
+
+
+def _finished_mission(live_backend):
+    mission_id = _paid_mission(live_backend)
+    asyncio.run(payment.client_confirme_presence(DummyCallback(CLIENT_ID, data=f"presence_yes_{mission_id}")))
+    asyncio.run(payment.prestataire_termine_mission(DummyCallback(PROVIDER_ID, data=f"mission_finish_{mission_id}")))
+    asyncio.run(payment.client_confirme_mission_terminee(DummyCallback(CLIENT_ID, data=f"client_confirm_done_{mission_id}"), DummyState()))
+
+
+def test_the_first_number_is_saved_during_a_withdrawal_which_then_goes_on(monkeypatch, live_backend):
+    _finished_mission(live_backend)
+    state = DummyState()
+    asyncio.run(dashboard.retrait_demander_montant(DummyCallback(PROVIDER_ID, data="wd_cur_USD"), state))
+    message = DummyMessage(PROVIDER_ID, text="50")
+    asyncio.run(dashboard.retrait_montant_recu(message, state))
+    assert message.answers == [get_message("withdraw_no_destination", "fr")]
+
+    live_backend.sent.clear()
+    added, state = _add_number(state=state)
+    assert get_message("withdraw_choose_destination", "fr", amount="50.00", currency="USD") in added.message.edited_text
+    texts = dict(live_backend.sent)
+    assert PAYOUT_NUMBER in texts[PROVIDER_ID], "la personne est prévenue de chaque nouveau numéro"
+    assert ADMIN_ID not in texts, "aucune vérification par l'équipe"
+
+    final = DummyCallback(PROVIDER_ID, data="wd_dest_1")
+    asyncio.run(dashboard.retrait_destination_choisie(final, state))
+    assert live_backend.balance(PROVIDER_ID) == 40.0
+
+
+def test_changing_numbers_is_done_in_the_app_not_in_the_bot(monkeypatch, live_backend):
+    _finished_mission(live_backend)
+    _add_number()
+    second, _ = _add_number("0890000201")
+    assert second.message.edited_text == get_message("money_error_destination_change_in_app", "fr")
+
+    screen = DummyCallback(PROVIDER_ID, data="wallet_numbers")
+    asyncio.run(dashboard.afficher_mes_numeros(screen, DummyState()))
+    assert PAYOUT_NUMBER in screen.message.edited_text
+    buttons = [button.callback_data for row in screen.message.edited_markup.inline_keyboard for button in row]
+    assert "wd_dest_add" not in buttons, "plus d'ajout dans le bot après le premier numéro"
+    assert "wd_rm_1" not in buttons, "retirer un numéro se fait dans l'app"
+
+    message, _, _ = _withdraw("50")
+    assert get_message("destinations_change_in_app", "fr").strip() in message.answers[0]

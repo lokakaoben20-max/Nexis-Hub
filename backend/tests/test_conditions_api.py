@@ -255,7 +255,7 @@ def test_new_actions_wait_for_the_new_box_but_money_and_reads_stay_open(api, bac
     assert api.get("/api/me/missions", headers=tg(CLIENT)).status_code == 200
     payout = api.post(
         "/api/bot/payouts",
-        json={"amount": 5, "currency": "USD", "phone": "+243810000042", "operator": "vodacom"},
+        json={"amount": 5, "currency": "USD", "destination_id": 1},
         headers=tg(CLIENT),
     )
     assert code(payout) != "terms_not_accepted"

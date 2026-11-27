@@ -282,8 +282,20 @@ def earn(db, gateway, amount=100.0):
     ledger.confirm_completion(db, 1, acc(db, CLIENT_ID))
 
 
+def destination(db, telegram_id=PROVIDER_ID):
+    """Numéro de retrait de la personne (enregistré au premier appel)."""
+    from backend.app import destinations
+    from backend.tests import profils_de_test
+
+    account_id = acc(db, telegram_id)
+    existing = destinations.active_destinations(db, account_id)
+    return existing[0].id if existing else profils_de_test.payout_destination(db, account_id, phone=PHONE)
+
+
 def withdraw(db, amount=50.0, telegram_id=PROVIDER_ID):
-    return mobile_money.request_payout(db, account_id=acc(db, telegram_id), amount=amount, currency="USD", phone=PHONE, operator="airtel")
+    return mobile_money.request_payout(
+        db, account_id=acc(db, telegram_id), amount=amount, currency="USD", destination_id=destination(db, telegram_id)
+    )
 
 
 def test_a_payout_holds_the_money_and_waits_for_the_admin(db, gateway):
