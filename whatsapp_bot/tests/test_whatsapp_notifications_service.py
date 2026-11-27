@@ -29,6 +29,7 @@ def _sender(bench, monkeypatch):
     monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", ACCESS_TOKEN)
     monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", PHONE_NUMBER_ID)
     monkeypatch.setenv("WHATSAPP_GRAPH_URL", GRAPH_URL)
+    monkeypatch.setenv("WHATSAPP_CALLBACK_KEY", "test-callback-key-not-a-secret-0000000001")
     api = TestClient(bench.fake.app())
     monkeypatch.setattr(notify_whatsapp, "_http_post", lambda url, json, headers, timeout: api.post(url, json=json, headers=headers))
     monkeypatch.setattr(notifications, "_TRANSPORTS", {"whatsapp": notify_whatsapp.WhatsAppTransport()})

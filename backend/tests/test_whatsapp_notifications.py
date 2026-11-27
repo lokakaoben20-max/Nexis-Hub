@@ -27,6 +27,7 @@ from whatsapp_bot.fake_meta import FakeMeta  # noqa: E402
 ACCESS_TOKEN = "test-access-token-not-a-secret"
 PHONE_NUMBER_ID = "100000000000001"
 GRAPH_URL = "https://graph.facebook.test/v23.0"
+CALLBACK_KEY = "test-callback-key-not-a-secret-0000000001"
 BSUID = "CD.5000000000000000005"
 PHONE = "243810000005"
 
@@ -109,6 +110,13 @@ class Env:
             return result
 
 
+def signed(notification_id, attempt):
+    """Callback tel que l'expéditeur le signe."""
+    from backend.app import notify_whatsapp
+
+    return f"nexis:{notification_id}:{attempt}:{notify_whatsapp._callback_mac(CALLBACK_KEY.encode(), notification_id, attempt)}"
+
+
 @pytest.fixture
 def env(monkeypatch, backend_db_url):
     importlib.import_module("backend.app.main")
@@ -116,6 +124,7 @@ def env(monkeypatch, backend_db_url):
     monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", ACCESS_TOKEN)
     monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", PHONE_NUMBER_ID)
     monkeypatch.setenv("WHATSAPP_GRAPH_URL", GRAPH_URL)
+    monkeypatch.setenv("WHATSAPP_CALLBACK_KEY", CALLBACK_KEY)
     database = importlib.reload(importlib.import_module("backend.app.database"))
     models = importlib.reload(importlib.import_module("backend.app.models"))
     database.init_db()
@@ -146,7 +155,7 @@ def test_inside_the_window_the_full_text_leaves_with_its_buttons(env):
     assert all(len(label) <= 20 for _action, label in sent.choices)
     # Gras de Telegram converti, valeur écrite par une personne gardée telle quelle.
     assert "*NXH-0042*" in sent.text and "Jean <b>& fils</b>" in sent.text and "<b>Nouveau" not in sent.text
-    assert sent.callback == f"nexis:{notification_id}:1"
+    assert sent.callback == signed(notification_id, 1)
     row = env.row(notification_id)
     assert row.status == "sent" and row.provider_message_id == sent.wamid and not row.template_required
 
@@ -246,7 +255,7 @@ def test_a_free_message_refused_later_for_the_closed_window_leaves_again_as_a_te
 
     assert env.send().sent == 1
     template = env.fake.sent[-1]
-    assert template.template is not None and template.callback == f"nexis:{notification_id}:2"
+    assert template.template is not None and template.callback == signed(notification_id, 2)
     assert env.status(template, "delivered") == "ignored"  # déjà noté envoyé, même wamid
     row = env.row(notification_id)
     assert row.status == "sent" and row.provider_message_id == template.wamid
@@ -284,7 +293,7 @@ def test_a_lost_answer_is_settled_by_the_status_without_sending_again(env):
     # rejoue comme si le message était parti, avec le même essai).
     from whatsapp_bot.fake_meta import Sent
 
-    ghost = Sent(wamid="wamid.LOST0001", to=PHONE, recipient=None, body={"biz_opaque_callback_data": f"nexis:{notification_id}:1"})
+    ghost = Sent(wamid="wamid.LOST0001", to=PHONE, recipient=None, body={"biz_opaque_callback_data": signed(notification_id, 1)})
     assert env.status(ghost, "delivered") == "confirmed"
     row = env.row(notification_id)
     assert row.status == "sent" and row.provider_message_id == "wamid.LOST0001"
@@ -298,11 +307,11 @@ def test_a_late_status_from_an_older_attempt_is_ignored(env):
     env.send()
     assert env.send(minutes_later=16).sent == 1  # seul renvoi permis, essai 2
     second = env.fake.sent[-1]
-    assert second.callback == f"nexis:{notification_id}:2"
+    assert second.callback == signed(notification_id, 2)
 
     from whatsapp_bot.fake_meta import Sent
 
-    first = Sent(wamid="wamid.OLD00001", to=PHONE, recipient=None, body={"biz_opaque_callback_data": f"nexis:{notification_id}:1"})
+    first = Sent(wamid="wamid.OLD00001", to=PHONE, recipient=None, body={"biz_opaque_callback_data": signed(notification_id, 1)})
     assert env.status(first, "failed", error_code=131026) == "ignored"
     assert env.row(notification_id).status == "sent"
     assert env.status(second, "delivered") == "ignored"
@@ -314,9 +323,9 @@ def test_a_status_for_an_unknown_or_foreign_message_is_ignored(env):
     account_id = env.client()
     notification_id = env.notify(account_id)
     env.send()
-    other = Sent(wamid="wamid.OTHER001", to=PHONE, recipient=None, body={"biz_opaque_callback_data": f"nexis:{notification_id}:1"})
+    other = Sent(wamid="wamid.OTHER001", to=PHONE, recipient=None, body={"biz_opaque_callback_data": signed(notification_id, 1)})
     assert env.status(other, "failed", error_code=131026) == "ignored"
-    nowhere = Sent(wamid="wamid.X", to=PHONE, recipient=None, body={"biz_opaque_callback_data": "nexis:999999:1"})
+    nowhere = Sent(wamid="wamid.X", to=PHONE, recipient=None, body={"biz_opaque_callback_data": signed(999999, 1)})
     assert env.status(nowhere, "delivered") == "ignored"
     assert env.status(nowhere, "delivered", attempt_callback="autre:1:1") == "ignored"
     assert env.row(notification_id).status == "sent"
@@ -396,10 +405,44 @@ def test_a_template_event_reaches_the_team_once(env):
     value = {"event": "PAUSED", "message_template_name": "nexis_suivi", "message_template_language": "fr", "reason": "<script>"}
     for _ in range(2):
         with env.database.SessionLocal() as db:
-            env.notify_whatsapp.alert_meta_event(db, "message_template_status_update", value, now=datetime.utcnow())
+            env.notify_whatsapp.alert_meta_event(db, "message_template_status_update", value, sent_at=1764000000, now=datetime.utcnow())
             db.commit()
     with env.database.SessionLocal() as db:
         alerts = db.query(env.models.Notification).filter(env.models.Notification.event_key.like("whatsapp_meta:%")).all()
     assert len(alerts) == 1
     text = alerts[0].params["text"]["$html"]
     assert "nexis_suivi" in text and "mis en pause" in text and "&lt;script&gt;" in text and "attendent" in text
+
+
+def test_a_later_identical_event_is_a_new_alert(env):
+    with env.database.SessionLocal() as db:
+        profils_de_test.admin(db, 900)
+        db.commit()
+    value = {"event": "PAUSED", "message_template_name": "nexis_suivi", "message_template_language": "fr"}
+    for sent_at in (1764000000, 1764000000, 1764090000):
+        with env.database.SessionLocal() as db:
+            env.notify_whatsapp.alert_meta_event(db, "message_template_status_update", value, sent_at=sent_at, now=datetime.utcnow())
+            db.commit()
+    with env.database.SessionLocal() as db:
+        assert db.query(env.models.Notification).filter(env.models.Notification.event_key.like("whatsapp_meta:%")).count() == 2
+
+
+def test_a_forged_or_unsigned_status_touches_nothing(env):
+    from whatsapp_bot.fake_meta import Sent
+
+    account_id = env.client()
+    notification_id = env.notify(account_id)
+    env.fake.fail_next("timeout")
+    env.send()
+    for callback in (f"nexis:{notification_id}:1", f"nexis:{notification_id}:1:{'0' * 32}", signed(notification_id, 1)[:-1] + "x"):
+        forged = Sent(wamid="wamid.FORGED01", to=PHONE, recipient=None, body={"biz_opaque_callback_data": callback})
+        assert env.status(forged, "delivered") == "ignored"
+    assert env.row(notification_id).status == "uncertain"
+
+
+def test_without_the_callback_key_nothing_is_sent(env, monkeypatch):
+    monkeypatch.delenv("WHATSAPP_CALLBACK_KEY")
+    account_id = env.client()
+    notification_id = env.notify(account_id)
+    env.send()
+    assert env.fake.sent == [] and env.row(notification_id).status == "pending"

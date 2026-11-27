@@ -45,6 +45,7 @@ Aucun texte de message n'est écrit dans les journaux.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import html
 import json
 import logging
@@ -95,7 +96,8 @@ WHATSAPP_ACTIONS = (
 )
 
 CALLBACK_PREFIX = "nexis"
-_CALLBACK = re.compile(rf"{CALLBACK_PREFIX}:(\d{{1,12}}):(\d{{1,4}})")
+_CALLBACK = re.compile(rf"{CALLBACK_PREFIX}:(\d{{1,12}}):(\d{{1,4}}):([0-9a-f]{{32}})")
+MIN_CALLBACK_KEY = 32
 
 # Codes d'erreur de Meta.
 WINDOW_CLOSED_CODES = {131047, 470}
@@ -193,8 +195,23 @@ def template_message(notification: Notification, lang: str) -> dict:
     }
 
 
+def _callback_key() -> bytes | None:
+    """Clé du backend seul (`WHATSAPP_CALLBACK_KEY`), jamais donnée au service
+    WhatsApp : un statut relayé ne peut viser que l'envoi qui le porte."""
+    key = _setting("WHATSAPP_CALLBACK_KEY")
+    return key.encode() if len(key) >= MIN_CALLBACK_KEY else None
+
+
+def _callback_mac(key: bytes, notification_id: int, attempt: int) -> str:
+    return hmac.new(key, f"{notification_id}:{attempt}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
 def callback_data(notification: Notification) -> str:
-    return f"{CALLBACK_PREFIX}:{notification.id}:{notification.attempts}"
+    """`nexis:<notification>:<essai>:<signature>`. Sans clé, l'expéditeur
+    n'est pas configuré : aucun envoi ne part sans signature."""
+    key = _callback_key()
+    mac = _callback_mac(key, notification.id, notification.attempts) if key else ""
+    return f"{CALLBACK_PREFIX}:{notification.id}:{notification.attempts}:{mac}"
 
 
 def window_open(last_inbound_at: datetime | None, now: datetime) -> bool:
@@ -208,7 +225,7 @@ class WhatsAppTransport:
     channel = notifications.WHATSAPP
 
     def configured(self) -> bool:
-        return bool(_setting("WHATSAPP_ACCESS_TOKEN") and _setting("WHATSAPP_PHONE_NUMBER_ID"))
+        return bool(_setting("WHATSAPP_ACCESS_TOKEN") and _setting("WHATSAPP_PHONE_NUMBER_ID") and _callback_key())
 
     def send(self, db: Session, notification: Notification) -> notifications.Outcome:
         identity = (
@@ -293,8 +310,16 @@ def _outcome(response: httpx.Response, *, template: bool) -> notifications.Outco
 
 
 def parse_callback(value: str | None) -> tuple[int, int] | None:
+    """(notification, essai) d'un statut, seulement si la signature est
+    celle du backend : un statut forgé ne touche à rien."""
     match = _CALLBACK.fullmatch(value or "")
-    return (int(match.group(1)), int(match.group(2))) if match else None
+    key = _callback_key()
+    if match is None or key is None:
+        return None
+    notification_id, attempt = int(match.group(1)), int(match.group(2))
+    if not hmac.compare_digest(match.group(3), _callback_mac(key, notification_id, attempt)):
+        return None
+    return notification_id, attempt
 
 
 def apply_status(db: Session, *, callback: str, message_id: str, status: str, error_code: int | None, now: datetime) -> str:
@@ -382,13 +407,19 @@ def meta_event_text(field: str, value: dict) -> str:
     return f"🚨 Compte WhatsApp chez Meta ({_clip(field)}) : {_clip(details, 600)}"
 
 
-def alert_meta_event(db: Session, field: str, value: dict, *, now: datetime) -> int:
-    """Une alerte par événement (clé tirée de son contenu : relayé deux fois,
-    il n'en crée qu'une). Ne valide pas."""
-    canonical = json.dumps({"field": field, "value": value}, sort_keys=True, ensure_ascii=False)
+def alert_meta_event(db: Session, field: str, value: dict, *, sent_at: int | None, now: datetime) -> int:
+    """Une alerte par événement : clé tirée du contenu et de l'heure donnée par
+    Meta (`entry.time`). Le même webhook relayé deux fois n'en crée qu'une ;
+    le même événement plus tard (modèle remis en pause) en crée une autre.
+    Ne valide pas."""
+    canonical = json.dumps({"field": field, "value": value, "time": sent_at}, sort_keys=True, ensure_ascii=False)
     digest = hashlib.sha256(canonical.encode()).hexdigest()[:32]
     if field == "message_template_status_update" and str(value.get("event") or "") not in _TEMPLATE_USABLE:
-        logger.error("Modèle WhatsApp inutilisable (%s) : notifications hors fenêtre en attente", value.get("event"))
+        event = str(value.get("event") or "")
+        logger.error(
+            "Modèle WhatsApp inutilisable (%s) : notifications hors fenêtre en attente",
+            event if event in _TEMPLATE_EVENTS else "événement inconnu",
+        )
     return notifications.enqueue_admins(
         db, event_key=f"whatsapp_meta:{digest}", params=notifications.admin_text(meta_event_text(field, value)), now=now
     )

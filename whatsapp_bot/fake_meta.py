@@ -182,7 +182,8 @@ class FakeMeta:
         return self.webhook({"type": "location", "location": {"latitude": latitude, "longitude": longitude}}, **who)
 
     def _envelope(self, change: dict) -> dict:
-        return {"object": "whatsapp_business_account", "entry": [{"id": "WABA_FAKE", "changes": [change]}]}
+        entry = {"id": "WABA_FAKE", "time": int(self.clock()), "changes": [change]}
+        return {"object": "whatsapp_business_account", "entry": [entry]}
 
     def status(self, sent: "Sent", status: str, *, error_code: int | None = None) -> dict:
         """Un statut de Meta pour un envoi accepté."""

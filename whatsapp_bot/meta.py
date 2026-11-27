@@ -94,6 +94,8 @@ class Status:
 class AccountEvent:
     field: str
     value: dict
+    # `entry.time` : heure de l'événement chez Meta.
+    time: int | None = None
 
 
 @dataclass(frozen=True)
@@ -123,13 +125,15 @@ def parse_webhook(payload: dict, phone_number_id: str) -> Batch:
     if not isinstance(payload, dict) or payload.get("object") != "whatsapp_business_account":
         return Batch()
     for entry in payload.get("entry") or []:
+        stamp = (entry or {}).get("time")
+        entry_time = stamp if isinstance(stamp, int) and stamp >= 0 else None
         for change in (entry or {}).get("changes") or []:
             name = (change or {}).get("field")
             value = (change or {}).get("value") or {}
             if not isinstance(value, dict):
                 continue
             if name in ACCOUNT_EVENT_FIELDS:
-                events.append(AccountEvent(field=name, value=value))
+                events.append(AccountEvent(field=name, value=value, time=entry_time))
                 continue
             if name != "messages":
                 continue

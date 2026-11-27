@@ -201,7 +201,7 @@ class Backend:
 
     async def account_event(self, event) -> dict:
         """Événement du compte WhatsApp (modèle, qualité du numéro...) : alerte à l'équipe."""
-        body = {"field": event.field, "value": event.value}
+        body = {"field": event.field, "value": event.value, "time": event.time}
         return await self._call("POST", "/api/whatsapp/meta-events", None, body=body, key=_digest_key("ev", body))
 
 

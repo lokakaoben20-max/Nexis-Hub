@@ -1,3 +1,4 @@
+import json
 import re
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -8,7 +9,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
@@ -987,9 +988,21 @@ def whatsapp_status(
     return _run_idempotent(request, response, META_ACTOR, idempotency_key, payload.model_dump(mode="json"), action)
 
 
+MAX_META_EVENT_BYTES = 8000
+
+
 class WhatsAppMetaEventPayload(BaseModel):
     field: Literal[tuple(notify_whatsapp.META_EVENT_FIELDS)]
     value: dict
+    # `entry.time` du webhook : distingue deux événements identiques.
+    time: int | None = Field(default=None, ge=0, le=10**11)
+
+    @field_validator("value")
+    @classmethod
+    def _bounded(cls, value: dict) -> dict:
+        if len(json.dumps(value, ensure_ascii=False)) > MAX_META_EVENT_BYTES:
+            raise ValueError("événement Meta trop long")
+        return value
 
 
 @router.post("/api/whatsapp/meta-events")
@@ -1007,7 +1020,7 @@ def whatsapp_meta_event(
     Une alerte par événement, même relayé deux fois."""
 
     def action(db) -> dict:
-        notify_whatsapp.alert_meta_event(db, payload.field, payload.value, now=datetime.utcnow())
+        notify_whatsapp.alert_meta_event(db, payload.field, payload.value, sent_at=payload.time, now=datetime.utcnow())
         db.flush()
         return {"status": "ok"}
 
