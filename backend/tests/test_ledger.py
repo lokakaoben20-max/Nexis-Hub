@@ -12,13 +12,14 @@ import pytest
 from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 
-from backend.app import crud, ledger
+from backend.app import crud, ledger, profils
 from backend.tests import profils_de_test
 
 BotMission = ledger.BotMission
 BotQuote = crud.BotQuote
 LedgerEntry = ledger.LedgerEntry
 MoneyOperation = ledger.MoneyOperation
+MissionAlert = crud.MissionAlert
 
 CLIENT_ID = 42
 PROVIDER_ID = 7
@@ -293,8 +294,6 @@ def test_a_lost_race_on_the_same_phase_is_resolved_by_the_database(db):
 
 def test_mission_cannot_start_before_payment(db):
     mission_id = new_mission(db)
-    db.get(BotMission, mission_id).provider_telegram_id = PROVIDER_ID
-    db.commit()
     refused("not_paid", lambda: ledger.start_mission(db, mission_id, acc(db, PROVIDER_ID)))
 
 
@@ -740,6 +739,7 @@ def test_one_person_has_a_single_wallet_whether_client_or_provider(db):
     finished(db)
     ledger.confirm_completion(db, 1, acc(db, CLIENT_ID))
     profils_de_test.client(db, PROVIDER_ID, "Prestataire")
+    profils_de_test.provider(db, CLIENT_ID, "Client prestataire")
 
     quote_id = accepted_quote(db, mission_id=2, amount=40.0, quote_ref=9, client=PROVIDER_ID, provider_account=acc(db, CLIENT_ID))
     ledger.fund_mission(db, 2, method="wallet", client_account_id=acc(db, PROVIDER_ID), quote_id=quote_id)
@@ -770,26 +770,25 @@ def test_mission_rules_compare_accounts_not_telegram_ids(db):
     assert ledger.start_mission(db, 1, acc(db, PROVIDER_ID)).status == "in_progress"
 
 
-def test_a_mission_without_linked_accounts_is_refused_never_accepted(db):
-    """Historique mal rattaché : refus explicite, jamais d'action par défaut."""
-    finished(db)
-    mission = db.get(BotMission, 1)
-    mission.client_account_id = None
-    mission.provider_account_id = None
+def test_a_paid_mission_without_provider_account_is_refused_never_accepted(db):
+    """Mission payée dont le compte prestataire manque : refus explicite,
+    jamais d'action par défaut."""
+    funded = fund(db)
+    funded.provider_telegram_id = None  # la base exige le compte d'un prestataire nommé
+    funded.provider_account_id = None
     db.commit()
 
-    refused("mission_account_missing", lambda: ledger.confirm_completion(db, 1, acc(db, CLIENT_ID)))
-    refused("mission_account_missing", lambda: ledger.open_dispute(db, 1, acc(db, CLIENT_ID), "x"))
+    refused("mission_account_missing", lambda: ledger.start_mission(db, 1, acc(db, PROVIDER_ID)))
     refused("mission_account_missing", lambda: ledger.finish_mission(db, 1, acc(db, PROVIDER_ID)))
     assert db.get(BotMission, 1).payment_status == "paid_escrow"
     assert_books_balanced(db)
 
 
-def test_a_provider_without_account_cannot_be_paid(db):
+def test_an_account_without_provider_profile_cannot_be_paid(db):
     client_account = acc(db, CLIENT_ID)
     unknown = ledger.NexisAccount()
     db.add(unknown)
-    db.commit()  # compte sans identité Telegram : pas un prestataire
+    db.commit()  # compte sans profil prestataire : pas un prestataire
     quote_id = accepted_quote(db, amount=10.0, quote_ref=1, provider_account=unknown.id)
     refused(
         "provider_not_found",
@@ -822,3 +821,43 @@ def test_a_payment_recorded_before_accounts_is_still_recognised_as_a_replay(db):
     assert fund(db).payment_status == "paid_escrow"
     assert len(operations(db)) == 1
     refused("already_paid", lambda: fund(db, amount=50))
+
+
+def test_a_provider_without_telegram_quotes_is_paid_and_rated_by_account(db):
+    """Prestataire sans Telegram (entreprise, app) : devis, paiement,
+    règlement et note ne passent que par son compte."""
+    business = profils_de_test.provider_without_telegram(db).account_id
+    mission_id = new_mission(db)
+    # Aucun canal ne le prévient encore (Telegram seulement) : la création ne
+    # l'alerte pas. L'alerte est posée comme le fera son futur canal.
+    assert business not in crud.alerted_provider_account_ids(db, mission_id)
+    db.add(MissionAlert(mission_id=mission_id, provider_account_id=business))
+    db.commit()
+
+    quote = crud.create_quote(db, mission_id, business, amount=100.0, currency="USD", delay_hours=2)
+    assert (quote.provider_account_id, quote.provider_telegram_id) == (business, None)
+    crud.accept_quote(db, quote.id, acc(db, CLIENT_ID))
+    ledger.fund_mission(db, mission_id, method="mobile_money", client_account_id=acc(db, CLIENT_ID), quote_id=quote.id)
+    mission = db.get(BotMission, mission_id)
+    assert (mission.provider_account_id, mission.provider_telegram_id) == (business, None)
+
+    ledger.start_mission(db, mission_id, business)
+    ledger.finish_mission(db, mission_id, business)
+    ledger.confirm_completion(db, mission_id, acc(db, CLIENT_ID))
+    assert ledger.balance(db, ledger.WALLET, business, "USD") == money(90)
+
+    review = crud.create_review(db, mission_id, acc(db, CLIENT_ID), 4)
+    assert (review.provider_account_id, review.provider_telegram_id) == (business, None)
+    provider = profils.provider_profile(db, business)
+    assert (provider.average_rating, provider.total_reviews, provider.total_missions) == (4.0, 1, 1)
+    assert_books_balanced(db)
+
+
+def test_a_provider_cannot_quote_a_mission_it_ordered_even_without_telegram(db):
+    """Même sans Telegram, un compte ne chiffre jamais sa propre mission."""
+    business = profils_de_test.provider_without_telegram(db).account_id
+    mission = db.get(BotMission, new_mission(db))
+    mission.client_account_id = business
+    db.commit()
+    with pytest.raises(ValueError, match="provider_is_client"):
+        crud.create_quote(db, mission.mission_id, business, amount=10.0, currency="USD", delay_hours=2)

@@ -41,16 +41,20 @@ def mission_columns(engine):
 
 
 def _insert_mission(connection, **destination):
+    # Toute mission a le compte de son client (migration a4b5c6d7e8f9).
+    client_account_id = connection.execute(
+        text("INSERT INTO accounts (roles, language, created_at) VALUES ('[]', 'fr', now()) RETURNING id")
+    ).scalar_one()
     connection.execute(
         text(
-            "INSERT INTO bot_missions (telegram_id, service, commune, currency, description, urgent,"
+            "INSERT INTO bot_missions (telegram_id, client_account_id, service, commune, currency, description, urgent,"
             " commission_amount, tola_fee, aggregator_fee, total_client, net_provider, created_at,"
             " status_changed_at, reminder_sent_10min, reminder_sent_20min,"
             " destination_latitude, destination_longitude, destination_landmark)"
-            " VALUES (42, 'service_plomberie', 'Gombe', 'USD', '', false, 0, 0, 0, 0, 0, now(), now(), false, false,"
-            " :latitude, :longitude, :landmark)"
+            " VALUES (42, :client_account_id, 'service_plomberie', 'Gombe', 'USD', '', false, 0, 0, 0, 0, 0, now(),"
+            " now(), false, false, :latitude, :longitude, :landmark)"
         ),
-        {"latitude": None, "longitude": None, "landmark": None, **destination},
+        {"latitude": None, "longitude": None, "landmark": None, "client_account_id": client_account_id, **destination},
     )
 
 

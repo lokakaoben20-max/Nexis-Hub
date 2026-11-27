@@ -37,6 +37,7 @@ from backend.app.models import (
     MoneyOperation,
     NexisAccount,
     Payout,
+    ProviderProfile,
 )
 
 CENT = Decimal("0.01")
@@ -454,6 +455,13 @@ def _require_provider(db: Session, mission: BotMission, account_id: int) -> None
         raise MoneyError("not_mission_provider", 403, mission)
 
 
+def require_provider_profile(db: Session, mission: BotMission, provider_account_id: int) -> None:
+    """Seul un compte qui a un profil prestataire est payé comme prestataire,
+    quel que soit son canal (Telegram, app, plus tard une entreprise)."""
+    if db.get(ProviderProfile, provider_account_id) is None:
+        raise MoneyError("provider_not_found", 404, mission)
+
+
 def funding_terms(db: Session, mission_id: int, quote_id: int, client_account_id: int) -> dict:
     """Ce qui sera payé, lu dans le backend et nulle part ailleurs : la mission
     (verrouillée jusqu'à la fin de la demande), son devis accepté, le
@@ -584,10 +592,11 @@ def fund_mission(
         # Une même personne peut être cliente et prestataire, jamais sur la
         # même mission : elle se paierait elle-même.
         raise MoneyError("provider_is_client", mission=mission)
+    require_provider_profile(db, mission, provider_account_id)
+    # Telegram du prestataire : affichage du bot seulement. Un prestataire
+    # sans Telegram (entreprise, app) est payé de la même façon : le
+    # règlement ne connaît que son compte.
     provider_telegram_id = telegram_id_of(db, provider_account_id)
-    if provider_telegram_id is None:
-        # Les prestataires n'existent que sur Telegram (et la Mini App).
-        raise MoneyError("provider_not_found", 404, mission)
 
     existing = mission_operation(db, mission_id, FUNDING)
     if existing is not None:
@@ -1364,11 +1373,8 @@ def _recompute_stats(db: Session, mission: BotMission) -> None:
     # Import local : crud importe déjà les modèles, pas ce module.
     from backend.app.crud import _recompute_provider_stats
 
-    provider_account_id = mission.provider_account_id
-    if provider_account_id is None and mission.provider_telegram_id is not None:
-        provider_account_id = account_id_for(db, TELEGRAM, mission.provider_telegram_id)
-    if provider_account_id is not None:
-        _recompute_provider_stats(db, provider_account_id)
+    if mission.provider_account_id is not None:
+        _recompute_provider_stats(db, mission.provider_account_id)
 
 
 def _after_settlement(db: Session, mission_id: int) -> BotMission:

@@ -208,10 +208,13 @@ class LiveBackend:
 
     def quote(self, mission_id: int, provider: int, amount: float = 100.0, currency: str = "USD", delay_hours: int = 2) -> int:
         """Devis envoyé par un prestataire prévenu ; renvoie son numéro."""
-        from backend.app import crud
+        from backend.app import crud, ledger
 
         with self.database.SessionLocal() as session:
-            return crud.create_quote(session, mission_id, provider, amount=amount, currency=currency, delay_hours=delay_hours).id
+            provider_account_id = ledger.account_id_for(session, ledger.TELEGRAM, provider)
+            return crud.create_quote(
+                session, mission_id, provider_account_id, amount=amount, currency=currency, delay_hours=delay_hours
+            ).id
 
     def accept(self, quote_id: int, client: int) -> None:
         from backend.app import crud, ledger

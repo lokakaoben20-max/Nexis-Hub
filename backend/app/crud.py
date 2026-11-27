@@ -33,11 +33,6 @@ def _touch_status(mission: BotMission) -> None:
     mission.status_changed_at = datetime.utcnow()
 
 
-def _account_id_for_telegram(db: Session, telegram_id: int) -> int:
-    """Compte canonique d'une identité Telegram vérifiée par le canal."""
-    return ledger.account_id_for(db, ledger.TELEGRAM, telegram_id, create=True)
-
-
 CLIENT_LANGUAGES = profils.LANGUAGES
 MAX_DISPLAY_NAME_LENGTH = profils.MAX_NAME_LENGTH
 
@@ -437,7 +432,7 @@ def mission_stats(db: Session) -> dict:
 def create_quote(
     db: Session,
     mission_id: int,
-    provider_telegram_id: int,
+    provider_account_id: int,
     amount: float,
     currency: str,
     delay_hours: int,
@@ -449,9 +444,7 @@ def create_quote(
     if mission.status not in QUOTABLE_STATUSES:
         # Devis accepté ou mission payée : plus de nouveau devis.
         raise MissionRefused("mission_not_open")
-    provider_account_id = _account_id_for_telegram(db, provider_telegram_id)
-    client_account_id = mission.client_account_id or _account_id_for_telegram(db, mission.telegram_id)
-    if client_account_id == provider_account_id:
+    if mission.client_account_id == provider_account_id:
         # Un prestataire peut commander comme client, jamais chiffrer sa
         # propre mission (le paiement le refuserait aussi : ledger).
         raise ValueError("provider_is_client")
@@ -460,7 +453,8 @@ def create_quote(
         raise MissionRefused("provider_not_alerted", 403)
     quote = BotQuote(
         mission_id=mission_id,
-        provider_telegram_id=provider_telegram_id,
+        # Affichage du bot Telegram seulement ; aucun s'il n'a pas de Telegram.
+        provider_telegram_id=ledger.telegram_id_of(db, provider_account_id),
         provider_account_id=provider_account_id,
         amount=amount,
         currency=currency,
@@ -576,7 +570,7 @@ def decide_accept_quote(db: Session, quote_id: int, client_account_id: int) -> B
         mission.status = "confirmed"
         _touch_status(mission)
         mission.provider_telegram_id = quote.provider_telegram_id
-        mission.provider_account_id = quote.provider_account_id or _account_id_for_telegram(db, quote.provider_telegram_id)
+        mission.provider_account_id = quote.provider_account_id
 
     evenements.quote_accepted(db, quote)
     db.flush()
@@ -683,13 +677,10 @@ def _recompute_provider_stats(db: Session, provider_account_id: int | None) -> N
     provider = profils.provider_profile(db, provider_account_id)
     if provider is None:
         return
-    # Les lignes d'avant les comptes Nexis ne portent que l'identifiant Telegram.
-    provider_telegram_id = ledger.telegram_id_of(db, provider_account_id)
+    # Toutes les lignes portent le compte du prestataire (migration
+    # a4b5c6d7e8f9) : Telegram n'entre plus dans le calcul.
     review_filter = BotReview.provider_account_id == provider_account_id
     mission_filter = BotMission.provider_account_id == provider_account_id
-    if provider_telegram_id is not None:
-        review_filter = or_(review_filter, BotReview.provider_telegram_id == provider_telegram_id)
-        mission_filter = or_(mission_filter, BotMission.provider_telegram_id == provider_telegram_id)
 
     avg_rating, total_reviews = db.query(func.avg(BotReview.rating), func.count(BotReview.id)).filter(review_filter).one()
     provider.average_rating = round(float(avg_rating), 1) if avg_rating is not None else 0.0
@@ -735,10 +726,9 @@ def create_review(
     mission = db.get(BotMission, mission_id)
     if mission is None:
         raise ValueError("Mission introuvable")
-    mission_client_account_id = mission.client_account_id or _account_id_for_telegram(db, mission.telegram_id)
-    if client_account_id is None or mission_client_account_id != client_account_id:
+    if client_account_id is None or mission.client_account_id != client_account_id:
         raise ValueError("Ce client n'est pas associé à cette mission")
-    if mission.provider_telegram_id is None:
+    if mission.provider_account_id is None:
         raise ValueError("Aucun prestataire associé à cette mission")
     if rating < 1 or rating > 5:
         raise ValueError("La note doit être comprise entre 1 et 5")
@@ -752,7 +742,7 @@ def create_review(
         client_telegram_id=client_telegram_id,
         provider_telegram_id=mission.provider_telegram_id,
         client_account_id=client_account_id,
-        provider_account_id=mission.provider_account_id or _account_id_for_telegram(db, mission.provider_telegram_id),
+        provider_account_id=mission.provider_account_id,
         rating=rating,
         comment=comment or None,
     )

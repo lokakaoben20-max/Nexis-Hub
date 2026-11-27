@@ -601,8 +601,7 @@ def _mission_to_dict(mission: BotMission) -> dict:
 def _quote_to_dict(quote: BotQuote, db=None) -> dict:
     provider = None
     if db is not None:
-        provider_account_id = quote.provider_account_id or ledger.account_id_for(db, ledger.TELEGRAM, quote.provider_telegram_id)
-        provider = profils.provider_profile(db, provider_account_id)
+        provider = profils.provider_profile(db, quote.provider_account_id)
     return {
         "provider_name": provider.full_name if provider is not None else None,
         # Note, missions, badge et vérification : ce qui aide le client à choisir.
@@ -1141,11 +1140,16 @@ def _mission_view(db, mission: BotMission, role: str) -> dict:
 @provider_action
 def create_quote(payload: QuoteCreatePayload, actor: Actor = Depends(current_actor)):
     with SessionLocal() as db:
+        # Le devis est au nom du compte de l'acteur, jamais d'un identifiant
+        # de canal. Sans compte, il n'a pu être prévenu d'aucune mission.
+        provider_account_id = ledger.account_id_for(db, actor.channel, actor.external_id)
+        if provider_account_id is None:
+            raise HTTPException(status_code=403, detail={"code": "provider_not_alerted"})
         try:
             quote = crud.create_quote(
                 db,
                 mission_id=payload.mission_id,
-                provider_telegram_id=actor.telegram_id,
+                provider_account_id=provider_account_id,
                 amount=payload.amount,
                 currency=payload.currency,
                 delay_hours=payload.delay_hours,
@@ -2127,11 +2131,8 @@ def my_missions(role: str = "client", limit: int = 20, actor: Actor = Depends(cu
 def _listed_mission(db, mission: BotMission, admin: bool = False) -> dict:
     """Mission d'une liste, avec les noms affichés par les canaux et ses
     décisions de litige (détail interne à Nexis Hub seulement pour l'admin)."""
-    client = profils.client_profile(db, mission.client_account_id or _telegram_account(db, mission.telegram_id))
-    provider_account_id = mission.provider_account_id
-    if provider_account_id is None and mission.provider_telegram_id is not None:
-        provider_account_id = _telegram_account(db, mission.provider_telegram_id)
-    provider = profils.provider_profile(db, provider_account_id)
+    client = profils.client_profile(db, mission.client_account_id)
+    provider = profils.provider_profile(db, mission.provider_account_id)
     return {
         **_mission_to_dict(mission),
         "client_name": client.first_name if client is not None else None,
