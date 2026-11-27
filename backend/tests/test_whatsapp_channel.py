@@ -44,6 +44,16 @@ WHATSAPP_ROUTES = {
     ("POST", "/api/bot/missions/{mission_id}/fund"),
     ("POST", "/api/bot/missions/{mission_id}/payment-intents"),
     ("GET", "/api/bot/payment-intents/{intent_id}"),
+    # Suivi par le client (étape 7) : arrivée, fin, litige, avis, solde,
+    # parité : test_whatsapp_suivi.py.
+    ("GET", "/api/bot/missions/{mission_id}/presence"),
+    ("POST", "/api/bot/missions/{mission_id}/presence/confirm"),
+    ("POST", "/api/bot/missions/{mission_id}/presence/not-yet"),
+    ("POST", "/api/bot/missions/{mission_id}/presence/wrong-person"),
+    ("POST", "/api/bot/missions/{mission_id}/confirm"),
+    ("POST", "/api/bot/missions/{mission_id}/dispute"),
+    ("POST", "/api/bot/reviews"),
+    ("GET", "/api/me/wallet/history"),
 }
 
 # Actions de prestataire : jamais depuis WhatsApp, refus explicite.

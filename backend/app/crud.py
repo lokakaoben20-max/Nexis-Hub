@@ -5,7 +5,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.app import app_auth, evenements, ledger, profils
+from backend.app import app_auth, evenements, ledger, profils, transactions
 from backend.app.models import (
     SERVICE_REQUEST_STATUSES,
     BotMission,
@@ -712,23 +712,31 @@ def _recompute_provider_stats(db: Session, provider_account_id: int | None) -> N
 
     provider.badge = _earned_badge(provider)
 
-    db.commit()
+    transactions.commit(db)
     db.refresh(provider)
+
+
+def mission_review(db: Session, mission_id: int) -> BotReview | None:
+    return db.query(BotReview).filter(BotReview.mission_id == mission_id).first()
 
 
 def create_review(
     db: Session,
     mission_id: int,
-    client_telegram_id: int,
+    client_account_id: int | None,
     rating: int,
     comment: str | None = None,
+    *,
+    client_telegram_id: int | None = None,
 ) -> BotReview:
+    """Avis du client de la mission sur son prestataire, une fois par
+    mission. Le client est son compte Nexis (Telegram ou WhatsApp) ;
+    `client_telegram_id` n'est gardé que pour un client Telegram."""
     mission = db.get(BotMission, mission_id)
     if mission is None:
         raise ValueError("Mission introuvable")
-    client_account_id = _account_id_for_telegram(db, client_telegram_id)
     mission_client_account_id = mission.client_account_id or _account_id_for_telegram(db, mission.telegram_id)
-    if mission_client_account_id != client_account_id:
+    if client_account_id is None or mission_client_account_id != client_account_id:
         raise ValueError("Ce client n'est pas associé à cette mission")
     if mission.provider_telegram_id is None:
         raise ValueError("Aucun prestataire associé à cette mission")
@@ -748,8 +756,13 @@ def create_review(
         rating=rating,
         comment=comment or None,
     )
-    db.add(review)
-    db.commit()
+    try:
+        with db.begin_nested():
+            db.add(review)
+    except IntegrityError as error:
+        # Deux avis en même temps sur la même mission : un seul est gardé.
+        raise ValueError("Cette mission a déjà été évaluée") from error
+    transactions.commit(db)
     db.refresh(review)
 
     _recompute_provider_stats(db, review.provider_account_id)

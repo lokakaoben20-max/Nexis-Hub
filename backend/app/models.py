@@ -193,10 +193,18 @@ class BotTransaction(Base):
 
 class BotReview(Base):
     __tablename__ = "bot_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "client_telegram_id IS NOT NULL OR client_account_id IS NOT NULL",
+            name="ck_bot_reviews_client_known",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     mission_id: Mapped[int] = mapped_column(ForeignKey("bot_missions.mission_id"), unique=True, index=True)
-    client_telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    # Un client WhatsApp n'a pas de Telegram : l'auteur est toujours connu
+    # par son compte (ou, avant les comptes, par son Telegram).
+    client_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     provider_telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
     client_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)
     provider_account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id"), nullable=True, index=True)

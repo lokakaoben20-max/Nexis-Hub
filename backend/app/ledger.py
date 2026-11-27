@@ -26,6 +26,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
+from backend.app import transactions
 from backend.app.models import (
     BotMission,
     BotQuote,
@@ -503,7 +504,7 @@ def _write(db: Session, mission_id: int, phase: str, matches, write, *, commit: 
     `commit=False` : l'écriture se fait dans un point de sauvegarde, et c'est
     l'appelant qui valide (avec la clé d'idempotence du message, par exemple).
     Même décision en cas de conflit ; seul le point de sauvegarde est annulé."""
-    if not commit:
+    if not commit or transactions.deferred(db):
         try:
             with db.begin_nested():
                 write()
@@ -854,7 +855,7 @@ def open_dispute(
     _set_status(mission, "disputed")
     if notify_provider:
         _events().dispute_opened(db, mission)
-    db.commit()
+    transactions.commit(db)
     _recompute_stats(db, mission)
     return db.get(BotMission, mission_id)
 
