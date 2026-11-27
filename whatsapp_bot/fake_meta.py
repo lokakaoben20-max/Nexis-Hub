@@ -7,6 +7,13 @@ essayer le service en local. Il :
   et les **limites de WhatsApp** comme Meta (3 boutons de 20 caractères,
   10 lignes de liste...), et répond un wamid ou une erreur au format Meta ;
 - simule les pannes de Meta : erreur, réponse 500, coupure (`fail_next`) ;
+- applique la **fenêtre de 24 h** comme Meta : un message libre à quelqu'un
+  qui n'a pas écrit depuis 24 h est accepté, puis refusé par un statut
+  `failed` (erreur 131047) ; seuls les modèles approuvés (`templates`)
+  passent hors fenêtre ;
+- garde les statuts que Meta enverrait pour les notifications (porteuses de
+  `biz_opaque_callback_data`) et les rend en webhook signé
+  (`status_webhook`), ainsi que les événements de modèle (`template_event`) ;
 - fabrique des webhooks **signés** comme Meta (`webhook_*`), avec BSUID et
   numéro facultatif, et peut les poster au service (`POST /_fake/ecrire`).
 
@@ -33,7 +40,9 @@ import itertools
 import json
 import os
 import secrets
+import time
 from dataclasses import dataclass, field
+from typing import Callable
 
 import httpx
 from fastapi import FastAPI, Request
@@ -43,6 +52,9 @@ from whatsapp_bot import meta, signature
 
 DEFAULT_BSUID = "CD.1000000000000000001"
 DEFAULT_PHONE = "243810000001"
+WINDOW_SECONDS = 24 * 3600
+# Modèles approuvés d'office (backend/app/modeles_whatsapp.py).
+DEFAULT_TEMPLATES = {("nexis_suivi", "fr"): "APPROVED", ("nexis_suivi", "en"): "APPROVED"}
 
 
 def _meta_error(status: int, code: int, message: str) -> JSONResponse:
@@ -76,6 +88,14 @@ class Sent:
         return ""
 
     @property
+    def callback(self) -> str | None:
+        return self.body.get("biz_opaque_callback_data")
+
+    @property
+    def template(self) -> dict | None:
+        return self.body.get("template") if self.body.get("type") == "template" else None
+
+    @property
     def choices(self) -> list[tuple[str, str]]:
         """(identifiant, libellé) des boutons ou des lignes de liste."""
         if self.kind == "button":
@@ -95,6 +115,14 @@ class FakeMeta:
     # Pannes à venir, dans l'ordre : "error" (refus 400 de Meta), "server"
     # (500), "timeout" (coupure après réception : réponse perdue).
     failures: list[str] = field(default_factory=list)
+    # Horloge de Meta (secondes), avançable dans les tests.
+    clock: Callable[[], float] = time.time
+    # Dernier message reçu de chaque personne (numéro et BSUID) : fenêtre de 24 h.
+    inbound: dict[str, float] = field(default_factory=dict)
+    # Modèles connus : (nom, langue) → APPROVED, PAUSED, DISABLED...
+    templates: dict[tuple[str, str], str] = field(default_factory=lambda: dict(DEFAULT_TEMPLATES))
+    # Statuts que Meta enverrait (notifications seulement), pas encore livrés.
+    statuses: list[dict] = field(default_factory=list)
     _counter: itertools.count = field(default_factory=lambda: itertools.count(1))
 
     def fail_next(self, *kinds: str) -> None:
@@ -107,10 +135,13 @@ class FakeMeta:
 
     def webhook(self, message: dict, *, bsuid: str = DEFAULT_BSUID, phone: str | None = DEFAULT_PHONE, name: str = "Client") -> dict:
         contact = {"profile": {"name": name}, "user_id": bsuid}
-        message = {"from_user_id": bsuid, "timestamp": "1764150000", **message}
+        now = self.clock()
+        message = {"from_user_id": bsuid, "timestamp": str(int(now)), **message}
+        self.inbound[bsuid] = now
         if phone is not None:
             contact["wa_id"] = phone
             message["from"] = phone
+            self.inbound[phone] = now
         message.setdefault("id", self.wamid())
         return {
             "object": "whatsapp_business_account",
@@ -140,11 +171,67 @@ class FakeMeta:
         reply = {"type": kind, kind: {"id": choice_id, "title": choice_id}}
         return self.webhook({"type": "interactive", "interactive": reply}, **who)
 
+    def template_reply(self, payload: str, text: str = "Voir les détails", **who) -> dict:
+        """Appui sur le bouton d'un modèle (`type: button`)."""
+        return self.webhook({"type": "button", "button": {"payload": payload, "text": text}}, **who)
+
     def media_message(self, kind: str = "image", **who) -> dict:
         return self.webhook({"type": kind, kind: {"id": "MEDIA_FAKE", "mime_type": "image/jpeg"}}, **who)
 
     def location_message(self, latitude: float, longitude: float, **who) -> dict:
         return self.webhook({"type": "location", "location": {"latitude": latitude, "longitude": longitude}}, **who)
+
+    def _envelope(self, change: dict) -> dict:
+        return {"object": "whatsapp_business_account", "entry": [{"id": "WABA_FAKE", "changes": [change]}]}
+
+    def status(self, sent: "Sent", status: str, *, error_code: int | None = None) -> dict:
+        """Un statut de Meta pour un envoi accepté."""
+        raw = {
+            "id": sent.wamid,
+            "status": status,
+            "timestamp": str(int(self.clock())),
+            "recipient_id": sent.to or sent.recipient,
+        }
+        if sent.callback:
+            raw["biz_opaque_callback_data"] = sent.callback
+        if error_code is not None:
+            raw["errors"] = [{"code": error_code, "title": "error", "message": "error"}]
+        return raw
+
+    def status_webhook(self, statuses: list[dict] | None = None) -> dict:
+        """Webhook des statuts donnés, ou de ceux que Meta a en attente
+        (qui sont alors vidés)."""
+        if statuses is None:
+            statuses, self.statuses = self.statuses, []
+        return self._envelope(
+            {
+                "field": "messages",
+                "value": {
+                    "messaging_product": "whatsapp",
+                    "metadata": {"display_phone_number": "243800000000", "phone_number_id": self.phone_number_id},
+                    "statuses": statuses,
+                },
+            }
+        )
+
+    def template_event(self, name: str, language: str, event: str, reason: str = "NONE") -> dict:
+        """Webhook de Meta : modèle approuvé, refusé, en pause..."""
+        return self._envelope(
+            {
+                "field": "message_template_status_update",
+                "value": {
+                    "event": event,
+                    "message_template_id": 1234567890,
+                    "message_template_name": name,
+                    "message_template_language": language,
+                    "reason": reason,
+                },
+            }
+        )
+
+    def in_window(self, address: str | None) -> bool:
+        seen = self.inbound.get(address or "")
+        return seen is not None and self.clock() - seen < WINDOW_SECONDS
 
     def signed(self, payload: dict) -> tuple[bytes, dict]:
         body = json.dumps(payload).encode()
@@ -177,8 +264,19 @@ class FakeMeta:
             problem = _invalid(body)
             if problem:
                 return _meta_error(400, 131009, f"Parameter value is not valid: {problem}")
+            if body.get("type") == "template":
+                refusal = fake._template_refusal(body["template"])
+                if refusal:
+                    return refusal
             wamid = fake.wamid()
-            fake.sent.append(Sent(wamid=wamid, to=body.get("to"), recipient=body.get("recipient"), body=body))
+            sent_message = Sent(wamid=wamid, to=body.get("to"), recipient=body.get("recipient"), body=body)
+            fake.sent.append(sent_message)
+            address = body.get("to") or body.get("recipient")
+            if body.get("type") != "template" and not fake.in_window(address):
+                # Comme Meta : accepté, puis refusé par un statut.
+                fake.statuses.append(fake.status(sent_message, "failed", error_code=131047))
+            elif sent_message.callback:
+                fake.statuses.append(fake.status(sent_message, "delivered"))
             contact = {"input": body.get("to") or body.get("recipient")}
             return {"messaging_product": "whatsapp", "contacts": [contact], "messages": [{"id": wamid}]}
 
@@ -207,6 +305,24 @@ class FakeMeta:
             return {"webhook": response.status_code}
 
         return api
+
+    def _template_refusal(self, template: dict) -> JSONResponse | None:
+        language = (template.get("language") or {}).get("code")
+        state = self.templates.get((template.get("name"), language))
+        if state is None:
+            return _meta_error(404, 132001, "Template name does not exist in the translation")
+        if state == "PAUSED":
+            return _meta_error(400, 132015, "Template is paused")
+        if state != "APPROVED":
+            return _meta_error(400, 132016, "Template is disabled")
+        body = [c for c in template.get("components") or [] if c.get("type") == "body"]
+        values = [p.get("text") or "" for c in body for p in c.get("parameters") or []]
+        if len(values) != 1 or any(not v or "\n" in v or "\t" in v or "     " in v for v in values):
+            return _meta_error(400, 132000, "Number of parameters does not match the expected number of params")
+        buttons = [c for c in template.get("components") or [] if c.get("type") == "button"]
+        if len(buttons) != 1 or not (buttons[0].get("parameters") or [{}])[0].get("payload"):
+            return _meta_error(400, 132000, "Button parameter missing")
+        return None
 
 
 def _invalid(body: dict) -> str | None:

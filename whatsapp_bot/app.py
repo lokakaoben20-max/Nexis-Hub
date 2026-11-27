@@ -18,6 +18,13 @@ Chaque message est traité avant de répondre à Meta, une seule fois :
 4. backend injoignable : la personne reçoit « service indisponible,
    réessayez », et le message est noté « fait ». **Rien n'est rejoué plus
    tard à sa place** : c'est elle qui réessaie.
+5. l'heure du message est notée au backend (fenêtre de 24 h des
+   notifications) ; un échec ici ne fait jamais retraiter le message.
+
+Statuts des notifications envoyées par le backend (reconnus à leur
+`biz_opaque_callback_data`) et événements du compte (modèle refusé ou en
+pause, qualité du numéro) : relayés au backend (`relay`) ; backend
+injoignable = réponse 500, Meta renverra.
 
 Journaux : identifiants de message et codes d'erreur seulement. Jamais le
 texte d'un message, une position, un numéro, un secret ni une signature.
@@ -97,12 +104,44 @@ async def process(service: Service, message: meta.Incoming) -> None:
         raise
     finally:
         await service.store.unlock(message.bsuid, token)
+    if message.timestamp is not None:
+        try:
+            await service.conversation.backend.seen(message.bsuid, message.message_id, message.timestamp)
+        except (BackendUnavailable, Refused) as error:
+            # Sans cette heure, une notification partira en modèle plutôt
+            # qu'en message libre : jamais une raison de retraiter le message.
+            logger.info("Message %s : heure de réception non notée (%s)", message.message_id, type(error).__name__)
     try:
         await service.messenger.mark_read(message.message_id)
     except meta.SendFailed as error:
         # Les deux coches bleues ne sont qu'un confort : jamais une raison de
         # retraiter le message.
         logger.info("Message %s : accusé de lecture non envoyé (%s)", message.message_id, error.reason)
+
+
+async def relay(service: Service, batch: meta.Batch) -> bool:
+    """Statuts des notifications et événements du compte, relayés au
+    backend. Backend injoignable : False, Meta renverra le webhook (les
+    messages déjà traités sont écartés, un statut relayé deux fois ne fait
+    rien de plus). Refus du backend : journalisé, jamais rejoué en boucle."""
+    backend = service.conversation.backend
+    for status in batch.statuses:
+        try:
+            await backend.notification_status(status)
+        except BackendUnavailable as error:
+            logger.warning("Statut %s non relayé (%s), Meta renverra", status.message_id, error)
+            return False
+        except Refused as refusal:
+            logger.error("Statut %s refusé par le backend (%s)", status.message_id, refusal.code)
+    for event in batch.events:
+        try:
+            await backend.account_event(event)
+        except BackendUnavailable as error:
+            logger.warning("Événement %s non relayé (%s), Meta renverra", event.field, error)
+            return False
+        except Refused as refusal:
+            logger.error("Événement %s refusé par le backend (%s)", event.field, refusal.code)
+    return True
 
 
 def build_app(service: Service) -> FastAPI:
@@ -140,6 +179,8 @@ def build_app(service: Service) -> FastAPI:
             except Exception:
                 logger.exception("Message %s : échec du traitement, Meta renverra", message.message_id)
                 return PlainTextResponse("Retry", status_code=500)
+        if not await relay(service, batch):
+            return PlainTextResponse("Retry", status_code=500)
         return Response(status_code=200)
 
     @app.get("/health")

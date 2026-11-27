@@ -200,6 +200,9 @@ def test_every_write_open_to_whatsapp_is_idempotent(backend):
         ("POST", "/api/bot/reviews"),
         ("POST", "/api/me/terms"),
         ("POST", "/api/whatsapp/client"),
+        ("POST", "/api/whatsapp/seen"),
+        ("POST", "/api/whatsapp/statuses"),
+        ("POST", "/api/whatsapp/meta-events"),
     ]
     for method, path, endpoint in api_routes(backend):
         if (method, path) in writes:
