@@ -18,6 +18,9 @@ final class AppModel {
     var amountsHidden = false
     /// Espace prestataire ouvert (seulement pour un compte prestataire).
     var providerSpace = false
+    /// Espace entreprise ouvert (numéro de l'entreprise) ; `nil` = espace
+    /// personnel. Jamais en même temps que l'espace prestataire.
+    var orgSpaceId: Int?
     /// Onglet demandé par un écran (« Voir mon portefeuille ») ; le cadre
     /// l'ouvre puis l'efface.
     var requestedTab: AppTab?
@@ -123,6 +126,7 @@ final class AppModel {
         amountsHidden = false
         walletCurrency = .cdf
         providerSpace = false
+        orgSpaceId = nil
         requestedTab = nil
         openFlowTabs = []
     }

@@ -1244,6 +1244,795 @@
   "fr": "facultatif",
   "ln": "ezali ntina te"
  },
+ "orgAccept": {
+  "en": "I have read and accept",
+  "fr": "J'ai lu et j'accepte",
+  "ln": "Natángi mpe nandimi"
+ },
+ "orgActBoth": {
+  "en": "Both",
+  "fr": "Les deux",
+  "ln": "Ba mibale"
+ },
+ "orgActOrders": {
+  "en": "Orders",
+  "fr": "Commande",
+  "ln": "Esengi misala"
+ },
+ "orgActProvides": {
+  "en": "Provides",
+  "fr": "Propose",
+  "ln": "Epesi misala"
+ },
+ "orgActivityLabel": {
+  "en": "On NexisHub, the company…",
+  "fr": "Sur NexisHub, l'entreprise…",
+  "ln": "Na NexisHub, kompani…"
+ },
+ "orgApprovedInvite": {
+  "en": "Invite your team",
+  "fr": "Inviter votre équipe",
+  "ln": "Kobenga équipe na yo"
+ },
+ "orgApprovedNumber": {
+  "en": "Register the merchant Mobile Money number",
+  "fr": "Enregistrer le numéro Mobile Money marchand",
+  "ln": "Kokoma nimero ya Mobile Money ya makambo ya kompani"
+ },
+ "orgApprovedOpen": {
+  "en": "Open the business space",
+  "fr": "Ouvrir l'espace entreprise",
+  "ln": "Kofungola esika ya kompani"
+ },
+ "orgApprovedText": {
+  "en": "Your business space is open, with its own wallet.",
+  "fr": "Votre espace entreprise est ouvert, avec son propre portefeuille.",
+  "ln": "Esika ya kompani na yo efungwami, na portefeuille na yango moko."
+ },
+ "orgApprovedTitle": {
+  "en": "{name} is verified",
+  "fr": "{name} est vérifiée",
+  "ln": "{name} etalami"
+ },
+ "orgAvailableCaption": {
+  "en": "Available · business",
+  "fr": "Disponible · entreprise",
+  "ln": "Ezali · kompani"
+ },
+ "orgBackProfile": {
+  "en": "Back to profile",
+  "fr": "Retour au profil",
+  "ln": "Kozonga na profil"
+ },
+ "orgCanTitle": {
+  "en": "This role can",
+  "fr": "Ce rôle permet de",
+  "ln": "Mosala oyo epesi nzela ya"
+ },
+ "orgChange": {
+  "en": "Switch",
+  "fr": "Changer",
+  "ln": "Kobongola"
+ },
+ "orgCreateRow": {
+  "en": "Create a business space",
+  "fr": "Créer un espace entreprise",
+  "ln": "Kozalisa esika ya kompani"
+ },
+ "orgCreateRowSub": {
+  "en": "In your company's name",
+  "fr": "Au nom de votre entreprise",
+  "ln": "Na nkombo ya kompani na yo"
+ },
+ "orgDocIdnat": {
+  "en": "National identification",
+  "fr": "Identification nationale",
+  "ln": "Identification ya mokili"
+ },
+ "orgDocNif": {
+  "en": "Tax number",
+  "fr": "Numéro d'impôt",
+  "ln": "Nimero ya mpako"
+ },
+ "orgDocRccm": {
+  "en": "Trade register",
+  "fr": "Registre du commerce",
+  "ln": "Buku ya mombongo"
+ },
+ "orgDocReceived": {
+  "en": "Received",
+  "fr": "Reçu",
+  "ln": "Ezwami"
+ },
+ "orgDocToAdd": {
+  "en": "To add",
+  "fr": "À ajouter",
+  "ln": "Pesa yango"
+ },
+ "orgDocToRedo": {
+  "en": "To redo",
+  "fr": "À refaire",
+  "ln": "Salá yango lisusu"
+ },
+ "orgDocsCount": {
+  "en": {
+   "=1": "1 document attached",
+   "other": "{count} documents attached"
+  },
+  "fr": {
+   "=1": "1 document joint",
+   "other": "{count} documents joints"
+  },
+  "ln": {
+   "=1": "Mokanda 1 etindami",
+   "other": "Mikanda {count} etindami"
+  }
+ },
+ "orgDocsDemo": {
+  "en": "Demo: sending real documents arrives with the server.",
+  "fr": "Démonstration : l'envoi réel des documents arrive avec le serveur.",
+  "ln": "Démonstration : kotinda mikanda ya solo ekoya na serveur."
+ },
+ "orgDocsNote": {
+  "en": "Encrypted documents, seen by the verification team only.",
+  "fr": "Documents chiffrés, vus par l'équipe de vérification seulement.",
+  "ln": "Mikanda ebombami na chiffrement, équipe ya vérification kaka ekomona yango."
+ },
+ "orgDocsTitle": {
+  "en": "Company documents",
+  "fr": "Les documents de l'entreprise",
+  "ln": "Mikanda ya kompani"
+ },
+ "orgEdit": {
+  "en": "Edit",
+  "fr": "Modifier",
+  "ln": "Bongola"
+ },
+ "orgFailed": {
+  "en": "Not possible right now. Nothing was changed. Try again in a moment.",
+  "fr": "Impossible pour le moment. Rien n'a été modifié. Réessayez dans un instant.",
+  "ln": "Ekoki te sikoyo. Eloko moko te ebongwani. Meká lisusu mwa sima."
+ },
+ "orgFixKept": {
+  "en": "The rest is kept.",
+  "fr": "Le reste est conservé.",
+  "ln": "Makambo mosusu etikali."
+ },
+ "orgFixMessage": {
+  "en": "Message from the team",
+  "fr": "Message de l'équipe",
+  "ln": "Nsango ya équipe"
+ },
+ "orgFixReplace": {
+  "en": "Replace the document",
+  "fr": "Remplacer le document",
+  "ln": "Bongola mokanda"
+ },
+ "orgFixTitle": {
+  "en": "A correction is requested.",
+  "fr": "Une correction est demandée.",
+  "ln": "Bazali kosenga bobongisi."
+ },
+ "orgFixWrite": {
+  "en": "Write to the team",
+  "fr": "Écrire à l'équipe",
+  "ln": "Koloba na équipe"
+ },
+ "orgFnDirector": {
+  "en": "Director",
+  "fr": "Directeur",
+  "ln": "Directeur"
+ },
+ "orgFnManager": {
+  "en": "Manager",
+  "fr": "Gérant",
+  "ln": "Mokambi"
+ },
+ "orgFnOwner": {
+  "en": "Owner",
+  "fr": "Propriétaire",
+  "ln": "Nkolo ya kompani"
+ },
+ "orgFormEstablishment": {
+  "en": "Establishment",
+  "fr": "Établissement",
+  "ln": "Établissement"
+ },
+ "orgFormOther": {
+  "en": "Other",
+  "fr": "Autre",
+  "ln": "Mosusu"
+ },
+ "orgFunction": {
+  "en": "Position",
+  "fr": "Fonction",
+  "ln": "Mosala na ye"
+ },
+ "orgIdOnce": {
+  "en": "Only once: this check will also serve your other spaces and “Become a provider”.",
+  "fr": "Une seule fois : cette vérification servira aussi à vos autres espaces et à « Devenir prestataire ».",
+  "ln": "Mbala moko kaka : vérification oyo ekosalisa mpe na ba espace mosusu na yo mpe na « Kokoma mosali »."
+ },
+ "orgIdPiece": {
+  "en": "ID document",
+  "fr": "Pièce",
+  "ln": "Pièce"
+ },
+ "orgIdSent": {
+  "en": "Verification sent: the NexisHub team is looking at it.",
+  "fr": "Vérification envoyée : l'équipe NexisHub la regarde.",
+  "ln": "Vérification etindami : équipe ya NexisHub ezali kotala yango."
+ },
+ "orgIdTodoS": {
+  "en": "Not done yet on your account.",
+  "fr": "Pas encore faite sur votre compte.",
+  "ln": "Esalemi naino te na compte na yo."
+ },
+ "orgIdTodoT": {
+  "en": "Verify my identity",
+  "fr": "Vérifier mon identité",
+  "ln": "Kotala ozali nani na ngai"
+ },
+ "orgIdVerifiedS": {
+  "en": "Nothing more to send: your NexisHub verification is enough.",
+  "fr": "Rien de plus à envoyer : votre vérification NexisHub suffit.",
+  "ln": "Tindá eloko mosusu te : vérification na yo ya NexisHub esili."
+ },
+ "orgIdVerifiedT": {
+  "en": "Identity already verified",
+  "fr": "Identité déjà vérifiée",
+  "ln": "Ozali nani etalami déjà"
+ },
+ "orgIdVideo": {
+  "en": "Face video",
+  "fr": "Vidéo du visage",
+  "ln": "Video ya elongi"
+ },
+ "orgIntroPersonal": {
+  "en": "Your personal account stays the same.",
+  "fr": "Votre compte personnel ne change pas.",
+  "ln": "Compte na yo ya moto ebongwani te."
+ },
+ "orgIntroPrepareS": {
+  "en": "RCCM, IDNAT, NIF and the company's merchant Mobile Money number.",
+  "fr": "RCCM, IDNAT, NIF et le numéro Mobile Money marchand de l'entreprise.",
+  "ln": "RCCM, IDNAT, NIF mpe nimero ya Mobile Money ya makambo ya kompani."
+ },
+ "orgIntroPrepareT": {
+  "en": "To prepare",
+  "fr": "À préparer",
+  "ln": "Bobongisa liboso"
+ },
+ "orgIntroReceiptsS": {
+  "en": "In the company's name.",
+  "fr": "Au nom de l'entreprise.",
+  "ln": "Na nkombo ya kompani."
+ },
+ "orgIntroReceiptsT": {
+  "en": "Clear receipts",
+  "fr": "Des reçus clairs",
+  "ln": "Ba reçu oyo emonani polele"
+ },
+ "orgIntroTeamS": {
+  "en": "Everyone with their own account.",
+  "fr": "Chacun avec son propre compte.",
+  "ln": "Moto na moto na compte na ye moko."
+ },
+ "orgIntroTeamT": {
+  "en": "Your team",
+  "fr": "Votre équipe",
+  "ln": "Équipe na yo"
+ },
+ "orgIntroTitle": {
+  "en": "A space for your business",
+  "fr": "Un espace pour votre entreprise",
+  "ln": "Esika mpo na kompani na yo"
+ },
+ "orgIntroWalletS": {
+  "en": "Separate from your personal money.",
+  "fr": "Séparé de votre argent personnel.",
+  "ln": "Eyébani na mbongo na yo ya moto."
+ },
+ "orgIntroWalletT": {
+  "en": "Its own wallet",
+  "fr": "Son propre portefeuille",
+  "ln": "Portefeuille na yango moko"
+ },
+ "orgInvAccept": {
+  "en": "Accept the invitation",
+  "fr": "Accepter l'invitation",
+  "ln": "Kondima libyangisi"
+ },
+ "orgInvAcceptVerify": {
+  "en": "Accept and verify",
+  "fr": "Accepter et vérifier",
+  "ln": "Kondima mpe kotala"
+ },
+ "orgInvAccepted": {
+  "en": "You joined the team.",
+  "fr": "Vous avez rejoint l'équipe.",
+  "ln": "Okoti na équipe."
+ },
+ "orgInvBody": {
+  "en": "{name} invites you to join the team as {role}.",
+  "fr": "{name} vous propose de rejoindre l'équipe comme {role}.",
+  "ln": "{name} azali kopesa yo likanisi ya kokota na équipe lokola {role}."
+ },
+ "orgInvHeading": {
+  "en": "{org} invites you",
+  "fr": "{org} vous invite",
+  "ln": "{org} azali kobenga yo"
+ },
+ "orgInvOwn": {
+  "en": "Your personal account stays yours, separate from the company.",
+  "fr": "Votre compte personnel reste à vous, séparé de l'entreprise.",
+  "ln": "Compte na yo ya moto etikali na yo, eyébani na kompani."
+ },
+ "orgInvRefuse": {
+  "en": "Decline",
+  "fr": "Refuser",
+  "ln": "Koboya"
+ },
+ "orgInvRefused": {
+  "en": "Invitation declined.",
+  "fr": "Invitation refusée.",
+  "ln": "Libyangisi eboyami."
+ },
+ "orgInvTitle": {
+  "en": "Invitation",
+  "fr": "Invitation",
+  "ln": "Libyangisi"
+ },
+ "orgInvUnverNote": {
+  "en": "You can accept now and verify afterwards.",
+  "fr": "Vous pourrez accepter maintenant et vérifier ensuite.",
+  "ln": "Okoki kondima sikoyo mpe kotalama sima."
+ },
+ "orgInvUnverS": {
+  "en": "ID document, then a video of your face.",
+  "fr": "Pièce, puis vidéo de votre visage.",
+  "ln": "Pièce, sima video ya elongi na yo."
+ },
+ "orgInvUnverT": {
+  "en": "Your identity still needs to be verified",
+  "fr": "Votre identité reste à vérifier",
+  "ln": "Ozali nani etikali kotalama"
+ },
+ "orgInvVerifiedT": {
+  "en": "You are already verified",
+  "fr": "Vous êtes déjà vérifié",
+  "ln": "Otalami déjà"
+ },
+ "orgInviteAction": {
+  "en": "Invite",
+  "fr": "Inviter",
+  "ln": "Kobenga"
+ },
+ "orgInviteRole": {
+  "en": "Role",
+  "fr": "Rôle",
+  "ln": "Mosala"
+ },
+ "orgInviteRow": {
+  "en": "Invitation from {name}",
+  "fr": "Invitation de {name}",
+  "ln": "Libyangisi ya {name}"
+ },
+ "orgInviteRowSub": {
+  "en": "Reply to the invitation",
+  "fr": "Répondre à l'invitation",
+  "ln": "Subola na libyangisi"
+ },
+ "orgInviteSend": {
+  "en": "Send the invitation",
+  "fr": "Envoyer l'invitation",
+  "ln": "Kotinda libyangisi"
+ },
+ "orgInviteSent": {
+  "en": "Invitation sent",
+  "fr": "Invitation envoyée",
+  "ln": "Libyangisi etindami"
+ },
+ "orgLater": {
+  "en": "Later",
+  "fr": "Plus tard",
+  "ln": "Sima"
+ },
+ "orgLegalForm": {
+  "en": "Legal form",
+  "fr": "Forme juridique",
+  "ln": "Lolenge ya mibeko ya kompani"
+ },
+ "orgMemberInvited": {
+  "en": "Invited",
+  "fr": "Invité",
+  "ln": "Abengami"
+ },
+ "orgMemberToVerify": {
+  "en": "To verify",
+  "fr": "À vérifier",
+  "ln": "Esengeli kotalama"
+ },
+ "orgMemberVerified": {
+  "en": "Verified",
+  "fr": "Vérifié",
+  "ln": "Etalami"
+ },
+ "orgMissionsTitle": {
+  "en": "Company missions",
+  "fr": "Missions de l'entreprise",
+  "ln": "Misala ya kompani"
+ },
+ "orgName": {
+  "en": "Name",
+  "fr": "Nom",
+  "ln": "Nkombo"
+ },
+ "orgNumberActive": {
+  "en": "Active",
+  "fr": "Actif",
+  "ln": "Ezali kosala"
+ },
+ "orgNumberAdd": {
+  "en": "Add a number",
+  "fr": "Ajouter un numéro",
+  "ln": "Kobakisa nimero"
+ },
+ "orgNumberAddTitle": {
+  "en": "New merchant number",
+  "fr": "Nouveau numéro marchand",
+  "ln": "Nimero ya sika ya makambo ya kompani"
+ },
+ "orgNumberDone": {
+  "en": "Number added: usable in 72 h.",
+  "fr": "Numéro ajouté : utilisable dans 72 h.",
+  "ln": "Nimero ebakisami : ekoki kosalelama na 72 h."
+ },
+ "orgNumberGuard": {
+  "en": "Add the number {number} to the company's withdrawals",
+  "fr": "Ajouter le numéro {number} aux retraits de l'entreprise",
+  "ln": "Kobakisa nimero {number} na ba retrait ya kompani"
+ },
+ "orgNumberInvalid": {
+  "en": "This number is not valid.",
+  "fr": "Ce numéro n'est pas valide.",
+  "ln": "Nimero oyo ezali malamu te."
+ },
+ "orgNumberLimit": {
+  "en": "4 numbers at most per account.",
+  "fr": "4 numéros au plus par compte.",
+  "ln": "Ba nimero 4 kaka na compte moko."
+ },
+ "orgNumberMerchant": {
+  "en": "Merchant · {number}",
+  "fr": "Marchand · {number}",
+  "ln": "Makambo ya kompani · {number}"
+ },
+ "orgNumberOperator": {
+  "en": "Operator",
+  "fr": "Opérateur",
+  "ln": "Opérateur"
+ },
+ "orgNumberWaiting": {
+  "en": "In {hours} h",
+  "fr": "Dans {hours} h",
+  "ln": "Na {hours} h"
+ },
+ "orgNumbersHint": {
+  "en": "Only the representative manages them, from the app.",
+  "fr": "Seul le représentant les gère, depuis l'app.",
+  "ln": "Moto ya kolakisa kaka akambaka yango, na app."
+ },
+ "orgNumbersNote": {
+  "en": "Each new number alerts everyone and waits 72 h before its first withdrawal.",
+  "fr": "Chaque nouveau numéro prévient tout le monde et attend 72 h avant son premier retrait.",
+  "ln": "Nimero nyonso ya sika ebengi bato nyonso mpe ezeli 72 h liboso ya retrait ya yambo."
+ },
+ "orgNumbersTitle": {
+  "en": "Withdrawal numbers",
+  "fr": "Numéros de retrait",
+  "ln": "Ba nimero ya kobimisa mbongo"
+ },
+ "orgOngoing": {
+  "en": "Ongoing missions",
+  "fr": "Missions en cours",
+  "ln": "Misala ezali kosalema"
+ },
+ "orgQuickTeam": {
+  "en": "Team",
+  "fr": "Équipe",
+  "ln": "Équipe"
+ },
+ "orgRepOther": {
+  "en": "Someone else",
+  "fr": "Une autre personne",
+  "ln": "Moto mosusu"
+ },
+ "orgRepOtherSub": {
+  "en": "They will need to confirm with their account.",
+  "fr": "Elle devra confirmer avec son compte.",
+  "ln": "Asengeli kondimisa na compte na ye."
+ },
+ "orgRepSelf": {
+  "en": "Myself",
+  "fr": "Moi-même",
+  "ln": "Ngai moko"
+ },
+ "orgRepTitle": {
+  "en": "Who represents the company?",
+  "fr": "Qui représente l'entreprise ?",
+  "ln": "Nani azali kolakisa kompani?"
+ },
+ "orgReviewNote": {
+  "en": "The team checks your documents before opening the space.",
+  "fr": "L'équipe vérifie vos documents avant d'ouvrir l'espace.",
+  "ln": "Équipe ekotala mikanda na yo liboso ya kofungola esika."
+ },
+ "orgRightBalance": {
+  "en": "See the balance and history",
+  "fr": "Voir le solde et l'historique",
+  "ln": "Kotala mbongo ezali mpe makambo ya kala"
+ },
+ "orgRightDoMissions": {
+  "en": "Carry out the company's missions",
+  "fr": "Réaliser les missions de l'entreprise",
+  "ln": "Kosala misala ya kompani"
+ },
+ "orgRightMembers": {
+  "en": "Invite or remove a member",
+  "fr": "Inviter ou retirer un membre",
+  "ln": "Kobenga to kolongola mosali ya équipe"
+ },
+ "orgRightMissions": {
+  "en": "See the company's missions",
+  "fr": "Voir les missions de l'entreprise",
+  "ln": "Kotala misala ya kompani"
+ },
+ "orgRightNoMoney": {
+  "en": "Cannot see the balance or withdrawals",
+  "fr": "Ne voit ni le solde ni les retraits",
+  "ln": "Akomona mbongo ezali te mpe ba retrait te"
+ },
+ "orgRightNumbers": {
+  "en": "Manage withdrawal numbers",
+  "fr": "Gérer les numéros de retrait",
+  "ln": "Kokamba ba nimero ya kobimisa mbongo"
+ },
+ "orgRightOwnMissions": {
+  "en": "See their own missions",
+  "fr": "Voir ses propres missions",
+  "ln": "Kotala misala na ye moko"
+ },
+ "orgRightWithdraw": {
+  "en": "Withdraw money",
+  "fr": "Retirer de l'argent",
+  "ln": "Kobimisa mbongo"
+ },
+ "orgRoleAccShort": {
+  "en": "Acc.",
+  "fr": "Compt.",
+  "ln": "Compt."
+ },
+ "orgRoleAccountant": {
+  "en": "Accountant",
+  "fr": "Comptable",
+  "ln": "Comptable"
+ },
+ "orgRoleManager": {
+  "en": "Manager",
+  "fr": "Gérant",
+  "ln": "Mokambi"
+ },
+ "orgRoleMgrShort": {
+  "en": "Manager",
+  "fr": "Gérant",
+  "ln": "Mokambi"
+ },
+ "orgRoleRepShort": {
+  "en": "Rep.",
+  "fr": "Repr.",
+  "ln": "Repr."
+ },
+ "orgRoleRepresentative": {
+  "en": "Representative",
+  "fr": "Représentant",
+  "ln": "Moto ya kolakisa"
+ },
+ "orgRoleWorker": {
+  "en": "Field worker",
+  "fr": "Intervenant",
+  "ln": "Intervenant"
+ },
+ "orgRoleWrkShort": {
+  "en": "Field",
+  "fr": "Interv.",
+  "ln": "Interv."
+ },
+ "orgRolesHint": {
+  "en": "The representative stays in control of the money and the team.",
+  "fr": "Le représentant garde la main sur l'argent et sur l'équipe.",
+  "ln": "Moto ya kolakisa azali na nguya likolo ya mbongo mpe équipe."
+ },
+ "orgRolesLink": {
+  "en": "See roles and rights",
+  "fr": "Voir les rôles et droits",
+  "ln": "Tala misala mpe makoki"
+ },
+ "orgRolesManagerNote": {
+  "en": "A manager runs day-to-day work but does not touch withdrawals.",
+  "fr": "Un gérant gère le quotidien, mais ne touche pas aux retraits.",
+  "ln": "Mokambi akambaka misala ya mokolo na mokolo, kasi akoki te kobimisa mbongo."
+ },
+ "orgRolesTitle": {
+  "en": "Roles and rights",
+  "fr": "Rôles et droits",
+  "ln": "Misala mpe makoki"
+ },
+ "orgSentPersonal": {
+  "en": "Meanwhile, your personal account works as usual.",
+  "fr": "En attendant, votre compte personnel fonctionne comme d'habitude.",
+  "ln": "Na kozela, compte na yo ya moto ezali kosala lokola ntango nyonso."
+ },
+ "orgSentText": {
+  "en": "The NexisHub team is checking {name}. We will notify you here and by message.",
+  "fr": "L'équipe NexisHub vérifie {name}. Nous vous prévenons ici et par message.",
+  "ln": "Équipe ya NexisHub ezali kotala {name}. Tokopesa yo nsango awa mpe na message."
+ },
+ "orgSentTitle": {
+  "en": "Request sent",
+  "fr": "Demande envoyée",
+  "ln": "Bosengi etindami"
+ },
+ "orgStart": {
+  "en": "Start",
+  "fr": "Commencer",
+  "ln": "Kobanda"
+ },
+ "orgStep1Title": {
+  "en": "Your company",
+  "fr": "Votre entreprise",
+  "ln": "Kompani na yo"
+ },
+ "orgSummaryBoth": {
+  "en": "Orders and provides services",
+  "fr": "Commande et propose des services",
+  "ln": "Esengi mpe epesi misala"
+ },
+ "orgSummaryOrders": {
+  "en": "Orders services",
+  "fr": "Commande des services",
+  "ln": "Esengi misala"
+ },
+ "orgSummaryProvides": {
+  "en": "Provides services",
+  "fr": "Propose des services",
+  "ln": "Epesi misala"
+ },
+ "orgSummaryRep": {
+  "en": "Representative: {name}, {role}",
+  "fr": "Représentant : {name}, {role}",
+  "ln": "Moto ya kolakisa : {name}, {role}"
+ },
+ "orgSwitchPersonal": {
+  "en": "My account",
+  "fr": "Mon compte",
+  "ln": "Compte na ngai"
+ },
+ "orgSwitchRow": {
+  "en": "Switch space",
+  "fr": "Changer d'espace",
+  "ln": "Kobongola esika"
+ },
+ "orgSwitchRowSub": {
+  "en": "Client, provider, business",
+  "fr": "Client, prestataire, entreprise",
+  "ln": "Mosombi, mosali, kompani"
+ },
+ "orgSwitchTitle": {
+  "en": "Switch space",
+  "fr": "Changer d'espace",
+  "ln": "Kobongola esika"
+ },
+ "orgTeamHint": {
+  "en": "A field worker takes missions only once verified, like any provider.",
+  "fr": "Un intervenant prend des missions seulement quand il est vérifié, comme tout prestataire.",
+  "ln": "Intervenant ayambi misala kaka soki etalami, lokola mosali nyonso."
+ },
+ "orgTermsTitle": {
+  "en": "Business terms",
+  "fr": "Conditions entreprises",
+  "ln": "Mibeko ya ba kompani"
+ },
+ "orgTimeOpen": {
+  "en": "Business space open",
+  "fr": "Espace entreprise ouvert",
+  "ln": "Esika ya kompani efungwami"
+ },
+ "orgTimeOpenSub": {
+  "en": "Wallet and team",
+  "fr": "Portefeuille et équipe",
+  "ln": "Portefeuille mpe équipe"
+ },
+ "orgTimeReview": {
+  "en": "Checking documents",
+  "fr": "Vérification des documents",
+  "ln": "Kotala mikanda"
+ },
+ "orgTimeReviewSub": {
+  "en": "In progress by the team",
+  "fr": "En cours par l'équipe",
+  "ln": "Équipe ezali kosala yango"
+ },
+ "orgTitle": {
+  "en": "Business space",
+  "fr": "Espace entreprise",
+  "ln": "Esika ya kompani"
+ },
+ "orgUpcoming": {
+  "en": "Upcoming",
+  "fr": "À venir",
+  "ln": "Ekoya"
+ },
+ "orgWalletLocked": {
+  "en": "The company's balance is not visible with your role.",
+  "fr": "Le solde de l'entreprise n'est pas visible avec votre rôle.",
+  "ln": "Mbongo ya kompani emonani te na mosala na yo."
+ },
+ "orgWalletRepOnly": {
+  "en": "Withdrawals are reserved for the representative",
+  "fr": "Retrait réservé au représentant",
+  "ln": "Kobimisa mbongo ezali ya moto ya kolakisa kaka"
+ },
+ "orgWithdrawAmount": {
+  "en": "Amount",
+  "fr": "Montant",
+  "ln": "Motango"
+ },
+ "orgWithdrawAvail": {
+  "en": "Available to the company",
+  "fr": "Disponible pour l'entreprise",
+  "ln": "Ezali mpo na kompani"
+ },
+ "orgWithdrawConfirm": {
+  "en": "You will confirm with your code or Face ID.",
+  "fr": "Vous confirmerez avec votre code ou Face ID.",
+  "ln": "Okondimisa na code na yo to Face ID."
+ },
+ "orgWithdrawCta": {
+  "en": "Withdraw money",
+  "fr": "Retirer de l'argent",
+  "ln": "Kobimisa mbongo"
+ },
+ "orgWithdrawDone": {
+  "en": "Withdrawal requested: {amount}.",
+  "fr": "Retrait demandé : {amount}.",
+  "ln": "Retrait esengami : {amount}."
+ },
+ "orgWithdrawGo": {
+  "en": "Withdraw {amount}",
+  "fr": "Retirer {amount}",
+  "ln": "Kobimisa {amount}"
+ },
+ "orgWithdrawGuard": {
+  "en": "Withdraw {amount} from {name} to {operator}",
+  "fr": "Retirer {amount} de {name} vers {operator}",
+  "ln": "Kobimisa {amount} na {name} epai ya {operator}"
+ },
+ "orgWithdrawNoNumber": {
+  "en": "No active number for now. A new number waits 72 h.",
+  "fr": "Aucun numéro actif pour l'instant. Un nouveau numéro attend 72 h.",
+  "ln": "Nimero ezali te sikoyo. Nimero ya sika ezeli 72 h."
+ },
+ "orgWithdrawTo": {
+  "en": "To",
+  "fr": "Vers",
+  "ln": "Epai ya"
+ },
+ "orgWorkerPays": {
+  "en": "Payment for your missions is handled by the company.",
+  "fr": "Le paiement de vos missions est géré par l'entreprise.",
+  "ln": "Kofuta misala na yo esalemi na kompani."
+ },
  "otherNeed": {
   "en": "Other",
   "fr": "Autre",

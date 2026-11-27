@@ -161,7 +161,7 @@ struct HomeView: View {
     }
 }
 
-private struct QuickAction: View {
+struct QuickAction: View {
     let symbol: String
     let label: String
     let action: () -> Void
@@ -195,13 +195,15 @@ private struct QuickAction: View {
 struct WalletCard: View {
     @Environment(AppModel.self) private var app
     let wallet: Wallet
+    /// Légende au-dessus du montant (« Disponible » par défaut).
+    var title: String? = nil
     @State private var explaining = false
 
     var body: some View {
         @Bindable var model = app
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text(app.t("available"))
+                Text(title ?? app.t("available"))
                     .font(.body(14, .medium, relativeTo: .subheadline))
                     .foregroundStyle(.white.opacity(0.85))
                 Spacer()

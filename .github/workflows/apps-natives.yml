@@ -132,6 +132,13 @@ jobs:
           for screen in protect protect-bio lock security; do
             shoot "$screen" light fr
           done
+          # Espace entreprise : création, suivi, espace ouvert, rôles, numéros, retrait.
+          for screen in org-profile org-intro org-step1 org-rep-verified org-rep-unverified org-docs org-terms \
+                        org-pending org-correction org-approved org-switch org-home org-team org-invite \
+                        org-invited-verified org-invited-unverified org-accountant org-worker org-roles \
+                        org-numbers org-number-add org-withdraw; do
+            shoot "$screen" light fr
+          done
           shoot tracking dark fr
           shoot home dark fr
           shoot home light ln

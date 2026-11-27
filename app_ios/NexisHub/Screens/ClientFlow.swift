@@ -29,6 +29,17 @@ enum MissionRoute: Hashable {
     case becomeProvider
     case security
     case portfolio
+    // Espace entreprise.
+    case orgCreate
+    case orgStatus(Int)
+    case orgInvitation(Int)
+    case orgIdentity
+    case orgTeam(Int)
+    case orgInvite(Int)
+    case orgRoles
+    case orgNumbers(Int)
+    case orgNumberAdd(Int)
+    case orgWithdraw(Int)
 
     /// Écrans ouverts d'emblée pour les captures de la CI.
     static func forCapture(_ capture: String?) -> [MissionRoute]? {
@@ -52,6 +63,16 @@ enum MissionRoute: Hashable {
         case PortfolioDemo.profile, PortfolioDemo.locked: return [.portfolio]
         case let capture? where IdentityDemo.captures.contains(capture): return [.becomeProvider]
         case "security": return [.security]
+        case "org-intro", "org-step1", "org-rep-verified", "org-rep-unverified", "org-docs", "org-terms":
+            return [.orgCreate]
+        case "org-pending", "org-correction", "org-approved": return [.orgStatus(1)]
+        case "org-invited-verified", "org-invited-unverified": return [.orgInvitation(1)]
+        case "org-team": return [.orgTeam(1)]
+        case "org-invite": return [.orgInvite(1)]
+        case "org-roles": return [.orgRoles]
+        case "org-numbers": return [.orgNumbers(1)]
+        case "org-number-add": return [.orgNumberAdd(1)]
+        case "org-withdraw": return [.orgWithdraw(1)]
         default: return nil
         }
     }
@@ -64,6 +85,7 @@ enum MissionRoute: Hashable {
                                                    PortfolioDemo.step, PortfolioDemo.profile, PortfolioDemo.locked,
                                                    "security"])
         .union(IdentityDemo.captures)
+        .union(OrgDemo.profileCaptures)
 }
 
 /// La pile d'écrans d'un onglet, et ce qu'elle montre par-dessus
@@ -171,6 +193,16 @@ private struct MissionScreen: View {
         case .becomeProvider: BecomeProviderView()
         case .security: SecuritySettingsView()
         case .portfolio: PortfolioView()
+        case .orgCreate: OrgCreateView()
+        case .orgStatus(let id): OrgStatusView(orgId: id)
+        case .orgInvitation(let id): OrgInvitationView(invitationId: id)
+        case .orgIdentity: OrgIdentityView()
+        case .orgTeam(let id): OrgTeamView(orgId: id)
+        case .orgInvite(let id): OrgInviteView(orgId: id)
+        case .orgRoles: OrgRolesView()
+        case .orgNumbers(let id): OrgNumbersView(orgId: id)
+        case .orgNumberAdd(let id): OrgNumberAddView(orgId: id)
+        case .orgWithdraw(let id): OrgWithdrawView(orgId: id)
         }
     }
 }

@@ -129,9 +129,17 @@ struct Profile: Hashable {
     /// Profil prestataire : `nil` pour un client seulement.
     var providerStatus: ProviderStatus? = nil
     let termsVersion: Date?
+    /// Client dont l'identité (pièce et vidéo) a été vérifiée par l'équipe,
+    /// sans être prestataire. Donnée du serveur.
+    var identityVerified: Bool = false
 
     /// Prestataire vérifié : il ouvre l'espace prestataire.
     var isProvider: Bool { providerStatus == .verified }
+
+    /// Identité déjà vérifiée (prestataire vérifié ou client vérifié) : elle
+    /// n'est JAMAIS revérifiée, ni pour créer un espace entreprise ni pour
+    /// rejoindre une équipe.
+    var isIdentityVerified: Bool { providerStatus == .verified || identityVerified }
 
     var initials: String {
         (String(firstName.prefix(1)) + String(lastName.prefix(1))).uppercased()
