@@ -22,7 +22,7 @@ enum OrgActivity: String, CaseIterable, Hashable {
 
 /// Fonction du représentant dans l'entreprise (texte libre côté serveur).
 enum OrgFunction: String, CaseIterable, Hashable {
-    case manager, director, owner, other
+    case manager, director, owner, accountant, other
 }
 
 /// Les rôles d'un espace entreprise. Un seul représentant actif.
@@ -35,7 +35,13 @@ enum OrgRole: String, CaseIterable, Hashable {
 
 /// Ce qu'un rôle permet (tableau « Rôles et droits »).
 enum OrgRight: CaseIterable, Hashable {
-    case seeMissions, seeBalance, manageMembers, manageNumbers, withdraw
+    case seeMissions, seeBalance, seeTeam, assignMissions, manageMembers, manageNumbers, withdraw
+
+    /// Ce que le représentant peut adapter pour chaque personne. Les
+    /// retraits, les numéros et l'équipe restent à lui seul.
+    static let editable: [OrgRight] = [.seeMissions, .seeBalance, .seeTeam, .assignMissions]
+
+    var isEditable: Bool { Self.editable.contains(self) }
 }
 
 extension OrgRole {
@@ -43,11 +49,15 @@ extension OrgRole {
     /// qui est interdit, jamais pour l'autoriser.
     func can(_ right: OrgRight) -> Bool {
         switch right {
-        case .seeMissions: return true
-        case .seeBalance: return self != .worker
+        case .seeMissions, .seeBalance, .seeTeam: return self != .worker
+        case .assignMissions: return self == .representative || self == .manager
         case .manageMembers, .manageNumbers, .withdraw: return self == .representative
         }
     }
+
+    /// Les droits proposés pour ce rôle ; le représentant peut les adapter
+    /// pour chaque personne.
+    var defaultRights: Set<OrgRight> { Set(OrgRight.allCases.filter { can($0) }) }
 }
 
 /// Où en est la demande d'ouverture de l'espace.
@@ -95,6 +105,10 @@ struct OrgMember: Identifiable, Hashable {
     var service: Service? = nil
     /// La personne qui regarde l'écran.
     var isMe: Bool = false
+    /// Droits adaptés par le représentant ; sans choix, ceux du rôle.
+    var rights: Set<OrgRight>? = nil
+
+    var effectiveRights: Set<OrgRight> { rights ?? role.defaultRights }
 }
 
 /// Un numéro Mobile Money marchand enregistré pour les retraits. Un numéro
@@ -135,8 +149,26 @@ struct Organization: Identifiable, Hashable {
     /// Solde de l'entreprise ; vide pour un rôle qui ne le voit pas.
     var wallet: Wallet = .empty
     var representative: String = ""
+    var email: String = ""
+    /// Qui est affecté à chaque mission : numéro de mission → numéros de membres.
+    var assignments: [Int: [Int]] = [:]
 
     var isOpen: Bool { status == .open }
+
+    /// Ce que la personne qui regarde peut voir ou faire : ses droits
+    /// propres (adaptés par le représentant), sinon ceux de son rôle.
+    func can(_ right: OrgRight) -> Bool {
+        if let me = members.first(where: \.isMe) { return me.effectiveRights.contains(right) }
+        return myRole.can(right)
+    }
+
+    /// Les missions que la personne a le droit de voir : toutes, ou
+    /// seulement celles où elle est affectée.
+    func visible(_ missions: [Mission]) -> [Mission] {
+        if can(.seeMissions) { return missions }
+        guard let me = members.first(where: \.isMe) else { return [] }
+        return missions.filter { assignments[$0.id]?.contains(me.id) == true }
+    }
 
     /// « Kasa Services SARLU » devient « Kasa Services ».
     static func shortName(of name: String) -> String {
@@ -167,7 +199,17 @@ struct OrgDraft: Equatable {
     /// Téléphone du représentant quand ce n'est pas la personne.
     var representativePhone = ""
     var function: OrgFunction = .manager
+    /// Fonction écrite par la personne quand elle choisit « Autre ».
+    var functionOther = ""
+    var email = ""
     var documents: Set<OrgDocKind> = []
+
+    static func isEmail(_ text: String) -> Bool {
+        let value = text.trimmingCharacters(in: .whitespaces)
+        guard !value.contains(" "), let at = value.firstIndex(of: "@"), at != value.startIndex else { return false }
+        let domain = value[value.index(after: at)...]
+        return domain.contains(".") && !domain.hasPrefix(".") && !domain.hasSuffix(".") && !domain.contains("@")
+    }
 
     var step1Ready: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty
@@ -175,9 +217,11 @@ struct OrgDraft: Equatable {
             && !idnat.trimmingCharacters(in: .whitespaces).isEmpty
             && !nif.trimmingCharacters(in: .whitespaces).isEmpty
             && commune != nil && form != nil && activity != nil
+            && Self.isEmail(email)
     }
 
     func step2Ready(identityVerified: Bool, identityTaken: Bool) -> Bool {
+        if function == .other && functionOther.trimmingCharacters(in: .whitespaces).isEmpty { return false }
         if representativeIsMe { return identityVerified || identityTaken }
         return DrcPhone.parse(representativePhone).isValid
     }
@@ -197,7 +241,7 @@ enum OrgDemo {
     /// Écrans de l'espace entreprise ouvert, pour le représentant.
     static let representativeCaptures: Set<String> = [
         "org-switch", "org-home", "org-team", "org-invite", "org-roles", "org-numbers", "org-number-add",
-        "org-withdraw",
+        "org-withdraw", "org-member", "org-photo", "org-space-profile", "org-assign",
     ]
     /// Vues d'un autre rôle.
     static let roleCaptures: Set<String> = ["org-accountant", "org-worker"]
@@ -215,6 +259,7 @@ enum OrgDemo {
         draft.commune = "Gombe"
         draft.form = .sarlu
         draft.activity = .both
+        draft.email = "contact@kasaservices.cd"
         if documents { draft.documents = Set(OrgDocKind.allCases) }
         return draft
     }

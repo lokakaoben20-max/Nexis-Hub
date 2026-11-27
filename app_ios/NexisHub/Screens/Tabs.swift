@@ -155,7 +155,20 @@ struct ProfileView: View {
                 if let profile {
                     Section {
                         HStack(spacing: 16) {
-                            InitialsAvatar(initials: profile.initials)
+                            Button { flow.push(.photo("me")) } label: {
+                                InitialsAvatar(initials: profile.initials, photoKey: "me")
+                                    .overlay(alignment: .bottomTrailing) {
+                                        Image(systemName: "camera.fill")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundStyle(.white)
+                                            .frame(width: 24, height: 24)
+                                            .background(Nexis.navy, in: Circle())
+                                            .overlay(Circle().strokeBorder(Nexis.surface, lineWidth: 2))
+                                            .offset(x: 3, y: 3)
+                                    }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(app.t("photoEdit"))
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("\(profile.firstName) \(profile.lastName)")
                                     .font(.title(19)).foregroundStyle(Nexis.ink)
@@ -217,6 +230,7 @@ struct ProfileView: View {
                     }
                 }
                 Section {
+                    row("info.circle", app.t("aboutRow"), app.t("aboutRowSub"), .about)
                     row("doc.text", app.t("legalTerms"), nil, .legal)
                     Button { flow.comingSoon = SheetTitle(app.t("legalPrivacy")) } label: {
                         rowLabel("hand.raised", app.t("legalPrivacy"), nil)

@@ -37,9 +37,15 @@ struct ShellView: View {
                 if let orgId = app.orgSpaceId { OrgWalletView(orgId: orgId) } else { WalletView() }
             }
             Tab(app.t("navProfile"), systemImage: "person.crop.circle", value: AppTab.profile) {
-                ProfileView()
+                if let orgId = app.orgSpaceId { OrgProfileView(orgId: orgId) } else { ProfileView() }
             }
         }
+        // L'espace entreprise a son bandeau marine et sa teinte : on sent
+        // qu'on n'est plus dans son compte personnel.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let orgId = app.orgSpaceId { OrgSpaceBar(orgId: orgId) }
+        }
+        .tint(spaceTint)
         .modifier(RequestServiceAccessory(open: $picking, tab: tab))
         .onAppear {
             switch app.capture {
@@ -47,7 +53,8 @@ struct ShellView: View {
             case "wallet": tab = .wallet
             case "profile": tab = .profile
             case "org-accountant": tab = .wallet
-            case "org-worker": tab = .missions
+            case "org-worker", "org-assign": tab = .missions
+            case "org-space-profile": tab = .profile
             case "org-switch", "org-profile": tab = .profile
             // Écrans de l'espace entreprise : l'accueil de l'espace les ouvre.
             case let capture? where OrgDemo.spaceCaptures.contains(capture): break
@@ -74,6 +81,9 @@ struct ShellView: View {
             })
         }
     }
+
+    /// Marine dans l'espace entreprise ; sinon la teinte de l'app.
+    private var spaceTint: Color? { app.orgSpaceId == nil ? nil : Nexis.orgTint }
 
     /// Vrai quand l'accessoire de la barre porte « Demander un service ».
     static var hasAccessory: Bool {

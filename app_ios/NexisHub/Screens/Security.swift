@@ -181,7 +181,7 @@ struct LockView: View {
         let security = app.security
         VStack(spacing: 0) {
             VStack(spacing: 10) {
-                InitialsAvatar(initials: profile?.initials ?? "", size: 64)
+                InitialsAvatar(initials: profile?.initials ?? "", size: 64, photoKey: "me")
                 Text(profile.map { app.t("hello", ["name": $0.firstName]) } ?? "NexisHub")
                     .font(.title(24, .semibold, relativeTo: .title1))
                     .foregroundStyle(Nexis.ink)

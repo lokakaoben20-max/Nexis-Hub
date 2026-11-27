@@ -40,6 +40,10 @@ enum MissionRoute: Hashable {
     case orgNumbers(Int)
     case orgNumberAdd(Int)
     case orgWithdraw(Int)
+    case orgMember(org: Int, member: Int)
+    // Photo de profil (« me » ou « org-<numéro> ») et À propos.
+    case photo(String)
+    case about
 
     /// Écrans ouverts d'emblée pour les captures de la CI.
     static func forCapture(_ capture: String?) -> [MissionRoute]? {
@@ -73,6 +77,10 @@ enum MissionRoute: Hashable {
         case "org-numbers": return [.orgNumbers(1)]
         case "org-number-add": return [.orgNumberAdd(1)]
         case "org-withdraw": return [.orgWithdraw(1)]
+        case "org-member": return [.orgTeam(1), .orgMember(org: 1, member: 3)]
+        case "org-photo": return [.photo("org-1")]
+        case "photo": return [.photo("me")]
+        case "about": return [.about]
         default: return nil
         }
     }
@@ -82,6 +90,7 @@ enum MissionRoute: Hashable {
 
     /// Captures qui se font depuis l'onglet Profil.
     static let profileCaptures: Set<String> = Set(["info", "devices", "alerts", "help", "legal", "become",
+                                                   "photo", "about",
                                                    PortfolioDemo.step, PortfolioDemo.profile, PortfolioDemo.locked,
                                                    "security"])
         .union(IdentityDemo.captures)
@@ -203,6 +212,9 @@ private struct MissionScreen: View {
         case .orgNumbers(let id): OrgNumbersView(orgId: id)
         case .orgNumberAdd(let id): OrgNumberAddView(orgId: id)
         case .orgWithdraw(let id): OrgWithdrawView(orgId: id)
+        case .orgMember(let org, let member): OrgMemberView(orgId: org, memberId: member)
+        case .photo(let key): PhotoEditView(key: key)
+        case .about: AboutView()
         }
     }
 }

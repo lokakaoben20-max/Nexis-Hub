@@ -12,6 +12,8 @@ extension AppModel {
         switch right {
         case .seeMissions: return t("orgRightMissions")
         case .seeBalance: return t("orgRightBalance")
+        case .seeTeam: return t("orgRightTeam")
+        case .assignMissions: return t("orgRightAssign")
         case .manageMembers: return t("orgRightMembers")
         case .manageNumbers: return t("orgRightNumbers")
         case .withdraw: return t("orgRightWithdraw")
@@ -34,6 +36,13 @@ extension AppModel {
         case .accountant: return t("orgRoleAccShort")
         case .worker: return t("orgRoleWrkShort")
         }
+    }
+
+    /// « Jean Kalala » devient « Jean K. ».
+    func shortPerson(_ name: String) -> String {
+        let words = name.split(separator: " ")
+        guard words.count > 1, let last = words.last?.first else { return name }
+        return "\(words[0]) \(last)."
     }
 
     /// « 99 123 4567 ».
@@ -62,8 +71,11 @@ extension AppModel {
 
 /// Le monogramme d'une entreprise : ses initiales sur le bleu Nexis.
 struct OrgMark: View {
+    @Environment(AppModel.self) private var app
     let name: String
     var size: CGFloat = 44
+    /// « org-<numéro> » : la photo de l'entreprise, quand elle en a une.
+    var photoKey: String? = nil
 
     private var initials: String {
         let words = Organization.shortName(of: name).split(separator: " ")
@@ -71,12 +83,57 @@ struct OrgMark: View {
     }
 
     var body: some View {
-        Text(initials)
-            .font(.title(size * 0.34, .semibold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(Nexis.brandGradient, in: RoundedRectangle(cornerRadius: size * 0.3, style: .continuous))
-            .accessibilityHidden(true)
+        if let image = app.photo(photoKey) {
+            Image(uiImage: image)
+                .resizable().scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: size * 0.3, style: .continuous))
+                .accessibilityHidden(true)
+        } else {
+            Text(initials)
+                .font(.title(size * 0.34, .semibold))
+                .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .background(Nexis.brandGradient, in: RoundedRectangle(cornerRadius: size * 0.3, style: .continuous))
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+/// Bandeau marine posé en haut de tout l'espace entreprise : on voit tout de
+/// suite qu'on n'est plus dans son compte personnel.
+struct OrgSpaceBar: View {
+    @Environment(AppModel.self) private var app
+    let orgId: Int
+    @State private var org: Organization?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            OrgMark(name: org?.name ?? "", size: 30, photoKey: "org-\(orgId)")
+            VStack(alignment: .leading, spacing: 0) {
+                Text(app.t("orgSpaceLabel").uppercased())
+                    .font(.body(10.5, .bold, relativeTo: .caption2))
+                    .tracking(0.8)
+                    .foregroundStyle(.white.opacity(0.7))
+                Text(org?.shortName ?? "NexisHub")
+                    .font(.body(14.5, .semibold, relativeTo: .subheadline))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            if let org {
+                Text(app.roleName(org.myRole))
+                    .font(.body(12, .semibold, relativeTo: .caption1))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(.white.opacity(0.16), in: Capsule())
+            }
+        }
+        .padding(.horizontal, 18).padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(Nexis.navy)
+        .accessibilityElement(children: .combine)
+        .task(id: app.revision) { org = try? await app.repository.organization(id: orgId) }
     }
 }
 
@@ -94,7 +151,7 @@ struct SpacePickerSheet: View {
                 VStack(spacing: 10) {
                     ChoiceRow(title: app.t("orgSwitchPersonal"), subtitle: app.t("spaceClient"),
                               selected: app.orgSpaceId == nil && !app.providerSpace) {
-                        InitialsAvatar(initials: profile?.initials ?? "", size: 40)
+                        InitialsAvatar(initials: profile?.initials ?? "", size: 40, photoKey: "me")
                     } action: {
                         app.openClientSpace()
                         dismiss()
@@ -197,14 +254,16 @@ struct OrgHomeView: View {
                 flow.push(.orgWithdraw(org.id))
             })
         }
-        if org.myRole.can(.seeBalance) {
+        if org.can(.seeBalance) {
             list.append(QuickItem(id: "history", symbol: "clock.arrow.circlepath", label: app.t("actionHistory")) {
                 onTab(.wallet)
             })
         }
-        list.append(QuickItem(id: "team", symbol: "person.2.fill", label: app.t("orgQuickTeam")) {
-            flow.push(.orgTeam(org.id))
-        })
+        if org.can(.seeTeam) {
+            list.append(QuickItem(id: "team", symbol: "person.2.fill", label: app.t("orgQuickTeam")) {
+                flow.push(.orgTeam(org.id))
+            })
+        }
         list.append(QuickItem(id: "more", symbol: "ellipsis", label: app.t("actionMore")) {
             flow.comingSoon = SheetTitle(app.t("actionMore"))
         })
@@ -214,8 +273,8 @@ struct OrgHomeView: View {
     private func content(_ org: Organization) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                if org.myRole.can(.seeBalance) {
-                    WalletCard(wallet: org.wallet, title: app.t("orgAvailableCaption"))
+                if org.can(.seeBalance) {
+                    WalletCard(wallet: org.wallet, title: app.t("orgAvailableCaption"), org: true)
                     HStack(alignment: .top, spacing: 0) {
                         ForEach(items(org)) { item in
                             QuickAction(symbol: item.symbol, label: item.label, action: item.run)
@@ -232,7 +291,7 @@ struct OrgHomeView: View {
     }
 
     private func ongoing(_ org: Organization) -> some View {
-        let list = missions.filter(\.isActive)
+        let list = org.visible(missions).filter(\.isActive)
         return VStack(alignment: .leading, spacing: 12) {
             Text(app.t("orgOngoing")).font(.title(18)).foregroundStyle(Nexis.ink)
             if list.isEmpty {
@@ -260,9 +319,12 @@ struct OrgMissionsView: View {
     @State private var org: Organization?
     @State private var missions: [Mission] = []
     @State private var showDone = false
+    @State private var assigning: Mission?
 
     var body: some View {
-        let list = showDone ? missions.filter { $0.status == .completed } : missions.filter(\.isActive)
+        let seen = org?.visible(missions) ?? missions
+        let list = showDone ? seen.filter { $0.status == .completed } : seen.filter(\.isActive)
+        let all = org?.can(.seeMissions) ?? true
         NavigationStack {
             List {
                 Section {
@@ -279,14 +341,26 @@ struct OrgMissionsView: View {
                         Text(app.t("noMissions")).font(.body(15)).foregroundStyle(Nexis.muted)
                     }
                     ForEach(list) { mission in
-                        if org?.myRole == .worker {
+                        if !all {
                             WorkerMissionRow(mission: mission, orgName: org?.shortName ?? "")
+                        } else if let org, org.can(.assignMissions), mission.isActive {
+                            VStack(alignment: .leading, spacing: 10) {
+                                MissionRow(mission: mission)
+                                assignLine(mission, org)
+                            }
                         } else {
                             MissionRow(mission: mission)
                         }
                     }
                 }
-                if org?.myRole == .worker {
+                if !all {
+                    Section {
+                        InfoNote(text: app.t("orgMineOnly"), systemImage: "person.fill")
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets())
+                    }
+                }
+                if !(org?.can(.seeBalance) ?? true) {
                     Section {
                         InfoNote(text: app.t("orgWorkerPays"), systemImage: "info.circle.fill")
                             .listRowBackground(Color.clear)
@@ -296,12 +370,140 @@ struct OrgMissionsView: View {
             }
             .scrollContentBackground(.hidden)
             .background(Nexis.bg)
-            .navigationTitle(app.t(org?.myRole == .worker ? "myMissions" : "orgMissionsTitle"))
+            .navigationTitle(app.t(all ? "orgMissionsTitle" : "myMissions"))
+            .sheet(item: $assigning) { mission in
+                if let org { OrgAssignSheet(org: org, mission: mission) }
+            }
             .task(id: app.revision) {
                 org = try? await app.repository.organization(id: orgId)
                 missions = (try? await app.repository.orgMissions(orgId: orgId)) ?? []
+                if app.capture == "org-assign", assigning == nil {
+                    assigning = missions.first(where: \.isActive)
+                }
             }
         }
+    }
+
+    /// « Intervenants : Jean K., Paul I. » ; un toucher ouvre le choix.
+    private func assignLine(_ mission: Mission, _ org: Organization) -> some View {
+        let names = (org.assignments[mission.id] ?? [])
+            .compactMap { id in org.members.first(where: { $0.id == id })?.name }
+            .map(app.shortPerson)
+        return Button { assigning = mission } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "person.2.fill").font(.system(size: 13, weight: .semibold))
+                Text(names.isEmpty ? app.t("orgAssignNone")
+                                   : app.t("orgAssignedLine", ["names": names.joined(separator: ", ")]))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 4)
+                Text(app.t("orgAssignAction")).font(.body(13, .bold))
+            }
+            .font(.body(13, .medium, relativeTo: .footnote))
+            .foregroundStyle(Nexis.softInk)
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .background(Nexis.soft, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Choisit qui va sur une mission. Plusieurs personnes possibles, toutes
+/// vérifiées ; le client voit le nom de chacune.
+private struct OrgAssignSheet: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    let org: Organization
+    let mission: Mission
+    @State private var picked: Set<Int> = []
+    @State private var busy = false
+    @State private var failed = false
+
+    private var candidates: [OrgMember] {
+        org.members.filter { $0.role == .worker || $0.service != nil }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(app.place(mission)).font(.body(16, .bold)).foregroundStyle(Nexis.ink)
+                        Text(app.t("orgAssignWho")).font(.body(13.5)).foregroundStyle(Nexis.muted)
+                    }
+                    VStack(spacing: 0) {
+                        ForEach(candidates) { member in
+                            row(member)
+                            if member.id != candidates.last?.id { Divider().padding(.leading, 70) }
+                        }
+                    }
+                    .background(Nexis.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    InfoNote(text: app.t("orgAssignHint"), systemImage: "person.2.fill")
+                    InfoNote(text: app.t("orgAssignOnlyVerified"), systemImage: "checkmark.seal.fill")
+                    if failed {
+                        Text(app.t("orgFailed")).font(.body(14)).foregroundStyle(Nexis.danger)
+                    }
+                }
+                .padding(18)
+            }
+            .background(Nexis.bg)
+            .navigationTitle(app.t("orgAssignTitle"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(app.t("cancel")) { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(app.t("orgAssignSave")) { Task { await save() } }
+                        .disabled(picked.isEmpty || busy)
+                }
+            }
+            .onAppear { picked = Set(org.assignments[mission.id] ?? []) }
+        }
+        .presentationDetents([.large])
+    }
+
+    private func row(_ member: OrgMember) -> some View {
+        let ready = member.status == .verified
+        return Button {
+            guard ready else { return }
+            if picked.contains(member.id) { picked.remove(member.id) } else { picked.insert(member.id) }
+        } label: {
+            HStack(spacing: 12) {
+                PersonAvatar(initials: member.initials, color: member.color, size: 44)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(member.name).font(.body(15.5, .bold)).foregroundStyle(Nexis.ink).lineLimit(1)
+                    Text(app.memberSubtitle(member)).font(.body(13, relativeTo: .footnote))
+                        .foregroundStyle(Nexis.muted).lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                if ready {
+                    Image(systemName: picked.contains(member.id) ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 22))
+                        .foregroundStyle(picked.contains(member.id) ? Nexis.accent : Color(light: 0xC9D0DB, dark: 0x3A4A66))
+                } else {
+                    Pill(tone: .warn, systemImage: "exclamationmark", text: app.t("orgMemberToVerify"))
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .contentShape(Rectangle())
+            .opacity(ready ? 1 : 0.65)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(picked.contains(member.id) ? .isSelected : [])
+    }
+
+    private func save() async {
+        busy = true
+        failed = false
+        do {
+            try await app.repository.assignMembers(orgId: org.id, missionId: mission.id,
+                                                   memberIds: org.members.map(\.id).filter { picked.contains($0) })
+            app.dataChanged()
+            dismiss()
+        } catch {
+            failed = true
+        }
+        busy = false
     }
 }
 
@@ -348,9 +550,9 @@ struct OrgWalletView: View {
         NavigationStack(path: $flow.path) {
             List {
                 if let org {
-                    if org.myRole.can(.seeBalance) {
+                    if org.can(.seeBalance) {
                         Section {
-                            WalletCard(wallet: org.wallet, title: app.t("orgAvailableCaption"))
+                            WalletCard(wallet: org.wallet, title: app.t("orgAvailableCaption"), org: true)
                                 .listRowBackground(Color.clear)
                                 .listRowInsets(EdgeInsets())
                         }
@@ -415,14 +617,25 @@ struct OrgTeamView: View {
         OrgLoader(orgId: orgId) { org in
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    VStack(spacing: 0) {
-                        ForEach(org.members) { member in
-                            memberRow(member)
-                            if member.id != org.members.last?.id { Divider().padding(.leading, 70) }
+                    if org.can(.seeTeam) {
+                        VStack(spacing: 0) {
+                            ForEach(org.members) { member in
+                                if org.myRole.can(.manageMembers), member.role != .representative {
+                                    Button { flow.push(.orgMember(org: org.id, member: member.id)) } label: {
+                                        memberRow(member, editable: true)
+                                    }
+                                    .buttonStyle(.plain)
+                                } else {
+                                    memberRow(member, editable: false)
+                                }
+                                if member.id != org.members.last?.id { Divider().padding(.leading, 70) }
+                            }
                         }
+                        .background(Nexis.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        InfoNote(text: app.t("orgTeamHint"), systemImage: "person.badge.shield.checkmark.fill")
+                    } else {
+                        InfoNote(text: app.t("orgTeamHidden"), systemImage: "lock.fill")
                     }
-                    .background(Nexis.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    InfoNote(text: app.t("orgTeamHint"), systemImage: "person.badge.shield.checkmark.fill")
                 }
                 .flowScreen()
             }
@@ -440,7 +653,7 @@ struct OrgTeamView: View {
         .flowTitle(app.t("orgQuickTeam"))
     }
 
-    private func memberRow(_ member: OrgMember) -> some View {
+    private func memberRow(_ member: OrgMember, editable: Bool) -> some View {
         HStack(spacing: 12) {
             PersonAvatar(initials: member.initials, color: member.color, size: 44)
             VStack(alignment: .leading, spacing: 3) {
@@ -456,6 +669,11 @@ struct OrgTeamView: View {
                 if member.role != .representative || member.status != .verified {
                     statusPill(member.status)
                 }
+            }
+            if editable {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color(light: 0xC4CAD4, dark: 0x4A5A75))
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
@@ -599,6 +817,7 @@ struct OrgRolesView: View {
                 }
                 .nxCard(padding: 14)
                 InfoNote(text: app.t("orgRolesManagerNote"), systemImage: "info.circle.fill")
+                InfoNote(text: app.t("orgRolesCustomHint"), systemImage: "slider.horizontal.3")
             }
             .flowScreen()
         }
@@ -844,5 +1063,238 @@ private struct OrgWithdrawBody: View {
             failed = true
         }
         busy = false
+    }
+}
+
+// MARK: - Droits d'une personne
+
+/// Ce que le représentant laisse voir et faire à une personne de l'équipe.
+/// On part des droits proposés pour son rôle, puis on les adapte.
+struct OrgMemberView: View {
+    @Environment(AppModel.self) private var app
+    let orgId: Int
+    let memberId: Int
+
+    var body: some View {
+        OrgLoader(orgId: orgId) { org in
+            if let member = org.members.first(where: { $0.id == memberId }) {
+                OrgMemberBody(org: org, member: member)
+            } else {
+                FlowLoading(label: app.t("orgMemberRightsTitle"))
+            }
+        }
+        .flowTitle(app.t("orgMemberRightsTitle"))
+    }
+}
+
+private struct OrgMemberBody: View {
+    @Environment(AppModel.self) private var app
+    @Environment(MissionFlow.self) private var flow
+    let org: Organization
+    let member: OrgMember
+    @State private var rights: Set<OrgRight> = []
+    @State private var busy = false
+    @State private var failed = false
+
+    private var current: Set<OrgRight> { member.effectiveRights.filter(\.isEditable) }
+    private var editable: Bool { org.myRole.can(.manageMembers) && member.role != .representative }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 12) {
+                    PersonAvatar(initials: member.initials, color: member.color, size: 52)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(member.name).font(.title(17)).foregroundStyle(Nexis.ink).lineLimit(1)
+                        Text(app.memberSubtitle(member)).font(.body(13.5)).foregroundStyle(Nexis.muted)
+                    }
+                    Spacer(minLength: 0)
+                }
+                Text(app.t("orgMemberRightsHint", ["name": app.shortPerson(member.name)]))
+                    .font(.body(14.5)).foregroundStyle(Nexis.muted).lineSpacing(3)
+                VStack(spacing: 0) {
+                    ForEach(OrgRight.allCases, id: \.self) { right in
+                        if right.isEditable {
+                            Toggle(isOn: binding(right)) {
+                                Text(app.rightText(right)).font(.body(15, .medium)).foregroundStyle(Nexis.ink)
+                            }
+                            .tint(Nexis.brand)
+                            .disabled(!editable || busy)
+                            .padding(.horizontal, 14).padding(.vertical, 10)
+                        } else {
+                            HStack(spacing: 10) {
+                                Image(systemName: "lock.fill").font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(Nexis.muted)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(app.rightText(right)).font(.body(15, .medium)).foregroundStyle(Nexis.muted)
+                                    Text(app.t("orgMemberFixed")).font(.body(12.5, relativeTo: .caption1))
+                                        .foregroundStyle(Nexis.muted)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 14).padding(.vertical, 12)
+                            .accessibilityElement(children: .combine)
+                        }
+                        if right != OrgRight.allCases.last { Divider().padding(.leading, 14) }
+                    }
+                }
+                .background(Nexis.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                if failed {
+                    Text(app.t("orgFailed")).font(.body(14)).foregroundStyle(Nexis.danger)
+                }
+            }
+            .flowScreen()
+        }
+        .bottomActions {
+            if editable {
+                Button { Task { await save() } } label: {
+                    BusyLabel(text: app.t("orgAssignSave"), busy: busy)
+                }
+                .nxProminentButton()
+                .disabled(rights == current || busy)
+                Button { rights = member.role.defaultRights.filter(\.isEditable) } label: {
+                    WideLabel(text: app.t("orgMemberDefaults"))
+                }
+                .nxSecondaryButton()
+                .disabled(busy)
+            }
+        }
+        .onAppear { rights = current }
+    }
+
+    private func binding(_ right: OrgRight) -> Binding<Bool> {
+        Binding(get: { rights.contains(right) },
+                set: { on in if on { rights.insert(right) } else { rights.remove(right) } })
+    }
+
+    private func save() async {
+        busy = true
+        failed = false
+        do {
+            try await app.repository.setMemberRights(orgId: org.id, memberId: member.id, rights: rights)
+            app.dataChanged()
+            if !flow.path.isEmpty { flow.path.removeLast() }
+            flow.say(app.t("orgMemberSaved"))
+        } catch {
+            failed = true
+        }
+        busy = false
+    }
+}
+
+// MARK: - Profil de l'espace
+
+/// Le 4e onglet de l'espace entreprise : l'entreprise elle-même (photo,
+/// représentant, e-mail), son équipe, ses numéros, À propos, et le retour
+/// au compte personnel.
+struct OrgProfileView: View {
+    @Environment(AppModel.self) private var app
+    let orgId: Int
+    @State private var flow = MissionFlow()
+    @State private var org: Organization?
+    @State private var switching = false
+
+    var body: some View {
+        NavigationStack(path: $flow.path) {
+            List {
+                if let org {
+                    Section {
+                        HStack(spacing: 16) {
+                            Button { flow.push(.photo("org-\(org.id)")) } label: {
+                                OrgMark(name: org.name, size: 64, photoKey: "org-\(org.id)")
+                                    .overlay(alignment: .bottomTrailing) {
+                                        Image(systemName: "camera.fill")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundStyle(.white)
+                                            .frame(width: 24, height: 24)
+                                            .background(Nexis.navy, in: Circle())
+                                            .overlay(Circle().strokeBorder(Nexis.surface, lineWidth: 2))
+                                            .offset(x: 3, y: 3)
+                                    }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(app.t("photoEdit"))
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(org.name).font(.title(18)).foregroundStyle(Nexis.ink)
+                                Text("RCCM \(org.rccm)").font(.body(13.5)).foregroundStyle(Nexis.muted)
+                                Text(app.t("orgSpaceLabel"))
+                                    .font(.body(12, .semibold, relativeTo: .caption1))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 10).padding(.vertical, 3)
+                                    .background(Nexis.navy, in: Capsule())
+                            }
+                        }
+                        .padding(.vertical, 6)
+                    }
+                    Section {
+                        info(app.t("orgProfileRep"), org.representative)
+                        if !org.email.isEmpty { info(app.t("orgProfileEmail"), org.email) }
+                    }
+                    Section {
+                        if org.can(.seeTeam) {
+                            row("person.2", app.t("orgQuickTeam"), app.roleName(org.myRole), .orgTeam(org.id))
+                        }
+                        if org.myRole.can(.manageNumbers) {
+                            row("phone.badge.checkmark", app.t("orgNumbersTitle"), nil, .orgNumbers(org.id))
+                        }
+                        row("slider.horizontal.3", app.t("orgRolesTitle"), nil, .orgRoles)
+                    }
+                    Section {
+                        row("info.circle", app.t("aboutRow"), app.t("aboutRowSub"), .about)
+                        row("doc.text", app.t("legalTerms"), nil, .legal)
+                    }
+                    Section {
+                        Button { switching = true } label: {
+                            Label { Text(app.t("orgSwitchRow")).font(.body(16)).foregroundStyle(Nexis.ink) } icon: {
+                                Image(systemName: "arrow.left.arrow.right").foregroundStyle(Nexis.accent)
+                            }
+                        }
+                        Button { app.openClientSpace() } label: {
+                            Label { Text(app.t("orgBackPersonal")).font(.body(16)).foregroundStyle(Nexis.ink) } icon: {
+                                Image(systemName: "person.crop.circle").foregroundStyle(Nexis.accent)
+                            }
+                        }
+                    }
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(Nexis.bg)
+            .navigationTitle(app.t("orgProfileCompany"))
+            .missionDestinations()
+            .task(id: app.revision) { org = try? await app.repository.organization(id: orgId) }
+        }
+        .missionFlow(flow, tab: .profile)
+        .sheet(isPresented: $switching) { SpacePickerSheet() }
+    }
+
+    private func info(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).font(.body(14)).foregroundStyle(Nexis.muted)
+            Spacer(minLength: 12)
+            Text(value).font(.body(15, .medium)).foregroundStyle(Nexis.ink).multilineTextAlignment(.trailing)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func row(_ symbol: String, _ title: String, _ subtitle: String?, _ route: MissionRoute) -> some View {
+        Button { flow.push(route) } label: {
+            HStack {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).font(.body(16)).foregroundStyle(Nexis.ink)
+                        if let subtitle {
+                            Text(subtitle).font(.body(13, relativeTo: .footnote)).foregroundStyle(Nexis.muted)
+                        }
+                    }
+                } icon: {
+                    Image(systemName: symbol).foregroundStyle(Nexis.accent)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color(light: 0xC4CAD4, dark: 0x4A5A75))
+            }
+            .contentShape(Rectangle())
+        }
     }
 }

@@ -1093,7 +1093,7 @@
   "orgIdVerifiedS": "Rien de plus à envoyer : votre vérification NexisHub suffit.",
   "orgIdTodoT": "Vérifier mon identité",
   "orgIdTodoS": "Pas encore faite sur votre compte.",
-  "orgIdPiece": "Pièce",
+  "orgIdPiece": "Pièce d'identité",
   "orgIdVideo": "Vidéo du visage",
   "orgIdOnce": "Une seule fois : cette vérification servira aussi à vos autres espaces et à « Devenir prestataire ».",
   "orgIdSent": "Vérification envoyée : l'équipe NexisHub la regarde.",
@@ -1133,7 +1133,7 @@
     }
   },
   "orgSentTitle": "Demande envoyée",
-  "orgSentText": "L'équipe NexisHub vérifie {name}. Nous vous prévenons ici et par message.",
+  "orgSentText": "L'équipe NexisHub vérifie {name}. Nous vous prévenons dans l'app, par message et par e-mail.",
   "@orgSentText": {
     "placeholders": {
       "name": {
@@ -1179,7 +1179,7 @@
   "orgRoleMgrShort": "Gérant",
   "orgRoleAccShort": "Compt.",
   "orgRoleWrkShort": "Interv.",
-  "orgRightMissions": "Voir les missions de l'entreprise",
+  "orgRightMissions": "Voir toutes les missions de l'entreprise",
   "orgRightBalance": "Voir le solde et l'historique",
   "orgRightMembers": "Inviter ou retirer un membre",
   "orgRightNumbers": "Gérer les numéros de retrait",
@@ -1252,7 +1252,7 @@
       }
     }
   },
-  "orgNumbersNote": "Chaque nouveau numéro prévient tout le monde et attend 72 h avant son premier retrait.",
+  "orgNumbersNote": "Chaque nouveau numéro prévient le représentant sur tous ses canaux (app, message, e-mail) et attend 72 h avant son premier retrait.",
   "orgNumberAdd": "Ajouter un numéro",
   "orgNumberAddTitle": "Nouveau numéro marchand",
   "orgNumberOperator": "Opérateur",
@@ -1304,5 +1304,67 @@
   "orgWithdrawNoNumber": "Aucun numéro actif pour l'instant. Un nouveau numéro attend 72 h.",
   "orgFailed": "Impossible pour le moment. Rien n'a été modifié. Réessayez dans un instant.",
   "orgInvVerifiedT": "Vous êtes déjà vérifié",
-  "orgUpcoming": "À venir"
+  "orgUpcoming": "À venir",
+  "orgFnAccountant": "Comptable",
+  "orgFnOtherHint": "Précisez la fonction",
+  "orgEmail": "E-mail",
+  "orgEmailInvalid": "Cette adresse e-mail n'est pas valide.",
+  "orgDocsFormat": "Photo nette ou PDF. Le NIF aussi : le numéro seul ne suffit pas, joignez le document.",
+  "orgRightTeam": "Voir l'équipe",
+  "orgRightAssign": "Affecter des intervenants aux missions",
+  "orgRolesCustomHint": "Ce sont les droits proposés. Vous pouvez les adapter pour chaque personne depuis l'équipe.",
+  "orgMemberRightsTitle": "Droits de la personne",
+  "orgMemberRightsHint": "Ce que {name} peut voir et faire. Les retraits, les numéros et l'équipe restent au représentant.",
+  "@orgMemberRightsHint": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "orgMemberFixed": "Réservé au représentant",
+  "orgMemberDefaults": "Remettre les droits proposés",
+  "orgMemberSaved": "Droits enregistrés.",
+  "orgTeamHidden": "L'équipe n'est pas visible avec vos droits.",
+  "orgMineOnly": "Vous voyez seulement vos propres missions.",
+  "orgAssignTitle": "Intervenants",
+  "orgAssignAction": "Affecter",
+  "orgAssignNone": "Aucun intervenant affecté",
+  "orgAssignWho": "Envoyer sur cette mission",
+  "orgAssignHint": "Plusieurs intervenants peuvent aller sur une même mission. Le client voit le nom de chacun.",
+  "orgAssignOnlyVerified": "Seuls les intervenants vérifiés peuvent être affectés.",
+  "orgAssignSave": "Enregistrer",
+  "orgAssignDone": "Intervenants enregistrés.",
+  "orgAssignedLine": "Intervenants : {names}",
+  "@orgAssignedLine": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "orgSpaceLabel": "Espace entreprise",
+  "orgBackPersonal": "Revenir à mon compte",
+  "orgProfileCompany": "L'entreprise",
+  "orgProfileRep": "Représentant",
+  "orgProfileEmail": "E-mail",
+  "orgPhotoRow": "Photo de l'entreprise",
+  "photoProfileTitle": "Photo de profil",
+  "photoTake": "Prendre une photo",
+  "photoChoose": "Choisir dans la photothèque",
+  "photoDelete": "Supprimer la photo",
+  "photoHint": "Votre photo est vue par vos clients et vos prestataires. Vous pouvez la changer ou la supprimer quand vous voulez.",
+  "photoDemo": "Démonstration : la photo reste sur ce téléphone en attendant le serveur.",
+  "photoEdit": "Modifier la photo",
+  "aboutRow": "À propos",
+  "aboutRowSub": "Version, conditions, contact",
+  "aboutText": "NexisHub met en relation des clients et des prestataires vérifiés, avec un paiement sécurisé jusqu'à la fin du service.",
+  "aboutVersion": "Version {version}",
+  "@aboutVersion": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  }
 }

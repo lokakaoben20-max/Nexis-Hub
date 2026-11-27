@@ -94,6 +94,7 @@ extension AppModel {
         case .manager: return t("orgFnManager")
         case .director: return t("orgFnDirector")
         case .owner: return t("orgFnOwner")
+        case .accountant: return t("orgFnAccountant")
         case .other: return t("orgFormOther")
         }
     }
@@ -347,6 +348,12 @@ struct OrgCreateView: View {
                         .textInputAutocapitalization(.characters).autocorrectionDisabled()
                 }
                 Divider().padding(.leading, 16)
+                OrgFieldRow(label: app.t("orgEmail")) {
+                    TextField("contact@entreprise.cd", text: $draft.email)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                }
+                Divider().padding(.leading, 16)
                 NavigationLink {
                     CommunePicker(selection: $draft.commune)
                 } label: {
@@ -360,6 +367,9 @@ struct OrgCreateView: View {
                     }
                 }
                 .buttonStyle(.plain)
+            }
+            if !draft.email.isEmpty && !OrgDraft.isEmail(draft.email) {
+                Text(app.t("orgEmailInvalid")).font(.body(13.5)).foregroundStyle(Nexis.danger)
             }
             OrgGroupLabel(text: app.t("orgLegalForm"))
             WrapLayout {
@@ -385,7 +395,7 @@ struct OrgCreateView: View {
             StepHeading(title: app.t("orgRepTitle"), hint: nil)
             ChoiceRow(title: app.t("orgRepSelf"), subtitle: profile.map { "\($0.firstName) \($0.lastName)" },
                       selected: draft.representativeIsMe) {
-                InitialsAvatar(initials: profile?.initials ?? "", size: 40)
+                InitialsAvatar(initials: profile?.initials ?? "", size: 40, photoKey: "me")
             } action: {
                 draft.representativeIsMe = true
             }
@@ -406,16 +416,20 @@ struct OrgCreateView: View {
                     }
                 }
             }
-            OrgFieldCard {
-                OrgFieldRow(label: app.t("orgFunction")) {
-                    Picker(app.t("orgFunction"), selection: $draft.function) {
-                        ForEach(OrgFunction.allCases, id: \.self) { function in
-                            Text(app.functionName(function)).tag(function)
-                        }
+            OrgGroupLabel(text: app.t("orgFunction"))
+            WrapLayout {
+                ForEach(OrgFunction.allCases, id: \.self) { function in
+                    ToggleChip(label: app.functionName(function), selected: draft.function == function) {
+                        draft.function = function
                     }
-                    .pickerStyle(.menu)
-                    .tint(Nexis.ink)
-                    Spacer(minLength: 0)
+                }
+            }
+            if draft.function == .other {
+                OrgFieldCard {
+                    OrgFieldRow(label: app.t("orgFunction")) {
+                        TextField(app.t("orgFnOtherHint"), text: $draft.functionOther)
+                            .textInputAutocapitalization(.sentences)
+                    }
                 }
             }
             if draft.representativeIsMe, profile != nil {
@@ -464,6 +478,7 @@ struct OrgCreateView: View {
                 }
                 .buttonStyle(.plain)
             }
+            InfoNote(text: app.t("orgDocsFormat"), systemImage: "doc.viewfinder")
             InfoNote(text: app.t("orgDocsNote"), systemImage: "lock.shield.fill")
             InfoNote(text: app.t("orgDocsDemo"), kind: .violet)
         }
@@ -482,7 +497,7 @@ struct OrgCreateView: View {
                 }
                 summaryLine("RCCM \(draft.rccm)")
                 summaryLine(app.t("orgSummaryRep", ["name": representativeName,
-                                                    "role": app.functionName(draft.function).lowercased()]))
+                                                    "role": functionLabel.lowercased()]))
                 if let activity = draft.activity { summaryLine(summary(activity)) }
                 summaryLine(app.plural("orgDocsCount", count: draft.documents.count))
             }
@@ -502,6 +517,11 @@ struct OrgCreateView: View {
             .nxCard(padding: 14)
             InfoNote(text: app.t("orgReviewNote"), systemImage: "hourglass")
         }
+    }
+
+    private var functionLabel: String {
+        let other = draft.functionOther.trimmingCharacters(in: .whitespaces)
+        return draft.function == .other && !other.isEmpty ? other : app.functionName(draft.function)
     }
 
     private var representativeName: String {

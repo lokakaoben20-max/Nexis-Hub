@@ -149,6 +149,13 @@ protocol NexisRepository: AnyObject {
     /// Réservé au représentant ; l'app ne l'appelle qu'après le code ou
     /// Face ID, et le serveur refuse tout autre numéro.
     func requestOrgWithdrawal(orgId: Int, amount: Money, numberId: Int) async throws
+    /// Adapte ce qu'une personne de l'équipe peut voir ou faire. Réservé au
+    /// représentant ; seuls les droits adaptables changent (jamais les
+    /// retraits, les numéros ni l'équipe).
+    func setMemberRights(orgId: Int, memberId: Int, rights: Set<OrgRight>) async throws
+    /// Choisit qui va sur une mission : plusieurs intervenants possibles, tous
+    /// vérifiés. Réservé à qui a le droit d'affecter.
+    func assignMembers(orgId: Int, missionId: Int, memberIds: [Int]) async throws
 }
 
 struct InvalidRequest: Error {}
@@ -797,7 +804,8 @@ final class DemoRepository: NexisRepository {
             activity: activity, status: .reviewing, myRole: mine.role, sentAt: .now,
             documents: OrgDocKind.allCases.map { OrgDocument(kind: $0, state: .received) },
             members: [mine],
-            representative: draft.representativeIsMe ? myName : draft.representativePhone)
+            representative: draft.representativeIsMe ? myName : draft.representativePhone,
+            email: draft.email.trimmingCharacters(in: .whitespaces))
         nextOrgId += 1
         orgs.append(org)
         return org
@@ -935,6 +943,29 @@ final class DemoRepository: NexisRepository {
         orgMovementsStore[orgId] = list
     }
 
+    func setMemberRights(orgId: Int, memberId: Int, rights: Set<OrgRight>) async throws {
+        try await Task.sleep(for: .milliseconds(500))
+        try change(orgId) { org in
+            guard org.isOpen, org.myRole.can(.manageMembers),
+                  rights.allSatisfy(\.isEditable),
+                  let index = org.members.firstIndex(where: { $0.id == memberId }),
+                  org.members[index].role != .representative
+            else { throw NexisRefusal(code: "rights_refused") }
+            org.members[index].rights = rights
+        }
+    }
+
+    func assignMembers(orgId: Int, missionId: Int, memberIds: [Int]) async throws {
+        try await Task.sleep(for: .milliseconds(500))
+        try change(orgId) { org in
+            let verified = Set(org.members.filter { $0.status == .verified }.map(\.id))
+            guard org.isOpen, org.can(.assignMissions), !memberIds.isEmpty,
+                  Set(memberIds).isSubset(of: verified)
+            else { throw NexisRefusal(code: "assignment_refused") }
+            org.assignments[missionId] = memberIds
+        }
+    }
+
     private var orgDemoWallet: Wallet {
         Wallet(available: [.cdf: Money(1_240_000, .cdf), .usd: Money(64_000, .usd)],
                secured: [.cdf: Money(320_000, .cdf)])
@@ -987,12 +1018,16 @@ final class DemoRepository: NexisRepository {
                 member(1, "Alain Mukendi", "AM", 0x0A63F0, .representative, .verified),
                 member(2, "Nadine Bope", "NB", 0x1E7A5C, .accountant, .verified),
                 member(3, "Jean Kalala", "JK", 0xC98200, .worker, .verified, .electricite),
+                OrgMember(id: 6, name: "Paul Ilunga", initials: "PI", color: 0x0F7C8C, role: .worker,
+                          status: .verified, service: .electricite),
                 OrgMember(id: 4, name: "Patrick Mavungu", initials: "PM", color: 0x494C95, role: .worker,
                           status: .toVerify, service: .plomberie),
                 OrgMember(id: 5, name: "Sarah Lutete", initials: "SL", color: 0xC2416B, role: .manager,
                           status: .invited),
             ],
-            representative: "Alain Mukendi")
+            representative: "Alain Mukendi",
+            email: "contact@kasaservices.cd")
+        org.assignments = [91: [3, 6], 92: [3], 93: [4]]
         if status == .open {
             if role.can(.seeBalance) { org.wallet = orgDemoWallet }
             if numbers {

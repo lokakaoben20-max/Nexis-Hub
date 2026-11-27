@@ -13,11 +13,42 @@ final class OrgRightsTests: XCTestCase {
         }
     }
 
-    func testOnlyTheFieldWorkerCannotSeeTheBalance() {
+    func testSuggestedRightsHideTheCompanyFromTheFieldWorker() {
         for role in OrgRole.allCases {
-            XCTAssertTrue(role.can(.seeMissions))
+            XCTAssertEqual(role.can(.seeMissions), role != .worker)
             XCTAssertEqual(role.can(.seeBalance), role != .worker)
+            XCTAssertEqual(role.can(.seeTeam), role != .worker)
+            XCTAssertEqual(role.can(.assignMissions), role == .representative || role == .manager)
         }
+    }
+
+    func testOnlyViewingAndAssigningCanBeAdapted() {
+        XCTAssertEqual(Set(OrgRight.editable), [.seeMissions, .seeBalance, .seeTeam, .assignMissions])
+        for right in [OrgRight.manageMembers, .manageNumbers, .withdraw] {
+            XCTAssertFalse(right.isEditable)
+        }
+    }
+
+    func testEmailMustLookLikeAnAddress() {
+        XCTAssertTrue(OrgDraft.isEmail("contact@kasaservices.cd"))
+        XCTAssertFalse(OrgDraft.isEmail(""))
+        XCTAssertFalse(OrgDraft.isEmail("contact@kasaservices"))
+        XCTAssertFalse(OrgDraft.isEmail("contact kasa@services.cd"))
+        XCTAssertFalse(OrgDraft.isEmail("@services.cd"))
+        var draft = OrgDemo.draft(documents: false)
+        draft.email = "pas-une-adresse"
+        XCTAssertFalse(draft.step1Ready)
+    }
+
+    func testOtherFunctionNeedsAWrittenPosition() {
+        var draft = OrgDemo.draft(documents: true)
+        draft.function = .other
+        XCTAssertFalse(draft.step2Ready(identityVerified: true, identityTaken: false))
+        draft.functionOther = "Directrice des opérations"
+        XCTAssertTrue(draft.step2Ready(identityVerified: true, identityTaken: false))
+        draft.function = .accountant
+        draft.functionOther = ""
+        XCTAssertTrue(draft.step2Ready(identityVerified: true, identityTaken: false))
     }
 
     func testInvitableRolesNeverIncludeTheRepresentative() {
@@ -284,5 +315,66 @@ final class OrgRepositoryTests: XCTestCase {
         XCTAssertEqual(org.status, .reviewing)
         XCTAssertNil(org.correctionNote)
         XCTAssertTrue(org.documents.allSatisfy { $0.state == .received })
+    }
+
+    func testRepresentativeAdaptsWhatAMemberSees() async throws {
+        let repo = DemoRepository()
+        repo.demoPreset("org-home")
+        let before = try await repo.organization(id: 1)
+        let jean = try XCTUnwrap(before.members.first { $0.id == 3 })
+        XCTAssertEqual(jean.effectiveRights, OrgRole.worker.defaultRights)
+        try await repo.setMemberRights(orgId: 1, memberId: 3, rights: [.seeMissions, .seeBalance])
+        let after = try await repo.organization(id: 1)
+        let changed = try XCTUnwrap(after.members.first { $0.id == 3 })
+        XCTAssertEqual(changed.effectiveRights, [.seeMissions, .seeBalance])
+        // Les retraits, les numéros et l'équipe ne s'adaptent pas.
+        let money = await refusal { try await repo.setMemberRights(orgId: 1, memberId: 3, rights: [.withdraw]) }
+        XCTAssertEqual(money, "rights_refused")
+        // Le représentant garde ses droits : on ne les modifie pas.
+        let rep = await refusal { try await repo.setMemberRights(orgId: 1, memberId: 1, rights: []) }
+        XCTAssertEqual(rep, "rights_refused")
+    }
+
+    func testOnlyTheRepresentativeAdaptsRights() async throws {
+        let accountant = DemoRepository()
+        accountant.demoPreset("org-accountant")
+        let refused = await refusal {
+            try await accountant.setMemberRights(orgId: 1, memberId: 3, rights: [.seeMissions])
+        }
+        XCTAssertEqual(refused, "rights_refused")
+    }
+
+    func testWorkerWithoutViewingRightSeesOnlyOwnMissions() async throws {
+        let worker = DemoRepository()
+        worker.demoPreset("org-worker")
+        let org = try await worker.organization(id: 1)
+        XCTAssertFalse(org.can(.seeMissions))
+        let missions = try await worker.orgMissions(orgId: 1)
+        let mine = org.visible(missions)
+        let me = try XCTUnwrap(org.members.first { $0.isMe })
+        XCTAssertTrue(mine.allSatisfy { org.assignments[$0.id]?.contains(me.id) == true })
+        XCTAssertLessThan(mine.count, missions.count)
+    }
+
+    func testSeveralVerifiedMembersCanGoOnTheSameMission() async throws {
+        let repo = DemoRepository()
+        repo.demoPreset("org-home")
+        let org = try await repo.organization(id: 1)
+        XCTAssertEqual(org.assignments[91]?.count, 2)
+        try await repo.assignMembers(orgId: 1, missionId: 92, memberIds: [3, 6])
+        let after = try await repo.organization(id: 1)
+        XCTAssertEqual(after.assignments[92], [3, 6])
+        // Une personne pas encore vérifiée ne part jamais en mission.
+        let unverified = await refusal { try await repo.assignMembers(orgId: 1, missionId: 92, memberIds: [3, 4]) }
+        XCTAssertEqual(unverified, "assignment_refused")
+        let nobody = await refusal { try await repo.assignMembers(orgId: 1, missionId: 92, memberIds: []) }
+        XCTAssertEqual(nobody, "assignment_refused")
+    }
+
+    func testAccountantCannotAssignMissions() async throws {
+        let accountant = DemoRepository()
+        accountant.demoPreset("org-accountant")
+        let refused = await refusal { try await accountant.assignMembers(orgId: 1, missionId: 92, memberIds: [3]) }
+        XCTAssertEqual(refused, "assignment_refused")
     }
 }

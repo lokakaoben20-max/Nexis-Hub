@@ -383,6 +383,7 @@ struct OperatorBadge: View {
         case .mpesa: return ("M", 0xE60000)
         case .orange: return ("O", 0xFF7900)
         case .airtel: return ("A", 0xED1C24)
+        case .africell: return ("Af", 0x7B2D8E)
         }
     }
 

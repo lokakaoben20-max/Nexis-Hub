@@ -1,4 +1,24 @@
 {
+ "aboutRow": {
+  "en": "About",
+  "fr": "À propos",
+  "ln": "Na ntina ya NexisHub"
+ },
+ "aboutRowSub": {
+  "en": "Version, terms, contact",
+  "fr": "Version, conditions, contact",
+  "ln": "Version, mibeko, contact"
+ },
+ "aboutText": {
+  "en": "NexisHub connects clients with verified providers, with a payment that stays secured until the service is done.",
+  "fr": "NexisHub met en relation des clients et des prestataires vérifiés, avec un paiement sécurisé jusqu'à la fin du service.",
+  "ln": "NexisHub esangisi basombi na basali batalami, na kofuta oyo ebombami kino mosala esili."
+ },
+ "aboutVersion": {
+  "en": "Version {version}",
+  "fr": "Version {version}",
+  "ln": "Version {version}"
+ },
  "actionDeposit": {
   "en": "Deposit",
   "fr": "Dépôt",
@@ -1294,10 +1314,60 @@
   "fr": "{name} est vérifiée",
   "ln": "{name} etalami"
  },
+ "orgAssignAction": {
+  "en": "Assign",
+  "fr": "Affecter",
+  "ln": "Kopesa"
+ },
+ "orgAssignDone": {
+  "en": "Team members saved.",
+  "fr": "Intervenants enregistrés.",
+  "ln": "Bato ebombami."
+ },
+ "orgAssignHint": {
+  "en": "Several team members can go on the same mission. The client sees each name.",
+  "fr": "Plusieurs intervenants peuvent aller sur une même mission. Le client voit le nom de chacun.",
+  "ln": "Bato mingi bakoki kokende na mosala moko. Mosombi amoni nkombo ya moto na moto."
+ },
+ "orgAssignNone": {
+  "en": "No one assigned",
+  "fr": "Aucun intervenant affecté",
+  "ln": "Moto moko te apesami"
+ },
+ "orgAssignOnlyVerified": {
+  "en": "Only verified team members can be assigned.",
+  "fr": "Seuls les intervenants vérifiés peuvent être affectés.",
+  "ln": "Bato oyo batalami kaka bakoki kopesama mosala."
+ },
+ "orgAssignSave": {
+  "en": "Save",
+  "fr": "Enregistrer",
+  "ln": "Kobomba"
+ },
+ "orgAssignTitle": {
+  "en": "Team members",
+  "fr": "Intervenants",
+  "ln": "Bato ya mosala"
+ },
+ "orgAssignWho": {
+  "en": "Send on this mission",
+  "fr": "Envoyer sur cette mission",
+  "ln": "Kotinda na mosala oyo"
+ },
+ "orgAssignedLine": {
+  "en": "Team members: {names}",
+  "fr": "Intervenants : {names}",
+  "ln": "Bato : {names}"
+ },
  "orgAvailableCaption": {
   "en": "Available · business",
   "fr": "Disponible · entreprise",
   "ln": "Ezali · kompani"
+ },
+ "orgBackPersonal": {
+  "en": "Back to my account",
+  "fr": "Revenir à mon compte",
+  "ln": "Zonga na compte na ngai"
  },
  "orgBackProfile": {
   "en": "Back to profile",
@@ -1373,6 +1443,11 @@
   "fr": "Démonstration : l'envoi réel des documents arrive avec le serveur.",
   "ln": "Démonstration : kotinda mikanda ya solo ekoya na serveur."
  },
+ "orgDocsFormat": {
+  "en": "A clear photo or a PDF. The NIF too: the number alone is not enough, attach the document.",
+  "fr": "Photo nette ou PDF. Le NIF aussi : le numéro seul ne suffit pas, joignez le document.",
+  "ln": "Foto polele to PDF. NIF mpe : nimero kaka epesi te, bakisa mokanda."
+ },
  "orgDocsNote": {
   "en": "Encrypted documents, seen by the verification team only.",
   "fr": "Documents chiffrés, vus par l'équipe de vérification seulement.",
@@ -1387,6 +1462,16 @@
   "en": "Edit",
   "fr": "Modifier",
   "ln": "Bongola"
+ },
+ "orgEmail": {
+  "en": "Email",
+  "fr": "E-mail",
+  "ln": "E-mail"
+ },
+ "orgEmailInvalid": {
+  "en": "This email address is not valid.",
+  "fr": "Cette adresse e-mail n'est pas valide.",
+  "ln": "Adresse e-mail oyo ezali malamu te."
  },
  "orgFailed": {
   "en": "Not possible right now. Nothing was changed. Try again in a moment.",
@@ -1418,6 +1503,11 @@
   "fr": "Écrire à l'équipe",
   "ln": "Koloba na équipe"
  },
+ "orgFnAccountant": {
+  "en": "Accountant",
+  "fr": "Comptable",
+  "ln": "Comptable"
+ },
  "orgFnDirector": {
   "en": "Director",
   "fr": "Directeur",
@@ -1427,6 +1517,11 @@
   "en": "Manager",
   "fr": "Gérant",
   "ln": "Mokambi"
+ },
+ "orgFnOtherHint": {
+  "en": "Specify the position",
+  "fr": "Précisez la fonction",
+  "ln": "Lakisa mosala"
  },
  "orgFnOwner": {
   "en": "Owner",
@@ -1455,8 +1550,8 @@
  },
  "orgIdPiece": {
   "en": "ID document",
-  "fr": "Pièce",
-  "ln": "Pièce"
+  "fr": "Pièce d'identité",
+  "ln": "Pièce d'identité"
  },
  "orgIdSent": {
   "en": "Verification sent: the NexisHub team is looking at it.",
@@ -1643,10 +1738,35 @@
   "fr": "Forme juridique",
   "ln": "Lolenge ya mibeko ya kompani"
  },
+ "orgMemberDefaults": {
+  "en": "Restore the suggested rights",
+  "fr": "Remettre les droits proposés",
+  "ln": "Zongisa ba droits oyo etindami"
+ },
+ "orgMemberFixed": {
+  "en": "Representative only",
+  "fr": "Réservé au représentant",
+  "ln": "Ya moto ya kolakisa kaka"
+ },
  "orgMemberInvited": {
   "en": "Invited",
   "fr": "Invité",
   "ln": "Abengami"
+ },
+ "orgMemberRightsHint": {
+  "en": "What {name} can see and do. Withdrawals, numbers and the team stay with the representative.",
+  "fr": "Ce que {name} peut voir et faire. Les retraits, les numéros et l'équipe restent au représentant.",
+  "ln": "Oyo {name} akoki komona mpe kosala. Retrait, ba nimero mpe équipe etikali na moto ya kolakisa."
+ },
+ "orgMemberRightsTitle": {
+  "en": "This person's rights",
+  "fr": "Droits de la personne",
+  "ln": "Ba droits ya moto"
+ },
+ "orgMemberSaved": {
+  "en": "Rights saved.",
+  "fr": "Droits enregistrés.",
+  "ln": "Ba droits ebombami."
  },
  "orgMemberToVerify": {
   "en": "To verify",
@@ -1657,6 +1777,11 @@
   "en": "Verified",
   "fr": "Vérifié",
   "ln": "Etalami"
+ },
+ "orgMineOnly": {
+  "en": "You only see your own missions.",
+  "fr": "Vous voyez seulement vos propres missions.",
+  "ln": "Okomona kaka misala na yo moko."
  },
  "orgMissionsTitle": {
   "en": "Company missions",
@@ -1724,9 +1849,9 @@
   "ln": "Moto ya kolakisa kaka akambaka yango, na app."
  },
  "orgNumbersNote": {
-  "en": "Each new number alerts everyone and waits 72 h before its first withdrawal.",
-  "fr": "Chaque nouveau numéro prévient tout le monde et attend 72 h avant son premier retrait.",
-  "ln": "Nimero nyonso ya sika ebengi bato nyonso mpe ezeli 72 h liboso ya retrait ya yambo."
+  "en": "Each new number alerts the representative on every channel (app, message, email) and waits 72 h before its first withdrawal.",
+  "fr": "Chaque nouveau numéro prévient le représentant sur tous ses canaux (app, message, e-mail) et attend 72 h avant son premier retrait.",
+  "ln": "Nimero nyonso ya sika ebengi moto ya kolakisa na nzela nyonso (app, message, e-mail) mpe ezeli 72 h liboso ya retrait ya yambo."
  },
  "orgNumbersTitle": {
   "en": "Withdrawal numbers",
@@ -1737,6 +1862,26 @@
   "en": "Ongoing missions",
   "fr": "Missions en cours",
   "ln": "Misala ezali kosalema"
+ },
+ "orgPhotoRow": {
+  "en": "Company photo",
+  "fr": "Photo de l'entreprise",
+  "ln": "Foto ya kompani"
+ },
+ "orgProfileCompany": {
+  "en": "The company",
+  "fr": "L'entreprise",
+  "ln": "Kompani"
+ },
+ "orgProfileEmail": {
+  "en": "Email",
+  "fr": "E-mail",
+  "ln": "E-mail"
+ },
+ "orgProfileRep": {
+  "en": "Representative",
+  "fr": "Représentant",
+  "ln": "Moto ya kolakisa"
  },
  "orgQuickTeam": {
   "en": "Team",
@@ -1768,6 +1913,11 @@
   "fr": "L'équipe vérifie vos documents avant d'ouvrir l'espace.",
   "ln": "Équipe ekotala mikanda na yo liboso ya kofungola esika."
  },
+ "orgRightAssign": {
+  "en": "Assign team members to missions",
+  "fr": "Affecter des intervenants aux missions",
+  "ln": "Kopesa bato misala"
+ },
  "orgRightBalance": {
   "en": "See the balance and history",
   "fr": "Voir le solde et l'historique",
@@ -1784,9 +1934,9 @@
   "ln": "Kobenga to kolongola mosali ya équipe"
  },
  "orgRightMissions": {
-  "en": "See the company's missions",
-  "fr": "Voir les missions de l'entreprise",
-  "ln": "Kotala misala ya kompani"
+  "en": "See all the company's missions",
+  "fr": "Voir toutes les missions de l'entreprise",
+  "ln": "Komona misala nyonso ya kompani"
  },
  "orgRightNoMoney": {
   "en": "Cannot see the balance or withdrawals",
@@ -1802,6 +1952,11 @@
   "en": "See their own missions",
   "fr": "Voir ses propres missions",
   "ln": "Kotala misala na ye moko"
+ },
+ "orgRightTeam": {
+  "en": "See the team",
+  "fr": "Voir l'équipe",
+  "ln": "Komona équipe"
  },
  "orgRightWithdraw": {
   "en": "Withdraw money",
@@ -1848,6 +2003,11 @@
   "fr": "Interv.",
   "ln": "Interv."
  },
+ "orgRolesCustomHint": {
+  "en": "These are the suggested rights. You can adapt them for each person from the team.",
+  "fr": "Ce sont les droits proposés. Vous pouvez les adapter pour chaque personne depuis l'équipe.",
+  "ln": "Yango ba droits oyo etindami. Okoki kobongola yango mpo na moto na moto na équipe."
+ },
  "orgRolesHint": {
   "en": "The representative stays in control of the money and the team.",
   "fr": "Le représentant garde la main sur l'argent et sur l'équipe.",
@@ -1874,14 +2034,19 @@
   "ln": "Na kozela, compte na yo ya moto ezali kosala lokola ntango nyonso."
  },
  "orgSentText": {
-  "en": "The NexisHub team is checking {name}. We will notify you here and by message.",
-  "fr": "L'équipe NexisHub vérifie {name}. Nous vous prévenons ici et par message.",
-  "ln": "Équipe ya NexisHub ezali kotala {name}. Tokopesa yo nsango awa mpe na message."
+  "en": "The NexisHub team is checking {name}. We will notify you in the app, by message and by email.",
+  "fr": "L'équipe NexisHub vérifie {name}. Nous vous prévenons dans l'app, par message et par e-mail.",
+  "ln": "Équipe ya NexisHub ezali kotala {name}. Tokopesa yo nsango na app, na message mpe na e-mail."
  },
  "orgSentTitle": {
   "en": "Request sent",
   "fr": "Demande envoyée",
   "ln": "Bosengi etindami"
+ },
+ "orgSpaceLabel": {
+  "en": "Business space",
+  "fr": "Espace entreprise",
+  "ln": "Esika ya kompani"
  },
  "orgStart": {
   "en": "Start",
@@ -1932,6 +2097,11 @@
   "en": "Switch space",
   "fr": "Changer d'espace",
   "ln": "Kobongola esika"
+ },
+ "orgTeamHidden": {
+  "en": "The team is not visible with your rights.",
+  "fr": "L'équipe n'est pas visible avec vos droits.",
+  "ln": "Équipe emonani te na ba droits na yo."
  },
  "orgTeamHint": {
   "en": "A field worker takes missions only once verified, like any provider.",
@@ -2192,6 +2362,41 @@
   "en": "Phone",
   "fr": "Téléphone",
   "ln": "Telefone"
+ },
+ "photoChoose": {
+  "en": "Choose from the library",
+  "fr": "Choisir dans la photothèque",
+  "ln": "Kopona foto na téléphone"
+ },
+ "photoDelete": {
+  "en": "Delete the photo",
+  "fr": "Supprimer la photo",
+  "ln": "Kolongola foto"
+ },
+ "photoDemo": {
+  "en": "Demo: the photo stays on this phone until the server is ready.",
+  "fr": "Démonstration : la photo reste sur ce téléphone en attendant le serveur.",
+  "ln": "Démonstration : foto etikali na téléphone oyo kino serveur ekoya."
+ },
+ "photoEdit": {
+  "en": "Edit photo",
+  "fr": "Modifier la photo",
+  "ln": "Kobongola foto"
+ },
+ "photoHint": {
+  "en": "Your photo is seen by the people you work with. You can change or delete it at any time.",
+  "fr": "Votre photo est vue par vos clients et vos prestataires. Vous pouvez la changer ou la supprimer quand vous voulez.",
+  "ln": "Bato oyo bazali na yo bakomona foto na yo. Okoki kobongola yango to kolongola yango ntango nyonso."
+ },
+ "photoProfileTitle": {
+  "en": "Profile photo",
+  "fr": "Photo de profil",
+  "ln": "Foto ya profil"
+ },
+ "photoTake": {
+  "en": "Take a photo",
+  "fr": "Prendre une photo",
+  "ln": "Kozwa foto"
  },
  "photos": {
   "en": "Photos",
