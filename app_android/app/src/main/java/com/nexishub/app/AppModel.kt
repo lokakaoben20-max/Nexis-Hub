@@ -34,6 +34,24 @@ class AppModel(
     /** Espace prestataire ouvert (seulement pour un compte prestataire). */
     var providerSpace by mutableStateOf(false)
 
+    /** Espace d'une entreprise ouvert (numéro de l'entreprise), ou aucun. */
+    var orgSpaceId by mutableStateOf<Int?>(null)
+
+    fun openClientSpace() {
+        providerSpace = false
+        orgSpaceId = null
+    }
+
+    fun openProviderSpace() {
+        orgSpaceId = null
+        providerSpace = true
+    }
+
+    fun openOrgSpace(id: Int) {
+        providerSpace = false
+        orgSpaceId = id
+    }
+
     /** Onglet demandé par un écran (« Voir mon portefeuille ») ; le cadre
      * l'ouvre puis l'efface. */
     var requestedTab by mutableStateOf<Int?>(null)
@@ -134,6 +152,7 @@ class AppModel(
         amountsHidden = false
         walletCurrency = Currency.CDF
         providerSpace = false
+        orgSpaceId = null
         requestedTab = null
     }
 

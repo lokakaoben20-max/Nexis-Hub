@@ -147,6 +147,33 @@ interface NexisRepository {
 
     /** « J'ai terminé » : le client a 48 h pour confirmer ou signaler. */
     suspend fun finishJob(missionId: Int): ProviderJob
+
+    // --- Espace entreprise ---
+
+    /** Les entreprises de la personne, avec son rôle dans chacune. */
+    suspend fun organizations(): List<Organization>
+    suspend fun organization(id: Int): Organization
+
+    /** Les missions de l'entreprise (toutes : l'app filtre selon les droits). */
+    suspend fun orgMissions(orgId: Int): List<Mission>
+    suspend fun orgMovements(orgId: Int): List<Movement>
+
+    /** Invite une personne par son numéro. Réservé au représentant. */
+    suspend fun inviteMember(orgId: Int, phone: String, role: OrgRole)
+
+    /** Ajoute un numéro Mobile Money marchand ; il attend 72 h avant son
+     * premier retrait. Réservé au représentant. */
+    suspend fun addWithdrawNumber(orgId: Int, operator: MobileOperator, number: String)
+
+    /** Retrait vers un numéro actif de l'entreprise. Réservé au représentant. */
+    suspend fun requestOrgWithdrawal(orgId: Int, amount: Money, numberId: Int)
+
+    /** Droits adaptés pour une personne de l'équipe (que ceux qui sont
+     * adaptables). Réservé au représentant. */
+    suspend fun setMemberRights(orgId: Int, memberId: Int, rights: Set<OrgRight>)
+
+    /** Qui va sur une mission : plusieurs personnes, toutes vérifiées. */
+    suspend fun assignMembers(orgId: Int, missionId: Int, memberIds: List<Int>)
 }
 
 /** Données FICTIVES de l'aperçu, reprises de l'app Flutter
@@ -624,5 +651,177 @@ class DemoRepository(private val now: Instant = Instant.now()) : NexisRepository
         if (ProviderStep.ARRIVED !in job.steps) throw NexisRefusal("arrival_not_confirmed")
         if (ProviderStep.FINISHED in job.steps) return job
         return save(job.copy(steps = job.steps + (ProviderStep.FINISHED to Instant.now())))
+    }
+    // --- Espace entreprise (démonstration) ---
+
+    private val orgsByPhone = mutableMapOf<String, MutableList<Organization>>()
+    private val orgMovementsStore = mutableMapOf<Int, MutableList<Movement>>()
+    private var nextMemberId = 100
+    private var nextNumberId = 10
+
+    // Le compte d'aperçu a déjà une entreprise ouverte (Kasa Services) : la
+    // création d'une entreprise n'est pas encore dans l'app Android.
+    private val orgs: MutableList<Organization>
+        get() = orgsByPhone.getOrPut(activePhone) {
+            if (isSample) mutableListOf(demoOrg(OrgRole.REPRESENTATIVE)) else mutableListOf()
+        }
+
+    override suspend fun organizations(): List<Organization> = orgs.toList()
+
+    override suspend fun organization(id: Int): Organization =
+        orgs.firstOrNull { it.id == id } ?: throw NexisRefusal("organization_not_found")
+
+    private fun change(id: Int, edit: (Organization) -> Organization) {
+        val index = orgs.indexOfFirst { it.id == id }
+        if (index < 0) throw NexisRefusal("organization_not_found")
+        orgs[index] = edit(orgs[index])
+    }
+
+    override suspend fun orgMissions(orgId: Int): List<Mission> {
+        val org = organization(orgId)
+        if (!org.isOpen) return emptyList()
+        val zone = ZoneId.systemDefault()
+        val today = now.atZone(zone).toLocalDate().atTime(15, 0).atZone(zone).toInstant()
+        val tomorrow = now.atZone(zone).toLocalDate().plusDays(1).atTime(9, 0).atZone(zone).toInstant()
+        return listOf(
+            Mission(91, Service.ELECTRICITE, commune = "Gombe", status = MissionStatus.IN_PROGRESS,
+                payment = PaymentState.SECURED, amount = Money(45_000, Currency.CDF), providerName = "Jean Kalala", at = today),
+            Mission(92, Service.ELECTRICITE, commune = "Limete", status = MissionStatus.CONFIRMED,
+                payment = PaymentState.SECURED, amount = Money(30_000, Currency.CDF), providerName = "Jean Kalala", at = tomorrow),
+            Mission(93, Service.PLOMBERIE, commune = "Gombe", status = MissionStatus.COMPLETED,
+                payment = PaymentState.RELEASED, amount = Money(180_000, Currency.CDF), providerName = "Patrick Mavungu",
+                at = ago(days = 2)),
+        )
+    }
+
+    override suspend fun orgMovements(orgId: Int): List<Movement> {
+        val org = organization(orgId)
+        if (!org.isOpen || !org.myRole.can(OrgRight.SEE_BALANCE)) return emptyList()
+        orgMovementsStore[orgId]?.let { return it.toList() }
+        return listOf(
+            Movement(MovementKind.RELEASE, "Électricité · Gombe", Money(180_000, Currency.CDF), ago(days = 1), PaymentState.RELEASED),
+            Movement(MovementKind.WITHDRAWAL, "Retrait Airtel Money", Money(-500_000, Currency.CDF), ago(days = 3), PaymentState.NONE),
+            Movement(MovementKind.RELEASE, "Prises · Limete", Money(95_000, Currency.CDF), ago(days = 4), PaymentState.RELEASED),
+        )
+    }
+
+    override suspend fun inviteMember(orgId: Int, phone: String, role: OrgRole) {
+        val digits = DrcPhone.parse(phone)
+        val label = "+243 ${digits.formatted}"
+        kotlinx.coroutines.delay(800)
+        val memberId = nextMemberId
+        change(orgId) { org ->
+            if (!org.isOpen || !org.myRole.can(OrgRight.MANAGE_MEMBERS) || !digits.isValid ||
+                role !in OrgRole.invitable || org.members.any { it.name == label }
+            ) throw NexisRefusal("invitation_refused")
+            org.copy(members = org.members + OrgMember(memberId, label, "+", 0xFF5B667A, role, OrgMemberStatus.INVITED))
+        }
+        nextMemberId++
+    }
+
+    override suspend fun addWithdrawNumber(orgId: Int, operator: MobileOperator, number: String) {
+        val digits = DrcPhone.parse(number)
+        kotlinx.coroutines.delay(800)
+        val numberId = nextNumberId
+        change(orgId) { org ->
+            if (!org.isOpen || !org.myRole.can(OrgRight.MANAGE_NUMBERS) || !digits.isValid ||
+                org.numbers.size >= 4 || org.numbers.any { it.number == digits.digits }
+            ) throw NexisRefusal("number_refused")
+            org.copy(numbers = org.numbers + WithdrawNumber(numberId, operator, digits.digits, Instant.now().plus(Duration.ofHours(72))))
+        }
+        nextNumberId++
+    }
+
+    override suspend fun requestOrgWithdrawal(orgId: Int, amount: Money, numberId: Int) {
+        val org = organization(orgId)
+        val number = org.numbers.firstOrNull { it.id == numberId }
+        val available = org.wallet.available[amount.currency]
+        if (!org.isOpen || !org.myRole.can(OrgRight.WITHDRAW) || amount.minorUnits <= 0 ||
+            number == null || !number.isActive() || available == null || available.minorUnits < amount.minorUnits
+        ) throw NexisRefusal("withdrawal_refused")
+        kotlinx.coroutines.delay(1_000)
+        change(orgId) { current ->
+            val money = current.wallet.available + (amount.currency to Money(available.minorUnits - amount.minorUnits, amount.currency))
+            current.copy(wallet = Wallet(money, current.wallet.secured))
+        }
+        val list = orgMovements(orgId).toMutableList()
+        list.add(0, Movement(MovementKind.WITHDRAWAL, "Retrait ${number.operator.displayName}",
+            Money(-amount.minorUnits, amount.currency), Instant.now(), PaymentState.NONE))
+        orgMovementsStore[orgId] = list
+    }
+
+    override suspend fun setMemberRights(orgId: Int, memberId: Int, rights: Set<OrgRight>) {
+        kotlinx.coroutines.delay(500)
+        change(orgId) { org ->
+            val index = org.members.indexOfFirst { it.id == memberId }
+            if (!org.isOpen || !org.myRole.can(OrgRight.MANAGE_MEMBERS) || !rights.all { it.isEditable } ||
+                index < 0 || org.members[index].role == OrgRole.REPRESENTATIVE
+            ) throw NexisRefusal("rights_refused")
+            org.copy(members = org.members.toMutableList().also { it[index] = it[index].copy(rights = rights) })
+        }
+    }
+
+    override suspend fun assignMembers(orgId: Int, missionId: Int, memberIds: List<Int>) {
+        kotlinx.coroutines.delay(500)
+        change(orgId) { org ->
+            val verified = org.members.filter { it.status == OrgMemberStatus.VERIFIED }.map { it.id }.toSet()
+            if (!org.isOpen || !org.can(OrgRight.ASSIGN_MISSIONS) || memberIds.isEmpty() || !verified.containsAll(memberIds)) {
+                throw NexisRefusal("assignment_refused")
+            }
+            org.copy(assignments = org.assignments + (missionId to memberIds))
+        }
+    }
+
+    private val orgDemoWallet: Wallet
+        get() = Wallet(
+            available = mapOf(Currency.CDF to Money(1_240_000, Currency.CDF), Currency.USD to Money(64_000, Currency.USD)),
+            secured = mapOf(Currency.CDF to Money(320_000, Currency.CDF)),
+        )
+
+    /** Captures de la CI : l'état de départ d'un écran entreprise. */
+    fun demoPreset(capture: String) {
+        when (capture) {
+            "org-accountant" -> setOrgs(demoOrg(OrgRole.ACCOUNTANT))
+            "org-worker" -> setOrgs(demoOrg(OrgRole.WORKER))
+            else -> if (capture in OrgDemo.representativeCaptures) setOrgs(demoOrg(OrgRole.REPRESENTATIVE))
+        }
+    }
+
+    private fun setOrgs(vararg list: Organization) {
+        orgs.clear()
+        orgs.addAll(list)
+    }
+
+    private fun demoOrg(role: OrgRole, numbers: Boolean = true): Organization {
+        val me = sampleProfile
+        val myName = "${me.firstName} ${me.lastName}"
+        fun member(id: Int, name: String, initials: String, color: Long, memberRole: OrgRole,
+                   state: OrgMemberStatus, service: Service? = null): OrgMember {
+            val isMe = memberRole == role
+            return OrgMember(id, if (isMe) myName else name, if (isMe) me.initials else initials,
+                if (isMe) 0xFF0A63F0 else color, memberRole, if (isMe) OrgMemberStatus.VERIFIED else state, service, isMe)
+        }
+        val open = role.can(OrgRight.SEE_BALANCE)
+        return Organization(
+            id = 1, name = "Kasa Services SARLU", shortName = "Kasa Services", rccm = "CD/KIN/RCCM/25-B-01234",
+            activity = OrgActivity.BOTH, status = OrgStatus.OPEN, myRole = role, sentAt = ago(hours = 2),
+            documents = OrgDocKind.entries.map { OrgDocument(it, OrgDocState.RECEIVED) },
+            members = listOf(
+                member(1, "Alain Mukendi", "AM", 0xFF0A63F0, OrgRole.REPRESENTATIVE, OrgMemberStatus.VERIFIED),
+                member(2, "Nadine Bope", "NB", 0xFF1E7A5C, OrgRole.ACCOUNTANT, OrgMemberStatus.VERIFIED),
+                member(3, "Jean Kalala", "JK", 0xFFC98200, OrgRole.WORKER, OrgMemberStatus.VERIFIED, Service.ELECTRICITE),
+                OrgMember(6, "Paul Ilunga", "PI", 0xFF0F7C8C, OrgRole.WORKER, OrgMemberStatus.VERIFIED, Service.ELECTRICITE),
+                OrgMember(4, "Patrick Mavungu", "PM", 0xFF494C95, OrgRole.WORKER, OrgMemberStatus.TO_VERIFY, Service.PLOMBERIE),
+                OrgMember(5, "Sarah Lutete", "SL", 0xFFC2416B, OrgRole.MANAGER, OrgMemberStatus.INVITED),
+            ),
+            representative = "Alain Mukendi",
+            email = "contact@kasaservices.cd",
+            assignments = mapOf(91 to listOf(3, 6), 92 to listOf(3), 93 to listOf(4)),
+            wallet = if (open) orgDemoWallet else Wallet.EMPTY,
+            numbers = if (numbers) listOf(
+                WithdrawNumber(1, MobileOperator.AIRTEL, "991234567", ago(days = 5)),
+                WithdrawNumber(2, MobileOperator.ORANGE, "897654321", now.plus(Duration.ofHours(71)).minus(Duration.ofMinutes(10))),
+            ) else emptyList(),
+        )
     }
 }

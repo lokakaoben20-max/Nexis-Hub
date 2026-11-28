@@ -38,6 +38,10 @@ object Nexis {
     /** Pastille « Nouveau » de la maquette. */
     val newBadge = Color(0xFFE5484D)
 
+    /** Carte du portefeuille de l'espace entreprise : marine, pour qu'on
+     * sente qu'on n'est plus dans son compte personnel. */
+    val orgGradient = Brush.linearGradient(listOf(Color(0xFF0E3A78), navy))
+
     val brandGradient = Brush.linearGradient(listOf(gradientStart, gradientEnd))
     val heroGradient = Brush.verticalGradient(listOf(halo, gradientEnd))
 }

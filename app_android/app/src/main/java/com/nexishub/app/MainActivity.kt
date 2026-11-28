@@ -202,6 +202,21 @@ enum class Capture(
     PORTFOLIO(true, tab = 3),
     PORTFOLIO_LOCKED(true, tab = 3),
 
+    // À propos et espace entreprise (voir OrgDemo).
+    ABOUT(true, tab = 3),
+    ORG_HOME(true, tab = 0),
+    ORG_TEAM(true, tab = 0),
+    ORG_INVITE(true, tab = 0),
+    ORG_ROLES(true, tab = 0),
+    ORG_NUMBERS(true, tab = 0),
+    ORG_NUMBER_ADD(true, tab = 0),
+    ORG_WITHDRAW(true, tab = 0),
+    ORG_MEMBER(true, tab = 0),
+    ORG_SPACE_PROFILE(true, tab = 3),
+    ORG_ASSIGN(true, tab = 1),
+    ORG_ACCOUNTANT(true, tab = 0),
+    ORG_WORKER(true, tab = 1),
+
     // Code NexisHub et empreinte.
     PROTECT(true),
     PROTECT_BIO(true),
