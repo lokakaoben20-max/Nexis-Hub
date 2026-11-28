@@ -100,43 +100,6 @@ struct OrgMark: View {
     }
 }
 
-/// Bandeau marine posé en haut de tout l'espace entreprise : on voit tout de
-/// suite qu'on n'est plus dans son compte personnel.
-struct OrgSpaceBar: View {
-    @Environment(AppModel.self) private var app
-    let orgId: Int
-    @State private var org: Organization?
-
-    var body: some View {
-        HStack(spacing: 10) {
-            OrgMark(name: org?.name ?? "", size: 30, photoKey: "org-\(orgId)")
-            VStack(alignment: .leading, spacing: 0) {
-                Text(app.t("orgSpaceLabel").uppercased())
-                    .font(.body(10.5, .bold, relativeTo: .caption2))
-                    .tracking(0.8)
-                    .foregroundStyle(.white.opacity(0.7))
-                Text(org?.shortName ?? "NexisHub")
-                    .font(.body(14.5, .semibold, relativeTo: .subheadline))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            if let org {
-                Text(app.roleName(org.myRole))
-                    .font(.body(12, .semibold, relativeTo: .caption1))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(.white.opacity(0.16), in: Capsule())
-            }
-        }
-        .padding(.horizontal, 18).padding(.vertical, 8)
-        .frame(maxWidth: .infinity)
-        .background(Nexis.navy)
-        .accessibilityElement(children: .combine)
-        .task(id: app.revision) { org = try? await app.repository.organization(id: orgId) }
-    }
-}
-
 // MARK: - 12. Changer d'espace
 
 struct SpacePickerSheet: View {

@@ -40,11 +40,8 @@ struct ShellView: View {
                 if let orgId = app.orgSpaceId { OrgProfileView(orgId: orgId) } else { ProfileView() }
             }
         }
-        // L'espace entreprise a son bandeau marine et sa teinte : on sent
-        // qu'on n'est plus dans son compte personnel.
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if let orgId = app.orgSpaceId { OrgSpaceBar(orgId: orgId) }
-        }
+        // L'espace entreprise a sa teinte, sa carte marine et son profil :
+        // on sent qu'on n'est plus dans son compte personnel.
         .tint(spaceTint)
         .modifier(RequestServiceAccessory(open: $picking, tab: tab))
         .onAppear {
