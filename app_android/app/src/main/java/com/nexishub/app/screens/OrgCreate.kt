@@ -419,10 +419,6 @@ private fun RepresentativeStep(
     if (!draft.representativeIsMe) {
         OrgTextField(draft.representativePhone, app.t("phone"), { onChange(draft.copy(representativePhone = it)) }, KeyboardType.Phone, "81 234 5678")
     }
-    OrgDropdown(app.t("orgFunction"), OrgFunction.entries, draft.function, { app.functionName(it) }) { onChange(draft.copy(function = it)) }
-    if (draft.function == OrgFunction.OTHER) {
-        OrgTextField(draft.functionOther, app.t("orgFunction"), { onChange(draft.copy(functionOther = it)) }, hint = app.t("orgFnOtherHint"))
-    }
     if (draft.representativeIsMe && profile != null) {
         if (identityVerified) {
             OrgIdentityBanner(true, app.t("orgIdVerifiedT"), app.t("orgIdVerifiedS"))

@@ -448,19 +448,6 @@ struct OrgCreateView: View {
                     }
                 }
             }
-            OrgGroupLabel(text: app.t("orgFunction"))
-            OrgFieldCard {
-                OrgMenuRow(placeholder: "—", options: OrgFunction.allCases, selection: draft.function,
-                           title: { app.functionName($0) }) { draft.function = $0 }
-            }
-            if draft.function == .other {
-                OrgFieldCard {
-                    OrgFieldRow(label: app.t("orgFunction")) {
-                        TextField(app.t("orgFnOtherHint"), text: $draft.functionOther)
-                            .textInputAutocapitalization(.sentences)
-                    }
-                }
-            }
             if draft.representativeIsMe, profile != nil {
                 if identityVerified {
                     OrgIdentityBanner(done: true, title: app.t("orgIdVerifiedT"), text: app.t("orgIdVerifiedS"))
