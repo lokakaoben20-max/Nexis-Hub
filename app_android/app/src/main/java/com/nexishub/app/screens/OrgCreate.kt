@@ -156,26 +156,27 @@ private fun OrgHeading(text: String, hint: String? = null) {
     }
 }
 
+/** Liste déroulante à choix unique (forme juridique, activité, fonction, pièce d'identité). */
 @Composable
-private fun OrgGroupLabel(text: String) {
+internal fun <T> OrgDropdown(label: String, options: List<T>, selected: T?, text: (T) -> String, onSelect: (T) -> Unit) {
     val p = LocalPalette.current
-    Text(text, style = body(13, FontWeight.SemiBold, p.muted), modifier = Modifier.padding(top = 6.dp))
-}
-
-/** Puce à choix unique (forme juridique, activité, fonction). */
-@Composable
-private fun OrgChoiceChip(label: String, selected: Boolean, onSelect: () -> Unit) {
-    val p = LocalPalette.current
-    Row(
-        Modifier.clip(CircleShape).background(if (selected) p.soft else p.surface, CircleShape)
-            .border(if (selected) 1.5.dp else 1.dp, if (selected) Nexis.brand else p.line, CircleShape)
-            .toggleable(selected, role = Role.RadioButton) { onSelect() }
-            .padding(horizontal = 13.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        if (selected) Icon(Icons.Rounded.Check, contentDescription = null, tint = p.accent, modifier = Modifier.size(14.dp))
-        Text(label, style = body(14, FontWeight.SemiBold, if (selected) p.accent else p.ink))
+    var open by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
+        OutlinedTextField(
+            value = selected?.let(text) ?: "", onValueChange = {}, readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(open) },
+            textStyle = body(16, color = p.ink), shape = RoundedCornerShape(16.dp), colors = orgFieldColors(),
+            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable),
+        )
+        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(text = { Text(text(option)) }, onClick = {
+                    onSelect(option)
+                    open = false
+                })
+            }
+        }
     }
 }
 
@@ -213,6 +214,7 @@ fun OrgCreateScreen() {
         mutableStateOf(
             when (app.capture) {
                 "org-step1" -> 1
+                "org-rep-unverified" -> 2
                 "org-docs" -> 3
                 "org-terms" -> 4
                 else -> 0
@@ -222,6 +224,7 @@ fun OrgCreateScreen() {
     var draft by remember {
         mutableStateOf(
             when (app.capture) {
+                "org-rep-unverified" -> OrgDemo.draft(documents = false)
                 "org-docs" -> OrgDemo.draft(documents = false).copy(documents = setOf(OrgDocKind.RCCM, OrgDocKind.IDNAT))
                 "org-terms" -> OrgDemo.draft(documents = true)
                 else -> OrgDraft()
@@ -387,18 +390,8 @@ private fun CompanyStep(draft: OrgDraft, onChange: (OrgDraft) -> Unit) {
             }
         }
     }
-    OrgGroupLabel(app.t("orgLegalForm"))
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OrgLegalForm.entries.forEach { form ->
-            OrgChoiceChip(app.formName(form), draft.form == form) { onChange(draft.copy(form = form)) }
-        }
-    }
-    OrgGroupLabel(app.t("orgActivityLabel"))
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OrgActivity.entries.forEach { activity ->
-            OrgChoiceChip(app.activityName(activity), draft.activity == activity) { onChange(draft.copy(activity = activity)) }
-        }
-    }
+    OrgDropdown(app.t("orgLegalForm"), OrgLegalForm.entries, draft.form, { app.formName(it) }) { onChange(draft.copy(form = it)) }
+    OrgDropdown(app.t("orgActivityLabel"), OrgActivity.entries, draft.activity, { app.activityName(it) }) { onChange(draft.copy(activity = it)) }
 }
 
 // Étape 2 : le représentant
@@ -426,12 +419,7 @@ private fun RepresentativeStep(
     if (!draft.representativeIsMe) {
         OrgTextField(draft.representativePhone, app.t("phone"), { onChange(draft.copy(representativePhone = it)) }, KeyboardType.Phone, "81 234 5678")
     }
-    OrgGroupLabel(app.t("orgFunction"))
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OrgFunction.entries.forEach { function ->
-            OrgChoiceChip(app.functionName(function), draft.function == function) { onChange(draft.copy(function = function)) }
-        }
-    }
+    OrgDropdown(app.t("orgFunction"), OrgFunction.entries, draft.function, { app.functionName(it) }) { onChange(draft.copy(function = it)) }
     if (draft.function == OrgFunction.OTHER) {
         OrgTextField(draft.functionOther, app.t("orgFunction"), { onChange(draft.copy(functionOther = it)) }, hint = app.t("orgFnOtherHint"))
     }
@@ -440,30 +428,9 @@ private fun RepresentativeStep(
             OrgIdentityBanner(true, app.t("orgIdVerifiedT"), app.t("orgIdVerifiedS"))
         } else {
             OrgIdentityBanner(false, app.t("orgIdTodoT"), app.t("orgIdTodoS"))
-            Column(Modifier.fillMaxWidth().nexisCard(p)) {
-                OrgProgressRow(Icons.Rounded.Description, app.t("orgIdPiece"), identity.pieceDone)
-                HorizontalDivider(Modifier.padding(start = 52.dp), color = p.line)
-                OrgProgressRow(Icons.Rounded.Person, app.t("orgIdVideo"), identity.video != null)
-            }
             InfoNote(app.t("orgIdOnce"))
             IdentityStep(identity, onIdentity)
         }
-    }
-}
-
-@Composable
-private fun OrgProgressRow(icon: ImageVector, text: String, done: Boolean) {
-    val p = LocalPalette.current
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp).semantics(mergeDescendants = true) { },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, contentDescription = null, tint = p.softInk, modifier = Modifier.size(22.dp))
-        Text(text, style = body(15, FontWeight.Medium, p.ink), modifier = Modifier.weight(1f).padding(start = 12.dp))
-        Icon(
-            if (done) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked, contentDescription = null,
-            tint = if (done) Nexis.ok else pick(0xFFC9D0DB, 0xFF3A4A66), modifier = Modifier.size(22.dp),
-        )
     }
 }
 

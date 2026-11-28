@@ -41,6 +41,42 @@ struct OrgFieldRow<Value: View>: View {
     }
 }
 
+/// Liste déroulante : un choix parmi plusieurs, sans occuper l'écran.
+struct OrgMenuRow<T: Hashable>: View {
+    let placeholder: String
+    let options: [T]
+    let selection: T?
+    let title: (T) -> String
+    let pick: (T) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(options, id: \.self) { option in
+                Button { pick(option) } label: {
+                    if option == selection {
+                        Label(title(option), systemImage: "checkmark")
+                    } else {
+                        Text(title(option))
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Text(selection.map(title) ?? placeholder)
+                    .font(.body(16, .medium))
+                    .foregroundStyle(selection == nil ? Nexis.muted : Nexis.ink)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Nexis.muted)
+            }
+            .padding(.horizontal, 16)
+            .frame(minHeight: 54)
+            .contentShape(Rectangle())
+        }
+    }
+}
+
 /// Petit titre au-dessus d'un groupe de puces.
 struct OrgGroupLabel: View {
     let text: String
@@ -372,18 +408,14 @@ struct OrgCreateView: View {
                 Text(app.t("orgEmailInvalid")).font(.body(13.5)).foregroundStyle(Nexis.danger)
             }
             OrgGroupLabel(text: app.t("orgLegalForm"))
-            WrapLayout {
-                ForEach(OrgLegalForm.allCases, id: \.self) { form in
-                    ToggleChip(label: app.formName(form), selected: draft.form == form) { draft.form = form }
-                }
+            OrgFieldCard {
+                OrgMenuRow(placeholder: "—", options: OrgLegalForm.allCases, selection: draft.form,
+                           title: { app.formName($0) }) { draft.form = $0 }
             }
             OrgGroupLabel(text: app.t("orgActivityLabel"))
-            WrapLayout {
-                ForEach(OrgActivity.allCases, id: \.self) { activity in
-                    ToggleChip(label: app.activityName(activity), selected: draft.activity == activity) {
-                        draft.activity = activity
-                    }
-                }
+            OrgFieldCard {
+                OrgMenuRow(placeholder: "—", options: OrgActivity.allCases, selection: draft.activity,
+                           title: { app.activityName($0) }) { draft.activity = $0 }
             }
         }
     }
@@ -417,12 +449,9 @@ struct OrgCreateView: View {
                 }
             }
             OrgGroupLabel(text: app.t("orgFunction"))
-            WrapLayout {
-                ForEach(OrgFunction.allCases, id: \.self) { function in
-                    ToggleChip(label: app.functionName(function), selected: draft.function == function) {
-                        draft.function = function
-                    }
-                }
+            OrgFieldCard {
+                OrgMenuRow(placeholder: "—", options: OrgFunction.allCases, selection: draft.function,
+                           title: { app.functionName($0) }) { draft.function = $0 }
             }
             if draft.function == .other {
                 OrgFieldCard {
@@ -437,31 +466,11 @@ struct OrgCreateView: View {
                     OrgIdentityBanner(done: true, title: app.t("orgIdVerifiedT"), text: app.t("orgIdVerifiedS"))
                 } else {
                     OrgIdentityBanner(done: false, title: app.t("orgIdTodoT"), text: app.t("orgIdTodoS"))
-                    VStack(spacing: 0) {
-                        progressRow("doc.viewfinder", app.t("orgIdPiece"), done: identity.pieceDone)
-                        Divider().padding(.leading, 52)
-                        progressRow("faceid", app.t("orgIdVideo"), done: identity.video != nil)
-                    }
-                    .background(Nexis.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     InfoNote(text: app.t("orgIdOnce"), systemImage: "lock.shield.fill")
                     IdentityStep(draft: $identity)
                 }
             }
         }
-    }
-
-    private func progressRow(_ symbol: String, _ title: String, done: Bool) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: symbol).font(.system(size: 17, weight: .medium)).foregroundStyle(Nexis.softInk)
-                .frame(width: 28)
-            Text(title).font(.body(15, .medium)).foregroundStyle(Nexis.ink)
-            Spacer()
-            Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 20))
-                .foregroundStyle(done ? Nexis.ok : Color(light: 0xC9D0DB, dark: 0x3A4A66))
-        }
-        .padding(.horizontal, 14).padding(.vertical, 12)
-        .accessibilityElement(children: .combine)
     }
 
     // Étape 3 : les documents (7)

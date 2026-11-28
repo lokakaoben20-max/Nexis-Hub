@@ -262,19 +262,15 @@ fun IdentityStep(draft: IdentityDraft, onChange: (IdentityDraft) -> Unit) {
     // La pièce : d'abord laquelle, puis recto et verso (ou la page photo du passeport).
     Column(Modifier.fillMaxWidth().nexisCard(p).padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionLine(app.t("becomeIdDocument"), app.t("becomeIdDocumentSub"), Icons.Rounded.Badge, draft.pieceDone)
-        Text(app.t("becomeDocChoose"), style = body(13, FontWeight.SemiBold, p.ink))
-        IdentityDocument.entries.forEach { document ->
-            ChoiceRow(
-                app.t(document.labelKey), selected = draft.document == document, onClick = { onChange(draft.choose(document)) },
-                subtitle = app.t(if (document.needsVerso) "becomeCardSides" else "becomePassportSub"),
-            ) {
-                Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(p.soft), contentAlignment = Alignment.Center) {
-                    Icon(document.icon, contentDescription = null, tint = p.softInk, modifier = Modifier.size(20.dp))
-                }
-            }
+        OrgDropdown(app.t("becomeDocChoose"), IdentityDocument.entries, draft.document, { app.t(it.labelKey) }) {
+            onChange(draft.choose(it))
         }
         val document = draft.document
         if (document != null) {
+            Text(
+                app.t(if (document.needsVerso) "becomeCardSides" else "becomePassportSub"),
+                style = body(13, color = p.muted),
+            )
             if (draft.recto != null || draft.verso != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (document.needsVerso) {

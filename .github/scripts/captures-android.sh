@@ -21,7 +21,7 @@ done
 for screen in tracking quotes showcase pay pending confirm report dispute decision provider request job info devices alerts help legal become become-identity become-wrong-side become-verso become-selfie become-review become-passport become-wrong-page become-portfolio portfolio portfolio-locked; do
   shoot "$screen" no fr
 done
-for screen in protect protect-bio lock security about org-home org-team org-invite org-roles org-numbers org-number-add org-withdraw org-member org-space-profile org-assign org-accountant org-worker org-intro org-step1 org-docs org-terms org-pending org-correction org-approved; do
+for screen in protect protect-bio lock security about org-home org-team org-invite org-roles org-numbers org-number-add org-withdraw org-member org-space-profile org-assign org-accountant org-worker org-intro org-step1 org-rep-unverified org-docs org-terms org-pending org-correction org-approved; do
   shoot "$screen" no fr
 done
 shoot tracking yes fr

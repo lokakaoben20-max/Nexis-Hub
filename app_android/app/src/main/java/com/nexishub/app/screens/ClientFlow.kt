@@ -230,7 +230,7 @@ sealed interface MissionRoute {
             "org-numbers" -> listOf(OrgNumbers(1))
             "org-number-add" -> listOf(OrgNumbers(1), OrgNumberAdd(1))
             "org-withdraw" -> listOf(OrgWithdraw(1))
-            "org-intro", "org-step1", "org-docs", "org-terms" -> listOf(OrgCreate)
+            "org-intro", "org-step1", "org-rep-unverified", "org-docs", "org-terms" -> listOf(OrgCreate)
             "org-pending", "org-correction", "org-approved" -> listOf(OrgStatus(1))
             else -> null
         }

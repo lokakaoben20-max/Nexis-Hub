@@ -223,7 +223,7 @@ data class OrgDraft(
 object OrgDemo {
     /** Écrans du parcours de création et de la demande, ouverts depuis le Profil. */
     val profileCaptures = setOf(
-        "org-intro", "org-step1", "org-docs", "org-terms", "org-pending", "org-correction", "org-approved",
+        "org-intro", "org-step1", "org-rep-unverified", "org-docs", "org-terms", "org-pending", "org-correction", "org-approved",
     )
 
     /** Un brouillon complet pour les captures (« Kasa Services SARLU »). */

@@ -869,7 +869,7 @@ class DemoRepository(private val now: Instant = Instant.now()) : NexisRepository
             "org-pending" -> setOrgs(demoRequest(OrgStatus.REVIEWING))
             "org-correction" -> setOrgs(demoRequest(OrgStatus.CORRECTION))
             "org-approved" -> setOrgs(demoRequest(OrgStatus.OPEN))
-            "org-intro", "org-step1", "org-docs", "org-terms" -> setOrgs()
+            "org-intro", "org-step1", "org-rep-unverified", "org-docs", "org-terms" -> setOrgs()
             else -> if (capture in OrgDemo.representativeCaptures) setOrgs(demoOrg(OrgRole.REPRESENTATIVE))
         }
     }

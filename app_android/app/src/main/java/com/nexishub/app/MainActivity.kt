@@ -216,6 +216,7 @@ enum class Capture(
     ORG_ASSIGN(true, tab = 1),
     ORG_INTRO(true, tab = 3),
     ORG_STEP1(true, tab = 3),
+    ORG_REP_UNVERIFIED(true, tab = 3),
     ORG_DOCS(true, tab = 3),
     ORG_TERMS(true, tab = 3),
     ORG_PENDING(true, tab = 3),
