@@ -157,18 +157,9 @@ struct ProfileView: View {
                         HStack(spacing: 16) {
                             Button { flow.push(.profileInfo) } label: {
                                 InitialsAvatar(initials: profile.initials, photoKey: "me")
-                                    .overlay(alignment: .bottomTrailing) {
-                                        Image(systemName: "camera.fill")
-                                            .font(.system(size: 11, weight: .bold))
-                                            .foregroundStyle(.white)
-                                            .frame(width: 24, height: 24)
-                                            .background(Nexis.navy, in: Circle())
-                                            .overlay(Circle().strokeBorder(Nexis.surface, lineWidth: 2))
-                                            .offset(x: 3, y: 3)
-                                    }
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel(app.t("photoEdit"))
+                            .accessibilityLabel(app.t("myInfo"))
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("\(profile.firstName) \(profile.lastName)")
                                     .font(.title(19)).foregroundStyle(Nexis.ink)
