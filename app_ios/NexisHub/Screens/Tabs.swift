@@ -231,10 +231,6 @@ struct ProfileView: View {
                 }
                 Section {
                     row("info.circle", app.t("aboutRow"), app.t("aboutRowSub"), .about)
-                    row("doc.text", app.t("legalTerms"), nil, .legal)
-                    Button { flow.comingSoon = SheetTitle(app.t("legalPrivacy")) } label: {
-                        rowLabel("hand.raised", app.t("legalPrivacy"), nil)
-                    }
                 }
                 Section {
                     Button(role: .destructive) { app.signOut() } label: {

@@ -739,8 +739,6 @@ private fun ProfileTab(onComingSoon: (String) -> Unit) {
             item {
                 SettingsGroup(p, listOf(
                     SettingsRow(app.t("aboutRow"), app.t("aboutRowSub")) { flow.push(MissionRoute.About) },
-                    SettingsRow(app.t("legalTerms"), null) { flow.push(MissionRoute.Legal) },
-                    SettingsRow(app.t("legalPrivacy"), null) { onComingSoon(app.t("legalPrivacy")) },
                 ))
             }
             item { ProfileSpacePicker(switching) { switching = false } }

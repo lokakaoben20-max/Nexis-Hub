@@ -1060,8 +1060,6 @@ fun OrgProfileTab(orgId: Int) {
             item {
                 Column(Modifier.fillMaxWidth().nexisCard(p)) {
                     OrgRow(app.t("aboutRow"), app.t("aboutRowSub")) { flow.push(MissionRoute.About) }
-                    HorizontalDivider(Modifier.padding(start = 16.dp), color = p.line)
-                    OrgRow(app.t("legalTerms"), null) { flow.push(MissionRoute.Legal) }
                 }
             }
             item {

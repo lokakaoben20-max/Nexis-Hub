@@ -1204,7 +1204,6 @@ struct OrgProfileView: View {
                     }
                     Section {
                         row("info.circle", app.t("aboutRow"), app.t("aboutRowSub"), .about)
-                        row("doc.text", app.t("legalTerms"), nil, .legal)
                     }
                     Section {
                         Button { switching = true } label: {
