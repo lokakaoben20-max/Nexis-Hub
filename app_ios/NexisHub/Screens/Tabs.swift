@@ -191,7 +191,6 @@ struct ProfileView: View {
                     }
                 }
                 Section {
-                    row("person.text.rectangle", app.t("myInfo"), app.t("myInfoSub"), .profileInfo)
                     Picker(selection: Binding(get: { app.language }, set: { app.language = $0 })) {
                         Text("Français").tag("fr")
                         Text("Lingála").tag("ln")

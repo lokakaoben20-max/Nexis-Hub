@@ -710,7 +710,6 @@ private fun ProfileTab(onComingSoon: (String) -> Unit) {
             if (profile?.isProvider == true) item { SpaceSwitch() }
             item {
                 SettingsGroup(p, listOf(
-                    SettingsRow(app.t("myInfo"), app.t("myInfoSub")) { flow.push(MissionRoute.ProfileInfo) },
                     SettingsRow(app.t("notifications"), app.t("notificationsSub")) { flow.push(MissionRoute.NotificationSettings) },
                     SettingsRow(app.t("myDevices"), app.plural("devicesCount", devicesCount)) { flow.push(MissionRoute.Devices) },
                     SettingsRow(app.t("securityRow"), app.t("securityRowSub")) { flow.push(MissionRoute.Security) },
