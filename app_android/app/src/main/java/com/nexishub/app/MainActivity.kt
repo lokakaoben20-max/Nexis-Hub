@@ -214,6 +214,13 @@ enum class Capture(
     ORG_MEMBER(true, tab = 0),
     ORG_SPACE_PROFILE(true, tab = 3),
     ORG_ASSIGN(true, tab = 1),
+    ORG_INTRO(true, tab = 3),
+    ORG_STEP1(true, tab = 3),
+    ORG_DOCS(true, tab = 3),
+    ORG_TERMS(true, tab = 3),
+    ORG_PENDING(true, tab = 3),
+    ORG_CORRECTION(true, tab = 3),
+    ORG_APPROVED(true, tab = 3),
     ORG_ACCOUNTANT(true, tab = 0),
     ORG_WORKER(true, tab = 1),
 

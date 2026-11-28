@@ -476,6 +476,7 @@ fun HelpScreen() {
 fun AppModel.legalTitle(key: LegalDocumentKey): String = when (key) {
     LegalDocumentKey.CGU -> t("legalCgu")
     LegalDocumentKey.PROVIDER_TERMS -> t("legalProviderTerms")
+    LegalDocumentKey.ORG_TERMS -> t("orgTermsTitle")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

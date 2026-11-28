@@ -38,7 +38,9 @@ data class AppDevice(
 }
 
 /** Les documents à accepter, comme le serveur les nomme. */
-enum class LegalDocumentKey(val serverKey: String) { CGU("cgu"), PROVIDER_TERMS("conditions_prestataires") }
+enum class LegalDocumentKey(val serverKey: String) {
+    CGU("cgu"), PROVIDER_TERMS("conditions_prestataires"), ORG_TERMS("conditions_entreprises")
+}
 
 /** Un document en vigueur, et quand la personne l'a accepté. */
 data class LegalDocument(val key: LegalDocumentKey, val version: LocalDate, val acceptedAt: LocalDate?)

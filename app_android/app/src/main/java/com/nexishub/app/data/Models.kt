@@ -107,7 +107,12 @@ data class Profile(
     /** Profil prestataire : nul pour un client seulement. */
     val providerStatus: ProviderStatus? = null,
     val termsVersion: LocalDate?,
+    /** Identité déjà vérifiée (pièce et vidéo) : la personne n'est jamais revérifiée. */
+    val identityVerified: Boolean = false,
 ) {
+    /** Un prestataire vérifié, ou une personne vérifiée pour une entreprise : jamais revérifiée. */
+    val isIdentityVerified: Boolean get() = providerStatus == ProviderStatus.VERIFIED || identityVerified
+
     val initials: String get() = (firstName.take(1) + lastName.take(1)).uppercase()
 
     /** Prestataire vérifié : il ouvre l'espace prestataire. */

@@ -175,9 +175,64 @@ data class Organization(
     }
 }
 
+/** Ce que la personne saisit pour demander un espace entreprise. Le serveur
+ * vérifie tout de nouveau ; ces règles servent à activer ou non « Suivant ». */
+data class OrgDraft(
+    val name: String = "",
+    val rccm: String = "",
+    val idnat: String = "",
+    val nif: String = "",
+    val commune: String? = null,
+    val form: OrgLegalForm? = null,
+    val activity: OrgActivity? = null,
+    val representativeIsMe: Boolean = true,
+    /** Téléphone du représentant quand ce n'est pas la personne. */
+    val representativePhone: String = "",
+    val function: OrgFunction = OrgFunction.MANAGER,
+    /** Fonction écrite par la personne quand elle choisit « Autre ». */
+    val functionOther: String = "",
+    val email: String = "",
+    val documents: Set<OrgDocKind> = emptySet(),
+) {
+    val step1Ready: Boolean
+        get() = name.isNotBlank() && rccm.isNotBlank() && idnat.isNotBlank() && nif.isNotBlank() &&
+            commune != null && form != null && activity != null && isEmail(email)
+
+    fun step2Ready(identityVerified: Boolean, identityTaken: Boolean): Boolean {
+        if (function == OrgFunction.OTHER && functionOther.isBlank()) return false
+        if (representativeIsMe) return identityVerified || identityTaken
+        return DrcPhone.parse(representativePhone).isValid
+    }
+
+    val step3Ready: Boolean get() = documents.size == OrgDocKind.entries.size
+
+    companion object {
+        fun isEmail(text: String): Boolean {
+            val value = text.trim()
+            if (value.contains(" ")) return false
+            val at = value.indexOf('@')
+            if (at <= 0) return false
+            val domain = value.substring(at + 1)
+            return domain.contains(".") && !domain.startsWith(".") && !domain.endsWith(".") && !domain.contains("@")
+        }
+    }
+}
+
 /** Écrans entreprise ouverts d'emblée pour les captures de la CI (version de
  * débogage seulement), avec des données dessinées. */
 object OrgDemo {
+    /** Écrans du parcours de création et de la demande, ouverts depuis le Profil. */
+    val profileCaptures = setOf(
+        "org-intro", "org-step1", "org-docs", "org-terms", "org-pending", "org-correction", "org-approved",
+    )
+
+    /** Un brouillon complet pour les captures (« Kasa Services SARLU »). */
+    fun draft(documents: Boolean) = OrgDraft(
+        name = "Kasa Services", rccm = "CD/KIN/RCCM/25-B-01234", idnat = "01-F4300-N12345K", nif = "A2512345B",
+        commune = "Gombe", form = OrgLegalForm.SARLU, activity = OrgActivity.BOTH, email = "contact@kasaservices.cd",
+        documents = if (documents) OrgDocKind.entries.toSet() else emptySet(),
+    )
+
     /** Écrans de l'espace entreprise ouvert, pour le représentant. */
     val representativeCaptures = setOf(
         "org-switch", "org-home", "org-team", "org-invite", "org-roles", "org-numbers", "org-number-add",

@@ -99,6 +99,8 @@ import com.nexishub.app.LocalApp
 import com.nexishub.app.data.Currency
 import com.nexishub.app.data.DemoRepository
 import com.nexishub.app.data.OrgDemo
+import com.nexishub.app.data.OrgStatus
+import com.nexishub.app.data.Organization
 import com.nexishub.app.data.DrcPhone
 import com.nexishub.app.data.Mission
 import com.nexishub.app.data.MissionStatus
@@ -139,6 +141,7 @@ fun Shell(start: Capture?) {
         if (start?.provider == true) app.providerSpace = true
         // Captures de l'espace entreprise : l'entreprise est ouverte d'emblée.
         app.capture?.let { c ->
+            if (c in OrgDemo.profileCaptures) (app.repository as? DemoRepository)?.demoPreset(c)
             if (c in OrgDemo.spaceCaptures) {
                 (app.repository as? DemoRepository)?.demoPreset(c)
                 app.openOrgSpace(1)
@@ -664,11 +667,12 @@ private fun ProfileTab(onComingSoon: (String) -> Unit) {
     var profile by remember { mutableStateOf<Profile?>(null) }
     var devicesCount by remember { mutableStateOf(1) }
     var worksAsked by remember { mutableStateOf(false) }
-    var hasOrgs by remember { mutableStateOf(false) }
+    var orgs by remember { mutableStateOf(emptyList<Organization>()) }
     var switching by remember { mutableStateOf(false) }
+    val hasOrgs = orgs.any { it.isOpen }
     LaunchedEffect(app.revision) {
         profile = app.repository.profile()
-        hasOrgs = attempt { app.repository.organizations() }.orEmpty().any { it.isOpen }
+        orgs = attempt { app.repository.organizations() }.orEmpty()
         devicesCount = attempt { app.repository.devices() }?.size ?: 1
         worksAsked = attempt { app.repository.portfolioRequest() } != null
     }
@@ -729,11 +733,18 @@ private fun ProfileTab(onComingSoon: (String) -> Unit) {
                     ))
                 }
             }
-            if (hasOrgs) {
+            if (profile != null) {
                 item {
-                    SettingsGroup(p, listOf(
-                        SettingsRow(app.t("orgSwitchRow"), app.t("orgSwitchRowSub")) { switching = true },
-                    ))
+                    // Une demande en cours, l'espace à changer, et la création d'un nouvel espace.
+                    SettingsGroup(p, buildList {
+                        orgs.filter { !it.isOpen }.forEach { org ->
+                            add(SettingsRow(org.shortName, app.t(if (org.status == OrgStatus.CORRECTION) "orgFixTitle" else "orgTimeReview")) {
+                                flow.push(MissionRoute.OrgStatus(org.id))
+                            })
+                        }
+                        if (hasOrgs) add(SettingsRow(app.t("orgSwitchRow"), app.t("orgSwitchRowSub")) { switching = true })
+                        add(SettingsRow(app.t("orgCreateRow"), app.t("orgCreateRowSub")) { flow.push(MissionRoute.OrgCreate) })
+                    })
                 }
             }
             item {

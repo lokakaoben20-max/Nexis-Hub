@@ -174,6 +174,16 @@ interface NexisRepository {
 
     /** Qui va sur une mission : plusieurs personnes, toutes vérifiées. */
     suspend fun assignMembers(orgId: Int, missionId: Int, memberIds: List<Int>)
+
+    /** Version des conditions entreprises, à accepter pour envoyer la demande. */
+    val orgTermsVersion: LocalDate
+
+    /** Envoie la demande d'espace entreprise. Une personne déjà vérifiée
+     * n'envoie aucune pièce d'identité ; sinon, la pièce et la vidéo. */
+    suspend fun createOrganization(draft: OrgDraft, acceptedTermsVersion: LocalDate?, identity: IdentityCapture?): Organization
+
+    /** Remplace le document que l'équipe a demandé de refaire. */
+    suspend fun replaceDocument(orgId: Int, kind: OrgDocKind)
 }
 
 /** Données FICTIVES de l'aperçu, reprises de l'app Flutter
@@ -413,7 +423,15 @@ class DemoRepository(private val now: Instant = Instant.now()) : NexisRepository
 
     /** Aperçu : aucune version n'est publiée, donc pas de texte. */
     override suspend fun legalText(key: LegalDocumentKey): LegalText =
-        LegalText(key, if (key == LegalDocumentKey.CGU) signupTermsVersion else providerTermsVersion, null)
+        LegalText(
+            key,
+            when (key) {
+                LegalDocumentKey.CGU -> signupTermsVersion
+                LegalDocumentKey.PROVIDER_TERMS -> providerTermsVersion
+                LegalDocumentKey.ORG_TERMS -> orgTermsVersion
+            },
+            null,
+        )
 
     private var chosenServices: List<String> = emptyList()
     private var sentPortfolio = Portfolio()
@@ -778,13 +796,97 @@ class DemoRepository(private val now: Instant = Instant.now()) : NexisRepository
             secured = mapOf(Currency.CDF to Money(320_000, Currency.CDF)),
         )
 
+    override val orgTermsVersion: LocalDate = LocalDate.of(2026, 11, 20)
+    private var nextOrgId = 10
+    private var identitySent = false
+
+    override suspend fun createOrganization(
+        draft: OrgDraft, acceptedTermsVersion: LocalDate?, identity: IdentityCapture?,
+    ): Organization {
+        val me = profile()
+        val commune = draft.commune
+        val form = draft.form
+        val activity = draft.activity
+        if (!draft.step1Ready || !draft.step3Ready || commune == null || commune !in communes || form == null ||
+            activity == null || acceptedTermsVersion != orgTermsVersion
+        ) throw NexisRefusal("organization_invalid")
+        // Une personne déjà vérifiée n'est jamais revérifiée ; sinon, il faut
+        // la pièce et la vidéo, ou une vérification déjà envoyée.
+        if (draft.representativeIsMe) {
+            if (!me.isIdentityVerified && !identitySent && identity?.isComplete != true) {
+                throw NexisRefusal("identity_required")
+            }
+        } else if (!DrcPhone.parse(draft.representativePhone).isValid) {
+            throw NexisRefusal("organization_invalid")
+        }
+        kotlinx.coroutines.delay(1_000)
+        if (draft.representativeIsMe && !me.isIdentityVerified && identity?.isComplete == true) identitySent = true
+        val name = draft.name.trim()
+        val formName = when (form) {
+            OrgLegalForm.SARL -> "SARL"
+            OrgLegalForm.SARLU -> "SARLU"
+            OrgLegalForm.SA -> "SA"
+            else -> ""
+        }
+        val fullName = if (formName.isNotEmpty() && !name.uppercase().endsWith(formName)) "$name $formName" else name
+        val myName = "${me.firstName} ${me.lastName}"
+        val mine = OrgMember(
+            nextMemberId, myName, me.initials, 0xFF0A63F0,
+            if (draft.representativeIsMe) OrgRole.REPRESENTATIVE else OrgRole.MANAGER,
+            if (me.isIdentityVerified) OrgMemberStatus.VERIFIED else OrgMemberStatus.TO_VERIFY, isMe = true,
+        )
+        nextMemberId++
+        val org = Organization(
+            id = nextOrgId, name = fullName, shortName = Organization.shortName(fullName), rccm = draft.rccm,
+            activity = activity, status = OrgStatus.REVIEWING, myRole = mine.role, sentAt = Instant.now(),
+            documents = OrgDocKind.entries.map { OrgDocument(it, OrgDocState.RECEIVED) },
+            members = listOf(mine),
+            representative = if (draft.representativeIsMe) myName else draft.representativePhone,
+            email = draft.email.trim(),
+        )
+        nextOrgId++
+        orgs.add(org)
+        return org
+    }
+
+    override suspend fun replaceDocument(orgId: Int, kind: OrgDocKind) {
+        kotlinx.coroutines.delay(1_000)
+        change(orgId) { org ->
+            val index = org.documents.indexOfFirst { it.kind == kind && it.state == OrgDocState.TO_REDO }
+            if (org.status != OrgStatus.CORRECTION || index < 0) throw NexisRefusal("document_not_requested")
+            org.copy(
+                documents = org.documents.mapIndexed { i, d -> if (i == index) d.copy(state = OrgDocState.RECEIVED) else d },
+                status = OrgStatus.REVIEWING, correctionNote = null,
+            )
+        }
+    }
+
     /** Captures de la CI : l'état de départ d'un écran entreprise. */
     fun demoPreset(capture: String) {
         when (capture) {
             "org-accountant" -> setOrgs(demoOrg(OrgRole.ACCOUNTANT))
             "org-worker" -> setOrgs(demoOrg(OrgRole.WORKER))
+            "org-pending" -> setOrgs(demoRequest(OrgStatus.REVIEWING))
+            "org-correction" -> setOrgs(demoRequest(OrgStatus.CORRECTION))
+            "org-approved" -> setOrgs(demoRequest(OrgStatus.OPEN))
+            "org-intro", "org-step1", "org-docs", "org-terms" -> setOrgs()
             else -> if (capture in OrgDemo.representativeCaptures) setOrgs(demoOrg(OrgRole.REPRESENTATIVE))
         }
+    }
+
+    /** Une demande d'espace entreprise à l'état voulu, pour les captures. */
+    private fun demoRequest(status: OrgStatus): Organization {
+        val base = demoOrg(OrgRole.REPRESENTATIVE, numbers = false)
+        return base.copy(
+            status = status, wallet = Wallet.EMPTY, sentAt = ago(hours = 2),
+            members = base.members.filter { it.isMe },
+            documents = base.documents.map {
+                if (status == OrgStatus.CORRECTION && it.kind == OrgDocKind.NIF) it.copy(state = OrgDocState.TO_REDO) else it
+            },
+            correctionNote = if (status == OrgStatus.CORRECTION) {
+                "Le NIF est illisible : merci de renvoyer une photo plus nette de l'attestation."
+            } else null,
+        )
     }
 
     private fun setOrgs(vararg list: Organization) {
