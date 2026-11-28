@@ -40,9 +40,22 @@ struct ProfileInfoView: View {
             Section {
                 HStack {
                     Spacer()
-                    InitialsAvatar(initials: (String(first.prefix(1)) + String(last.prefix(1))).uppercased())
-                        .scaleEffect(1.3)
-                        .padding(.vertical, 14)
+                    Button { flow.push(.photo("me")) } label: {
+                        InitialsAvatar(initials: (String(first.prefix(1)) + String(last.prefix(1))).uppercased(),
+                                       size: 84, photoKey: "me")
+                            .overlay(alignment: .bottomTrailing) {
+                                Image(systemName: "camera.fill")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 28, height: 28)
+                                    .background(Nexis.navy, in: Circle())
+                                    .overlay(Circle().strokeBorder(Nexis.surface, lineWidth: 2))
+                                    .offset(x: 3, y: 3)
+                            }
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(app.t("photoEdit"))
                     Spacer()
                 }
                 .listRowBackground(Color.clear)

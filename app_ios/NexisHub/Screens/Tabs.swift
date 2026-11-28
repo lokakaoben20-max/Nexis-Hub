@@ -155,7 +155,7 @@ struct ProfileView: View {
                 if let profile {
                     Section {
                         HStack(spacing: 16) {
-                            Button { flow.push(.photo("me")) } label: {
+                            Button { flow.push(.profileInfo) } label: {
                                 InitialsAvatar(initials: profile.initials, photoKey: "me")
                                     .overlay(alignment: .bottomTrailing) {
                                         Image(systemName: "camera.fill")
