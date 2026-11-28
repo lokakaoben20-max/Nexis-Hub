@@ -188,7 +188,7 @@ data class OrgDraft(
     val representativeIsMe: Boolean = true,
     /** Téléphone du représentant quand ce n'est pas la personne. */
     val representativePhone: String = "",
-    val function: OrgFunction = OrgFunction.MANAGER,
+    val function: OrgFunction? = null,
     /** Fonction écrite par la personne quand elle choisit « Autre ». */
     val functionOther: String = "",
     val email: String = "",

@@ -198,7 +198,7 @@ struct OrgDraft: Equatable {
     var representativeIsMe = true
     /// Téléphone du représentant quand ce n'est pas la personne.
     var representativePhone = ""
-    var function: OrgFunction = .manager
+    var function: OrgFunction?
     /// Fonction écrite par la personne quand elle choisit « Autre ».
     var functionOther = ""
     var email = ""

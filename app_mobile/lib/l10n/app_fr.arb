@@ -1085,7 +1085,7 @@
   "orgRepSelf": "Moi-même",
   "orgRepOther": "Une autre personne",
   "orgRepOtherSub": "Elle devra confirmer avec son compte.",
-  "orgFunction": "Fonction",
+  "orgFunction": "Votre titre dans l'entreprise (facultatif)",
   "orgFnManager": "Gérant",
   "orgFnDirector": "Directeur",
   "orgFnOwner": "Propriétaire",

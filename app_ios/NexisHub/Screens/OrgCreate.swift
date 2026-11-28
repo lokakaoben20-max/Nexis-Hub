@@ -505,8 +505,12 @@ struct OrgCreateView: View {
                         .font(.body(15, .semibold)).tint(Nexis.accent)
                 }
                 summaryLine("RCCM \(draft.rccm)")
-                summaryLine(app.t("orgSummaryRep", ["name": representativeName,
-                                                    "role": functionLabel.lowercased()]))
+                if let functionLabel {
+                    summaryLine(app.t("orgSummaryRep", ["name": representativeName,
+                                                        "role": functionLabel.lowercased()]))
+                } else {
+                    summaryLine("\(app.t("orgProfileRep")) : \(representativeName)")
+                }
                 if let activity = draft.activity { summaryLine(summary(activity)) }
                 summaryLine(app.plural("orgDocsCount", count: draft.documents.count))
             }
@@ -528,9 +532,10 @@ struct OrgCreateView: View {
         }
     }
 
-    private var functionLabel: String {
+    private var functionLabel: String? {
+        guard let function = draft.function else { return nil }
         let other = draft.functionOther.trimmingCharacters(in: .whitespaces)
-        return draft.function == .other && !other.isEmpty ? other : app.functionName(draft.function)
+        return function == .other && !other.isEmpty ? other : app.functionName(function)
     }
 
     private var representativeName: String {

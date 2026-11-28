@@ -1539,9 +1539,9 @@
   "ln": "Mosusu"
  },
  "orgFunction": {
-  "en": "Position",
-  "fr": "Fonction",
-  "ln": "Mosala na ye"
+  "en": "Your title in the company (optional)",
+  "fr": "Votre titre dans l'entreprise (facultatif)",
+  "ln": "Mosala na yo na kompani (soki olingi)"
  },
  "orgIdOnce": {
   "en": "Only once: this check will also serve your other spaces and “Become a provider”.",
