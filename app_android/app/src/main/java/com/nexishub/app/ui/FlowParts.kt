@@ -367,19 +367,38 @@ fun ChoiceRow(
     }
 }
 
-/** Pastille de l'opérateur : une lettre en attendant l'accord des
- * opérateurs pour leurs logos. */
+/** Pastille de l'opérateur : son logo sur fond blanc (Airtel, Orange Money,
+ * M-Pesa) ; Africell reste une lettre en attendant son logo officiel. Les
+ * logos sont des marques déposées : le kit officiel des opérateurs les
+ * remplacera avant le lancement. */
 @Composable
 fun OperatorBadge(operator: MobileOperator) {
-    val (letter, color) = when (operator) {
-        MobileOperator.MPESA -> "M" to 0xFFE60000
-        MobileOperator.ORANGE -> "O" to 0xFFFF7900
-        MobileOperator.AIRTEL -> "A" to 0xFFED1C24
+    val logo = when (operator) {
+        MobileOperator.MPESA -> com.nexishub.app.R.drawable.op_mpesa
+        MobileOperator.ORANGE -> com.nexishub.app.R.drawable.op_orange
+        MobileOperator.AIRTEL -> com.nexishub.app.R.drawable.op_airtel
+        MobileOperator.AFRICELL -> null
     }
-    Box(
-        Modifier.size(40.dp).background(Color(color), RoundedCornerShape(12.dp)).clearAndSetSemantics { },
-        contentAlignment = Alignment.Center,
-    ) { Text(letter, style = body(14, FontWeight.ExtraBold, Color.White)) }
+    val shape = RoundedCornerShape(12.dp)
+    if (logo != null) {
+        Box(
+            Modifier.size(width = 58.dp, height = 40.dp).background(Color.White, shape)
+                .border(0.5.dp, pick(0xFFE3E8F0, 0xFF22314B), shape).clearAndSetSemantics { }.padding(6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(logo),
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    } else {
+        Box(
+            Modifier.size(width = 58.dp, height = 40.dp).background(Color(0xFF7B2D8E), shape).clearAndSetSemantics { },
+            contentAlignment = Alignment.Center,
+        ) { Text("Af", style = body(14, FontWeight.ExtraBold, Color.White)) }
+    }
 }
 
 /** Case photo. L'envoi et l'affichage des photos arrivent avec le serveur :

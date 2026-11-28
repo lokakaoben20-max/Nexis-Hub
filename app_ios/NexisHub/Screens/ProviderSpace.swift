@@ -60,8 +60,9 @@ struct SpaceSwitch: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
-        Picker(app.t("spaceProvider"), selection: Binding(get: { app.providerSpace },
-                                                          set: { app.providerSpace = $0 })) {
+        Picker(app.t("spaceProvider"), selection: Binding(
+            get: { app.providerSpace },
+            set: { if $0 { app.openProviderSpace() } else { app.openClientSpace() } })) {
             Text(app.t("spaceClient")).tag(false)
             Text(app.t("spaceProvider")).tag(true)
         }

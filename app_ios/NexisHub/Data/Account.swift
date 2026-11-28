@@ -40,6 +40,7 @@ struct AppDevice: Identifiable, Hashable {
 enum LegalDocumentKey: String, Hashable, CaseIterable {
     case cgu
     case providerTerms = "conditions_prestataires"
+    case orgTerms = "conditions_entreprises"
 }
 
 /// Un document en vigueur, et quand la personne l'a accepté.

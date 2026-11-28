@@ -10,10 +10,14 @@ struct NexisHubApp: App {
         // Captures d'écran de la CI : -capture home -language fr
         let defaults = UserDefaults.standard
         if let capture = defaults.string(forKey: "capture") {
-            let model = AppModel(repository: DemoRepository(),
+            let repository = DemoRepository()
+            repository.demoPreset(capture)
+            let model = AppModel(repository: repository,
                                  security: AppSecurity(vault: MemoryCodeVault()),
                                  language: defaults.string(forKey: "language"))
             model.capture = capture
+            // Espace entreprise ouvert d'emblée pour ses écrans.
+            if OrgDemo.spaceCaptures.contains(capture) { model.orgSpaceId = 1 }
             if !["welcome", "phone", "code", "signup"].contains(capture) { model.signIn() }
             // Le simulateur n'a pas Face ID : les captures font comme si.
             switch capture {

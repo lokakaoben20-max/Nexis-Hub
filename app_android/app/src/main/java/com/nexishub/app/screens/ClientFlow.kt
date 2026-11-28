@@ -187,6 +187,18 @@ sealed interface MissionRoute {
     data object BecomeProvider : MissionRoute
     data object Security : MissionRoute
     data object Works : MissionRoute
+    data object About : MissionRoute
+
+    // Espace entreprise.
+    data class OrgTeam(val orgId: Int) : MissionRoute
+    data class OrgMemberRights(val orgId: Int, val memberId: Int) : MissionRoute
+    data class OrgInvite(val orgId: Int) : MissionRoute
+    data object OrgRoles : MissionRoute
+    data class OrgNumbers(val orgId: Int) : MissionRoute
+    data class OrgNumberAdd(val orgId: Int) : MissionRoute
+    data class OrgWithdraw(val orgId: Int) : MissionRoute
+    data object OrgCreate : MissionRoute
+    data class OrgStatus(val orgId: Int) : MissionRoute
 
     companion object {
         /** Écrans ouverts d'emblée pour les captures de la CI. */
@@ -210,6 +222,16 @@ sealed interface MissionRoute {
             PortfolioDemo.PROFILE, PortfolioDemo.LOCKED -> listOf(Works)
             in IdentityDemo.codes -> listOf(BecomeProvider)
             "security" -> listOf(Security)
+            "about" -> listOf(About)
+            "org-team" -> listOf(OrgTeam(1))
+            "org-member" -> listOf(OrgTeam(1), OrgMemberRights(1, 3))
+            "org-invite" -> listOf(OrgTeam(1), OrgInvite(1))
+            "org-roles" -> listOf(OrgRoles)
+            "org-numbers" -> listOf(OrgNumbers(1))
+            "org-number-add" -> listOf(OrgNumbers(1), OrgNumberAdd(1))
+            "org-withdraw" -> listOf(OrgWithdraw(1))
+            "org-intro", "org-step1", "org-rep-unverified", "org-docs", "org-terms" -> listOf(OrgCreate)
+            "org-pending", "org-correction", "org-approved" -> listOf(OrgStatus(1))
             else -> null
         }
     }
@@ -353,6 +375,16 @@ private fun MissionScreen(route: MissionRoute) {
         MissionRoute.BecomeProvider -> BecomeProviderScreen()
         MissionRoute.Security -> SecurityScreen()
         MissionRoute.Works -> PortfolioScreen()
+        MissionRoute.About -> AboutScreen()
+        is MissionRoute.OrgTeam -> OrgTeamScreen(route.orgId)
+        is MissionRoute.OrgMemberRights -> OrgMemberScreen(route.orgId, route.memberId)
+        is MissionRoute.OrgInvite -> OrgInviteScreen(route.orgId)
+        MissionRoute.OrgRoles -> OrgRolesScreen()
+        is MissionRoute.OrgNumbers -> OrgNumbersScreen(route.orgId)
+        MissionRoute.OrgCreate -> OrgCreateScreen()
+        is MissionRoute.OrgStatus -> OrgStatusScreen(route.orgId)
+        is MissionRoute.OrgNumberAdd -> OrgNumberAddScreen(route.orgId)
+        is MissionRoute.OrgWithdraw -> OrgWithdrawScreen(route.orgId)
     }
 }
 

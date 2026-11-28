@@ -40,9 +40,22 @@ struct ProfileInfoView: View {
             Section {
                 HStack {
                     Spacer()
-                    InitialsAvatar(initials: (String(first.prefix(1)) + String(last.prefix(1))).uppercased())
-                        .scaleEffect(1.3)
-                        .padding(.vertical, 14)
+                    Button { flow.push(.photo("me")) } label: {
+                        InitialsAvatar(initials: (String(first.prefix(1)) + String(last.prefix(1))).uppercased(),
+                                       size: 84, photoKey: "me")
+                            .overlay(alignment: .bottomTrailing) {
+                                Image(systemName: "camera.fill")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 28, height: 28)
+                                    .background(Nexis.navy, in: Circle())
+                                    .overlay(Circle().strokeBorder(Nexis.surface, lineWidth: 2))
+                                    .offset(x: 3, y: 3)
+                            }
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(app.t("photoEdit"))
                     Spacer()
                 }
                 .listRowBackground(Color.clear)
@@ -403,6 +416,7 @@ extension AppModel {
         switch key {
         case .cgu: return t("legalCgu")
         case .providerTerms: return t("legalProviderTerms")
+        case .orgTerms: return t("orgTermsTitle")
         }
     }
 }
@@ -695,7 +709,7 @@ struct BecomeProviderView: View {
     }
 }
 
-private struct StepHeading: View {
+struct StepHeading: View {
     let title: String
     let hint: String?
 
@@ -709,7 +723,7 @@ private struct StepHeading: View {
 }
 
 /// Ligne à cocher (plusieurs choix possibles).
-private struct CheckRow<Leading: View>: View {
+struct CheckRow<Leading: View>: View {
     let title: String
     let selected: Bool
     @ViewBuilder var leading: Leading
@@ -738,7 +752,7 @@ private struct CheckRow<Leading: View>: View {
 }
 
 /// Puce à cocher (communes).
-private struct ToggleChip: View {
+struct ToggleChip: View {
     let label: String
     let selected: Bool
     let action: () -> Void

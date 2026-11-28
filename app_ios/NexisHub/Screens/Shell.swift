@@ -16,28 +16,45 @@ struct ShellView: View {
     var body: some View {
         TabView(selection: $tab) {
             Tab(app.t("navHome"), systemImage: "house", value: AppTab.home) {
-                if app.providerSpace {
+                if let orgId = app.orgSpaceId {
+                    OrgHomeView(orgId: orgId, onTab: { tab = $0 })
+                } else if app.providerSpace {
                     ProviderHomeView(onTab: { tab = $0 })
                 } else {
                     HomeView(onPickService: { picking = true }, onTab: { tab = $0 })
                 }
             }
             Tab(app.t("navMissions"), systemImage: "list.bullet.clipboard", value: AppTab.missions) {
-                if app.providerSpace { ProviderMissionsView() } else { MissionsView() }
+                if let orgId = app.orgSpaceId {
+                    OrgMissionsView(orgId: orgId)
+                } else if app.providerSpace {
+                    ProviderMissionsView()
+                } else {
+                    MissionsView()
+                }
             }
             Tab(app.t("navWallet"), systemImage: "wallet.bifold", value: AppTab.wallet) {
-                WalletView()
+                if let orgId = app.orgSpaceId { OrgWalletView(orgId: orgId) } else { WalletView() }
             }
             Tab(app.t("navProfile"), systemImage: "person.crop.circle", value: AppTab.profile) {
-                ProfileView()
+                if let orgId = app.orgSpaceId { OrgProfileView(orgId: orgId) } else { ProfileView() }
             }
         }
+        // L'espace entreprise a sa teinte, sa carte marine et son profil :
+        // on sent qu'on n'est plus dans son compte personnel.
+        .tint(spaceTint)
         .modifier(RequestServiceAccessory(open: $picking, tab: tab))
         .onAppear {
             switch app.capture {
             case "missions": tab = .missions
             case "wallet": tab = .wallet
             case "profile": tab = .profile
+            case "org-accountant": tab = .wallet
+            case "org-worker", "org-assign": tab = .missions
+            case "org-space-profile": tab = .profile
+            case "org-switch", "org-profile": tab = .profile
+            // Écrans de l'espace entreprise : l'accueil de l'espace les ouvre.
+            case let capture? where OrgDemo.spaceCaptures.contains(capture): break
             case "services": picking = true
             case let capture? where MissionRoute.profileCaptures.contains(capture): tab = .profile
             case let capture? where MissionRoute.providerCaptures.contains(capture):
@@ -48,6 +65,7 @@ struct ShellView: View {
         }
         // Changer d'espace ramène à son accueil.
         .onChange(of: app.providerSpace) { tab = .home }
+        .onChange(of: app.orgSpaceId) { tab = .home }
         .onChange(of: app.requestedTab) { _, requested in
             guard let requested else { return }
             tab = requested
@@ -60,6 +78,9 @@ struct ShellView: View {
             })
         }
     }
+
+    /// Marine dans l'espace entreprise ; sinon la teinte de l'app.
+    private var spaceTint: Color? { app.orgSpaceId == nil ? nil : Nexis.orgTint }
 
     /// Vrai quand l'accessoire de la barre porte « Demander un service ».
     static var hasAccessory: Bool {
@@ -75,7 +96,9 @@ private struct RequestServiceAccessory: ViewModifier {
 
     /// Côté prestataire, rien à demander ; dans un écran de mission (paiement,
     /// suivi…), l'accessoire se range avec la barre d'onglets.
-    private var shown: Bool { !app.providerSpace && !app.openFlowTabs.contains(tab) }
+    private var shown: Bool {
+        !app.providerSpace && app.orgSpaceId == nil && !app.openFlowTabs.contains(tab)
+    }
 
     func body(content: Content) -> some View {
         if #available(iOS 26.1, *) {
@@ -83,7 +106,7 @@ private struct RequestServiceAccessory: ViewModifier {
                 .tabBarMinimizeBehavior(.onScrollDown)
                 .tabViewBottomAccessory(isEnabled: shown) { button }
         } else if #available(iOS 26.0, *) {
-            if app.providerSpace {
+            if app.providerSpace || app.orgSpaceId != nil {
                 content.tabBarMinimizeBehavior(.onScrollDown)
             } else {
                 content

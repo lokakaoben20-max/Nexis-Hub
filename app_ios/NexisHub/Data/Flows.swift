@@ -21,15 +21,16 @@ struct Quote: Identifiable, Hashable {
     var firstName: String { String(providerName.split(separator: " ").first ?? "") }
 }
 
-/// Les trois opérateurs Mobile Money.
+/// Les opérateurs Mobile Money.
 enum MobileOperator: String, CaseIterable, Hashable {
-    case mpesa, orange, airtel
+    case mpesa, orange, airtel, africell
 
     var displayName: String {
         switch self {
         case .mpesa: return "M-Pesa"
         case .orange: return "Orange Money"
         case .airtel: return "Airtel Money"
+        case .africell: return "Africell Money"
         }
     }
 }

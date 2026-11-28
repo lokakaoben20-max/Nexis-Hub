@@ -18,6 +18,11 @@ enum Nexis {
     /// Pastille « Nouveau » de la maquette.
     static let newBadge = Color(hex: 0xE5484D)
 
+    /// Espace entreprise : marine, pour qu'on sente qu'on n'est plus dans son compte.
+    static let orgTint = Color(light: 0x021937, dark: 0xEAF0FA)
+    static let orgGradient = LinearGradient(
+        colors: [Color(hex: 0x0E3A78), Color(hex: 0x021937)], startPoint: .topLeading, endPoint: .bottomTrailing)
+
     static let brandGradient = LinearGradient(
         colors: [gradientStart, gradientEnd], startPoint: .topLeading, endPoint: .bottomTrailing)
     static let heroGradient = LinearGradient(

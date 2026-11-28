@@ -97,6 +97,10 @@ import com.nexishub.app.AppModel
 import com.nexishub.app.Capture
 import com.nexishub.app.LocalApp
 import com.nexishub.app.data.Currency
+import com.nexishub.app.data.DemoRepository
+import com.nexishub.app.data.OrgDemo
+import com.nexishub.app.data.OrgStatus
+import com.nexishub.app.data.Organization
 import com.nexishub.app.data.DrcPhone
 import com.nexishub.app.data.Mission
 import com.nexishub.app.data.MissionStatus
@@ -135,12 +139,25 @@ fun Shell(start: Capture?) {
     // Captures de la CI : l'espace et l'écran de mission demandés.
     LaunchedEffect(Unit) {
         if (start?.provider == true) app.providerSpace = true
+        // Captures de l'espace entreprise : l'entreprise est ouverte d'emblée.
+        app.capture?.let { c ->
+            if (c in OrgDemo.profileCaptures) (app.repository as? DemoRepository)?.demoPreset(c)
+            if (c in OrgDemo.spaceCaptures) {
+                (app.repository as? DemoRepository)?.demoPreset(c)
+                app.openOrgSpace(1)
+                tab = when (c) {
+                    "org-assign", "org-worker" -> 1
+                    "org-space-profile" -> 3
+                    else -> 0
+                }
+            }
+        }
         MissionRoute.forCapture(app.capture)?.let { flow.path.addAll(it) }
     }
     // Changer d'espace ramène à son accueil.
-    var shownSpace by remember { mutableStateOf(app.providerSpace) }
-    if (shownSpace != app.providerSpace) {
-        shownSpace = app.providerSpace
+    var shownSpace by remember { mutableStateOf(app.providerSpace to app.orgSpaceId) }
+    if (shownSpace != (app.providerSpace to app.orgSpaceId)) {
+        shownSpace = app.providerSpace to app.orgSpaceId
         tab = 0
     }
     LaunchedEffect(app.requestedTab) {
@@ -150,7 +167,7 @@ fun Shell(start: Capture?) {
         }
     }
     // Côté prestataire, rien à demander : pas de bouton « + ».
-    val showFab = tab <= 1 && !app.providerSpace
+    val showFab = tab <= 1 && !app.providerSpace && app.orgSpaceId == null
     // « Demander un service » reste un « + » compact. Il s'ouvre quelques
     // secondes pour se présenter : de temps en temps quand la personne a déjà
     // des missions (sinon la carte de l'accueil porte déjà ce bouton), et dès
@@ -226,7 +243,12 @@ fun Shell(start: Capture?) {
                         }
                     },
             ) {
+                val orgId = app.orgSpaceId
                 when {
+                    orgId != null && tab == 0 -> OrgHomeTab(orgId, onTab = { tab = it })
+                    orgId != null && tab == 1 -> OrgMissionsTab(orgId)
+                    orgId != null && tab == 2 -> OrgWalletTab(orgId)
+                    orgId != null -> OrgProfileTab(orgId)
                     tab == 0 && app.providerSpace -> ProviderHomeTab(onTab = { tab = it })
                     tab == 0 -> HomeTab(
                         onPick = { picking = true }, onTab = { tab = it }, onComingSoon = { comingSoon = it },
@@ -348,7 +370,6 @@ private fun HomeTab(onPick: () -> Unit, onTab: (Int) -> Unit, onComingSoon: (Str
             item {
                 Row(Modifier.fillMaxWidth()) {
                     QuickAction(Icons.Rounded.Apps, app.t("actionServices"), onPick)
-                    QuickAction(Icons.Rounded.Download, app.t("actionDeposit")) { onComingSoon(app.t("actionDeposit")) }
                     QuickAction(Icons.Rounded.Upload, app.t("actionWithdraw")) { onComingSoon(app.t("actionWithdraw")) }
                     QuickAction(Icons.Rounded.History, app.t("actionHistory")) { onTab(2) }
                     QuickAction(Icons.Rounded.MoreHoriz, app.t("actionMore")) { onComingSoon(app.t("actionMore")) }
@@ -416,7 +437,7 @@ private fun OngoingDoneSwitch(showDone: Boolean, onChange: (Boolean) -> Unit) {
 }
 
 @Composable
-private fun androidx.compose.foundation.layout.RowScope.QuickAction(icon: ImageVector, label: String, onClick: () -> Unit) {
+fun androidx.compose.foundation.layout.RowScope.QuickAction(icon: ImageVector, label: String, onClick: () -> Unit) {
     val p = LocalPalette.current
     Column(
         Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).clickable(role = Role.Button, onClickLabel = label, onClick = onClick).padding(vertical = 4.dp),
@@ -435,18 +456,19 @@ private fun androidx.compose.foundation.layout.RowScope.QuickAction(icon: ImageV
  * de l'argent bloqué pour les missions en cours. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WalletCard(wallet: Wallet) {
+fun WalletCard(wallet: Wallet, org: Boolean = false, caption: String? = null) {
     val app = LocalApp.current
     val p = LocalPalette.current
     var explaining by remember { mutableStateOf(false) }
     fun shown(money: Money?) = if (app.amountsHidden) "••••" else app.money(money ?: Money(0, app.walletCurrency))
     val shape = RoundedCornerShape(28.dp)
     Column(
-        Modifier.fillMaxWidth().shadow(18.dp, shape, spotColor = Nexis.brand).background(Nexis.brandGradient, shape).padding(20.dp),
+        Modifier.fillMaxWidth().shadow(18.dp, shape, spotColor = if (org) Nexis.navy else Nexis.brand)
+            .background(if (org) Nexis.orgGradient else Nexis.brandGradient, shape).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(app.t("available"), style = body(14, FontWeight.Medium, Color.White.copy(alpha = 0.85f)), modifier = Modifier.weight(1f))
+            Text(caption ?: app.t("available"), style = body(14, FontWeight.Medium, Color.White.copy(alpha = 0.85f)), modifier = Modifier.weight(1f))
             Row(Modifier.clip(CircleShape).background(Color.White.copy(alpha = 0.16f))) {
                 for ((currency, label) in listOf(Currency.CDF to "FC", Currency.USD to "USD")) {
                     val selected = app.walletCurrency == currency
@@ -604,7 +626,7 @@ private fun WalletTab() {
 }
 
 @Composable
-private fun MovementRow(movement: Movement, app: AppModel, p: NexisPalette) {
+fun MovementRow(movement: Movement, app: AppModel, p: NexisPalette) {
     val tint = when (movement.state) {
         PaymentState.SECURED -> p.accent
         PaymentState.REFUNDED, PaymentState.AVAILABLE -> Nexis.ok
@@ -645,8 +667,12 @@ private fun ProfileTab(onComingSoon: (String) -> Unit) {
     var profile by remember { mutableStateOf<Profile?>(null) }
     var devicesCount by remember { mutableStateOf(1) }
     var worksAsked by remember { mutableStateOf(false) }
+    var orgs by remember { mutableStateOf(emptyList<Organization>()) }
+    var switching by remember { mutableStateOf(false) }
+    val hasOrgs = orgs.any { it.isOpen }
     LaunchedEffect(app.revision) {
         profile = app.repository.profile()
+        orgs = attempt { app.repository.organizations() }.orEmpty()
         devicesCount = attempt { app.repository.devices() }?.size ?: 1
         worksAsked = attempt { app.repository.portfolioRequest() } != null
     }
@@ -684,7 +710,6 @@ private fun ProfileTab(onComingSoon: (String) -> Unit) {
             if (profile?.isProvider == true) item { SpaceSwitch() }
             item {
                 SettingsGroup(p, listOf(
-                    SettingsRow(app.t("myInfo"), app.t("myInfoSub")) { flow.push(MissionRoute.ProfileInfo) },
                     SettingsRow(app.t("notifications"), app.t("notificationsSub")) { flow.push(MissionRoute.NotificationSettings) },
                     SettingsRow(app.t("myDevices"), app.plural("devicesCount", devicesCount)) { flow.push(MissionRoute.Devices) },
                     SettingsRow(app.t("securityRow"), app.t("securityRowSub")) { flow.push(MissionRoute.Security) },
@@ -707,12 +732,26 @@ private fun ProfileTab(onComingSoon: (String) -> Unit) {
                     ))
                 }
             }
+            if (profile != null) {
+                item {
+                    // Une demande en cours, l'espace à changer, et la création d'un nouvel espace.
+                    SettingsGroup(p, buildList {
+                        orgs.filter { !it.isOpen }.forEach { org ->
+                            add(SettingsRow(org.shortName, app.t(if (org.status == OrgStatus.CORRECTION) "orgFixTitle" else "orgTimeReview")) {
+                                flow.push(MissionRoute.OrgStatus(org.id))
+                            })
+                        }
+                        if (hasOrgs) add(SettingsRow(app.t("orgSwitchRow"), app.t("orgSwitchRowSub")) { switching = true })
+                        add(SettingsRow(app.t("orgCreateRow"), app.t("orgCreateRowSub")) { flow.push(MissionRoute.OrgCreate) })
+                    })
+                }
+            }
             item {
                 SettingsGroup(p, listOf(
-                    SettingsRow(app.t("legalTerms"), null) { flow.push(MissionRoute.Legal) },
-                    SettingsRow(app.t("legalPrivacy"), null) { onComingSoon(app.t("legalPrivacy")) },
+                    SettingsRow(app.t("aboutRow"), app.t("aboutRowSub")) { flow.push(MissionRoute.About) },
                 ))
             }
+            item { ProfileSpacePicker(switching) { switching = false } }
             item {
                 TextButton(onClick = { app.signOut() }, modifier = Modifier.fillMaxWidth()) {
                     Text(app.t("signOut"), style = body(16, FontWeight.SemiBold, Nexis.danger))
@@ -720,6 +759,11 @@ private fun ProfileTab(onComingSoon: (String) -> Unit) {
             }
         }
     }
+}
+
+@Composable
+private fun ProfileSpacePicker(show: Boolean, onDismiss: () -> Unit) {
+    if (show) SpacePickerSheet(onDismiss)
 }
 
 private class SettingsRow(val heading: String, val sub: String?, val onOpen: () -> Unit)

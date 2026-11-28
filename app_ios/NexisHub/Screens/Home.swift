@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Accueil client, d'après la maquette validée du 22 novembre : salutation,
-/// une seule carte de portefeuille, cinq actions rapides, puis les
+/// une seule carte de portefeuille, quatre actions rapides, puis les
 /// prestations (En cours d'abord, Terminées ensuite).
 struct HomeView: View {
     @Environment(AppModel.self) private var app
@@ -50,7 +50,7 @@ struct HomeView: View {
                 // Le rond du profil (initiales tant qu'il n'y a pas de photo).
                 if let profile {
                     Button { onTab(.profile) } label: {
-                        InitialsAvatar(initials: profile.initials, size: 38)
+                        InitialsAvatar(initials: profile.initials, size: 38, photoKey: "me")
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(app.t("navProfile"))
@@ -84,9 +84,6 @@ struct HomeView: View {
         HStack(alignment: .top, spacing: 0) {
             QuickAction(symbol: "square.grid.2x2.fill", label: app.t("actionServices"),
                         action: onPickService)
-            QuickAction(symbol: "arrow.down.to.line", label: app.t("actionDeposit")) {
-                comingSoon = SheetTitle(app.t("actionDeposit"))
-            }
             QuickAction(symbol: "arrow.up.to.line", label: app.t("actionWithdraw")) {
                 comingSoon = SheetTitle(app.t("actionWithdraw"))
             }
@@ -161,7 +158,7 @@ struct HomeView: View {
     }
 }
 
-private struct QuickAction: View {
+struct QuickAction: View {
     let symbol: String
     let label: String
     let action: () -> Void
@@ -195,13 +192,17 @@ private struct QuickAction: View {
 struct WalletCard: View {
     @Environment(AppModel.self) private var app
     let wallet: Wallet
+    /// Légende au-dessus du montant (« Disponible » par défaut).
+    var title: String? = nil
+    /// Dans l'espace entreprise, la carte est marine au lieu de bleue.
+    var org = false
     @State private var explaining = false
 
     var body: some View {
         @Bindable var model = app
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text(app.t("available"))
+                Text(title ?? app.t("available"))
                     .font(.body(14, .medium, relativeTo: .subheadline))
                     .foregroundStyle(.white.opacity(0.85))
                 Spacer()
@@ -243,8 +244,9 @@ struct WalletCard: View {
             }
         }
         .padding(20)
-        .background(Nexis.brandGradient, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .shadow(color: Nexis.brand.opacity(0.35), radius: 18, y: 10)
+        .background(org ? Nexis.orgGradient : Nexis.brandGradient,
+                    in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .shadow(color: (org ? Nexis.navy : Nexis.brand).opacity(0.35), radius: 18, y: 10)
         .sheet(isPresented: $explaining) {
             VStack(alignment: .leading, spacing: 12) {
                 Label(app.t("heldWhy"), systemImage: "lock.shield.fill")

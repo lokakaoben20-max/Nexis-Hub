@@ -112,6 +112,50 @@ protocol NexisRepository: AnyObject {
     func enterPresenceCode(missionId: Int, code: String) async throws -> PresenceResult
     /// « J'ai terminé » : le client a 48 h pour confirmer ou signaler.
     func finishJob(missionId: Int) async throws -> ProviderJob
+
+    // --- Espace entreprise ---
+
+    /// Version en vigueur des conditions entreprises.
+    var orgTermsVersion: Date { get }
+    /// Les entreprises de la personne, ouvertes ou en cours de demande.
+    func organizations() async throws -> [Organization]
+    func organization(id: Int) async throws -> Organization
+    /// Demande l'ouverture d'un espace entreprise. Le serveur refuse si les
+    /// conditions entreprises en vigueur ne sont pas acceptées, si un document
+    /// manque, ou si le représentant n'a pas d'identité (vérifiée ou envoyée).
+    /// Une personne déjà vérifiée n'est jamais revérifiée : `identity` est
+    /// alors `nil`.
+    func createOrganization(_ draft: OrgDraft, acceptedTermsVersion: Date?,
+                            identity: IdentityCapture?) async throws -> Organization
+    /// Remplace le document refusé par l'équipe.
+    func replaceDocument(orgId: Int, kind: OrgDocKind) async throws
+    /// Les missions de l'entreprise (pour un intervenant : les siennes).
+    func orgMissions(orgId: Int) async throws -> [Mission]
+    /// Les mouvements du portefeuille de l'entreprise ; vide pour un rôle qui
+    /// ne voit pas le solde.
+    func orgMovements(orgId: Int) async throws -> [Movement]
+    /// Invite une personne par son numéro. Réservé au représentant.
+    func inviteMember(orgId: Int, phone: String, role: OrgRole) async throws
+    /// Les invitations reçues, pas encore répondues.
+    func invitations() async throws -> [OrgInvitation]
+    func answerInvitation(id: Int, accept: Bool) async throws
+    /// Envoie la vérification d'identité d'une personne jamais vérifiée (pièce,
+    /// puis vidéo). Une personne déjà vérifiée n'appelle jamais ceci.
+    func submitIdentity(_ capture: IdentityCapture) async throws
+    /// Enregistre un numéro Mobile Money marchand. Réservé au représentant, et
+    /// l'app ne l'appelle qu'après le code ou Face ID ; le numéro attend 72 h.
+    func addWithdrawNumber(orgId: Int, mobileOperator: MobileOperator, number: String) async throws
+    /// Retire de l'argent de l'entreprise vers un numéro enregistré et actif.
+    /// Réservé au représentant ; l'app ne l'appelle qu'après le code ou
+    /// Face ID, et le serveur refuse tout autre numéro.
+    func requestOrgWithdrawal(orgId: Int, amount: Money, numberId: Int) async throws
+    /// Adapte ce qu'une personne de l'équipe peut voir ou faire. Réservé au
+    /// représentant ; seuls les droits adaptables changent (jamais les
+    /// retraits, les numéros ni l'équipe).
+    func setMemberRights(orgId: Int, memberId: Int, rights: Set<OrgRight>) async throws
+    /// Choisit qui va sur une mission : plusieurs intervenants possibles, tous
+    /// vérifiés. Réservé à qui a le droit d'affecter.
+    func assignMembers(orgId: Int, missionId: Int, memberIds: [Int]) async throws
 }
 
 struct InvalidRequest: Error {}
@@ -390,7 +434,13 @@ final class DemoRepository: NexisRepository {
 
     /// Aperçu : aucune version n'est publiée, donc pas de texte.
     func legalText(_ key: LegalDocumentKey) async throws -> LegalText {
-        LegalText(key: key, version: key == .cgu ? signupTermsVersion : providerTermsVersion, text: nil)
+        LegalText(key: key, version: {
+            switch key {
+            case .cgu: return signupTermsVersion
+            case .providerTerms: return providerTermsVersion
+            case .orgTerms: return orgTermsVersion
+            }
+        }(), text: nil)
     }
 
     private var chosenServices: [String] = []
@@ -673,5 +723,321 @@ final class DemoRepository: NexisRepository {
         guard job.steps[.finished] == nil else { return job }
         job.steps[.finished] = .now
         return save(job)
+    }
+
+    // MARK: - Espace entreprise (démonstration)
+
+    let orgTermsVersion = DateComponents(
+        calendar: Calendar(identifier: .gregorian), year: 2026, month: 11, day: 27
+    ).date!
+
+    private var orgsByPhone: [String: [Organization]] = [:]
+    private var invitesByPhone: [String: [OrgInvitation]] = [:]
+    private var orgMovementsStore: [Int: [Movement]] = [:]
+    private var identitySent = false
+    private var nextOrgId = 1
+    private var nextMemberId = 100
+    private var nextNumberId = 10
+
+    private var orgs: [Organization] {
+        get { orgsByPhone[activePhone] ?? [] }
+        set { orgsByPhone[activePhone] = newValue }
+    }
+
+    private var invites: [OrgInvitation] {
+        get { invitesByPhone[activePhone] ?? [] }
+        set { invitesByPhone[activePhone] = newValue }
+    }
+
+    func organizations() async throws -> [Organization] { orgs }
+
+    func organization(id: Int) async throws -> Organization {
+        guard let org = orgs.first(where: { $0.id == id }) else {
+            throw NexisRefusal(code: "organization_not_found")
+        }
+        return org
+    }
+
+    private func change(_ id: Int, _ edit: (inout Organization) throws -> Void) throws {
+        guard let index = orgs.firstIndex(where: { $0.id == id }) else {
+            throw NexisRefusal(code: "organization_not_found")
+        }
+        var org = orgs[index]
+        try edit(&org)
+        orgs[index] = org
+    }
+
+    func createOrganization(_ draft: OrgDraft, acceptedTermsVersion: Date?,
+                            identity: IdentityCapture?) async throws -> Organization {
+        let me = try await profile()
+        guard draft.step1Ready, draft.step3Ready,
+              let commune = draft.commune, communes.contains(commune),
+              let form = draft.form, let activity = draft.activity,
+              acceptedTermsVersion == orgTermsVersion
+        else { throw NexisRefusal(code: "organization_invalid") }
+        // Une personne déjà vérifiée n'est jamais revérifiée ; sinon, il faut
+        // la pièce et la vidéo, ou une vérification déjà envoyée.
+        if draft.representativeIsMe {
+            guard me.isIdentityVerified || identitySent || identity?.isComplete == true else {
+                throw NexisRefusal(code: "identity_required")
+            }
+        } else {
+            guard DrcPhone.parse(draft.representativePhone).isValid else {
+                throw NexisRefusal(code: "organization_invalid")
+            }
+        }
+        try await Task.sleep(for: .seconds(1))
+        if draft.representativeIsMe, !me.isIdentityVerified, identity?.isComplete == true {
+            identitySent = true
+        }
+        let name = draft.name.trimmingCharacters(in: .whitespaces)
+        let formName = form.rawValue.uppercased()
+        let withForm = ["SARL", "SARLU", "SA"].contains(formName) && !name.uppercased().hasSuffix(formName)
+        let fullName = withForm ? "\(name) \(formName)" : name
+        let myName = "\(me.firstName) \(me.lastName)"
+        let mine = OrgMember(id: nextMemberId, name: myName, initials: me.initials, color: 0x0A63F0,
+                             role: draft.representativeIsMe ? .representative : .manager,
+                             status: me.isIdentityVerified ? .verified : .toVerify, isMe: true)
+        nextMemberId += 1
+        let org = Organization(
+            id: nextOrgId, name: fullName, shortName: Organization.shortName(of: fullName), rccm: draft.rccm,
+            activity: activity, status: .reviewing, myRole: mine.role, sentAt: .now,
+            documents: OrgDocKind.allCases.map { OrgDocument(kind: $0, state: .received) },
+            members: [mine],
+            representative: draft.representativeIsMe ? myName : draft.representativePhone,
+            email: draft.email.trimmingCharacters(in: .whitespaces))
+        nextOrgId += 1
+        orgs.append(org)
+        return org
+    }
+
+    func replaceDocument(orgId: Int, kind: OrgDocKind) async throws {
+        try await Task.sleep(for: .seconds(1))
+        try change(orgId) { org in
+            guard org.status == .correction,
+                  let index = org.documents.firstIndex(where: { $0.kind == kind && $0.state == .toRedo }) else {
+                throw NexisRefusal(code: "document_not_requested")
+            }
+            org.documents[index].state = .received
+            org.status = .reviewing
+            org.correctionNote = nil
+        }
+    }
+
+    func orgMissions(orgId: Int) async throws -> [Mission] {
+        let org = try await organization(id: orgId)
+        guard org.isOpen else { return [] }
+        let calendar = Calendar.current
+        let today = calendar.date(bySettingHour: 15, minute: 0, second: 0, of: now) ?? now
+        let tomorrow = calendar.date(bySettingHour: 9, minute: 0, second: 0,
+                                     of: now.addingTimeInterval(86_400)) ?? now
+        return [
+            Mission(id: 91, service: .electricite, commune: "Gombe", status: .inProgress,
+                    payment: .secured, amount: Money(45_000, .cdf), providerName: "Jean Kalala", when: today),
+            Mission(id: 92, service: .electricite, commune: "Limete", status: .confirmed,
+                    payment: .secured, amount: Money(30_000, .cdf), providerName: "Jean Kalala", when: tomorrow),
+            Mission(id: 93, service: .plomberie, commune: "Gombe", status: .completed,
+                    payment: .released, amount: Money(180_000, .cdf), providerName: "Patrick Mavungu",
+                    when: ago(days: 2)),
+        ]
+    }
+
+    func orgMovements(orgId: Int) async throws -> [Movement] {
+        let org = try await organization(id: orgId)
+        guard org.isOpen, org.myRole.can(.seeBalance) else { return [] }
+        if let stored = orgMovementsStore[orgId] { return stored }
+        return [
+            Movement(kind: .release, label: "Électricité · Gombe", amount: Money(180_000, .cdf),
+                     when: ago(days: 1), state: .released),
+            Movement(kind: .withdrawal, label: "Retrait Airtel Money", amount: Money(-500_000, .cdf),
+                     when: ago(days: 3), state: .none),
+            Movement(kind: .release, label: "Prises · Limete", amount: Money(95_000, .cdf),
+                     when: ago(days: 4), state: .released),
+        ]
+    }
+
+    func inviteMember(orgId: Int, phone: String, role: OrgRole) async throws {
+        let digits = DrcPhone.parse(phone)
+        let label = "+243 \(digits.formatted)"
+        try await Task.sleep(for: .milliseconds(800))
+        let memberId = nextMemberId
+        try change(orgId) { org in
+            guard org.isOpen, org.myRole.can(.manageMembers), digits.isValid, OrgRole.invitable.contains(role),
+                  !org.members.contains(where: { $0.name == label })
+            else { throw NexisRefusal(code: "invitation_refused") }
+            org.members.append(OrgMember(id: memberId, name: label, initials: "+",
+                                         color: 0x5B667A, role: role, status: .invited))
+        }
+        nextMemberId += 1
+    }
+
+    func invitations() async throws -> [OrgInvitation] { invites }
+
+    func answerInvitation(id: Int, accept: Bool) async throws {
+        guard let invitation = invites.first(where: { $0.id == id }) else {
+            throw NexisRefusal(code: "invitation_not_found")
+        }
+        try await Task.sleep(for: .milliseconds(800))
+        invites.removeAll { $0.id == id }
+        guard accept else { return }
+        let me = try await profile()
+        let member = OrgMember(id: nextMemberId, name: "\(me.firstName) \(me.lastName)", initials: me.initials,
+                               color: 0x0A63F0, role: invitation.role,
+                               status: me.isIdentityVerified ? .verified : .toVerify, isMe: true)
+        orgs.append(Organization(
+            id: nextOrgId, name: invitation.orgName, shortName: Organization.shortName(of: invitation.orgName),
+            rccm: "", activity: .provides, status: .open, myRole: invitation.role, sentAt: ago(days: 30),
+            documents: OrgDocKind.allCases.map { OrgDocument(kind: $0, state: .received) },
+            members: [member],
+            wallet: invitation.role.can(.seeBalance) ? orgDemoWallet : .empty,
+            representative: invitation.inviterName))
+        nextOrgId += 1
+        nextMemberId += 1
+    }
+
+    func submitIdentity(_ capture: IdentityCapture) async throws {
+        let me = try await profile()
+        guard !me.isIdentityVerified, capture.isComplete else {
+            throw NexisRefusal(code: "identity_not_needed")
+        }
+        // Aperçu : la pièce et la vidéo ne sont gardées nulle part.
+        try await Task.sleep(for: .seconds(1))
+        identitySent = true
+        for i in orgs.indices {
+            for j in orgs[i].members.indices where orgs[i].members[j].isMe {
+                orgs[i].members[j].status = .toVerify
+            }
+        }
+    }
+
+    func addWithdrawNumber(orgId: Int, mobileOperator: MobileOperator, number: String) async throws {
+        let digits = DrcPhone.parse(number)
+        try await Task.sleep(for: .milliseconds(800))
+        let numberId = nextNumberId
+        try change(orgId) { org in
+            guard org.isOpen, org.myRole.can(.manageNumbers), digits.isValid, org.numbers.count < 4,
+                  !org.numbers.contains(where: { $0.number == digits.digits })
+            else { throw NexisRefusal(code: "number_refused") }
+            org.numbers.append(WithdrawNumber(id: numberId, mobileOperator: mobileOperator,
+                                              number: digits.digits,
+                                              usableAt: Date.now.addingTimeInterval(72 * 3600)))
+        }
+        nextNumberId += 1
+    }
+
+    func requestOrgWithdrawal(orgId: Int, amount: Money, numberId: Int) async throws {
+        let org = try await organization(id: orgId)
+        guard org.isOpen, org.myRole.can(.withdraw), amount.minorUnits > 0,
+              let number = org.numbers.first(where: { $0.id == numberId }), number.isActive(),
+              let available = org.wallet.available[amount.currency], available.minorUnits >= amount.minorUnits
+        else { throw NexisRefusal(code: "withdrawal_refused") }
+        try await Task.sleep(for: .seconds(1))
+        try change(orgId) { org in
+            var money = org.wallet.available
+            money[amount.currency] = Money(available.minorUnits - amount.minorUnits, amount.currency)
+            org.wallet = Wallet(available: money, secured: org.wallet.secured)
+        }
+        var list = try await orgMovements(orgId: orgId)
+        list.insert(Movement(kind: .withdrawal, label: "Retrait \(number.mobileOperator.displayName)",
+                             amount: Money(-amount.minorUnits, amount.currency), when: .now, state: .none), at: 0)
+        orgMovementsStore[orgId] = list
+    }
+
+    func setMemberRights(orgId: Int, memberId: Int, rights: Set<OrgRight>) async throws {
+        try await Task.sleep(for: .milliseconds(500))
+        try change(orgId) { org in
+            guard org.isOpen, org.myRole.can(.manageMembers),
+                  rights.allSatisfy(\.isEditable),
+                  let index = org.members.firstIndex(where: { $0.id == memberId }),
+                  org.members[index].role != .representative
+            else { throw NexisRefusal(code: "rights_refused") }
+            org.members[index].rights = rights
+        }
+    }
+
+    func assignMembers(orgId: Int, missionId: Int, memberIds: [Int]) async throws {
+        try await Task.sleep(for: .milliseconds(500))
+        try change(orgId) { org in
+            let verified = Set(org.members.filter { $0.status == .verified }.map(\.id))
+            guard org.isOpen, org.can(.assignMissions), !memberIds.isEmpty,
+                  Set(memberIds).isSubset(of: verified)
+            else { throw NexisRefusal(code: "assignment_refused") }
+            org.assignments[missionId] = memberIds
+        }
+    }
+
+    private var orgDemoWallet: Wallet {
+        Wallet(available: [.cdf: Money(1_240_000, .cdf), .usd: Money(64_000, .usd)],
+               secured: [.cdf: Money(320_000, .cdf)])
+    }
+
+    /// Captures de la CI : l'état de départ d'un écran entreprise.
+    func demoPreset(_ capture: String) {
+        if ["org-rep-unverified", "org-invited-unverified"].contains(capture) {
+            sampleProfile = Profile(firstName: sampleProfile.firstName, lastName: sampleProfile.lastName,
+                                    phone: sampleProfile.phone, commune: sampleProfile.commune,
+                                    providerStatus: nil, termsVersion: sampleProfile.termsVersion)
+        }
+        switch capture {
+        case "org-pending": orgs = [demoOrg(role: .representative, status: .reviewing)]
+        case "org-correction": orgs = [demoOrg(role: .representative, status: .correction)]
+        case "org-approved": orgs = [demoOrg(role: .representative, status: .open, numbers: false)]
+        case "org-accountant": orgs = [demoOrg(role: .accountant, status: .open)]
+        case "org-worker": orgs = [demoOrg(role: .worker, status: .open)]
+        case "org-invited-verified", "org-invited-unverified":
+            invites = [OrgInvitation(id: 1, orgName: "Kasa Services SARLU", inviterName: "Alain Mukendi",
+                                     role: .worker)]
+        default:
+            if OrgDemo.representativeCaptures.contains(capture) {
+                orgs = [demoOrg(role: .representative, status: .open)]
+            }
+        }
+    }
+
+    private func demoOrg(role: OrgRole, status: OrgStatus, numbers: Bool = true) -> Organization {
+        let me = sampleProfile
+        let myName = "\(me.firstName) \(me.lastName)"
+        func member(_ id: Int, _ name: String, _ initials: String, _ color: UInt32, _ memberRole: OrgRole,
+                    _ state: OrgMemberStatus, _ service: Service? = nil) -> OrgMember {
+            let isMe = memberRole == role
+            return OrgMember(id: id, name: isMe ? myName : name, initials: isMe ? me.initials : initials,
+                             color: isMe ? 0x0A63F0 : color, role: memberRole,
+                             status: isMe ? .verified : state, service: service, isMe: isMe)
+        }
+        var org = Organization(
+            id: 1, name: "Kasa Services SARLU", shortName: "Kasa Services", rccm: "CD/KIN/RCCM/25-B-01234",
+            activity: .both, status: status, myRole: role, sentAt: ago(hours: 2),
+            documents: [
+                OrgDocument(kind: .rccm, state: .received),
+                OrgDocument(kind: .idnat, state: .received),
+                OrgDocument(kind: .nif, state: status == .correction ? .toRedo : .received),
+            ],
+            correctionNote: status == .correction
+                ? "Le NIF est coupé en bas. Photographiez le document entier, bien à plat." : nil,
+            members: [
+                member(1, "Alain Mukendi", "AM", 0x0A63F0, .representative, .verified),
+                member(2, "Nadine Bope", "NB", 0x1E7A5C, .accountant, .verified),
+                member(3, "Jean Kalala", "JK", 0xC98200, .worker, .verified, .electricite),
+                OrgMember(id: 6, name: "Paul Ilunga", initials: "PI", color: 0x0F7C8C, role: .worker,
+                          status: .verified, service: .electricite),
+                OrgMember(id: 4, name: "Patrick Mavungu", initials: "PM", color: 0x494C95, role: .worker,
+                          status: .toVerify, service: .plomberie),
+                OrgMember(id: 5, name: "Sarah Lutete", initials: "SL", color: 0xC2416B, role: .manager,
+                          status: .invited),
+            ],
+            representative: "Alain Mukendi",
+            email: "contact@kasaservices.cd")
+        org.assignments = [91: [3, 6], 92: [3], 93: [4]]
+        if status == .open {
+            if role.can(.seeBalance) { org.wallet = orgDemoWallet }
+            if numbers {
+                org.numbers = [
+                    WithdrawNumber(id: 1, mobileOperator: .airtel, number: "991234567", usableAt: ago(days: 5)),
+                    WithdrawNumber(id: 2, mobileOperator: .orange, number: "897654321",
+                                   usableAt: now.addingTimeInterval(71 * 3600 - 600)),
+                ]
+            }
+        }
+        return org
     }
 }

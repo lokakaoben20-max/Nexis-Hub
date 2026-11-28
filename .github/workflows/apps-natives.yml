@@ -14,6 +14,11 @@ on:
       - "outils/pictogrammes_apps_natives.py"
       - ".github/workflows/apps-natives.yml"
   workflow_dispatch:
+    inputs:
+      seulement:
+        description: "Captures iOS à refaire seulement (noms séparés par des espaces) ; vide = toutes"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -109,6 +114,8 @@ jobs:
           path: app_ios/livrable/NexisHub-non-signee.ipa
           if-no-files-found: error
       - name: Captures d'écran
+        env:
+          SEULEMENT: ${{ github.event.inputs.seulement }}
         run: |
           mkdir -p captures
           xcrun simctl boot "$UDID" || true
@@ -123,13 +130,24 @@ jobs:
             sleep 6
             xcrun simctl io "$UDID" screenshot "captures/ios-$1-$2-$3.png"
           }
-          for screen in welcome phone code signup home missions wallet profile services; do
+          if [ -n "$SEULEMENT" ]; then
+            for screen in $SEULEMENT; do shoot "$screen" light fr; done
+            exit 0
+          fi
+          for screen in welcome phone code signup home missions wallet profile services photo about; do
             shoot "$screen" light fr
           done
           for screen in tracking quotes showcase pay pending confirm report dispute decision provider request job info devices alerts help legal become become-identity become-wrong-side become-verso become-selfie become-review become-passport become-wrong-page become-portfolio portfolio portfolio-locked; do
             shoot "$screen" light fr
           done
           for screen in protect protect-bio lock security; do
+            shoot "$screen" light fr
+          done
+          # Espace entreprise : création, suivi, espace ouvert, rôles, numéros, retrait.
+          for screen in org-profile org-intro org-step1 org-rep-verified org-rep-unverified org-docs org-terms \
+                        org-pending org-correction org-approved org-switch org-home org-team org-invite \
+                        org-invited-verified org-invited-unverified org-accountant org-worker org-roles \
+                        org-numbers org-number-add org-withdraw org-member org-photo org-space-profile org-assign; do
             shoot "$screen" light fr
           done
           shoot tracking dark fr

@@ -110,17 +110,13 @@ struct IdentityStep: View {
             SectionLine(title: app.t("becomeIdDocument"), subtitle: app.t("becomeIdDocumentSub"),
                         systemImage: "person.text.rectangle", done: draft.pieceDone)
             Text(app.t("becomeDocChoose")).font(.body(13.5, .semibold, relativeTo: .subheadline)).foregroundStyle(Nexis.ink)
-            ForEach(IdentityDocument.allCases, id: \.self) { document in
-                ChoiceRow(title: app.t(document.labelKey),
-                          subtitle: app.t(document.needsVerso ? "becomeCardSides" : "becomePassportSub"),
-                          selected: draft.document == document) {
-                    Image(systemName: document.symbol).font(.system(size: 18)).foregroundStyle(Nexis.softInk)
-                        .frame(width: 36, height: 36)
-                        .background(Nexis.soft, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .accessibilityHidden(true)
-                } action: {
-                    draft.choose(document)
-                }
+            OrgFieldCard {
+                OrgMenuRow(placeholder: "—", options: IdentityDocument.allCases, selection: draft.document,
+                           title: { app.t($0.labelKey) }) { draft.choose($0) }
+            }
+            if let document = draft.document {
+                Text(app.t(document.needsVerso ? "becomeCardSides" : "becomePassportSub"))
+                    .font(.body(13, relativeTo: .footnote)).foregroundStyle(Nexis.muted)
             }
             if let document = draft.document {
                 if draft.recto != nil || draft.verso != nil {

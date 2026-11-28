@@ -762,7 +762,7 @@ struct SignupView: View {
 }
 
 /// La liste des communes, avec une coche sur celle choisie.
-private struct CommunePicker: View {
+struct CommunePicker: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @Binding var selection: String?

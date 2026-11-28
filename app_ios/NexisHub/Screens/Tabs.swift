@@ -88,7 +88,7 @@ struct WalletView: View {
     }
 }
 
-private struct MovementRow: View {
+struct MovementRow: View {
     @Environment(AppModel.self) private var app
     let movement: Movement
 
@@ -143,15 +143,23 @@ struct ProfileView: View {
     @State private var profile: Profile?
     @State private var devicesCount = 1
     @State private var worksAsked = false
+    @State private var orgs: [Organization] = []
+    @State private var invites: [OrgInvitation] = []
+    @State private var switching = false
     @State private var flow = MissionFlow()
 
     var body: some View {
         NavigationStack(path: $flow.path) {
+            ScrollViewReader { proxy in
             List {
                 if let profile {
                     Section {
                         HStack(spacing: 16) {
-                            InitialsAvatar(initials: profile.initials)
+                            Button { flow.push(.profileInfo) } label: {
+                                InitialsAvatar(initials: profile.initials, photoKey: "me")
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(app.t("myInfo"))
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("\(profile.firstName) \(profile.lastName)")
                                     .font(.title(19)).foregroundStyle(Nexis.ink)
@@ -183,7 +191,6 @@ struct ProfileView: View {
                     }
                 }
                 Section {
-                    row("person.text.rectangle", app.t("myInfo"), app.t("myInfoSub"), .profileInfo)
                     Picker(selection: Binding(get: { app.language }, set: { app.language = $0 })) {
                         Text("Français").tag("fr")
                         Text("Lingála").tag("ln")
@@ -198,6 +205,9 @@ struct ProfileView: View {
                     row("lock.shield", app.t("securityRow"), app.t("securityRowSub"), .security)
                     row("questionmark.bubble", app.t("helpDisputes"), app.t("helpDisputesSub"), .help)
                 }
+                if profile != nil {
+                    orgSection
+                }
                 if let profile, profile.providerStatus == nil {
                     Section {
                         row("briefcase", app.t("becomeProvider"), app.t("becomeProviderSub"), .becomeProvider)
@@ -210,10 +220,7 @@ struct ProfileView: View {
                     }
                 }
                 Section {
-                    row("doc.text", app.t("legalTerms"), nil, .legal)
-                    Button { flow.comingSoon = SheetTitle(app.t("legalPrivacy")) } label: {
-                        rowLabel("hand.raised", app.t("legalPrivacy"), nil)
-                    }
+                    row("info.circle", app.t("aboutRow"), app.t("aboutRowSub"), .about)
                 }
                 Section {
                     Button(role: .destructive) { app.signOut() } label: {
@@ -230,14 +237,68 @@ struct ProfileView: View {
                 profile = try? await app.repository.profile()
                 devicesCount = (try? await app.repository.devices())?.count ?? 1
                 worksAsked = ((try? await app.repository.portfolioRequest()) ?? nil) != nil
+                orgs = (try? await app.repository.organizations()) ?? []
+                invites = (try? await app.repository.invitations()) ?? []
+            }
+            .task {
+                // Capture de la CI : la ligne « Créer un espace entreprise » au milieu de l'écran.
+                guard app.capture == "org-profile" else { return }
+                try? await Task.sleep(for: .milliseconds(700))
+                proxy.scrollTo("org-create", anchor: .center)
+            }
             }
         }
         .missionFlow(flow, tab: .profile)
+        .sheet(isPresented: $switching) { SpacePickerSheet() }
         .onAppear {
+            if app.capture == "org-switch" { switching = true }
             if let capture = app.capture, MissionRoute.profileCaptures.contains(capture), flow.path.isEmpty,
                let routes = MissionRoute.forCapture(capture) {
                 flow.path = routes
             }
+        }
+    }
+
+    /// Espace entreprise : invitations reçues, entreprises de la personne,
+    /// changer d'espace, créer un espace.
+    @ViewBuilder
+    private var orgSection: some View {
+        Section {
+            ForEach(invites) { invite in
+                row("envelope.badge", app.t("orgInviteRow", ["name": Organization.shortName(of: invite.orgName)]),
+                    app.t("orgInviteRowSub"), .orgInvitation(invite.id))
+            }
+            ForEach(orgs) { org in
+                if org.isOpen {
+                    Button { app.openOrgSpace(org.id) } label: {
+                        HStack {
+                            rowLabel("building.2", org.shortName, app.roleName(org.myRole))
+                            Spacer()
+                            if app.orgSpaceId == org.id {
+                                Image(systemName: "checkmark").foregroundStyle(Nexis.accent)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                } else {
+                    row("building.2", org.shortName, app.t(org.status == .correction ? "orgFixTitle" : "orgTimeReview"),
+                        .orgStatus(org.id))
+                }
+            }
+            if orgs.contains(where: \.isOpen) {
+                Button { switching = true } label: {
+                    HStack {
+                        rowLabel("arrow.left.arrow.right", app.t("orgSwitchRow"), app.t("orgSwitchRowSub"))
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color(light: 0xC4CAD4, dark: 0x4A5A75))
+                    }
+                    .contentShape(Rectangle())
+                }
+            }
+            row("building.2.crop.circle", app.t("orgCreateRow"), app.t("orgCreateRowSub"), .orgCreate)
+                .id("org-create")
         }
     }
 

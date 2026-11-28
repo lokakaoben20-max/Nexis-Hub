@@ -321,18 +321,29 @@ struct ComingSoonView: View {
     }
 }
 
-/// Avatar à initiales.
+/// Avatar à initiales, ou la photo de la personne quand elle en a une.
 struct InitialsAvatar: View {
+    @Environment(AppModel.self) private var app
     let initials: String
     var size: CGFloat = 64
+    /// « me » : la photo de profil de la personne.
+    var photoKey: String? = nil
 
     var body: some View {
-        Text(initials)
-            .font(.title(size * 0.34, .semibold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(Nexis.brandGradient, in: Circle())
-            .accessibilityHidden(true)
+        if let image = app.photo(photoKey) {
+            Image(uiImage: image)
+                .resizable().scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+                .accessibilityHidden(true)
+        } else {
+            Text(initials)
+                .font(.title(size * 0.34, .semibold))
+                .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .background(Nexis.brandGradient, in: Circle())
+                .accessibilityHidden(true)
+        }
     }
 }
 

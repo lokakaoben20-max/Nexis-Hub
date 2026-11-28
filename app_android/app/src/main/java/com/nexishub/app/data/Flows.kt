@@ -21,9 +21,9 @@ data class Quote(
     val firstName: String get() = providerName.split(" ").first()
 }
 
-/** Les trois opérateurs Mobile Money. */
+/** Les opérateurs Mobile Money. */
 enum class MobileOperator(val displayName: String) {
-    MPESA("M-Pesa"), ORANGE("Orange Money"), AIRTEL("Airtel Money")
+    MPESA("M-Pesa"), ORANGE("Orange Money"), AIRTEL("Airtel Money"), AFRICELL("Africell Money")
 }
 
 /** Un numéro Mobile Money du client (masqué), ou rien d'enregistré. */

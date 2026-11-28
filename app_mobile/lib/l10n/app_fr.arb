@@ -1045,5 +1045,326 @@
   "securityNewCode": "Nouveau code",
   "securityCodeChanged": "Votre code est changé.",
   "securityLockNote": "L'app se verrouille quand elle reste fermée plus d'une minute.",
-  "cancel": "Annuler"
+  "cancel": "Annuler",
+  "orgCreateRow": "Créer un espace entreprise",
+  "orgCreateRowSub": "Au nom de votre entreprise",
+  "orgInviteRow": "Invitation de {name}",
+  "@orgInviteRow": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "orgInviteRowSub": "Répondre à l'invitation",
+  "orgSwitchRow": "Changer d'espace",
+  "orgSwitchRowSub": "Client, prestataire, entreprise",
+  "orgTitle": "Espace entreprise",
+  "orgIntroTitle": "Un espace pour votre entreprise",
+  "orgIntroPersonal": "Votre compte personnel ne change pas.",
+  "orgIntroWalletT": "Son propre portefeuille",
+  "orgIntroWalletS": "Séparé de votre argent personnel.",
+  "orgIntroTeamT": "Votre équipe",
+  "orgIntroTeamS": "Chacun avec son propre compte.",
+  "orgIntroReceiptsT": "Des reçus clairs",
+  "orgIntroReceiptsS": "Au nom de l'entreprise.",
+  "orgIntroPrepareT": "À préparer",
+  "orgIntroPrepareS": "RCCM, IDNAT, NIF et le numéro Mobile Money marchand de l'entreprise.",
+  "orgStart": "Commencer",
+  "orgLater": "Plus tard",
+  "orgStep1Title": "Votre entreprise",
+  "orgName": "Nom",
+  "orgLegalForm": "Forme juridique",
+  "orgFormEstablishment": "Établissement",
+  "orgFormOther": "Autre",
+  "orgActivityLabel": "Sur NexisHub, l'entreprise…",
+  "orgActOrders": "Commande",
+  "orgActProvides": "Propose",
+  "orgActBoth": "Les deux",
+  "orgRepTitle": "Qui représente l'entreprise ?",
+  "orgRepSelf": "Moi-même",
+  "orgRepOther": "Une autre personne",
+  "orgRepOtherSub": "Elle devra confirmer avec son compte.",
+  "orgFunction": "Votre titre dans l'entreprise (facultatif)",
+  "orgFnManager": "Gérant",
+  "orgFnDirector": "Directeur",
+  "orgFnOwner": "Propriétaire",
+  "orgIdVerifiedT": "Identité déjà vérifiée",
+  "orgIdVerifiedS": "Rien de plus à envoyer : votre vérification NexisHub suffit.",
+  "orgIdTodoT": "Vérifier mon identité",
+  "orgIdTodoS": "Pas encore faite sur votre compte.",
+  "orgIdPiece": "Pièce d'identité",
+  "orgIdVideo": "Vidéo du visage",
+  "orgIdOnce": "Une seule fois : cette vérification servira aussi à vos autres espaces et à « Devenir prestataire ».",
+  "orgIdSent": "Vérification envoyée : l'équipe NexisHub la regarde.",
+  "orgDocsTitle": "Les documents de l'entreprise",
+  "orgDocRccm": "Registre du commerce",
+  "orgDocIdnat": "Identification nationale",
+  "orgDocNif": "Numéro d'impôt",
+  "orgDocReceived": "Reçu",
+  "orgDocToAdd": "À ajouter",
+  "orgDocToRedo": "À refaire",
+  "orgDocsNote": "Documents chiffrés, vus par l'équipe de vérification seulement.",
+  "orgDocsDemo": "Démonstration : l'envoi réel des documents arrive avec le serveur.",
+  "orgTermsTitle": "Conditions entreprises",
+  "orgAccept": "J'ai lu et j'accepte",
+  "orgReviewNote": "L'équipe vérifie vos documents avant d'ouvrir l'espace.",
+  "orgEdit": "Modifier",
+  "orgSummaryRep": "Représentant : {name}, {role}",
+  "@orgSummaryRep": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "role": {
+        "type": "String"
+      }
+    }
+  },
+  "orgSummaryOrders": "Commande des services",
+  "orgSummaryProvides": "Propose des services",
+  "orgSummaryBoth": "Commande et propose des services",
+  "orgDocsCount": "{count, plural, =1{1 document joint} other{{count} documents joints}}",
+  "@orgDocsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "orgSentTitle": "Demande envoyée",
+  "orgSentText": "L'équipe NexisHub vérifie {name}. Nous vous prévenons dans l'app, par message et par e-mail.",
+  "@orgSentText": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "orgTimeReview": "Vérification des documents",
+  "orgTimeReviewSub": "En cours par l'équipe",
+  "orgTimeOpen": "Espace entreprise ouvert",
+  "orgTimeOpenSub": "Portefeuille et équipe",
+  "orgSentPersonal": "En attendant, votre compte personnel fonctionne comme d'habitude.",
+  "orgBackProfile": "Retour au profil",
+  "orgFixTitle": "Une correction est demandée.",
+  "orgFixKept": "Le reste est conservé.",
+  "orgFixMessage": "Message de l'équipe",
+  "orgFixReplace": "Remplacer le document",
+  "orgFixWrite": "Écrire à l'équipe",
+  "orgApprovedTitle": "{name} est vérifiée",
+  "@orgApprovedTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "orgApprovedText": "Votre espace entreprise est ouvert, avec son propre portefeuille.",
+  "orgApprovedNumber": "Enregistrer le numéro Mobile Money marchand",
+  "orgApprovedInvite": "Inviter votre équipe",
+  "orgApprovedOpen": "Ouvrir l'espace entreprise",
+  "orgSwitchTitle": "Changer d'espace",
+  "orgSwitchPersonal": "Mon compte",
+  "orgChange": "Changer",
+  "orgAvailableCaption": "Disponible · entreprise",
+  "orgQuickTeam": "Équipe",
+  "orgOngoing": "Missions en cours",
+  "orgMissionsTitle": "Missions de l'entreprise",
+  "orgRoleRepresentative": "Représentant",
+  "orgRoleManager": "Gérant",
+  "orgRoleAccountant": "Comptable",
+  "orgRoleWorker": "Intervenant",
+  "orgRoleRepShort": "Repr.",
+  "orgRoleMgrShort": "Gérant",
+  "orgRoleAccShort": "Compt.",
+  "orgRoleWrkShort": "Interv.",
+  "orgRightMissions": "Voir toutes les missions de l'entreprise",
+  "orgRightBalance": "Voir le solde et l'historique",
+  "orgRightMembers": "Inviter ou retirer un membre",
+  "orgRightNumbers": "Gérer les numéros de retrait",
+  "orgRightWithdraw": "Retirer de l'argent",
+  "orgRightDoMissions": "Réaliser les missions de l'entreprise",
+  "orgRightOwnMissions": "Voir ses propres missions",
+  "orgRightNoMoney": "Ne voit ni le solde ni les retraits",
+  "orgRolesTitle": "Rôles et droits",
+  "orgRolesHint": "Le représentant garde la main sur l'argent et sur l'équipe.",
+  "orgRolesManagerNote": "Un gérant gère le quotidien, mais ne touche pas aux retraits.",
+  "orgRolesLink": "Voir les rôles et droits",
+  "orgTeamHint": "Un intervenant prend des missions seulement quand il est vérifié, comme tout prestataire.",
+  "orgMemberVerified": "Vérifié",
+  "orgMemberToVerify": "À vérifier",
+  "orgMemberInvited": "Invité",
+  "orgInviteAction": "Inviter",
+  "orgInviteRole": "Rôle",
+  "orgCanTitle": "Ce rôle permet de",
+  "orgInviteSend": "Envoyer l'invitation",
+  "orgInviteSent": "Invitation envoyée",
+  "orgInvTitle": "Invitation",
+  "orgInvHeading": "{org} vous invite",
+  "@orgInvHeading": {
+    "placeholders": {
+      "org": {
+        "type": "String"
+      }
+    }
+  },
+  "orgInvBody": "{name} vous propose de rejoindre l'équipe comme {role}.",
+  "@orgInvBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "role": {
+        "type": "String"
+      }
+    }
+  },
+  "orgInvOwn": "Votre compte personnel reste à vous, séparé de l'entreprise.",
+  "orgInvAccept": "Accepter l'invitation",
+  "orgInvRefuse": "Refuser",
+  "orgInvUnverT": "Votre identité reste à vérifier",
+  "orgInvUnverS": "Pièce, puis vidéo de votre visage.",
+  "orgInvUnverNote": "Vous pourrez accepter maintenant et vérifier ensuite.",
+  "orgInvAcceptVerify": "Accepter et vérifier",
+  "orgInvAccepted": "Vous avez rejoint l'équipe.",
+  "orgInvRefused": "Invitation refusée.",
+  "orgWalletRepOnly": "Retrait réservé au représentant",
+  "orgWithdrawCta": "Retirer de l'argent",
+  "orgWalletLocked": "Le solde de l'entreprise n'est pas visible avec votre rôle.",
+  "orgWorkerPays": "Le paiement de vos missions est géré par l'entreprise.",
+  "orgNumbersTitle": "Numéros de retrait",
+  "orgNumbersHint": "Seul le représentant les gère, depuis l'app.",
+  "orgNumberMerchant": "Marchand · {number}",
+  "@orgNumberMerchant": {
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
+  "orgNumberActive": "Actif",
+  "orgNumberWaiting": "Dans {hours} h",
+  "@orgNumberWaiting": {
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      }
+    }
+  },
+  "orgNumbersNote": "Chaque nouveau numéro prévient le représentant sur tous ses canaux (app, message, e-mail) et attend 72 h avant son premier retrait.",
+  "orgNumberAdd": "Ajouter un numéro",
+  "orgNumberAddTitle": "Nouveau numéro marchand",
+  "orgNumberOperator": "Opérateur",
+  "orgNumberGuard": "Ajouter le numéro {number} aux retraits de l'entreprise",
+  "@orgNumberGuard": {
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
+  "orgNumberDone": "Numéro ajouté : utilisable dans 72 h.",
+  "orgNumberLimit": "4 numéros au plus par compte.",
+  "orgNumberInvalid": "Ce numéro n'est pas valide.",
+  "orgWithdrawAvail": "Disponible pour l'entreprise",
+  "orgWithdrawAmount": "Montant",
+  "orgWithdrawTo": "Vers",
+  "orgWithdrawConfirm": "Vous confirmerez avec votre code ou Face ID.",
+  "orgWithdrawGo": "Retirer {amount}",
+  "@orgWithdrawGo": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "orgWithdrawGuard": "Retirer {amount} de {name} vers {operator}",
+  "@orgWithdrawGuard": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      },
+      "name": {
+        "type": "String"
+      },
+      "operator": {
+        "type": "String"
+      }
+    }
+  },
+  "orgWithdrawDone": "Retrait demandé : {amount}.",
+  "@orgWithdrawDone": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "orgWithdrawNoNumber": "Aucun numéro actif pour l'instant. Un nouveau numéro attend 72 h.",
+  "orgFailed": "Impossible pour le moment. Rien n'a été modifié. Réessayez dans un instant.",
+  "orgInvVerifiedT": "Vous êtes déjà vérifié",
+  "orgUpcoming": "À venir",
+  "orgFnAccountant": "Comptable",
+  "orgFnOtherHint": "Précisez la fonction",
+  "orgEmail": "E-mail",
+  "orgEmailInvalid": "Cette adresse e-mail n'est pas valide.",
+  "orgDocsFormat": "Photo nette ou PDF. Le NIF aussi : le numéro seul ne suffit pas, joignez le document.",
+  "orgRightTeam": "Voir l'équipe",
+  "orgRightAssign": "Affecter des intervenants aux missions",
+  "orgRolesCustomHint": "Ce sont les droits proposés. Vous pouvez les adapter pour chaque personne depuis l'équipe.",
+  "orgMemberRightsTitle": "Droits de la personne",
+  "orgMemberRightsHint": "Ce que {name} peut voir et faire. Les retraits, les numéros et l'équipe restent au représentant.",
+  "@orgMemberRightsHint": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "orgMemberFixed": "Réservé au représentant",
+  "orgMemberDefaults": "Remettre les droits proposés",
+  "orgMemberSaved": "Droits enregistrés.",
+  "orgTeamHidden": "L'équipe n'est pas visible avec vos droits.",
+  "orgMineOnly": "Vous voyez seulement vos propres missions.",
+  "orgAssignTitle": "Intervenants",
+  "orgAssignAction": "Affecter",
+  "orgAssignNone": "Aucun intervenant affecté",
+  "orgAssignWho": "Envoyer sur cette mission",
+  "orgAssignHint": "Plusieurs intervenants peuvent aller sur une même mission. Le client voit le nom de chacun.",
+  "orgAssignOnlyVerified": "Seuls les intervenants vérifiés peuvent être affectés.",
+  "orgAssignSave": "Enregistrer",
+  "orgAssignDone": "Intervenants enregistrés.",
+  "orgAssignedLine": "Intervenants : {names}",
+  "@orgAssignedLine": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "orgSpaceLabel": "Espace entreprise",
+  "orgBackPersonal": "Revenir à mon compte",
+  "orgProfileCompany": "L'entreprise",
+  "orgProfileRep": "Représentant",
+  "orgProfileEmail": "E-mail",
+  "orgPhotoRow": "Photo de l'entreprise",
+  "photoProfileTitle": "Photo de profil",
+  "photoTake": "Prendre une photo",
+  "photoChoose": "Choisir dans la photothèque",
+  "photoDelete": "Supprimer la photo",
+  "photoHint": "Votre photo est vue par vos clients et vos prestataires. Vous pouvez la changer ou la supprimer quand vous voulez.",
+  "photoDemo": "Démonstration : la photo reste sur ce téléphone en attendant le serveur.",
+  "photoEdit": "Modifier la photo",
+  "aboutRow": "À propos",
+  "aboutRowSub": "Version, conditions, contact",
+  "aboutText": "NexisHub met en relation des clients et des prestataires vérifiés, avec un paiement sécurisé jusqu'à la fin du service.",
+  "aboutVersion": "Version {version}",
+  "@aboutVersion": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  }
 }
